@@ -35,11 +35,9 @@
       # Disable if you don't want unfree packages
       allowUnfree = true;
       nix = {
-        binaryCachePublicKeys = [
-          "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-        ];
-        binaryCaches =
-          [ "https://cache.nixos.org" ];
+        binaryCachePublicKeys =
+          [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" ];
+        binaryCaches = [ "https://cache.nixos.org" ];
       };
     };
   };
@@ -86,7 +84,7 @@
       openssh.authorizedKeys.keys = [
         # TODO: Add your SSH public key(s) here, if you plan on using SSH to connect
       ];
-      extraGroups = [ "wheel" "networkmanager" "video" "audio" "input"];
+      extraGroups = [ "wheel" "networkmanager" "video" "audio" "input" ];
     };
   };
 
@@ -98,7 +96,6 @@
     passwordAuthentication = false;
   };
 
-
   security.rtkit.enable = true;
   services.pipewire = {
     enable = true;
@@ -107,7 +104,7 @@
     alsa.support32Bit = true;
     pulse.enable = true;
     jack.enable = true;
-    systemWide  = false;
+    systemWide = false;
     wireplumber.enable = true;
   };
 

@@ -4,44 +4,45 @@
 { config, lib, pkgs, modulesPath, ... }:
 
 {
-  imports =
-    [ (modulesPath + "/installer/scan/not-detected.nix")
-    ];
+  imports = [ (modulesPath + "/installer/scan/not-detected.nix") ];
 
-  boot.initrd.availableKernelModules = [ "xhci_pci" "ahci" "nvme" "usb_storage" "sd_mod" ];
+  boot.initrd.availableKernelModules =
+    [ "xhci_pci" "ahci" "nvme" "usb_storage" "sd_mod" ];
   boot.initrd.kernelModules = [ ];
   boot.kernelModules = [ "kvm-intel" "wl" ];
   boot.extraModulePackages = [ config.boot.kernelPackages.broadcom_sta ];
 
-  fileSystems."/" =
-    { device = "/dev/disk/by-uuid/0868005a-079e-4db5-ad24-c6a7c6335246";
-      fsType = "ext4";
-    };
+  fileSystems."/" = {
+    device = "/dev/disk/by-uuid/0868005a-079e-4db5-ad24-c6a7c6335246";
+    fsType = "ext4";
+  };
 
-  boot.initrd.luks.devices."nixos".device = "/dev/disk/by-uuid/022d4f44-7207-4487-bb90-3094c4a90d44";
+  boot.initrd.luks.devices."nixos".device =
+    "/dev/disk/by-uuid/022d4f44-7207-4487-bb90-3094c4a90d44";
 
-  fileSystems."/home" =
-    { device = "/dev/disk/by-uuid/c22bf5e2-51fa-484e-9362-c46f2ac6985f";
-      fsType = "ext4";
-    };
+  fileSystems."/home" = {
+    device = "/dev/disk/by-uuid/c22bf5e2-51fa-484e-9362-c46f2ac6985f";
+    fsType = "ext4";
+  };
 
-  boot.initrd.luks.devices."home".device = "/dev/disk/by-uuid/b704b36a-9b78-488f-b8c2-3f910a4e7883";
+  boot.initrd.luks.devices."home".device =
+    "/dev/disk/by-uuid/b704b36a-9b78-488f-b8c2-3f910a4e7883";
 
-  fileSystems."/boot" =
-    { device = "/dev/disk/by-uuid/96039c89-b897-4fcc-ac0e-b4999c433db1";
-      fsType = "ext4";
-    };
+  fileSystems."/boot" = {
+    device = "/dev/disk/by-uuid/96039c89-b897-4fcc-ac0e-b4999c433db1";
+    fsType = "ext4";
+  };
 
-  boot.initrd.luks.devices."boot".device = "/dev/disk/by-uuid/80ab3ae5-b400-4f73-b302-5d8590de6538";
+  boot.initrd.luks.devices."boot".device =
+    "/dev/disk/by-uuid/80ab3ae5-b400-4f73-b302-5d8590de6538";
 
-  fileSystems."/boot/EFI" =
-    { device = "/dev/disk/by-uuid/26E4-630A";
-      fsType = "vfat";
-    };
+  fileSystems."/boot/EFI" = {
+    device = "/dev/disk/by-uuid/26E4-630A";
+    fsType = "vfat";
+  };
 
   swapDevices =
-    [ { device = "/dev/disk/by-uuid/9d037c56-eb00-4f9e-a726-a98fef5f5714"; }
-    ];
+    [{ device = "/dev/disk/by-uuid/9d037c56-eb00-4f9e-a726-a98fef5f5714"; }];
 
   # Enables DHCP on each ethernet and wireless interface. In case of scripted networking
   # (the default) this is the recommended approach. When using systemd-networkd it's
@@ -52,7 +53,8 @@
 
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
   powerManagement.cpuFreqGovernor = lib.mkDefault "powersave";
-  hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
+  hardware.cpu.intel.updateMicrocode =
+    lib.mkDefault config.hardware.enableRedistributableFirmware;
   # high-resolution display
   hardware.video.hidpi.enable = lib.mkDefault true;
 }
