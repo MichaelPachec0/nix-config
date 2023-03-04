@@ -41,6 +41,10 @@
       };
     };
   };
+  zramSwap = {
+    enable = true;
+    memoryPercent = 25;
+  };
 
   nix = {
     # This will add each flake input as a registry
