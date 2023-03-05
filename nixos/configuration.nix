@@ -30,6 +30,10 @@
       #     patches = [ ./change-hello-to-hi.patch ];
       #   });
       # })
+      (final: prev: {
+        nix = pkgs.unstable.nix;
+        cacerts = pkgs.unstable.cacerts;
+      })
     ];
     config = {
       # Disable if you don't want unfree packages
