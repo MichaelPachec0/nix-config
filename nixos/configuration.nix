@@ -121,6 +121,11 @@
     wireplumber.enable = true;
   };
 
+  services.zerotierone = {
+    enable = true;
+    joinNetworks = [ "565799d8f65ab6a3" ];
+  };
+
   environment.systemPackages = with pkgs; [
     mosh
     wget
