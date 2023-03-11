@@ -148,6 +148,7 @@
     openssl
 
   ];
+  environment.pathsToLink = [ "/share/zsh" ];
 
   fonts.fonts = with pkgs; [ noto-fonts noto-fonts-emoji nerdfonts ];
 
