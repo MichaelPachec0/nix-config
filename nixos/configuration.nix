@@ -155,6 +155,15 @@
   fonts.fontconfig.defaultFonts.monospace =
     [ "Iosevka Nerd Font Complete Mono" ];
 
+  virtualisation = {
+    podman = {
+      enable = true;
+      dockerCompat = true;
+      defaultNetwork.dnsname.enable = true;
+    };
+    libvirtd = { enable = true; };
+    kvmgt = { enable = true; };
+  };
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
   system.stateVersion = "21.11";
 }
