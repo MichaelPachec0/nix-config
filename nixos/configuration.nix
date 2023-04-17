@@ -114,6 +114,13 @@
       };
     };
     hostName = "nyx";
+    networkmanager = {
+      enable = true;
+      wifi.powersave = true;
+      enableFccUnlock = true;
+      wifi.backend = "iwd";
+    };
+    
   };
 
   time.timeZone = "America/Los_Angeles";
