@@ -32,8 +32,6 @@
     efi.canTouchEfiVariables = false;
   };
 
-
-
   nixpkgs = {
     overlays = [
       # overlay skeleton
@@ -80,11 +78,9 @@
     };
   };
 
-
   networking.hostName = "nyx";
   networking.networkmanager.enable = true;
   networking.firewall.enable = false;
-
 
   time.timeZone = "America/Los_Angeles";
 
@@ -94,8 +90,7 @@
         "$6$WXBvFlgvwtcGIdYg$IS.Rii0vfzj2j5nDqpPm.a0maMqRYTQ2u/kaRaaO2Css/rzsSYghXPhlVOFAUTma1UU19oSCvccLfe1LRMF8T/";
       isNormalUser = true;
       shell = pkgs.zsh;
-      openssh.authorizedKeys.keys = [
-      ];
+      openssh.authorizedKeys.keys = [ ];
       extraGroups = [ "wheel" "networkmanager" "video" "audio" "input" ];
     };
   };
