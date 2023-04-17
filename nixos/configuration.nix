@@ -124,6 +124,14 @@
     firewall.enable = true;
   };
 
+  systemd.network.links = {
+    "80-iwd" = lib.mkForce {
+      enable = true;
+      matchConfig = { Type = "wlan"; };
+      linkConfig = { NamePolicy = "mac"; };
+    };
+  };
+
   time.timeZone = "America/Los_Angeles";
 
   users.users = {
