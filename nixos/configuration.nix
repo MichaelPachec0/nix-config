@@ -22,6 +22,17 @@
   boot.kernelModules = [ "wl" ];
   boot.extraModulePackages = with config.boot.kernelPackages; [ broadcom_sta ];
   boot.blacklistedKernelModules = [ "b43" "bcma" ];
+
+  boot.loader = {
+    systemd-boot = {
+      enable = true;
+      memtest86.enable = true;
+    };
+    efi.canTouchEfiVariables = false;
+  };
+
+
+
   nixpkgs = {
     overlays = [
       # overlay skeleton
@@ -68,34 +79,21 @@
     };
   };
 
-  # FIXME: Add the rest of your current configuration
 
-  # TODO: Set your hostname
   networking.hostName = "nyx";
   networking.networkmanager.enable = true;
   networking.firewall.enable = false;
 
-  # TODO: This is just an example, be sure to use whatever bootloader you prefer
-  boot.loader = {
-    systemd-boot = {
-      enable = true;
-      memtest86.enable = true;
-    };
-    efi.canTouchEfiVariables = false;
-  };
 
   time.timeZone = "America/Los_Angeles";
 
-  # TODO: Configure your system-wide user settings (groups, etc), add more users as needed.
   users.users = {
-    # FIXME: Replace with your username
     michael = {
       hashedPassword =
         "$6$WXBvFlgvwtcGIdYg$IS.Rii0vfzj2j5nDqpPm.a0maMqRYTQ2u/kaRaaO2Css/rzsSYghXPhlVOFAUTma1UU19oSCvccLfe1LRMF8T/";
       isNormalUser = true;
       shell = pkgs.zsh;
       openssh.authorizedKeys.keys = [
-        # TODO: Add your SSH public key(s) here, if you plan on using SSH to connect
       ];
       extraGroups = [ "wheel" "networkmanager" "video" "audio" "input" ];
     };
@@ -103,9 +101,7 @@
 
   services.openssh = {
     enable = true;
-    # Allow root login through SSH.
     permitRootLogin = "no";
-    # SSH using password
     passwordAuthentication = false;
   };
 
