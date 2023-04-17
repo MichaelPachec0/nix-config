@@ -99,9 +99,22 @@
     };
   };
 
-  networking.hostName = "nyx";
-  networking.networkmanager.enable = true;
-  networking.firewall.enable = false;
+  networking = {
+    wireless = {
+      iwd = {
+        enable = true;
+        settings = {
+          General = { EnableNetworkConfiguration = true; };
+          Settings = {
+            AutoConnect = true;
+            AlwaysRandomizeAddress = false;
+            Hidden = false;
+          };
+        };
+      };
+    };
+    hostName = "nyx";
+  };
 
   time.timeZone = "America/Los_Angeles";
 
