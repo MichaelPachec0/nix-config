@@ -23,7 +23,19 @@
   ];
   # make sure to compile broadcom kernel modules, needed for the bcm4360
   boot.kernelModules = [ "wl" ];
-  boot.extraModulePackages = with config.boot.kernelPackages; [ broadcom_sta ];
+  boot.extraModulePackages = with config.boot.kernelPackages; [
+    broadcom_sta
+    # to control brightness on non-internal monitors
+    ddcci-driver
+    # enable temp monitoring subsystem
+    tmon
+    # enable zfs
+    # zfs
+    # usb over ip
+    # usbip
+    # processor stats
+    turbostat
+  ];
   boot.blacklistedKernelModules = [ "b43" "bcma" ];
 
   boot.loader = {
