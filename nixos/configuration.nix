@@ -234,6 +234,13 @@
     };
   };
 
+  hardware.openrazer = {
+    enable = true;
+    devicesOffOnScreensaver = true;
+    keyStatistics = true;
+    users = [ "michael" ];
+  };
+
   environment.systemPackages = with pkgs; [
     mosh
     wget
