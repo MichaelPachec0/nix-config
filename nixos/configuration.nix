@@ -10,6 +10,8 @@
     # You can also split up your configuration and import pieces of it here:
     # ./users.nix
     inputs.hardware.nixosModules.dell-xps-15-9560-intel
+
+    inputs.kmonad-pkgs.nixosModules.default
     # Import your generated (nixos-generate-config) hardware configuration
     ./hardware-configuration.nix
     ./tlp.nix
@@ -129,6 +131,88 @@
       # Remove NVIDIA VGA/3D controller devices
       ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x03[0-9]*", ATTR{power/control}="auto", ATTR{remove}="1"
     '';
+  };
+
+  services.kmonad = {
+    enable = true;
+    keyboards = {
+      laptop-internal = {
+        device = "/dev/input/by-path/platform-i8042-serio-0-event-kbd";
+        defcfg = {
+          enable = true;
+          fallthrough = true;
+        };
+        config = ''
+                              (defsrc ;; Default keymap for laptop
+                                esc   f1   f2   f3   f4   f5   f6   f7   f8   f9   f10  f11  f12  prnt  ins  del
+                                `     1    2    3    4    5    6    7    8    9    0    -    =    bspc
+                                tab   q    w    e    r    t    y    u    i    o    p    [    ]    \
+                                caps  a    s    d    f    g    h    j    k    l    ;    '    ret
+                                lsft  z    x    c    v    b    n    m    ,    .    /    rsft up
+                                lctl  lmet lalt           spc            ralt rctl left down right
+                              )
+                              (defalias
+                                
+
+
+                    	  )
+                              (deflayer qwerty ;; Default layer, just switched caps for esc, lctl for caps, and esc for lctl 
+                                caps   f1   f2   f3   f4   f5   f6   f7   f8   f9   f10  f11  f12  prnt  ins  del
+                                `     1    2    3    4    5    6    7    8    9    0    -    =    bspc
+                                tab   q    w    e    r    t    y    u    i    o    p    [    ]    \
+                                @cen  a    s    d    f    g    h    j    k    l    ;    '    ret
+                                lsft  z    x    c    v    b    n    m    ,    .    /    rsft up
+                                esc  lmet lalt           spc            ralt rctl left down right
+                              )
+          (defalias
+            cen (multi-tap 180 lctl esc)
+            ;;cen (multi-tap 200 a 200 b 200 c d)
+          )
+        '';
+
+      };
+      rzr-blkwd-te = {
+        # Was not able to debug why i need to use if01 instead of the actual event kdb, this means
+        # that ripple effects wont work.
+        device =
+          "/dev/input/by-id/usb-Razer_Razer_BlackWidow_Tournament_Edition_Chroma-event-kbd";
+        defcfg = {
+          enable = true;
+          fallthrough = true;
+        };
+        # This is to deal with openrazer taking over the keyboard.
+        extraGroups = [ "openrazer" ];
+        config = ''
+
+
+          (defsrc ;; the sys is also a prnt scr key
+            esc       f1   f2   f3   f4    f5   f6   f7   f8   f9   f10  f11  f12    sys  slck pause
+            grv  1    2    3    4    5    6    7    8    9    0    -    =    bspc    ins  home pgup
+            tab  q    w    e    r    t    y    u    i    o    p    [    ]    \       del  end  pgdn
+            caps a    s    d    f    g    h    j    k    l    ;    '    ret
+            lsft z    x    c    v    b    n    m    ,    .    /    rsft                    up       
+            lctl lmet lalt           spc            ralt      cmp  rctl              left down rght
+          )
+
+          (deflayer qwerty ;; the sys is also a prnt scr key
+            caps      f1   f2   f3   f4    f5   f6   f7   f8   f9   f10  f11  f12    sys  slck pause
+            grv  1    2    3    4    5    6    7    8    9    0    -    =    bspc    ins  home pgup
+            tab  q    w    e    r    t    y    u    i    o    p    [    ]    \       del  end  pgdn
+            @cen a    s    d    f    g    h    j    k    l    ;    '    ret
+            lsft z    x    c    v    b    n    m    ,    .    /    rsft                    up       
+            esc  lmet lalt           spc            ralt      cmp  rctl              left down rght
+          )
+
+
+          (defalias
+            cen (multi-tap 170 lctl esc)
+            ;;cen (multi-tap 200 a 200 b 200 c d)
+          )
+
+        '';
+
+      };
+    };
   };
 
   environment.systemPackages = with pkgs; [

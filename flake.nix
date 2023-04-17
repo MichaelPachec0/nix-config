@@ -9,6 +9,9 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     hardware = { url = "github:nixos/nixos-hardware/master"; };
+
+    kmonad-pkgs = { url = "github:kmonad/kmonad?dir=nix"; };
+
   };
   outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, ... }@inputs:
     let
