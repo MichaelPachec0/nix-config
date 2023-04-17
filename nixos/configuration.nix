@@ -34,6 +34,25 @@
     efi.canTouchEfiVariables = false;
   };
 
+  boot.kernelParams = [
+    # from: https://wiki.archlinux.org/title/Dell_XPS_15_(9560)#Enable_power_saving_features_for_the_i915_kernel_module
+    # might remove the rc6 option later.
+    "i915.enable_psr=1"
+    "i915.enable_rc6=7"
+    "i915.enable_fbc=1"
+    "i915.disable_power_well=0"
+    # Make sure the laptop exposes correct acpi. Makes the laptop less crash prone
+    "acpi_rev_override=1"
+    # USB-C fix, do not sleep the pcie links
+    "pcie_aspm=off"
+    # Do not let nouveau take control of the nvidia gpu
+    "nouveau.modeset=0"
+    # Test option, to see if there is any discernible difference
+    "workqueue.power_efficient=1"
+    # Self explanatory
+    "mitigations=off"
+  ];
+
   nixpkgs = {
     overlays = [
       # overlay skeleton
