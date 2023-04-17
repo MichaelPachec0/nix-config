@@ -3,19 +3,18 @@
 
   inputs = {
     nixpkgs = { url = "nixpkgs/nixos-22.11"; };
-    nixpkgs-unstable = { url = "nixos/nixos-unstable"; };
+    nixpkgs-unstable = { url = "nixpkgs/nixos-unstable"; };
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     hardware = {
       url = "github:nixos/nixos-hardware/master";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
   outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, ... }@inputs:
     let
-      inherit (self) ouptuts;
+      inherit (self) outputs;
       unstable = import nixpkgs-unstable {
         config.allowUnfree = true;
         system = "x86_64-linux";
@@ -26,14 +25,14 @@
         ({ config, pkgs, ... }: { nixpkgs.overlays = [ overlayUnstable ]; })
       ];
       nixosModules = baseModules ++ [
-        home-manager
+        home-manager.nixosModules.home-manager
         {
           home-manager.useGlobalPkgs = true;
           home-manager.useUserPackages = true;
         }
       ];
     in {
-      nixosConfiguration = with nixpkgs.lib; {
+      nixosConfigurations = with nixpkgs.lib; {
         nyx = nixosSystem {
           system = "x86_64-linux";
           specialArgs = { inherit inputs outputs; };
