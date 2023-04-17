@@ -120,7 +120,8 @@
       enableFccUnlock = true;
       wifi.backend = "iwd";
     };
-    
+    nameservers = [ "1.1.1.1" "8.8.8.8" "9.9.9.9" ];
+    firewall.enable = true;
   };
 
   time.timeZone = "America/Los_Angeles";
