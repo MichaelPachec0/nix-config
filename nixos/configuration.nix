@@ -12,6 +12,7 @@
     inputs.hardware.nixosModules.dell-xps-15-9560-intel
     # Import your generated (nixos-generate-config) hardware configuration
     ./hardware-configuration.nix
+    ./tlp.nix
   ];
   boot.initrd.availableKernelModules = [
     # fast decrypt for luks
