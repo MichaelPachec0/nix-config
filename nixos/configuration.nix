@@ -15,6 +15,7 @@
     # Import your generated (nixos-generate-config) hardware configuration
     ./hardware-configuration.nix
     ./tlp.nix
+    ../features/kernel
   ];
   boot.initrd.availableKernelModules = [
     # fast decrypt for luks
@@ -64,7 +65,7 @@
     # Self explanatory
     "mitigations=off"
   ];
-
+  kernel-mod.ntfs3.enable = true;
   nixpkgs = {
     overlays = [
       # overlay skeleton
