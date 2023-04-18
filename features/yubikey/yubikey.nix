@@ -14,8 +14,8 @@ in {
         enableSSHSupport = true;
         enableExtraSocket = true;
         # This is the builtin pinentry app in gnupg
-        # TODO: make this conditional, so that we can gtk2 when there is a graphical interface, and curses when not.
-        pinentryFlavor = "gtk2";
+        pinentryFlavor =
+          if (config.xdg.portal.enable) then "gtk2" else "curses";
       };
     };
   };
