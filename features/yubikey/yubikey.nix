@@ -9,7 +9,6 @@ let
 in {
   config = lib.mkIf (config.yubikey.enable) {
     programs = {
-      ssh.startAgent = false;
       gnupg.agent = {
         enable = true;
         # use gnupg's ssh support agent instead.
