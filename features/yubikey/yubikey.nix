@@ -19,5 +19,10 @@ in {
           if (config.xdg.portal.enable) then "gtk2" else "curses";
       };
     };
+    services = {
+      dbus.enable = true;
+      pcscd.enable = true;
+      udev.packages = [ pkgs.yubikey-personalization ];
+    };
   };
 }
