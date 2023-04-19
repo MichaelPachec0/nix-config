@@ -16,15 +16,6 @@ in {
     #inputs.nwg-displays-pkgs.packages.${pkgs.system}.nwg-displays
 
     inputs.hyprland.nixosModules.default
-    {
-      programs.hyprland = {
-        enable = true;
-        xwayland = {
-          enable = true;
-          hidpi = true;
-        };
-      };
-    }
 
     inputs.kmonad-pkgs.nixosModules.default
     # Import your generated (nixos-generate-config) hardware configuration
@@ -347,6 +338,14 @@ in {
   yubiAuth.enable = true;
 
   environment.pathsToLink = [ "/share/zsh" ];
+
+  programs.hyprland = {
+    enable = true;
+    xwayland = {
+      enable = true;
+      hidpi = true;
+    };
+  };
 
   fonts = {
     fonts = with pkgs; [ noto-fonts noto-fonts-emoji nerdfonts powerline ];
