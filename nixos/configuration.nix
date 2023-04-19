@@ -169,6 +169,10 @@
       extraGroups = [ "wheel" "networkmanager" "video" "audio" "input" ];
     };
   };
+  # recomended keyring to use.
+  services.gnome.gnome-keyring.enable = true;
+  # Needed for sway/hyprland usage in HM as per: https://nixos.wiki/wiki/Sway#Using_Home_Manager
+  security.polkit.enable = true;
 
   services.openssh = {
     enable = true;
