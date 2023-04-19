@@ -10,6 +10,8 @@
     };
     hardware = { url = "github:nixos/nixos-hardware/master"; };
 
+    hyprland = { url = "github:hyprwm/Hyprland"; };
+
     kmonad-pkgs = { url = "github:kmonad/kmonad?dir=nix"; };
 
   };
