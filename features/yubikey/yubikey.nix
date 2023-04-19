@@ -7,7 +7,9 @@ let
 
   u2f_file = pkgs.writeText "u2f_mapping" u2f_keys;
   graphical = config.xdg.portal.enable;
+  greetdEnabled = config.services.greetd.enable;
 in {
+  imports = [ ../pam/pam-u2f.nix ];
   config = lib.mkIf (config.yubikey.enable) {
     programs = {
       gnupg.agent = {
@@ -31,5 +33,27 @@ in {
         yubikey-personalization-gui
         yubikey-manager-qt
       ];
+    security.pam = {
+      u2f = {
+        enable = true;
+        authFile = "${u2f_file}";
+        cue = true;
+      };
+      services = {
+        sudo = {
+          u2fAuth = true;
+          use2Factor = false;
+        };
+        login = {
+          u2fAuth = true;
+          use2Factor = true;
+        };
+        greetd = if (greetdEnabled) then {
+          u2fAuth = true;
+          use2Factor = true;
+        } else
+          { };
+      };
+    };
   };
 }
