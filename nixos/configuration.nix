@@ -11,13 +11,13 @@
     # ./users.nix
     inputs.hardware.nixosModules.dell-xps-15-9560-intel
 
-    inputs.hyrpland.nixosModules.default
+    inputs.hyprland.nixosModules.default
     {
       programs.hyprland = {
         enable = true;
         xwayland = {
           enable = true;
-          hipdi = true;
+          hidpi = true;
         };
       };
     }
