@@ -14,6 +14,8 @@
 
     kmonad-pkgs = { url = "github:kmonad/kmonad?dir=nix"; };
 
+    nwg-displays-pkgs = { url = "github:nwg-piotr/nwg-displays"; };
+
   };
   outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, ... }@inputs:
     let
