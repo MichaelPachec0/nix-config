@@ -33,6 +33,7 @@ in {
     ../features/kernel
     ../features/auth
     ../features/logitech
+    ../features/login
   ];
   boot.initrd.availableKernelModules = [
     # fast decrypt for luks
@@ -225,6 +226,7 @@ in {
   };
 
   services.logid.enable = true;
+  services.graphicalLogin.enable = true;
 
   services.kmonad = {
     enable = true;
