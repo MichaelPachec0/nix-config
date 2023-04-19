@@ -284,6 +284,14 @@
     users = [ "michael" ];
   };
 
+  hardware.bluetooth = {
+    enable = true;
+    settings = { General = { Enable = "Source,Sink,Media,Socket"; }; };
+    package = pkgs.bluezFull;
+  };
+
+  services.blueman.enable = true;
+
   environment.systemPackages = with pkgs; [
     mosh
     wget
