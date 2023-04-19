@@ -29,7 +29,8 @@ in {
       udev.packages = [ pkgs.yubikey-personalization ];
     };
     environment.systemPackages = with pkgs;
-      [ yubico-piv-tool yubikey-manager ] ++ lib.optionals (graphical) [
+      [ yubico-piv-tool yubikey-manager pcsctools opensc ]
+      ++ lib.optionals (graphical) [
         yubikey-personalization-gui
         yubikey-manager-qt
       ];
