@@ -31,7 +31,7 @@ in {
       # settings = {};
     };
     # enable greetd
-    service.greetd = {
+    services.greetd = {
       enable = true;
       # restart on logout
       restart = true;
