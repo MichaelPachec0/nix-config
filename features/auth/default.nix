@@ -6,5 +6,5 @@
         "Enables gpg and u2f auth services using a yubikey in nixOS";
     };
   };
-  config = lib.mkIf (config.yubiAuth.enable) { config.yubikey.enable = true; };
+  config = lib.mkIf (config.yubiAuth.enable) { yubikey.enable = true; };
 }
