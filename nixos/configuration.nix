@@ -182,6 +182,11 @@
     joinNetworks = [ "565799d8f65ab6a3" ];
   };
 
+  services.onedrive = {
+    enable = true;
+    package = pkgs.unstable.onedrive;
+  };
+
   services.udev = {
     extraRules = ''
       # Remove NVIDIA USB xHCI Host Controller devices, if present
