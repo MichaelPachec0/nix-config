@@ -32,6 +32,7 @@ in {
     ./tlp.nix
     ../features/kernel
     ../features/auth
+    ../features/logitech
   ];
   boot.initrd.availableKernelModules = [
     # fast decrypt for luks
@@ -222,6 +223,8 @@ in {
       ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x03[0-9]*", ATTR{power/control}="auto", ATTR{remove}="1"
     '';
   };
+
+  services.logid.enable = true;
 
   services.kmonad = {
     enable = true;
