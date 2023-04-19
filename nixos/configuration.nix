@@ -1,7 +1,9 @@
 # This is your system's configuration file.
 # Use this to configure your system environment (it replaces /etc/nixos/configuration.nix)
 
-{ inputs, lib, config, pkgs, ... }: {
+{ inputs, lib, config, pkgs, ... }:
+let nwgDisplayPkgs = inputs.nwg-displays-pkgs.packages.${pkgs.system};
+in {
   # You can import other NixOS modules here
   imports = [
     # If you want to use modules from other flakes (such as nixos-hardware):
@@ -10,6 +12,8 @@
     # You can also split up your configuration and import pieces of it here:
     # ./users.nix
     inputs.hardware.nixosModules.dell-xps-15-9560-intel
+
+    #inputs.nwg-displays-pkgs.packages.${pkgs.system}.nwg-displays
 
     inputs.hyprland.nixosModules.default
     {
@@ -175,7 +179,7 @@
   };
   # recomended keyring to use.
   services.gnome.gnome-keyring.enable = true;
-  # Needed for sway/hyprland usage in HM as per: https://nixos.wiki/wiki/Sway#Using_Home_Manager
+  # Needed for sway/hyprland usage HM as per: https://nixos.wiki/wiki/Sway#Using_Home_Manager
   security.polkit.enable = true;
 
   services.openssh = {
@@ -332,7 +336,7 @@
     nerdfonts
     gcc_multi
     openssl
-
+    nwgDisplayPkgs.nwg-displays
   ];
 
   yubiAuth.enable = true;
