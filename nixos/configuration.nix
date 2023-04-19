@@ -11,6 +11,17 @@
     # ./users.nix
     inputs.hardware.nixosModules.dell-xps-15-9560-intel
 
+    inputs.hyprland.nixosModules.default
+    {
+      programs.hyprland = {
+        enable = true;
+        xwayland = {
+          enable = true;
+          hidpi = true;
+        };
+      };
+    }
+
     inputs.kmonad-pkgs.nixosModules.default
     # Import your generated (nixos-generate-config) hardware configuration
     ./hardware-configuration.nix
