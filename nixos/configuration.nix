@@ -95,9 +95,13 @@
       # Disable if you don't want unfree packages
       allowUnfree = true;
       nix = {
-        binaryCachePublicKeys =
-          [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" ];
-        binaryCaches = [ "https://cache.nixos.org" ];
+        binaryCachePublicKeys = [
+          "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+          "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc="
+
+        ];
+        binaryCaches =
+          [ "https://cache.nixos.org" "https://hyprland.cachix.org" ];
       };
     };
   };
