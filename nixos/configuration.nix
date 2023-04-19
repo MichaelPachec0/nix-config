@@ -16,7 +16,7 @@
     ./hardware-configuration.nix
     ./tlp.nix
     ../features/kernel
-    ../features/yubikey
+    ../features/auth
   ];
   boot.initrd.availableKernelModules = [
     # fast decrypt for luks
@@ -294,7 +294,7 @@
 
   ];
 
-  yubikey.enable = true;
+  yubiAuth.enable = true;
 
   environment.pathsToLink = [ "/share/zsh" ];
 
