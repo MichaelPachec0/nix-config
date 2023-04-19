@@ -2,7 +2,7 @@
 # Use this to configure your system environment (it replaces /etc/nixos/configuration.nix)
 
 { inputs, lib, config, pkgs, ... }:
-let nwgDisplayPkgs = inputs.nwg-displays-pkgs.packages.${pkgs.system};
+let nwg-displays = inputs.nwg-displays-pkgs.packages.${pkgs.system}.default;
 in {
   # You can import other NixOS modules here
   imports = [
@@ -336,7 +336,7 @@ in {
     nerdfonts
     gcc_multi
     openssl
-    nwgDisplayPkgs.nwg-displays
+    nwg-displays
   ];
 
   yubiAuth.enable = true;
