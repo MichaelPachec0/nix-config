@@ -28,7 +28,7 @@ in {
       # udev rules to access the yubikey
       udev.packages = [ pkgs.yubikey-personalization ];
     };
-    enviroment.systemPackages = with pkgs;
+    environment.systemPackages = with pkgs;
       [ yubico-piv-tool yubikey-manager ] ++ lib.optionals (graphical) [
         yubikey-personalization-gui
         yubikey-manager-qt
