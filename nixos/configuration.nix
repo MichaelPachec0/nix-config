@@ -16,7 +16,6 @@
     ./hardware-configuration.nix
     ./tlp.nix
     ../features/kernel
-    ../features/auth
   ];
   boot.initrd.availableKernelModules = [
     # fast decrypt for luks
@@ -293,9 +292,6 @@
     openssl
 
   ];
-
-  yubiAuth.enable = true;
-
   environment.pathsToLink = [ "/share/zsh" ];
 
   fonts.fonts = with pkgs; [ noto-fonts noto-fonts-emoji nerdfonts ];
