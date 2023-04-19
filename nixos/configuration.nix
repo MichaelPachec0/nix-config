@@ -298,10 +298,13 @@
 
   environment.pathsToLink = [ "/share/zsh" ];
 
-  fonts.fonts = with pkgs; [ noto-fonts noto-fonts-emoji nerdfonts ];
+  fonts = {
+    fonts = with pkgs; [ noto-fonts noto-fonts-emoji nerdfonts powerline ];
+    enableDefaultFonts = true;
 
-  fonts.fontconfig.defaultFonts.monospace =
-    [ "Iosevka Nerd Font Complete Mono" ];
+    fontconfig.defaultFonts.monospace =
+      lib.mkForce [ "Source Code Pro for Powerline" ];
+  };
 
   virtualisation = {
     podman = {
