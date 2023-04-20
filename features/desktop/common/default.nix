@@ -26,40 +26,54 @@ in {
       systemWide = false;
       wireplumber.enable = true;
     };
-    environment.systemPackages = with pkgs; [
-      # pdf readers, will eventually choose between one or the other
-      evince
-      okular
+    programs.firefox = {
+      enable = true;
+      package = pkgs.firefox-devedition-bin;
+    };
+    environment.systemPackages = with pkgs;
+      [
+        # pdf readers, will eventually choose between one or the other
+        evince
+        okular
 
-      # mail clients
-      neomutt
+        # mail clients
+        neomutt
 
-      # video players
-      mpv
-      vlc
+        # video players
+        mpv
+        vlc
 
-      # telegram
-      ## cli
-      tg
-      ## telegram desktop
-      kotatogram-desktop
-      ## ncurses telegram + whatapp
-      unstable.nchat
-      whatsapp-for-linux
-      ## TODO: find out how this works
-      # matterbridge
+        # telegram
+        ## cli
+        tg
+        ## telegram desktop
+        kotatogram-desktop
+        ## ncurses telegram + whatapp
+        unstable.nchat
+        whatsapp-for-linux
+        ## TODO: find out how this works
+        # matterbridge
 
-      # slack
-      slack-term
-      slack
+        # slack
+        slack-term
+        slack
 
-      # discord
-      ## oss discord client
-      ripcord
-      ## discord in latest electron, also privacy oriented
-      unstable.webcord
-      ## discord in terminal
-      unstable.discordo
+        # discord
+        ## oss discord client
+        ripcord
+        ## discord in latest electron, also privacy oriented
+        unstable.webcord
+        ## discord in terminal
+        unstable.discordo
+
+        # view nix tree graphically
+        nix-query-tree-viewer
+
+        # terminal notetaking app
+        nb
+
+        #partition management
+        gparted
 
       # view nix tree graphically
       nix-query-tree-viewer
