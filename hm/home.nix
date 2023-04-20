@@ -37,6 +37,33 @@ in {
       defaultCursor = "Adwaita";
     };
   };
+  gtk = {
+    enable = true;
+    cursorTheme = {
+      name = "Adwaita";
+      package = pkgs.gnome.adwaita-icon-theme;
+      size = 24;
+
+    };
+    font = {
+      package = pkgs.dejavu_fonts;
+      name = "DejaVu Sans";
+      size = 10;
+
+    };
+
+    gtk3.extraConfig = {
+      gtk-cursor-theme-name = "Adwaita";
+      gtk-cursor-theme-size = 24;
+    };
+
+    theme = {
+      # name = "Adwaita-dark";
+      name = "Flat-Remix-GTK-Blue-Dark";
+      package = pkgs.flat-remix-gtk;
+
+    };
+  };
 
   xdg = {
     enable = true;
