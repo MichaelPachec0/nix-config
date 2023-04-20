@@ -26,6 +26,18 @@ in {
       hidpi = true;
     };
   };
+
+  home.pointerCursor = {
+    name = "Adwaita";
+    package = pkgs.gnome3.adwaita-icon-theme;
+    size = 24;
+    gtk.enable = true;
+    x11 = {
+      enable = true;
+      defaultCursor = "Adwaita";
+    };
+  };
+
   xdg = {
     enable = true;
     configFile."hypr/hyprland.conf".source = ./hyprland.conf;
