@@ -352,7 +352,7 @@ in {
     nixdoc
     # check which pkgs take space
     # i: https://github.com/symphorien/nix-du
-    nix-du
+    unstable.nix-du
     # dot command needed by nix-du
     graphviz
     # check whats compiling
