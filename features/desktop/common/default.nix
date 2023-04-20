@@ -75,8 +75,7 @@ in {
         #partition management
         gparted
 
-      # view nix tree graphically
-      nix-query-tree-viewer
-    ];
+        #
+      ] ++ lib.optionals (config.networking.wireless.iwd.enable) [ iwgtk ];
   };
 }
