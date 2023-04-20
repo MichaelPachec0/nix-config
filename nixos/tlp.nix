@@ -82,8 +82,8 @@
 
       # include fingerprint and touch screen in usb autosuspend
       # 138a:0091 - fingerprint sensor
-      # 04f3:24a1 - touch screen (ELAN)
-      USB_ALLOWLIST = "138a:0091 04f3:24a1";
+      # 04f3:24a0 - touch screen (ELAN)
+      USB_ALLOWLIST = "138a:0091 04f3:24a0";
 
       # suspend usb devices on shutdown
       USB_AUTOSUSPEND_DISABLE_ON_SHUTDOWN = 1;
