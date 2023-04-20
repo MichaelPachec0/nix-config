@@ -1,9 +1,7 @@
 # This is your system's configuration file.
 # Use this to configure your system environment (it replaces /etc/nixos/configuration.nix)
 
-{ inputs, lib, config, pkgs, ... }:
-let nwg-displays = inputs.nwg-displays-pkgs.packages.${pkgs.system}.default;
-in {
+{ inputs, lib, config, pkgs, ... }: {
   # You can import other NixOS modules here
   imports = [
     # If you want to use modules from other flakes (such as nixos-hardware):
@@ -329,7 +327,6 @@ in {
     nerdfonts
     gcc_multi
     openssl
-    nwg-displays
     niv
     # to format nix files
     nixfmt

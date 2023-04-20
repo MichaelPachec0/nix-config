@@ -1,5 +1,7 @@
 { config, pkgs, lib, inputs, ... }:
-let cfg = config.desktop;
+let
+  cfg = config.desktop;
+  nwg-displays = inputs.nwg-displays-pkgs.packages.${pkgs.system}.default;
 in {
   options = {
     desktop = {
@@ -39,6 +41,7 @@ in {
       mpvpaper
       cliphist
       eww-wayland
+      nwg-displays
       # auto brightness adjustement
       # more info: https://github.com/maximbaz/wluma
       nw.wluna
