@@ -44,7 +44,7 @@ in {
       ## telegram desktop
       kotatogram-desktop
       ## ncurses telegram + whatapp
-      nchat
+      unstable.nchat
       ## TODO: find out how this works
       # matterbridge
 
