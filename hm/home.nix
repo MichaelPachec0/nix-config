@@ -18,5 +18,12 @@ in {
     username = "michael";
     homeDirectory = "/home/michael";
   };
-  wayland.windowManager.hyrpland.enable = true;
+  wayland.windowManager.hyrpland = {
+    enable = true;
+    systemdIntegration = true;
+    xwayland = {
+      enable = true;
+      hidpi = true;
+    };
+  };
 }
