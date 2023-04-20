@@ -15,6 +15,17 @@ in {
       assertion = cfg.wayland.laptop || cfg.wayland.desktop;
       message = "Apps here need a X or Wayland backend!";
     }];
+    security.rtkit.enable = true;
+    services.pipewire = {
+      enable = true;
+      audio.enable = true;
+      alsa.enable = true;
+      alsa.support32Bit = true;
+      pulse.enable = true;
+      jack.enable = true;
+      systemWide = false;
+      wireplumber.enable = true;
+    };
     environment.systemPackages = with pkgs; [
       # pdf readers, will eventually choose between one or the other
       evince
