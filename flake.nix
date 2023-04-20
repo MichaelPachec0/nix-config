@@ -16,6 +16,8 @@
 
     nwg-displays-pkgs = { url = "github:nwg-piotr/nwg-displays"; };
 
+    nixpkgs-wayland = { url = "github:nix-community/nixpkgs-wayland"; };
+
   };
   outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, ... }@inputs:
     let
