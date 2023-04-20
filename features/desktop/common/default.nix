@@ -45,6 +45,7 @@ in {
       kotatogram-desktop
       ## ncurses telegram + whatapp
       unstable.nchat
+      whatsapp-for-linux
       ## TODO: find out how this works
       # matterbridge
 
