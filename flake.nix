@@ -49,6 +49,14 @@
           modules = nixosModules ++ [ ./nixos/configuration.nix ];
         };
       };
+      homeConfigurations = with home-manager.lib; {
+        "michael-nyx" = let system = "x86_64-linux";
+        in homeManagerConfiguration {
+          pkgs = nixpkgs.legacyPackages.${system};
+          extraSpecialArgs = { inherit inputs outputs; };
+          modules = baseModules ++ [ ./hm/home.nix ];
+        };
+      };
     };
 
 }
