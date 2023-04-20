@@ -16,6 +16,8 @@
 
     nwg-displays-pkgs = { url = "github:nwg-piotr/nwg-displays"; };
 
+    nixpkgs-wayland = { url = "github:nix-community/nixpkgs-wayland"; };
+
   };
   outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, ... }@inputs:
     let
@@ -27,7 +29,10 @@
       };
       overlayUnstable = final: prev: { inherit unstable; };
       baseModules = [
-        ({ config, pkgs, ... }: { nixpkgs.overlays = [ overlayUnstable ]; })
+        ({ config, pkgs, ... }: {
+          nixpkgs.overlays =
+            [ overlayUnstable inputs.hyprland.overlays.default ];
+        })
       ];
       nixosModules = baseModules ++ [
         home-manager.nixosModules.home-manager
