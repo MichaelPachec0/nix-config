@@ -39,10 +39,10 @@ in {
     ddcci-driver
     # enable temp monitoring subsystem
     tmon
-    # enable zfs
+    # enable zfs (still broken in 6.2.x)
     # zfs
     # usb over ip
-    # usbip
+    usbip
     # processor stats
     turbostat
   ];
