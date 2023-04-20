@@ -341,6 +341,33 @@ in {
     gcc_multi
     openssl
     nwg-displays
+    niv
+    # to format nix files
+    nixfmt
+    # create docs from nix files
+    nixdoc
+    # check which pkgs take space
+    # i: https://github.com/symphorien/nix-du
+    nix-du
+    # dot command needed by nix-du
+    graphviz
+    # check whats compiling
+    nix-top
+    # scripts can set dependencies inside themselves
+    # i: https://github.com/madjar/nixbang
+    nixbang
+    # create oci images from repos
+    # gh: https://github.com/railwayapp/nixpacks
+    # i: https://nixpacks.com/docs/getting-started
+    nixpacks
+    # dependicies as a tree
+    nix-tree
+    nix-diff
+    # hash calulation for nixpkgs/docker/github
+    nix-prefetch-scripts
+    rnix-hashes
+    nix-prefetch-docker
+    nix-prefetch-github
   ];
 
   yubiAuth.enable = true;
