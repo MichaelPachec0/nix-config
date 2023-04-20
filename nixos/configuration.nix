@@ -74,6 +74,14 @@ in {
     # Self explanatory
     "mitigations=off"
   ];
+
+  boot.kernelPackages = pkgs.linuxPackages_6_2;
+  # taken from disable nvidia
+  boot.extraModprobeConfig = ''
+    blacklist nouveau
+    options nouveau modeset=0
+  '';
+
   kernel-mod.ntfs3.enable = true;
   nixpkgs = {
     overlays = [
@@ -364,6 +372,7 @@ in {
     libvirtd = { enable = true; };
     kvmgt = { enable = true; };
   };
+
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
   system.stateVersion = "21.11";
 }
