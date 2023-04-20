@@ -35,6 +35,9 @@ in {
     # This is already set in regreet, but for the purposes of being explicit, define it here as well
     programs.sway = { enable = true; };
 
+    # secrets storage (ssh keys... ect)
+    services.gnome.gnome-keyring.enable = true;
+
     environment.systemPackages = with pkgs; [
       # mpv as wallpaper 
       # info: https://github.com/GhostNaN/mpvpaper
@@ -42,6 +45,12 @@ in {
       cliphist
       eww-wayland
       nwg-displays
+      # recommended by hyprland dev for auth-agent
+      polkit-kde-agent
+      # secrets viewer
+      gnome.seahorse
+      # file browser (might change this)
+      cinnamon.nemo
       # auto brightness adjustement
       # more info: https://github.com/maximbaz/wluma
       wluma
