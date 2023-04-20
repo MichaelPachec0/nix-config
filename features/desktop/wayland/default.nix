@@ -31,9 +31,7 @@ in {
       };
     };
     # This is already set in regreet, but for the purposes of being explicit, define it here as well
-    programs.sway = {
-      enable = true;
-    };
+    programs.sway = { enable = true; };
 
     environment.systemPackages = with pkgs; [
       # mpv as wallpaper 
