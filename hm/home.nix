@@ -26,4 +26,10 @@ in {
       hidpi = true;
     };
   };
+  xdg = {
+    enable = true;
+    configFile."hypr/hyprland.conf".source = ./hyprland.conf;
+  };
+  # make sure that apps run under wayland when possible
+  home.sessionVariables.NIXOS_OZONE_WL = "1";
 }
