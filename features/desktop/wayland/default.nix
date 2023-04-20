@@ -10,7 +10,8 @@ in {
     };
   };
   imports = [ inputs.hyprland.nixosModules.default ];
-  config = lib.mkIf (cfg.wayland.laptop || cfg.wayland.desktop) {
+  config = let nw = inputs.nixpkgs-wayland.packages.${pkgs.system};
+  in lib.mkIf (cfg.wayland.laptop || cfg.wayland.desktop) {
     nix = {
       binaryCachePublicKeys = [
         "nixpkgs-wayland.cachix.org-1:3lwxaILxMRkVhehr5StQprHdEo4IrE8sRho9R9HOLYA="
@@ -20,7 +21,7 @@ in {
       binaryCaches =
         [ "https://nixpkgs-wayland.cachix.org" "https://hyprland.cachix.org" ];
     };
-    nixpkgs.overlays = [ inputs.nixpkgs-wayland.overlay ];
+    nixpkgs.overlays = [ ];
 
     programs.hyprland = {
       enable = true;
@@ -38,21 +39,21 @@ in {
       eww-wayland
       # auto brightness adjustement
       # more info: https://github.com/maximbaz/wluma
-      wluna
+      nw.wluna
       # drm devices utility
-      drm_info
+      nw.drm_info
       # rdp client for wayland
-      freerdp3
+      nw.freerdp3
       # render glsl shaders as wallpaper
-      glpaper
+      nw.glpaper
       # grab from wayland compositor
-      grim
+      nw.grim
       # image viewer
-      imv
+      nw.imv
       # auto configure displays
-      kanshi
+      nw.kanshi
       # notification daemon
-      mako
+      nw.mako
       # might change to this notification deamon
       # info: https://gitlab.com/snakedye/salut
       # salut
@@ -60,45 +61,45 @@ in {
       # info: https://git.sr.ht/~whynothugo/shotman
       # shotman
       # region selection for wayland
-      slurp
+      nw.slurp
       # wallpaper tool more info look at swaybg(1)
-      swaybg
+      nw.swaybg
       # idle deamon info: https://github.com/swaywm/swayidle/blob/master/swayidle.1.scd
-      swayidle
+      nw.swayidle
       # vanilla locker
       # swaylock
       # info: https://github.com/mortie/swaylock-effects
-      swaylock-effects
+      nw.swaylock-effects
       # fancy wallpaper manager
       # info: https://github.com/Horus645/swww
-      swww
+      nw.swww
       # multiuse prompter, supports pinentry (accessed as pinentry-wayprompt),
       #   himitsu (himitsu-wayprompt) and generic prompt (wayprompt-cli)
-      wayprompt
+      nw.wayprompt
       # event viewer
-      wev
+      nw.wev
       # screen recording
-      wf-recorder
+      nw.wf-recorder
       # clipboard
-      wl-clipboard
+      nw.wl-clipboard
       # contrast/brightness/gamma adjuster (using a bar like waybar)
-      wl-gammarelay-rs
+      nw.wl-gammarelay-rs
       # monitor config creator
-      wlay
+      nw.wlay
       # app launcher
-      wldash
+      nw.wldash
       # logout menu
-      wlogout
+      nw.wlogout
       # day/night gamma adjuster
-      wlsunset
+      nw.wlsunset
       # vnc client
-      wlvncc
+      nw.wlvncc
       # main launcher
-      wofi
+      nw.wofi
       # shows keys pressed
-      wshowkeys
+      nw.wshowkeys
       # wayland alternative for xdotool
-      wtype
+      nw.wtype
       ## wayland pip video player (not part of the nix community wayland repo) but added here for wayland only config
       qt-video-wlr
     ];
