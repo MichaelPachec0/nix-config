@@ -37,6 +37,7 @@ in {
       defaultCursor = "Adwaita";
     };
   };
+
   gtk = {
     enable = true;
     cursorTheme = {
@@ -63,6 +64,11 @@ in {
       package = pkgs.flat-remix-gtk;
 
     };
+  };
+
+  qt = {
+    enable = true;
+    platformTheme = "gtk";
   };
 
   xdg = {
