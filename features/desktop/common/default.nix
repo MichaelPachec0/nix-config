@@ -59,6 +59,9 @@ in {
       webcord
       ## discord in terminal
       discordo
+
+      # view nix tree graphically
+      nix-query-tree-viewer
     ];
   };
 }
