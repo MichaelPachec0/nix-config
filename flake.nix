@@ -29,7 +29,10 @@
       };
       overlayUnstable = final: prev: { inherit unstable; };
       baseModules = [
-        ({ config, pkgs, ... }: { nixpkgs.overlays = [ overlayUnstable ]; })
+        ({ config, pkgs, ... }: {
+          nixpkgs.overlays =
+            [ overlayUnstable inputs.hyprland.overlays.default ];
+        })
       ];
       nixosModules = baseModules ++ [
         home-manager.nixosModules.home-manager
