@@ -44,7 +44,7 @@ in {
       nwg-displays
       # auto brightness adjustement
       # more info: https://github.com/maximbaz/wluma
-      nw.wluna
+      wluma
       # drm devices utility
       nw.drm_info
       # rdp client for wayland
