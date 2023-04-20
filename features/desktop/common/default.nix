@@ -42,7 +42,7 @@ in {
       ## cli
       tg
       ## telegram desktop
-      kotogram
+      kotatogram-desktop
       ## ncurses telegram + whatapp
       nchat
       ## TODO: find out how this works
