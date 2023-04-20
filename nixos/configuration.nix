@@ -82,6 +82,10 @@ in {
     options nouveau modeset=0
   '';
 
+  # Make sure swap gets unlocked.
+  boot.initrd.luks.devices."swap".device =
+    "/dev/disk/by-uuid/c20f4b7d-5f67-4f24-b796-c6d1446ecd26";
+
   kernel-mod.ntfs3.enable = true;
   nixpkgs = {
     overlays = [
