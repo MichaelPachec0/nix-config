@@ -57,9 +57,9 @@ in {
       ## oss discord client
       ripcord
       ## discord in latest electron, also privacy oriented
-      webcord
+      unstable.webcord
       ## discord in terminal
-      discordo
+      unstable.discordo
 
       # view nix tree graphically
       nix-query-tree-viewer
