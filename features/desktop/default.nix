@@ -10,7 +10,7 @@ in {
       };
     };
   };
-  config = lib.mkIf cfg.enable {
+  config = lib.mkIf cfg.common.enable {
     assertions = [{
       # will add all the backends here (wayland/x11)
       assertion = cfg.wayland.laptop || cfg.wayland.desktop;

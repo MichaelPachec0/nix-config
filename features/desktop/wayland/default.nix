@@ -9,15 +9,27 @@ in {
       };
     };
   };
-  imports = [ ];
-  config = lib.mkIf cfg.laptop || cfg.desktop {
+  imports = [ inputs.hyprland.nixosModules.default ];
+  config = lib.mkIf (cfg.wayland.laptop || cfg.wayland.desktop) {
     nix = {
       binaryCachePublicKeys = [
         "nixpkgs-wayland.cachix.org-1:3lwxaILxMRkVhehr5StQprHdEo4IrE8sRho9R9HOLYA="
+        "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc="
+
       ];
-      binaryCaches = [ "https://nixpkgs-wayland.cachix.org" ];
+      binaryCaches =
+        [ "https://nixpkgs-wayland.cachix.org" "https://hyprland.cachix.org" ];
     };
     nixpkgs.overlays = [ inputs.nixpkgs-wayland.overlay ];
+
+    programs.hyprland = {
+      enable = true;
+      xwayland = {
+        enable = true;
+        hidpi = true;
+      };
+    };
+
     environment.systemPackages = with pkgs; [
       # mpv as wallpaper 
       # info: https://github.com/GhostNaN/mpvpaper
