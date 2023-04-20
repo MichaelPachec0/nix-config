@@ -190,18 +190,6 @@ in {
     passwordAuthentication = false;
   };
 
-  security.rtkit.enable = true;
-  services.pipewire = {
-    enable = true;
-    audio.enable = true;
-    alsa.enable = true;
-    alsa.support32Bit = true;
-    pulse.enable = true;
-    jack.enable = true;
-    systemWide = false;
-    wireplumber.enable = true;
-  };
-
   services.zerotierone = {
     enable = true;
     joinNetworks = [ "565799d8f65ab6a3" ];
