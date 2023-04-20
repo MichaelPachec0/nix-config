@@ -45,6 +45,8 @@ in {
       # auto brightness adjustement
       # more info: https://github.com/maximbaz/wluma
       wluma
+      # waybar with hyprland patches
+      waybar-hyprland
       # drm devices utility
       nw.drm_info
       # rdp client for wayland
