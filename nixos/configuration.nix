@@ -15,8 +15,6 @@ in {
 
     #inputs.nwg-displays-pkgs.packages.${pkgs.system}.nwg-displays
 
-    inputs.hyprland.nixosModules.default
-
     inputs.kmonad-pkgs.nixosModules.default
     # Import your generated (nixos-generate-config) hardware configuration
     ./hardware-configuration.nix
@@ -25,6 +23,7 @@ in {
     ../features/auth
     ../features/logitech
     ../features/login
+    ../features/desktop
   ];
   boot.initrd.availableKernelModules = [
     # fast decrypt for luks
@@ -106,11 +105,9 @@ in {
       nix = {
         binaryCachePublicKeys = [
           "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-          "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc="
 
         ];
-        binaryCaches =
-          [ "https://cache.nixos.org" "https://hyprland.cachix.org" ];
+        binaryCaches = [ "https://cache.nixos.org" ];
       };
     };
   };
@@ -378,14 +375,6 @@ in {
 
   environment.pathsToLink = [ "/share/zsh" ];
 
-  programs.hyprland = {
-    enable = true;
-    xwayland = {
-      enable = true;
-      hidpi = true;
-    };
-  };
-
   fonts = {
     fonts = with pkgs; [ noto-fonts noto-fonts-emoji nerdfonts powerline ];
     enableDefaultFonts = true;
@@ -393,7 +382,10 @@ in {
     fontconfig.defaultFonts.monospace =
       lib.mkForce [ "Source Code Pro for Powerline" ];
   };
-
+  desktop = {
+    common.enable = true;
+    wayland.laptop = true;
+  };
   virtualisation = {
     podman = {
       enable = true;
