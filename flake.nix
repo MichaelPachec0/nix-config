@@ -18,6 +18,8 @@
 
     nixpkgs-wayland = { url = "github:nix-community/nixpkgs-wayland"; };
 
+    spicetify = { url = "github:the-argus/spicetify-nix"; };
+
   };
   outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, ... }@inputs:
     let
