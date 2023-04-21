@@ -4,7 +4,7 @@ let
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-hard;
 in {
   imports = [
-    inputs.hyrpland.homeManagerModules.default
+    inputs.hyprland.homeManagerModules.default
     inputs.spicetify.homeManagerModule
     ../features/auth/hm-gpg
   ];
