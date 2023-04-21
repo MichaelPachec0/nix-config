@@ -3,7 +3,7 @@
   options = { };
   config = {
     nixpkgs = {
-      overlay =
+      overlays =
         [ (final: prev: { kitty-themes = pkgs.unstable.kitty-themes; }) ];
     };
     programs = {
