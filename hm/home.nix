@@ -6,7 +6,7 @@ in {
   imports = [
     inputs.hyprland.homeManagerModules.default
     inputs.spicetify.homeManagerModule
-    ../features/auth/hm-gpg
+    ../features/auth/hm-gpg/yubikey.nix
   ];
   nixpkgs = {
     overlays = [ ];

@@ -1,5 +1,14 @@
 { config, pkgs, lib, ... }:
-let pinentryFlavor = if (config.xdg.portal.enable) then "gtk2" else "curses";
+let
+  cfgWM = config.wayland.windowManager;
+  # generate a list of wayalnd window managers containing only enablement condition.
+  # This assumes that only a attrset of window managers will be here.
+  waylandWMList = lib.attrsets.mapAttrsToList (n: v: v.enable) cfgWM;
+  # If there are any wm's enabled this will be true.
+  waylandEnabled = lib.lists.findFirst (wm: wm == true) false waylandWMList;
+
+  pinentryFlavor =
+    if (config.xsession.enable || waylandEnabled) then "gtk2" else "curses";
 in {
   # TODO: Need to find how nix does a if "package is installed", need to find out why.
   programs.zsh.oh-my-zsh.plugins = lib.optionals (config.programs.gpg.enable
