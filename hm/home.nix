@@ -6,6 +6,7 @@ in {
   imports = [
     inputs.hyrpland.homeManagerModules.default
     inputs.spicetify.homeManagerModule
+    ../features/auth/hm-gpg
   ];
   nixpkgs = {
     overlays = [ ];
