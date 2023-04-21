@@ -7,6 +7,7 @@ in {
     inputs.hyprland.homeManagerModules.default
     inputs.spicetify.homeManagerModule
     ../features/auth/hm-gpg/yubikey.nix
+    ../features/hm/kanshi
   ];
   nixpkgs = {
     overlays = [ ];
