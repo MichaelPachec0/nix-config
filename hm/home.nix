@@ -19,7 +19,7 @@ in {
     username = "michael";
     homeDirectory = "/home/michael";
   };
-  wayland.windowManager.hyrpland = {
+  wayland.windowManager.hyprland = {
     enable = true;
     systemdIntegration = true;
     xwayland = {
@@ -85,4 +85,6 @@ in {
   home.sessionVariables."GDK_DPI_SCALE" = 1;
   home.sessionVariables."QT_AUTO_SCREEN_SCALE_FACTOR" = 1;
 
+  # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
+  home.stateVersion = "23.05";
 }
