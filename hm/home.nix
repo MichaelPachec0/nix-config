@@ -10,6 +10,7 @@ in {
     ../features/hm/kanshi
     ../features/hm/zsh
     ../features/hm/kitty
+    ../features/hm/ssh
   ];
   nixpkgs = {
     overlays = [ ];
