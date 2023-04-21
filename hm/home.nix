@@ -9,6 +9,7 @@ in {
     ../features/auth/hm-gpg/yubikey.nix
     ../features/hm/kanshi
     ../features/hm/zsh
+    ../features/hm/kitty
   ];
   nixpkgs = {
     overlays = [ ];
