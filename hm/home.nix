@@ -6,7 +6,7 @@ in {
   imports = [
     inputs.hyprland.homeManagerModules.default
     inputs.spicetify.homeManagerModule
-    ../features/auth/hm-gpg/yubikey.nix
+    ../features/hm/gpg
     ../features/hm/kanshi
     ../features/hm/zsh
     ../features/hm/kitty
