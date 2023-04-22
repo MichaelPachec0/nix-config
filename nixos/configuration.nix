@@ -154,7 +154,17 @@
       wifi.backend = "iwd";
     };
     nameservers = [ "1.1.1.1" "8.8.8.8" "9.9.9.9" ];
-    firewall.enable = true;
+    firewal= { 
+      enable = true;
+      allowedTCPPortRanges = [
+        # kdeconnect
+        { from = 1714; to = 1764; }
+      ];
+      allowedUDPPortRanges = [
+        # kdeconnect
+        { from = 1714; to = 1764; }
+      ];
+    };
   };
 
   systemd.network.links = {
@@ -380,6 +390,8 @@
     libvirtd = { enable = true; };
     kvmgt = { enable = true; };
   };
+  # TODO: move this to its own file
+  programs.kdeconnect.enable = true;
 
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
   system.stateVersion = "21.11";
