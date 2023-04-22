@@ -154,15 +154,21 @@
       wifi.backend = "iwd";
     };
     nameservers = [ "1.1.1.1" "8.8.8.8" "9.9.9.9" ];
-    firewal= { 
+    firewal = {
       enable = true;
       allowedTCPPortRanges = [
         # kdeconnect
-        { from = 1714; to = 1764; }
+        {
+          from = 1714;
+          to = 1764;
+        }
       ];
       allowedUDPPortRanges = [
         # kdeconnect
-        { from = 1714; to = 1764; }
+        {
+          from = 1714;
+          to = 1764;
+        }
       ];
     };
   };
