@@ -120,19 +120,15 @@ in {
     };
   };
 
-  # TEST
+  # run without xorg
   services.xserver.enable = lib.mkForce false;
+  # install nvidia drivers
   services.xserver.videoDrivers = [ "nvidia" ];
   hardware.opengl.enable = true;
-  hardware.nvidia.package = config.boot.kernelPackages.nvidiaPackages.stable;
-
-  # networking.hostName = "nixos"; # Define your hostname.
-  # Pick only one of the below networking options.
-  # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
-  # networking.networkmanager.enable = true;  # Easiest to use and most distros use this by default.
-
-  # Set your time zone.
-  # time.timeZone = "Europe/Amsterdam";
+  hardware.nvidia = {
+    package = config.boot.kernelPackages.nvidiaPackages.stable;
+    nvidiaPersistenced = true;
+  };
 
   # Configure network proxy if necessary
   # networking.proxy.default = "http://user:password@proxy:port/";
