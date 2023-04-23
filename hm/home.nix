@@ -11,6 +11,7 @@ in {
     ../features/hm/zsh
     ../features/hm/kitty
     ../features/hm/ssh
+    ../features/hm/common
   ];
   nixpkgs = {
     overlays = [ ];
@@ -31,6 +32,9 @@ in {
       hidpi = true;
     };
   };
+
+  graphical.enable = true;
+  audio.enable = true;
 
   home.pointerCursor = {
     name = "Adwaita";
