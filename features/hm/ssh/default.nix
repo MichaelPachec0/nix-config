@@ -40,7 +40,7 @@ in {
           };
           # local ryzen server prev known as zeus
           # local ip is 192.168.5
-          "kore" = mkHost { hostname = "172.30.0.5"; };
+          "kore" = mkHost { hostname = "192.168.1.5"; }; # "172.30.0.5"; };
           # aarch64 master node prev known as atlas
           "hades" = mkHost { hostname = "172.30.0.4"; };
           # in-progress
