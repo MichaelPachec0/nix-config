@@ -50,7 +50,13 @@
           specialArgs = { inherit inputs outputs; };
           modules = nixosModules ++ [ ./nixos/nyx/configuration.nix ];
         };
+        kore = nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = { inherit inputs outputs; };
+          modules = nixosModules ++ [ ./nixos/kore/configuration.nix ];
+        };
       };
+
       homeConfigurations = with home-manager.lib; {
         "michael-nyx" = let system = "x86_64-linux";
         in homeManagerConfiguration {
