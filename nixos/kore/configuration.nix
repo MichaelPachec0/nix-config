@@ -17,6 +17,11 @@ in {
   # Make sure swap is unlocked.
   boot.initrd.luks.devices."swap".device =
     "/dev/disk/by-uuid/82d28d78-2134-42af-b5b2-28e5ef1f7e95";
+  boot.initrd.availableKernelModules = [
+    # fast decrypt for luks
+    "aesni_intel"
+    "cryptd"
+  ];
   hardware.enableAllFirmware = true;
 
   ## hardware-configuration overrides
