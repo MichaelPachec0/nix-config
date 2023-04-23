@@ -17,11 +17,11 @@
     # Import your generated (nixos-generate-config) hardware configuration
     ./hardware-configuration.nix
     ./tlp.nix
-    ../features/nixos/kernel
-    ../features/nixos/auth
-    ../features/nixos/logitech
-    ../features/nixos/login
-    ../features/nixos/desktop
+    ../../features/nixos/kernel
+    ../../features/nixos/auth
+    ../../features/nixos/logitech
+    ../../features/nixos/login
+    ../../features/nixos/desktop
   ];
   boot.initrd.availableKernelModules = [
     # fast decrypt for luks
