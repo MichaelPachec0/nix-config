@@ -21,7 +21,7 @@
           "extract"
           "fancy-ctrl-z"
           "frontend-search"
-          "fzf"
+          #"fzf"
           "git-escape-magic"
           "git-flow"
           "gh"
