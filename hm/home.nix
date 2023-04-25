@@ -12,6 +12,7 @@ in {
     ../features/hm/kitty
     ../features/hm/ssh
     ../features/hm/common
+    ../features/hm/wayland
   ];
   nixpkgs = {
     overlays = [ ];
@@ -24,66 +25,11 @@ in {
     username = "michael";
     homeDirectory = "/home/michael";
   };
-  wayland.windowManager.hyprland = {
-    enable = true;
-    systemdIntegration = true;
-    xwayland = {
-      enable = true;
-      hidpi = true;
-    };
-  };
 
   graphical.enable = true;
   audio.enable = true;
 
-  home.pointerCursor = {
-    name = "Adwaita";
-    package = pkgs.gnome3.adwaita-icon-theme;
-    size = 24;
-    gtk.enable = true;
-    x11 = {
-      enable = true;
-      defaultCursor = "Adwaita";
-    };
-  };
-
-  gtk = {
-    enable = true;
-    cursorTheme = {
-      name = "Adwaita";
-      package = pkgs.gnome.adwaita-icon-theme;
-      size = 24;
-
-    };
-    font = {
-      package = pkgs.dejavu_fonts;
-      name = "DejaVu Sans";
-      size = 10;
-
-    };
-
-    gtk3.extraConfig = {
-      gtk-cursor-theme-name = "Adwaita";
-      gtk-cursor-theme-size = 24;
-    };
-
-    theme = {
-      # name = "Adwaita-dark";
-      name = "Flat-Remix-GTK-Blue-Dark";
-      package = pkgs.flat-remix-gtk;
-
-    };
-  };
-
-  qt = {
-    enable = true;
-    platformTheme = "gtk";
-  };
-
-  xdg = {
-    enable = true;
-    configFile."hypr/hyprland.conf".source = ./hyprland.conf;
-  };
+  xdg = { enable = true; };
   # make sure that apps run under wayland when possible
   home.sessionVariables.NIXOS_OZONE_WL = "1";
   # make sure vim is the default editor
