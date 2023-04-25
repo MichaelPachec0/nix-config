@@ -32,9 +32,24 @@ in {
     };
     environment.systemPackages = with pkgs;
       [
+        nmap
+        # password
+        keepassxc
+        # telegram
+        tdesktop
+        kotatogram-desktop
+
+        # vnc
+        unstable.wayvnc
+        remmina
+        # browsers
+        nyxt
+        #firefox-esr
+        qutebrowser
         # pdf readers, will eventually choose between one or the other
         evince
         okular
+        zathura
 
         # mail clients
         neomutt
@@ -46,10 +61,9 @@ in {
         # telegram
         ## cli
         tg
-        ## telegram desktop
-        kotatogram-desktop
         ## ncurses telegram + whatapp
         unstable.nchat
+
         whatsapp-for-linux
         ## TODO: find out how this works
         # matterbridge
@@ -75,7 +89,16 @@ in {
         #partition management
         gparted
 
-        #
+        # irc
+        weechat
+        # newsreader
+        newsboat
+        # youtube
+        yt-dlp
+        tartube-yt-dlp
+        # brightness control
+        brightnessctl
       ] ++ lib.optionals (config.networking.wireless.iwd.enable) [ iwgtk ];
   };
 }
+

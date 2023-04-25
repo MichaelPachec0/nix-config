@@ -23,7 +23,12 @@ in {
       binaryCaches =
         [ "https://nixpkgs-wayland.cachix.org" "https://hyprland.cachix.org" ];
     };
-    nixpkgs.overlays = [ ];
+    nixpkgs.overlays = [
+      (final: prev: {
+        waybar = nw.waybar;
+      })
+
+     ];
 
     programs.hyprland = {
       enable = true;
@@ -69,7 +74,8 @@ in {
       # auto configure displays
       nw.kanshi
       # notification daemon
-      nw.mako
+      #nw.mako
+      nw.dunst
       # might change to this notification deamon
       # info: https://gitlab.com/snakedye/salut
       # salut
@@ -116,6 +122,8 @@ in {
       nw.wshowkeys
       # wayland alternative for xdotool
       nw.wtype
+      # randr tool for wayland
+      nw.wlr-randr
       ## wayland pip video player (not part of the nix community wayland repo) but added here for wayland only config
       qt-video-wlr
     ];
