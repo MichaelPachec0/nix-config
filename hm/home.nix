@@ -28,6 +28,7 @@ in {
 
   graphical.enable = true;
   audio.enable = true;
+  devMachine.enable = true;
 
   xdg = { enable = true; };
   # make sure that apps run under wayland when possible
