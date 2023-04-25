@@ -1,10 +1,13 @@
-{ ... }: {
+{ inputs, pkgs, ... }:
+let nw = inputs.nixpkgs-wayland.packages.${pkgs.system};
+in {
   imports = [ ];
   options = { };
   config = {
     services = {
       kanshi = {
         enable = true;
+        package = nw.kanshi;
         profiles = {
           default-setup = {
             outputs = [{
@@ -47,7 +50,7 @@
             # TODO: Do not execute anything here, need to find out why specifically on this setup laptop display freezes. Might need add a sleep
             # after every command.
             exec = [
-              #"sleep 30; hyprctl dispatch moveworkspacetomonitor 1 eDP-1; hyprctl dispatch moveworkspacetomonitor 2 HDMI-A-1; hyprctl dispatch moveworkspacetomonitor 3 DP-2; hyprctl dispatch moveworkspacetomonitor 4 eDP-1; hyprctl dispatch moveworkspacetomonitor 5 DP-2; hyprctl dispatch moveworkspacetomonitor 6 HDMI-A-1"
+              #"sleep 30; hyprctl dispatch moveworkspacetomonitor 1 eDP-1; sleep 1; hyprctl dispatch moveworkspacetomonitor 2 HDMI-A-1; sleep 1; hyprctl dispatch moveworkspacetomonitor 3 DP-2; sleep 1; hyprctl dispatch moveworkspacetomonitor 4 eDP-1; sleep 1; hyprctl dispatch moveworkspacetomonitor 5 DP-2; sleep 1; hyprctl dispatch moveworkspacetomonitor 6 HDMI-A-1"
             ];
             outputs = [
               {
