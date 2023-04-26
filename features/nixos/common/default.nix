@@ -35,9 +35,14 @@
         lrzip
         lz4
         unrar-wrapper
+        cabextract
+        p7zip
         rpm
+
         neovim
+        # nix generation diff tool
         nvd
+        # process mon
         btop
         unstable.home-manager
       ]
