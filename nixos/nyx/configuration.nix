@@ -71,11 +71,12 @@
     "mitigations=off"
   ];
 
-  boot.kernelPackages = pkgs.linuxPackages_6_2;
+  boot.kernelPackages = pkgs.linuxPackages_6_1;
   # taken from disable nvidia
   boot.extraModprobeConfig = ''
     blacklist nouveau
     options nouveau modeset=0
+
   '';
 
   # Make sure swap gets unlocked.
