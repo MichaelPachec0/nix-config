@@ -164,6 +164,11 @@
           from = 1714;
           to = 1764;
         }
+        # spotify p2p
+        {
+          from = 57621;
+          to = 57621;
+        }
       ];
       allowedUDPPortRanges = [
         # kdeconnect
