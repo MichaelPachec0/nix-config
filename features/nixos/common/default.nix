@@ -21,7 +21,7 @@
         viu
         neofetch
         thefuck
-        powertop
+        powertop-git
         pciutils
         usbutils
         # extract 
