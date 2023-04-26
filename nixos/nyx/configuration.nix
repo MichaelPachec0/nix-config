@@ -22,6 +22,7 @@
     ../../features/nixos/logitech
     ../../features/nixos/login
     ../../features/nixos/desktop
+    ../../features/nixos/common
   ];
   boot.initrd.availableKernelModules = [
     # fast decrypt for luks
@@ -84,6 +85,8 @@
     "/dev/disk/by-uuid/c20f4b7d-5f67-4f24-b796-c6d1446ecd26";
 
   kernel-mod.ntfs3.enable = true;
+  audio.enable = true;
+  devMachine.enable = true;
   nixpkgs = {
     overlays = [
       # overlay skeleton
