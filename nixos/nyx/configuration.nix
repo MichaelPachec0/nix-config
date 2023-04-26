@@ -47,7 +47,7 @@
     };
     efi.canTouchEfiVariables = false;
   };
-
+  services.fwupd.enable = true;
   boot.kernelParams = [
     # from: https://wiki.archlinux.org/title/Dell_XPS_15_(9560)#Enable_power_saving_features_for_the_i915_kernel_module
     # might remove the rc6 option later.
@@ -336,6 +336,7 @@
   services.hardware.bolt.enable = true;
 
   environment.systemPackages = with pkgs; [
+    fwupd
     mosh
     wget
     curl
