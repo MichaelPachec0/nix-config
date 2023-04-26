@@ -35,7 +35,7 @@ in {
   # make sure that apps run under wayland when possible
   home.sessionVariables.NIXOS_OZONE_WL = "1";
   # make sure vim is the default editor
-  home.sessionVariables."EDITOR" = "vim";
+  home.sessionVariables."EDITOR" = lib.mkForce "vim";
   # HiDPI setup
   home.sessionVariables."GDK_SCALE" = 1;
   home.sessionVariables."GDK_DPI_SCALE" = 1;
