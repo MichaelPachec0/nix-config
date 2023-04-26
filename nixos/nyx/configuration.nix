@@ -339,6 +339,8 @@
     }
   '';
 
+  services.hardware.bolt.enable = true;
+
   environment.systemPackages = with pkgs; [
     mosh
     wget
