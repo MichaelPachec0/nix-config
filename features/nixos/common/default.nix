@@ -50,6 +50,8 @@
         nixfmt
         # csv files in terminal
         tidy-viewer
+      ] ++ lib.optionals (config.hardware.bolt.enable) [
+        bolt
       ];
   };
 }
