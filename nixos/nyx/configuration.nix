@@ -35,14 +35,8 @@
     broadcom_sta
     # to control brightness on non-internal monitors
     ddcci-driver
-    # enable temp monitoring subsystem
-    tmon
     # enable zfs (still broken in 6.2.x)
     # zfs
-    # usb over ip
-    usbip
-    # processor stats
-    turbostat
   ];
   boot.blacklistedKernelModules = [ "b43" "bcma" ];
 
@@ -375,6 +369,8 @@
     rnix-hashes
     nix-prefetch-docker
     nix-prefetch-github
+    config.boot.kernelPackages.turbostat
+    config.boot.kernelPackages.tmon
   ];
 
   yubiAuth.enable = true;
