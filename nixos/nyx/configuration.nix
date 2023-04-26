@@ -10,6 +10,7 @@
     # You can also split up your configuration and import pieces of it here:
     # ./users.nix
     inputs.hardware.nixosModules.dell-xps-15-9560-intel
+    inputs.hardware.nixosModules.common-pc-laptop-ssd
 
     #inputs.nwg-displays-pkgs.packages.${pkgs.system}.nwg-displays
 
