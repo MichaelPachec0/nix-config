@@ -40,7 +40,45 @@ in {
   home.sessionVariables."GDK_SCALE" = 1;
   home.sessionVariables."GDK_DPI_SCALE" = 1;
   home.sessionVariables."QT_AUTO_SCREEN_SCALE_FACTOR" = 1;
+  programs.spicetify = {
+    enable = true;
+    windowManagerPatch = true;
+    spotifyPackage = pkgs.unstable.spotify;
+    #spotifyPackage = pkgs.spotify;
+    # theming causes extreme slowdown in spotify, disable for now.
+    # theme = spicePkgs.themes.DefaultDynamic;
+    # colorScheme = 
+    enabledExtensions = with spicePkgs.extensions; [
+      copyToClipboard
+      showQueueDuration
+      fullAppDisplayMod
+      # powerBar
+      trashbin
+      seekSong
+      playlistIcons
+      fullAlbumDate
+      skipStats
+      history
+      genre
+      fixEnhance
+      bookmark
+      loopyLoop
+      # this is charliesAdblock
+      adblock
+      songStats
+      wikify
+      goToSong
 
+    ];
+    # Custom apps dont work on rolling release spotify,
+    enabledCustomApps = with spicePkgs.apps; [
+      marketplace
+      reddit
+      new-releases
+      lyrics-plus
+    ];
+
+  };
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
   home.stateVersion = "23.05";
 }
