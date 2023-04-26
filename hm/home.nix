@@ -12,6 +12,7 @@ in {
     ../features/hm/kitty
     ../features/hm/ssh
     ../features/hm/common
+    ../features/hm/neovim
     ../features/hm/wayland
   ];
   nixpkgs = {
