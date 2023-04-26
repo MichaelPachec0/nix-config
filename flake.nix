@@ -32,8 +32,34 @@
       overlayUnstable = final: prev: { inherit unstable; };
       baseModules = [
         ({ config, pkgs, ... }: {
-          nixpkgs.overlays =
-            [ overlayUnstable inputs.hyprland.overlays.default ];
+          nixpkgs.overlays = [
+            overlayUnstable
+            inputs.hyprland.overlays.default
+            (final: prev: {
+              powertop-git = prev.unstable.powertop.overrideAttrs
+                (oldAttrs: rec {
+                  version = "2.15-pre";
+                  src = prev.fetchFromGitHub {
+                    owner = "fenrus75";
+                    repo = oldAttrs.pname;
+                    rev = "b6d1569203f32ec1c2aaa065d05961c552a76a6f";
+                    hash =
+                      "sha256-JUqzyYyv2zi3UpuSnvjiJwecp9yYomlif6kla1wv7ZM=";
+                  };
+                  buildInputs = [
+                    prev.gettext
+                    prev.libnl
+                    prev.libtraceevent
+                    prev.libtracefs
+                    prev.ncurses
+                    prev.pciutils
+                    prev.zlib
+                  ];
+
+                });
+            })
+
+          ];
         })
       ];
       nixosModules = baseModules ++ [
@@ -44,6 +70,7 @@
         }
       ];
     in {
+      # overlays = import ./overlays {inherit inputs;};
       nixosConfigurations = with nixpkgs.lib; {
         nyx = nixosSystem {
           system = "x86_64-linux";
