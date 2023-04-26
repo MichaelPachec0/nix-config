@@ -24,11 +24,9 @@ in {
         [ "https://nixpkgs-wayland.cachix.org" "https://hyprland.cachix.org" ];
     };
     nixpkgs.overlays = [
-      (final: prev: {
-        waybar = nw.waybar;
-      })
+      (final: prev: { waybar = nw.waybar; })
 
-     ];
+    ];
 
     programs.hyprland = {
       enable = true;
@@ -127,7 +125,9 @@ in {
       ## wayland pip video player (not part of the nix community wayland repo) but added here for wayland only config
       qt-video-wlr
     ];
-
+    systemd.user.units."dunst" = {
+      wantedBy = [ "xdg-desktop-portal.service" ];
+    };
   };
 
 }
