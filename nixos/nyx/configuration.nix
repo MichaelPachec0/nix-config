@@ -50,15 +50,18 @@
   services.fwupd.enable = true;
   boot.kernelParams = [
     # from: https://wiki.archlinux.org/title/Dell_XPS_15_(9560)#Enable_power_saving_features_for_the_i915_kernel_module
-    # might remove the rc6 option later.
     "i915.enable_psr=1"
-    "i915.enable_rc6=7"
     "i915.enable_fbc=1"
     "i915.disable_power_well=0"
     # Make sure the laptop exposes correct acpi. Makes the laptop less crash prone
     "acpi_rev_override=1"
+    # define that we are linux
+    "acpi_osi=Linux"
+    # lets see the battery savings with this
+    "pcie_aspm=on"
     # USB-C fix, do not sleep the pcie links
-    "pcie_aspm=off"
+    #"pcie_aspm=off"
+    # "pcie_port_pm=off"
     # Do not let nouveau take control of the nvidia gpu
     "nouveau.modeset=0"
     # Test option, to see if there is any discernible difference
