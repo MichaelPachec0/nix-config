@@ -13,8 +13,8 @@
       #MAX_LOST_WORK_SECS_ON_BAT = 60;
       # cpu gov should already be done by the initial config
       #HWP
-      CPU_HWP_ON_AC = "balance_performance";
-      CPU_HWP_ON_BAT = "balance_power";
+      CPU_HWP_ON_AC = "balance_power";
+      CPU_HWP_ON_BAT = "power";
       # P-state stuff, might comment out
       CPU_MIN_PERF_ON_AC = 0;
       CPU_MAX_PERF_ON_AC = 100;
@@ -31,8 +31,8 @@
 
       NMI_WATCHDOG = 0;
 
-      ENERGY_PERF_POLICY_ON_AC = "performance";
-      ENERGY_PERF_POLICY_ON_BAT = "power";
+      CPU_ENERGY_PERF_POLICY_ON_AC = "default";
+      CPU_ENERGY_PERF_POLICY_ON_BAT = "power";
 
       DISK_DEVICES = "nvme-ADATA_SX8200PNP_2K3729A528XF";
 
@@ -66,7 +66,7 @@
       RUNTIME_PM_ON_AC = "on";
       RUNTIME_PM_ON_BAT = "auto";
       RUNTIME_PM_DISABLE = "00:1d.6 24:00.0 07:02.0 07:01.0 07:00.0 06:00.0";
-      PCIE_ASPM_ON_AC = "performance";
+      PCIE_ASPM_ON_AC = "default";
       PCIE_ASPM_ON_BAT = "powersupersave";
 
       USB_AUTOSUSPEND = 1;
@@ -78,7 +78,7 @@
       USB_DENYLIST = "046d:c52b 1050:0407";
 
       # Include bluetooth in usb powersave
-      USB_BLACKLIST_BTUSB = 1;
+      USB_BLACKLIST_BTUSB = 0;
 
       # enable phone charging
       USB_BLACKLIST_PHONE = 1;
@@ -89,7 +89,7 @@
       # 05ac:828d - Apple bluetooth host controller
       # 0c45:6713 - Webcam
 
-      USB_ALLOWLIST = "138a:0091 04f3:24a0 05ac:828d  0c45:6713 05ac:4500 ";
+      USB_ALLOWLIST = "138a:0091 04f3:24a0 05ac:828d 0c45:6713";
 
       # suspend usb devices on shutdown
       # USB_AUTOSUSPEND_DISABLE_ON_SHUTDOWN = 1;
