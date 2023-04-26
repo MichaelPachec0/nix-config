@@ -9,8 +9,8 @@
       # disk settings
       DISK_IDLE_SECS_ON_AC = 0;
       DISK_IDLE_SECS_ON_BAT = 2;
-      MAX_LOST_WORK_SECS_ON_AC = 15;
-      MAX_LOST_WORK_SECS_ON_BAT = 60;
+      #MAX_LOST_WORK_SECS_ON_AC = 15;
+      #MAX_LOST_WORK_SECS_ON_BAT = 60;
       # cpu gov should already be done by the initial config
       #HWP
       CPU_HWP_ON_AC = "balance_performance";
@@ -18,8 +18,8 @@
       # P-state stuff, might comment out
       CPU_MIN_PERF_ON_AC = 0;
       CPU_MAX_PERF_ON_AC = 100;
-      CPU_MIN_PERF_ON_BAT = 0;
-      CPU_MAX_PERF_ON_BAT = 50;
+      #CPU_MIN_PERF_ON_BAT = 0;
+      #CPU_MAX_PERF_ON_BAT = 50;
       # Turbo boost
       CPU_BOOST_ON_AC = 1;
       CPU_BOOST_ON_BAT = 0;
@@ -65,6 +65,9 @@
       # Runtime PCI-E PM
       RUNTIME_PM_ON_AC = "on";
       RUNTIME_PM_ON_BAT = "auto";
+      RUNTIME_PM_DISABLE = "00:1d.6 24:00.0 07:02.0 07:01.0 07:00.0 06:00.0";
+      PCIE_ASPM_ON_AC = "performance";
+      PCIE_ASPM_ON_BAT = "powersupersave";
 
       USB_AUTOSUSPEND = 1;
 
@@ -75,7 +78,7 @@
       USB_DENYLIST = "046d:c52b 1050:0407";
 
       # Include bluetooth in usb powersave
-      USB_BLACKLIST_BTUSB = 0;
+      USB_BLACKLIST_BTUSB = 1;
 
       # enable phone charging
       USB_BLACKLIST_PHONE = 1;
@@ -83,10 +86,13 @@
       # include fingerprint and touch screen in usb autosuspend
       # 138a:0091 - fingerprint sensor
       # 04f3:24a0 - touch screen (ELAN)
-      USB_ALLOWLIST = "138a:0091 04f3:24a0";
+      # 05ac:828d - Apple bluetooth host controller
+      # 0c45:6713 - Webcam
+
+      USB_ALLOWLIST = "138a:0091 04f3:24a0 05ac:828d  0c45:6713 05ac:4500 ";
 
       # suspend usb devices on shutdown
-      USB_AUTOSUSPEND_DISABLE_ON_SHUTDOWN = 1;
+      # USB_AUTOSUSPEND_DISABLE_ON_SHUTDOWN = 1;
 
     };
   };
