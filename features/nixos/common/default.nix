@@ -2,7 +2,7 @@
   imports = [ ];
   options = {
     audio.enable = lib.mkEnableOption "Installs common audio apps.";
-    graphical.enable = lib.mkEnableOption "Install common graphical apps.";
+    devMachine.enable = lib.mkEnableOption "Install common developer apps.";
   };
   config = {
     environment.systemPackages = with pkgs;
@@ -21,9 +21,9 @@
         viu
         neofetch
         thefuck
-        nixfmt
         powertop
         pciutils
+        usbutils
         # extract 
         unzip
         zip
@@ -36,49 +36,21 @@
         lz4
         unrar-wrapper
         rpm
-
         neovim
         nvd
-
+        btop
+        unstable.home-manager
       ]
       ++ lib.optionals (config.audio.enable) [ pavucontrol ncpamixer playerctl ]
-      ++ lib.optionals (config.graphical.enable) [
-        nmap # network visualizer
-        keepassxc # pass
-        # telegram
-        tdesktop
-        kotatogram-desktop
-        # discord
-        unstable.webcord
-        # vnc
-        unstable.wayvnc
-        remmina
-        unstable.kanshi
-        nyxt
+      ++ lib.optionals (config.devMachine.enable) [
+        nix-prefetch
+        nix-prefetch-git
+        nix-prefetch-github
+        nix-index
+        nixfmt
+        # csv files in terminal
+        tidy-viewer
       ];
   };
 }
-# mako notifications
-# nmap
-# mplayer
-# tidy-viewer # csv printer terminal
-# pavucontrol # audio
-# ncpamixer # audio
-# keepassxc # graphical
-# tg # terminal but only for michael user
-# tdesktop # graphical
-# kotatogram-desktop
-# playerctl # audio
-# waybar-hyprland
-# unstable-webcord
-# slackterm
-# themechanger
-# brightnessctl #
-# unstable.wayvnc # vnc
-# remmina # vnc
-# unstable.nil # nvim nix lsp michael user
-# gsettings-qt
-#     inputs.nwg-displays-pkgs.packages.${pkgs.system}.nwg-displays
-# unstable.kanshi # screen control
-# nyxt # vim/emacs browser
 
