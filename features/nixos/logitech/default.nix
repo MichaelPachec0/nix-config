@@ -2,7 +2,7 @@
 { config, lib, pkgs, ... }:
 let
   configText = ''
-        // Logiops (Linux driver) configuration for Logitech MX Master 3.
+    // Logiops (Linux driver) configuration for Logitech MX Master 3.
     // Includes gestures, smartshift, DPI.
     // Tested on logid v0.2.3 - GNOME 3.38.4 on Zorin OS 16 Pro
     // What's working:
@@ -247,6 +247,8 @@ in {
       enableGraphical = true;
     };
     systemd.packages = [ pkgs.logiops ];
+    systemd.services."logid" = { wantedBy = [ "graphical.target" ]; };
+
     environment.etc."logid.cfg".source = "${configFile}";
   };
 }
