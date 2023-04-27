@@ -1,12 +1,15 @@
-{ config, pkgs, lib, ... }: {
+{ config, pkgs, lib, inputs, ... }: {
   imports = [ ];
   options = {
     audio.enable = lib.mkEnableOption "Installs common audio apps.";
     devMachine.enable = lib.mkEnableOption "Install common developer apps.";
   };
   config = {
+    nixpkgs.overlays = [ inputs.nix-your-shell.overlays.default ];
+
     environment.systemPackages = with pkgs;
       [
+        nix-your-shell
         curl
         wget
         # graphical/terminal browser
