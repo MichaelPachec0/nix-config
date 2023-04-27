@@ -42,25 +42,41 @@ in {
   home.sessionVariables."QT_AUTO_SCREEN_SCALE_FACTOR" = 1;
   programs.spicetify = {
     enable = true;
+    spicetifyPackage = pkgs.unstable.spicetify-cli;
     windowManagerPatch = true;
     spotifyPackage = pkgs.unstable.spotify;
     #spotifyPackage = pkgs.spotify;
     # theming causes extreme slowdown in spotify, disable for now.
-    # theme = spicePkgs.themes.DefaultDynamic;
+    theme = spicePkgs.themes.DefaultDynamic;
     # colorScheme = 
     enabledExtensions = with spicePkgs.extensions; [
       copyToClipboard
       showQueueDuration
-      fullAppDisplayMod
-      # powerBar
+      fullAppDisplay
+      {
+        filename = "power-bar.js";
+        src = pkgs.fetchFromGitHub {
+          owner = "jeroentvb";
+          repo = "spicetify-power-bar";
+          rev = "dacaffb55b8e06954e8b22ec4f23a597e795d83f";
+          sha256 = "1m30k1j8023yy0n4ia6m95scyi29i88pmx4vyxk6rxr07p3b9c7x";
+        };
+      }
+      {
+        filename = "playlist-icons.js";
+        src = pkgs.fetchFromGitHub {
+          owner = "jeroentvb";
+          repo = "spicetify-playlist-icons";
+          rev = "4e2fdda5079b441eca8d4d9f7479db82f6cc20b8";
+          sha256 = "1wiq1iq74g2y8g0yv5ldhf0dc7nnamr1ydfbb6fgq0c0ix3yrh51";
+        };
+      }
       trashbin
       seekSong
-      playlistIcons
       fullAlbumDate
       skipStats
       history
       genre
-      fixEnhance
       bookmark
       loopyLoop
       # this is charliesAdblock
