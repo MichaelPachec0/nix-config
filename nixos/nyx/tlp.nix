@@ -49,7 +49,8 @@
       AHCI_RUNTIME_PM_ON_BAT = "auto";
 
       # Wifi powersave
-      WIFI_PWR_ON_AC = "off";
+      # WIFI_PWR_ON_AC = "off";
+      WIFI_PWR_ON_AC = "on";
       WIFI_PWR_ON_BAT = "on";
 
       # WOL
@@ -63,10 +64,11 @@
       SOUND_POWER_SAVE_CONTROLLER = "Y";
 
       # Runtime PCI-E PM
-      RUNTIME_PM_ON_AC = "on";
+      RUNTIME_PM_ON_AC = "auto";
       RUNTIME_PM_ON_BAT = "auto";
       RUNTIME_PM_DISABLE = "00:1d.6 24:00.0 07:02.0 07:01.0 07:00.0 06:00.0";
-      PCIE_ASPM_ON_AC = "default";
+      # PCIE_ASPM_ON_AC = "default";
+      PCIE_ASPM_ON_AC = "powersave";
       PCIE_ASPM_ON_BAT = "powersupersave";
 
       USB_AUTOSUSPEND = 1;
