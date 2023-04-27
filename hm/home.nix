@@ -42,6 +42,24 @@ in {
   home.sessionVariables."QT_AUTO_SCREEN_SCALE_FACTOR" = 1;
   programs.spicetify = {
     enable = true;
+    spicetifyPackage = pkgs.spicetify-cli.overrideAttrs (oa: rec {
+      __noChroot = true;
+      #proxyVendor = true;
+      pname = oa.pname;
+      version = "hash-8088fd7";
+      src = pkgs.fetchFromGitHub {
+        owner = "spicetify";
+        repo = "${pname}";
+        rev = "8088fd7d4537f3774884d6952dcd6ecd8579da4d";
+        hash = "sha256-Axdja85j+4kxPokDY2EPz7YTkD9AYTWOUhAbsFPpjG8=";
+      };
+      preBuild = ''
+        export GOPROXY=proxy.golang.org
+        # go mod vendor
+      '';
+      buildFlags = "-mod=mod";
+      vendorHash = null;
+    });
     windowManagerPatch = true;
     spotifyPackage = pkgs.unstable.spotify;
     #spotifyPackage = pkgs.spotify;
