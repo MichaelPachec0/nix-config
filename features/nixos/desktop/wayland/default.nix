@@ -126,7 +126,7 @@ in {
       qt-video-wlr
     ];
     systemd.user.units."dunst" = {
-      wantedBy = [ "xdg-desktop-portal.service" ];
+      wantedBy = [ "graphical-session.target" ];
     };
   };
 
