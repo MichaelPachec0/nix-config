@@ -67,8 +67,10 @@ in {
     };
     xdg = {
       enable = true;
-      configFile."hypr/hyprland.conf".source = ./hyprland.conf;
-      configFile."hypr/hyprlandd.conf".source = ./hyprland.conf;
+      configFile."hypr/hyprland.conf".text =
+        import ./hyprland.conf.nix { inherit pkgs; };
+      configFile."hypr/hyprlandd.conf".text =
+        import ./hyprland.conf.nix { inherit pkgs; };
       configFile."waybar/" = {
         enable = true;
         source = ./waybar;
