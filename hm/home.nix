@@ -47,7 +47,7 @@ in {
     spotifyPackage = pkgs.unstable.spotify;
     #spotifyPackage = pkgs.spotify;
     # theming causes extreme slowdown in spotify, disable for now.
-    # theme = spicePkgs.themes.DefaultDynamic;
+    theme = spicePkgs.themes.DefaultDynamic;
     # colorScheme = 
     enabledExtensions = with spicePkgs.extensions; [
       copyToClipboard
