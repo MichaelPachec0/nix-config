@@ -1,13 +1,18 @@
-{ inputs, pkgs, ... }:
+{ inputs, pkgs, config, ... }:
 let nw = inputs.nixpkgs-wayland.packages.${pkgs.system};
 in {
   imports = [ ];
   options = { };
   config = {
     services = {
-      kanshi = {
+      kanshi = let
+        # TODO: include sway and newm commands as well
+        hyprctl =
+          "${config.wayland.windowManager.hyprland.package}/bin/hyprctl";
+      in {
         enable = true;
         package = nw.kanshi;
+        systemdTarget = "graphical-session.target";
         profiles = {
           default-setup = {
             outputs = [{
@@ -21,7 +26,7 @@ in {
           };
           mobile-with-monitor = {
             # This does the 90 deg rotation since kanshi cannot do it on its own
-            exec = [ "hyprctl keyword monitor DP-1, transform,1" ];
+            exec = [ "${hyprctl} keyword monitor DP-1, transform,1" ];
             outputs = [
               {
                 # 4k display from xps 9560
