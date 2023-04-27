@@ -27,6 +27,9 @@
           function mv2mon() {
             command hyprctl dispatch moveworkspacetomonitor "$@";
           }
+          if command -v nix-your-shell > /dev/null; then
+            nix-your-shell zsh | source /dev/stdin
+          fi
         '';
         shellAliases = {
           hmsf = "home-manager switch -L --flake";
