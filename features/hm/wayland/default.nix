@@ -1,6 +1,7 @@
 { config, lib, pkgs, inputs, ... }:
 let nw = inputs.nixpkgs-wayland.packages.${pkgs.system};
 in {
+  imports = [ ./swayidle.nix ];
   config = {
     wayland.windowManager.hyprland = {
       enable = true;
