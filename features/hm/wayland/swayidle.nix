@@ -20,7 +20,7 @@ in {
         {
           timeout = 800;
           command = "${hyprctl} dispatch dpms off";
-          resumeCommand = "{hyprctl} dispatch dpms on";
+          resumeCommand = "${hyprctl} dispatch dpms on";
         }
       ];
       systemdTarget = "hyprland-session.target";
