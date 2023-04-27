@@ -45,9 +45,9 @@ in {
     spicetifyPackage = pkgs.unstable.spicetify-cli;
     windowManagerPatch = true;
     spotifyPackage = pkgs.unstable.spotify;
-    #spotifyPackage = pkgs.spotify;
-    # theming causes extreme slowdown in spotify, disable for now.
-    theme = spicePkgs.themes.DefaultDynamic;
+    # theming causes extreme slowdown in spotify on 4k, disable for now.
+    #theme = spicePkgs.themes.DefaultDynamic;
+    # TODO: change to using nix-colors
     # colorScheme = 
     enabledExtensions = with spicePkgs.extensions; [
       copyToClipboard
@@ -79,7 +79,6 @@ in {
       genre
       bookmark
       loopyLoop
-      # this is charliesAdblock
       adblock
       songStats
       wikify
