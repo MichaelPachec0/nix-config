@@ -1,5 +1,5 @@
 { config, pkgs, lib, inputs, ... }: {
-  imports = [ ];
+  imports = [ ./deploy.nix ];
   options = {
     audio.enable = lib.mkEnableOption "Installs common audio apps.";
     devMachine.enable = lib.mkEnableOption "Install common developer apps.";
