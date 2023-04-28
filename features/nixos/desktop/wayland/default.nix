@@ -89,7 +89,7 @@ in {
       # vanilla locker
       # swaylock
       # info: https://github.com/mortie/swaylock-effects
-      nw.swaylock-effects
+      unstable.swaylock-effects
       # fancy wallpaper manager
       # info: https://github.com/Horus645/swww
       nw.swww
@@ -125,9 +125,7 @@ in {
       ## wayland pip video player (not part of the nix community wayland repo) but added here for wayland only config
       qt-video-wlr
     ];
-    systemd.user.units."dunst" = {
-      wantedBy = [ "graphical-session.target" ];
-    };
+    systemd.user.units."dunst" = { wantedBy = [ "graphical-session.target" ]; };
   };
 
 }
