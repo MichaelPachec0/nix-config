@@ -7,6 +7,8 @@ let fsOptions = [ "compress=zstd" "noatime" ];
 in {
   imports = [ # Include the results of the hardware scan.
     ./hardware-configuration.nix
+    ../../features/nixos/common
+    ../../features/nixos/kernel
   ];
 
   # Use the systemd-boot EFI boot loader.
