@@ -18,7 +18,7 @@ in {
   boot.supportedFilesystems = [ "btrfs" ];
   # Make sure swap is unlocked.
   boot.initrd.luks.devices."swap".device =
-    "/dev/disk/by-uuid/82d28d78-2134-42af-b5b2-28e5ef1f7e95";
+    "/dev/disk/by-uuid/92488ec8-0bb3-4e9c-9c54-372ad59bb2d8";
   boot.initrd.availableKernelModules = [
     # fast decrypt for luks
     "aesni_intel"
