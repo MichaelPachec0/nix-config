@@ -54,6 +54,10 @@ in {
           use2Factor = true;
         } else
           { };
+        swaylock = {
+          u2fAuth = true;
+          use2Factor = false;
+        };
       };
     };
   };
