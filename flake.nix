@@ -70,6 +70,7 @@
                     ./overlays/swaylock_effects/4_disp_img_insd_ind.patch
                     ./overlays/swaylock_effects/37_cairo_bilinear.patch
                     ./overlays/swaylock_effects/38_red_screen_fix.patch
+                    ./overlays/swaylock_effects/8_change_state_strings.patch
                   ];
                 });
 

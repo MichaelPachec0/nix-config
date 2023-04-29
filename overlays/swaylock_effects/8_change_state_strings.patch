@@ -1,0 +1,186 @@
+diff --git a/completions/bash/swaylock b/completions/bash/swaylock
+index 713fb4c..21abdf5 100644
+--- a/completions/bash/swaylock
++++ b/completions/bash/swaylock
+@@ -30,6 +30,7 @@ _swaylock()
+     --bs-hl-color
+     --caps-lock-bs-hl-color
+     --caps-lock-key-hl-color
++    --clearstr
+     --color
+     --config
+     --daemonize
+@@ -80,6 +81,8 @@ _swaylock()
+     --text-wrong-color
+     --tiling
+     --version
++    --verstr
++    --wrongstr
+   )
+ 
+   scaling=(
+diff --git a/completions/fish/swaylock.fish b/completions/fish/swaylock.fish
+index 41416a3..21f3e95 100644
+--- a/completions/fish/swaylock.fish
++++ b/completions/fish/swaylock.fish
+@@ -3,6 +3,7 @@
+ complete -c swaylock -l bs-hl-color                 --description "Sets the color of backspace highlight segments."
+ complete -c swaylock -l caps-lock-bs-hl-color       --description "Sets the color of backspace highlight segments when Caps Lock is active."
+ complete -c swaylock -l caps-lock-key-hl-color      --description "Sets the color of the key press highlight segments when Caps Lock is active."
++complete -c swaylock -l clearstr                    --description "The string displayed when the password is cleared."
+ complete -c swaylock -l color                  -s c --description "Turn the screen into the given color instead of white."
+ complete -c swaylock -l config                 -s C --description "Path to the config file."
+ complete -c swaylock -l daemonize              -s f --description "Detach from the controlling terminal after locking."
+@@ -53,3 +54,5 @@ complete -c swaylock -l text-ver-color              --description "Sets the colo
+ complete -c swaylock -l text-wrong-color            --description "Sets the color of the text when invalid."
+ complete -c swaylock -l tiling                 -s t --description "Same as --scaling=tile."
+ complete -c swaylock -l version                -s v --description "Show the version number and quit."
++complete -c swaylock -l verstr                      --description "The string displayed when the password is being verified."
++complete -c swaylock -l wrongstr                    --description "The string displayed when the password is wrong."
+diff --git a/completions/zsh/_swaylock b/completions/zsh/_swaylock
+index 9e9f788..1455d4a 100644
+--- a/completions/zsh/_swaylock
++++ b/completions/zsh/_swaylock
+@@ -7,6 +7,7 @@ _arguments -s \
+ 	'(--bs-hl-color)'--bs-hl-color'[Sets the color of backspace highlight segments]:color:' \
+ 	'(--caps-lock-bs-hl-color)'--caps-lock-bs-hl-color'[Sets the color of backspace highlight segments when Caps Lock is active]:color:' \
+ 	'(--caps-lock-key-hl-color)'--caps-lock-key-hl-color'[Sets the color of the key press highlight segments when Caps Lock is active]:color:' \
++	'(--clearstr)'--clearstr'[The string displayed when the password is cleared.]:string:' \
+ 	'(--color -c)'{--color,-c}'[Turn the screen into the given color instead of white]:color:' \
+ 	'(--config -C)'{--config,-C}'[Path to the config file]:filename:_files' \
+ 	'(--daemonize -f)'{--daemonize,-f}'[Detach from the controlling terminal after locking]' \
+@@ -56,4 +57,6 @@ _arguments -s \
+ 	'(--text-ver-color)'--text-ver-color'[Sets the color of the text when verifying]:color:' \
+ 	'(--text-wrong-color)'--text-wrong-color'[Sets the color of the text when invalid]:color:' \
+ 	'(--tiling -t)'{--tiling,-t}'[Same as --scaling=tile]' \
+-	'(--version -v)'{--version,-v}'[Show the version number and quit]'
++	'(--version -v)'{--version,-v}'[Show the version number and quit]' \
++	'(--verstr)'--verstr'[The string displayed when the password is being verified.]:string:' \
++	'(--wrongstr)'--wrongstr'[The string displayed when the password is wrong.]:string:'
+diff --git a/include/swaylock.h b/include/swaylock.h
+index ad259b6..809e00e 100644
+--- a/include/swaylock.h
++++ b/include/swaylock.h
+@@ -75,6 +75,9 @@ struct swaylock_args {
+ 	bool clock;
+ 	char *timestr;
+ 	char *datestr;
++	char *validatingstr;
++	char *invalidstr;
++	char *clearstr;
+ 	uint32_t fade_in;
+ 	bool allow_fade;
+ 	bool password_submit_on_touch;
+diff --git a/main.c b/main.c
+index a361c16..f7b9c28 100644
+--- a/main.c
++++ b/main.c
+@@ -992,6 +992,9 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 		LO_CLOCK,
+ 		LO_TIMESTR,
+ 		LO_DATESTR,
++		LO_VERSTR,
++		LO_WRONGSTR,
++		LO_CLEARSTR,
+ 		LO_FADE_IN,
+ 		LO_SUBMIT_ON_TOUCH,
+ 		LO_GRACE,
+@@ -1067,6 +1070,9 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 		{"clock", no_argument, NULL, LO_CLOCK},
+ 		{"timestr", required_argument, NULL, LO_TIMESTR},
+ 		{"datestr", required_argument, NULL, LO_DATESTR},
++		{"verstr", required_argument, NULL, LO_VERSTR},
++		{"wrongstr", required_argument, NULL, LO_WRONGSTR},
++		{"clearstr", required_argument, NULL, LO_CLEARSTR},
+ 		{"fade-in", required_argument, NULL, LO_FADE_IN},
+ 		{"submit-on-touch", no_argument, NULL, LO_SUBMIT_ON_TOUCH},
+ 		{"grace", required_argument, NULL, LO_GRACE},
+@@ -1130,6 +1136,12 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 			"The format string for the time. Defaults to '%T'.\n"
+ 		"  --datestr <format>               "
+ 			"The format string for the date. Defaults to '%a, %x'.\n"
++		"  --verstr <string>                "
++			"The string displayed when the password is being verified.\n"
++		"  --wrongstr <string>              "
++			"The string displayed when the password is wrong.\n"
++		"  --clearstr <string>              "
++			"The string displayed when the password is cleared.\n"
+ 		"  -v, --version                    "
+ 			"Show the version number and quit.\n"
+ 		"  --bs-hl-color <color>            "
+@@ -1610,6 +1622,24 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 				state->args.datestr = strdup(optarg);
+ 			}
+ 			break;
++		case LO_VERSTR:
++			if (state) {
++				free(state->args.validatingstr);
++				state->args.validatingstr = strdup(optarg);
++			}
++			break;
++		case LO_WRONGSTR:
++			if (state) {
++				free(state->args.invalidstr);
++				state->args.invalidstr = strdup(optarg);
++			}
++			break;
++		case LO_CLEARSTR:
++			if (state) {
++				free(state->args.clearstr);
++				state->args.clearstr = strdup(optarg);
++			}
++			break;
+ 		case LO_FADE_IN:
+ 			if (state) {
+ 				state->args.fade_in = parse_seconds(optarg);
+@@ -1794,6 +1824,9 @@ int main(int argc, char **argv) {
+ 		.clock = false,
+ 		.timestr = strdup("%T"),
+ 		.datestr = strdup("%a, %x"),
++		.validatingstr = strdup("Verifying"),
++		.invalidstr = strdup("Wrong"),
++		.clearstr = strdup("Cleared"),
+ 		.allow_fade = true,
+ 		.password_grace_period = 0,
+ 	};
+diff --git a/render.c b/render.c
+index 655c5b1..2574dcf 100644
+--- a/render.c
++++ b/render.c
+@@ -227,13 +227,13 @@ void render_frame(struct swaylock_surface *surface) {
+ 		cairo_set_font_size(cairo, font_size);
+ 		switch (state->auth_state) {
+ 		case AUTH_STATE_VALIDATING:
+-			text = "verifying";
++			text = state->args.validatingstr;
+ 			break;
+ 		case AUTH_STATE_INVALID:
+-			text = "wrong";
++			text = state->args.invalidstr;
+ 			break;
+ 		case AUTH_STATE_CLEAR:
+-			text = "cleared";
++			text = state->args.clearstr;
+ 			break;
+ 		case AUTH_STATE_INPUT:
+ 		case AUTH_STATE_INPUT_NOP:
+diff --git a/swaylock.1.scd b/swaylock.1.scd
+index 2b708fd..e7bebb0 100644
+--- a/swaylock.1.scd
++++ b/swaylock.1.scd
+@@ -77,6 +77,15 @@ Locks your Wayland session.
+ *--datestr* <format>
+ 	The date format for the indicator clock. Defaults to '%a, %x'.
+ 
++*--verstr* <string>
++	The string displayed when the password is being verified.
++
++*--wrongstr* <string>
++	The string displayed when the password is wrong.
++
++*--clearstr* <string>
++	The string displayed when the password is cleared.
++
+ *-i, --image* [[<output>]:]<path>
+ 	Display the given image, optionally only on the given output. Use -c to set
+ 	a background color. If the path potentially contains a ':', prefix it with another
