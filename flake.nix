@@ -36,7 +36,7 @@
       };
       overlayUnstable = final: prev: { inherit unstable; };
       baseModules = [
-        ({ config, pkgs, ... }: {
+        ({ config, pkgs, lib, ... }: {
           nixpkgs.overlays = [
             overlayUnstable
             inputs.hyprland.overlays.default
@@ -62,6 +62,16 @@
                   ];
 
                 });
+              swaylock-effects-pr = pkgs.unstable.swaylock-effects.overrideAttrs
+                (oldAttrs: {
+                  version =
+                    lib.strings.concatStrings [ oldAttrs.version "-unstable" ];
+                  patches = (oldAttrs.patches or [ ]) ++ [
+                    ./overlays/swaylock_effects/4_disp_img_insd_ind.patch
+                    ./overlays/swaylock_effects/37_cairo_bilinear.patch
+                  ];
+                });
+
             })
 
           ];
