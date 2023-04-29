@@ -1,0 +1,55 @@
+From 18573cb795592b4ab82f7693c151923d9e08cbb5 Mon Sep 17 00:00:00 2001
+From: lx200916 <mjt197305@gmail.com>
+Date: Sat, 18 Mar 2023 21:19:00 +0800
+Subject: [PATCH 1/2] Try to fix red screen even through Swaylock exit
+ normally.
+
+---
+ main.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/main.c b/main.c
+index a361c16e..f211eb26 100644
+--- a/main.c
++++ b/main.c
+@@ -1,4 +1,6 @@
+ #define _POSIX_C_SOURCE 200809L
++
++#include <wayland-client-core.h>
+ #include <assert.h>
+ #include <ctype.h>
+ #include <errno.h>
+@@ -1980,9 +1982,10 @@ int main(int argc, char **argv) {
+ 	}
+ 	if (state.ext_session_lock_v1) {
+ 		ext_session_lock_v1_unlock_and_destroy(state.ext_session_lock_v1);
++		wl_display_roundtrip(state.display);
+ 		wl_display_flush(state.display);
+ 	}
+ 
+ 	free(state.args.font);
+ 	return 0;
+-}
++}
+\ No newline at end of file
+
+From 071bfa4f584593de4dd91f052419767bc30d0b4b Mon Sep 17 00:00:00 2001
+From: lx200916 <mjt197305@gmail.com>
+Date: Sun, 19 Mar 2023 11:14:47 +0800
+Subject: [PATCH 2/2] Fix typo.
+
+---
+ main.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/main.c b/main.c
+index f211eb26..0ba56d42 100644
+--- a/main.c
++++ b/main.c
+@@ -1,6 +1,4 @@
+ #define _POSIX_C_SOURCE 200809L
+-
+-#include <wayland-client-core.h>
+ #include <assert.h>
+ #include <ctype.h>
+ #include <errno.h>
