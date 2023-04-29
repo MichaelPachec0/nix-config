@@ -1,0 +1,12 @@
+diff --git a/main.c b/main.c
+index a361c16..a0f41f5 100644
+--- a/main.c
++++ b/main.c
+@@ -1980,6 +1980,7 @@ int main(int argc, char **argv) {
+ 	}
+ 	if (state.ext_session_lock_v1) {
+ 		ext_session_lock_v1_unlock_and_destroy(state.ext_session_lock_v1);
++		wl_display_roundtrip(state.display);
+ 		wl_display_flush(state.display);
+ 	}
+ 
