@@ -1,0 +1,209 @@
+diff --git a/completions/bash/swaylock b/completions/bash/swaylock
+index 713fb4c..a2f2f52 100644
+--- a/completions/bash/swaylock
++++ b/completions/bash/swaylock
+@@ -47,6 +47,7 @@ _swaylock()
+     --indicator-thickness
+     --indicator-x-position
+     --indicator-y-position
++    --indicator-image
+     --inside-caps-lock-color
+     --inside-clear-color
+     --inside-color
+@@ -99,7 +100,7 @@ _swaylock()
+       COMPREPLY=($(compgen -W "${scaling[*]}" -- "$cur"))
+       return
+       ;;
+-    -i|--image)
++    -i|--image|--indicator-image)
+       if grep -q : <<< "$cur"; then
+         output="${cur%%:*}:"
+         cur="${cur#*:}"
+diff --git a/completions/fish/swaylock.fish b/completions/fish/swaylock.fish
+index 41416a3..f73a1ec 100644
+--- a/completions/fish/swaylock.fish
++++ b/completions/fish/swaylock.fish
+@@ -20,6 +20,7 @@ complete -c swaylock -l indicator-radius            --description "Sets the indi
+ complete -c swaylock -l indicator-thickness         --description "Sets the indicator thickness."
+ complete -c swaylock -l indicator-x-position        --description "Sets the horizontal position of the indicator."
+ complete -c swaylock -l indicator-y-position        --description "Sets the vertical position of the indicator."
++complete -c swaylock -l indicator-image             --description "Display the given image inside of the indicator."
+ complete -c swaylock -l inside-caps-lock-color      --description "Sets the color of the inside of the indicator when Caps Lock is active."
+ complete -c swaylock -l inside-clear-color          --description "Sets the color of the inside of the indicator when cleared."
+ complete -c swaylock -l inside-color                --description "Sets the color of the inside of the indicator."
+diff --git a/completions/zsh/_swaylock b/completions/zsh/_swaylock
+index 9e9f788..a16577d 100644
+--- a/completions/zsh/_swaylock
++++ b/completions/zsh/_swaylock
+@@ -24,6 +24,7 @@ _arguments -s \
+ 	'(--indicator-thickness)'--indicator-thickness'[Sets the indicator thickness]:thickness:' \
+ 	'(--indicator-x-position)'--indicator-x-position'[Sets the horizontal position of the indicator]' \
+ 	'(--indicator-y-position)'--indicator-y-position'[Sets the vertical position of the indicator]' \
++	'(--indicator-image)'--indicator-image'[Display the given image inside of the indicator]:filename:_files' \
+ 	'(--inside-caps-lock-color)'--inside-caps-lock-color'[Sets the color of the inside of the indicator when Caps Lock is active]:color:' \
+ 	'(--inside-clear-color)'--inside-clear-color'[Sets the color of the inside of the indicator when cleared]:color:' \
+ 	'(--inside-color)'--inside-color'[Sets the color of the inside of the indicator]:color:' \
+diff --git a/include/swaylock.h b/include/swaylock.h
+index ad259b6..51444ba 100644
+--- a/include/swaylock.h
++++ b/include/swaylock.h
+@@ -101,6 +101,9 @@ struct swaylock_state {
+ 	struct wl_shm *shm;
+ 	struct wl_list surfaces;
+ 	struct wl_list images;
++	cairo_surface_t *indicator_image;
++	int indicator_image_width;
++	int indicator_image_height;
+ 	struct swaylock_args args;
+ 	struct swaylock_password password;
+ 	struct swaylock_xkb xkb;
+diff --git a/main.c b/main.c
+index a361c16..add1846 100644
+--- a/main.c
++++ b/main.c
+@@ -834,6 +834,42 @@ static char *join_args(char **argv, int argc) {
+ 	return res;
+ }
+ 
++static void load_indicator_image(char* path, struct swaylock_state *state){
++	if (!strcmp(path, "")) return;
++
++	cairo_surface_t *image;
++#if HAVE_GDK_PIXBUF
++	GError *err = NULL;
++	GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(path, &err);
++	if (!pixbuf) {
++		swaylock_log(LOG_ERROR, "Failed to load indicator image (%s).",
++				err->message);
++		return;
++	}
++	image = gdk_cairo_image_surface_create_from_pixbuf(pixbuf);
++	g_object_unref(pixbuf);
++#else
++	image = cairo_image_surface_create_from_png(path);
++#endif // HAVE_GDK_PIXBUF
++	if (!image) {
++		swaylock_log(LOG_ERROR, "Failed to read indicator image.");
++		return;
++	}
++	if (cairo_surface_status(image) != CAIRO_STATUS_SUCCESS) {
++		swaylock_log(LOG_ERROR, "Failed to read indicator image: %s."
++#if !HAVE_GDK_PIXBUF
++				"\nSway was compiled without gdk_pixbuf support, so only"
++				"\nPNG images can be loaded. This is the likely cause."
++#endif // !HAVE_GDK_PIXBUF
++				, cairo_status_to_string(cairo_surface_status(image)));
++		return;
++	}
++
++	state->indicator_image = image;
++	state->indicator_image_height = cairo_image_surface_get_height (image);
++	state->indicator_image_width = cairo_image_surface_get_width (image);
++}
++
+ static void load_image(char *arg, struct swaylock_state *state) {
+ 	// [[<output>]:]<path>
+ 	struct swaylock_image *image = calloc(1, sizeof(struct swaylock_image));
+@@ -955,6 +991,7 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 		LO_IND_X_POSITION,
+ 		LO_IND_Y_POSITION,
+ 		LO_IND_THICKNESS,
++		LO_IND_IMAGE,
+ 		LO_INSIDE_COLOR,
+ 		LO_INSIDE_CLEAR_COLOR,
+ 		LO_INSIDE_CAPS_LOCK_COLOR,
+@@ -1030,6 +1067,7 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 		{"indicator-thickness", required_argument, NULL, LO_IND_THICKNESS},
+ 		{"indicator-x-position", required_argument, NULL, LO_IND_X_POSITION},
+ 		{"indicator-y-position", required_argument, NULL, LO_IND_Y_POSITION},
++		{"indicator-image", required_argument, NULL, LO_IND_IMAGE},
+ 		{"inside-color", required_argument, NULL, LO_INSIDE_COLOR},
+ 		{"inside-clear-color", required_argument, NULL, LO_INSIDE_CLEAR_COLOR},
+ 		{"inside-caps-lock-color", required_argument, NULL, LO_INSIDE_CAPS_LOCK_COLOR},
+@@ -1154,6 +1192,8 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 			"Sets the horizontal position of the indicator.\n"
+ 		"  --indicator-y-position <y>       "
+ 			"Sets the vertical position of the indicator.\n"
++		"  --indicator-image <path>         "
++			"Display the given image inside of the indicator.\n"
+ 		"  --inside-color <color>           "
+ 			"Sets the color of the inside of the indicator.\n"
+ 		"  --inside-clear-color <color>     "
+@@ -1387,6 +1427,11 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 				state->args.indicator_y_position = atoi(optarg);
+ 			}
+ 			break;
++		case LO_IND_IMAGE:
++			if (state) {
++				load_indicator_image(optarg, state);
++			}
++			break;
+ 		case LO_INSIDE_COLOR:
+ 			if (state) {
+ 				state->args.colors.inside.input = parse_color(optarg);
+diff --git a/render.c b/render.c
+index 655c5b1..394a0ce 100644
+--- a/render.c
++++ b/render.c
+@@ -7,6 +7,12 @@
+ #include "background-image.h"
+ #include "swaylock.h"
+ 
++// glib might or might not have already defined MIN,
++// depending on whether we have pixbuf or not...
++#ifndef MIN
++#define MIN(a, b) ((a) < (b) ? (a) : (b))
++#endif
++
+ #define M_PI 3.14159265358979323846
+ const float TYPE_INDICATOR_RANGE = M_PI / 3.0f;
+ const float TYPE_INDICATOR_BORDER_THICKNESS = M_PI / 128.0f;
+@@ -194,6 +200,34 @@ void render_frame(struct swaylock_surface *surface) {
+ 
+ 	if (state->args.indicator ||
+ 			(upstream_show_indicator && state->auth_state != AUTH_STATE_GRACE)) {
++		// Draw indicator image
++		cairo_surface_t * image = state->indicator_image;
++		if (image) {
++			int height = state->indicator_image_height;
++			int width = state->indicator_image_height;
++			int smallest = MIN(height, width);
++			double radius = arc_radius - arc_thickness * 0.5;
++			double scale = radius * 2 / smallest;
++			double offset = buffer_diameter * 0.5 / scale - smallest * 0.5;
++
++			// Create the arc that clips the image
++			cairo_arc(cairo,
++					buffer_diameter * 0.5,
++					buffer_diameter * 0.5,
++					radius,
++					0, 2 * M_PI);
++
++			// Scale cairo to make image fit the indicator
++			cairo_scale (cairo, scale, scale);
++
++			cairo_set_source_surface(cairo, image, offset, offset);
++
++			// Scale cairo back
++			cairo_scale (cairo, 1 / scale, 1 / scale);
++
++			cairo_fill(cairo);
++		}
++
+ 		// Fill inner circle
+ 		cairo_set_line_width(cairo, 0);
+ 		cairo_arc(cairo, buffer_width / 2, buffer_diameter / 2,
+diff --git a/swaylock.1.scd b/swaylock.1.scd
+index 2b708fd..f7a1c2e 100644
+--- a/swaylock.1.scd
++++ b/swaylock.1.scd
+@@ -141,6 +141,9 @@ Locks your Wayland session.
+ *--indicator-y-position* <y>
+ 	Sets the vertical position of the indicator.
+ 
++*--indicator-image* <path>
++	Display the given image inside of the indicator.
++
+ *--inside-color* <rrggbb[aa]>
+ 	Sets the color of the inside of the indicator.
+ 
