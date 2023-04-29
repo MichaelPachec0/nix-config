@@ -36,7 +36,7 @@
       };
       overlayUnstable = final: prev: { inherit unstable; };
       baseModules = [
-        ({ config, pkgs, ... }: {
+        ({ config, pkgs, lib, ... }: {
           nixpkgs.overlays = [
             overlayUnstable
             inputs.hyprland.overlays.default
@@ -62,6 +62,22 @@
                   ];
 
                 });
+              swaylock-effects-pr = pkgs.unstable.swaylock-effects.overrideAttrs
+                (oldAttrs: {
+                  version =
+                    lib.strings.concatStrings [ oldAttrs.version "-unstable" ];
+                  patches = let
+                    pr_4 = builtins.fetchurl {
+                      url =
+                        "https://patch-diff.githubusercontent.com/raw/jirutka/swaylock-effects/pull/4.patch";
+                      sha256 =
+                        "1d76clgb7f22z492cvp6qvpff3n0mma2mpa130ill8ysx5lqigb9";
+                    };
+                  in (oldAttrs.patches or [ ]) ++ [
+                    pr_4
+                  ];
+                });
+
             })
 
           ];
