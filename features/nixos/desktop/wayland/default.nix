@@ -85,11 +85,12 @@ in {
       # wallpaper tool more info look at swaybg(1)
       nw.swaybg
       # idle deamon info: https://github.com/swaywm/swayidle/blob/master/swayidle.1.scd
-      nw.swayidle
+      unstable.swayidle
       # vanilla locker
       # swaylock
       # info: https://github.com/mortie/swaylock-effects
-      unstable.swaylock-effects
+      # unstable.swaylock-effects
+      swaylock-effects-pr
       # fancy wallpaper manager
       # info: https://github.com/Horus645/swww
       nw.swww

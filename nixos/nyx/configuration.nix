@@ -221,6 +221,25 @@
   };
 
   services.udev = {
+    packages = let
+      command = pkgs.writeShellScript "yubikey-lock.sh" ''
+        ${pkgs.systemd}/bin/loginctl lock-sessions --no-ask-password
+      '';
+    in [
+      (pkgs.writeTextFile {
+        # i2c/ddc
+        name = "i2c-udev-rules";
+        text = ''ACTION=="add", KERNEL="i2c-[0-9]*", TAG+="uaccess"'';
+        destination = "/etc/udev/rules.d/72-i2c.rules";
+      })
+      (pkgs.writeTextFile {
+        name = "yubikey-lock";
+        text = ''
+          ACTION=="remove", ENV{PRODUCT}=="1050",ATTRS{idProduct}=="0010, RUN+=${command}
+        '';
+        destination = "/etc/udev/rules.d/74-yubikey-lock.rules";
+      })
+    ];
     extraRules = ''
       # Remove NVIDIA USB xHCI Host Controller devices, if present
       ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x0c0330", ATTR{power/control}="auto", ATTR{remove}="1"
