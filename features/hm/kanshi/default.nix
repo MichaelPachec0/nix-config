@@ -10,7 +10,7 @@ in {
         hyprctl =
           "${config.wayland.windowManager.hyprland.package}/bin/hyprctl";
       in {
-        enable = true;
+        enable = false;
         package = nw.kanshi;
         systemdTarget = "graphical-session.target";
         profiles = {
