@@ -18,17 +18,11 @@ in {
         seperator-color=00000000
         grace=2
         fade-in=0.2
-        daemonize
         show-failed-attempts
       '';
     in config;
     services.swayidle = let
-      # swaylockSettings =
-      # " --screenshots  --clock --indicator --indicator-radius 100 --indicator-thickness 7 --effect-blur 7x5 --effect-vignette 0.5:0.5 --ring-color bb00cc --key-hl-color 880033 --line-color 00000000 --inside-color 00000088 --separator-color 00000000 --grace 2 --fade-in 0.2 -fF";
-      lockScreen =
-        #"${pkgs.swaylock-effects-pr}/bin/swaylock ${swaylockSettings}";
-        "${pkgs.swaylock-effects-pr}/bin/swaylock";
-      #"${pkgs.unstable.swaylock-effects}/bin/swaylock ${swaylockSettings}";
+      lockScreen = "${pkgs.swaylock-effects-pr}/bin/swaylock -f";
       hyprctl = "${config.wayland.windowManager.hyprland.package}/bin/hyprctl";
     in {
       enable = true;
