@@ -76,6 +76,7 @@ in {
         enable = true;
         source = ./waybar;
       };
+      configFile."shikane/config.toml".source = ../shikane/config.toml;
     };
     services.dunst = {
       enable = true;
