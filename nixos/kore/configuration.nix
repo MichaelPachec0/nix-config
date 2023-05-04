@@ -9,6 +9,7 @@ in {
     ./hardware-configuration.nix
     ../../features/nixos/common
     ../../features/nixos/kernel
+    ../../features/nixos/common/deploy.nix
   ];
 
   # Use the systemd-boot EFI boot loader.
