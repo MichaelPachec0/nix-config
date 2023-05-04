@@ -222,16 +222,19 @@
 
   services.udev = {
     packages = let
-      command = pkgs.writeShellScript "yubikey-lock.sh" ''
-        ${pkgs.systemd}/bin/loginctl lock-sessions --no-ask-password
-      '';
+      command = "${pkgs.systemd}/bin/loginctl";
+#      commandPkg = pkgs.writeShellScript "yubikey-lock.sh" ''
+#        if [ -z "$(lsusb | grep Yubikey)" ] ; then
+#          ${command} lock-sessions --no-ask-password
+#        fi
+#      '';
     in [
       (pkgs.writeTextFile {
         name = "yubikey-lock";
         text = ''
-          ACTION=="remove", ENV{PRODUCT}=="1050",ATTRS{idProduct}=="0010, RUN+=${command}
-          '';
-        destination = "/etc/udev/rules.d/74-yubikey-lock.rules";
+          SUBSYSTEM=="usb", ENV{PRODUCT}=="1050/407/543", ACTION=="remove", RUN+="${command} lock-sessions --no-ask-password"
+        '';
+        destination = "/etc/udev/rules.d/5-yubikey-lock.rules";
       })
     ];
     extraRules = ''
