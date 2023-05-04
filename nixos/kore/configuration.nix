@@ -6,6 +6,12 @@
 let fsOptions = [ "compress=zstd" "noatime" ];
 in {
   imports = [ # Include the results of the hardware scan.
+    inputs.hardware.nixosModules.common-cpu-amd
+    inputs.hardware.nixosModules.common-cpu-amd-pstate
+    inputs.hardware.nixosModules.common-pc
+    { services.xserver.libinput.enable = lib.mkForce false; }
+    inputs.hardware.nixosModules.common-pc-hdd
+    inputs.hardware.nixosModules.common-pc-ssd
     ./hardware-configuration.nix
     ../../features/nixos/common
     ../../features/nixos/kernel
