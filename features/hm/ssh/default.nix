@@ -19,6 +19,8 @@ in {
           "github.com" = mkHost {
             hostname = "github.com";
             user = "git";
+          } // {
+            #extraOptions = { MACs = "hmac-sha2-512"; };
           };
           # Mac-Pro
           # will look into setting either Match or proxy command
@@ -41,6 +43,10 @@ in {
           # local ryzen server prev known as zeus
           # local ip is 192.168.5
           "kore" = mkHost { hostname = "172.30.0.5"; };
+          "deploy@kore" = mkHost {
+            hostname = "172.30.0.5";
+            user = "deploy";
+          };
           # aarch64 master node prev known as atlas
           "hades" = mkHost { hostname = "172.30.0.4"; };
           # in-progress
