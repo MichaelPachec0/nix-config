@@ -65,45 +65,68 @@
           languageserver = {
             # need to enable other language servers, like js, rust, go, elixir, c? c++ 
             nix = {
-              command = "nil";
+              command = "${lib.getExe pkgs.unstable.nil}";
               filetypes = [ "nix" ];
               rootPatterns = [ "flake.nix" ];
               settings = {
-                nil = { formatting = { command = [ "nixpkgs-fmt" ]; }; };
+                nil = {
+                  formatting = {
+                    command = [ "${lib.getExe pkgs.nixpkgs-fmt}" ];
+                  };
+                };
+                binary = "/run/current-system/sw/bin/nix";
               };
             };
-            go = {
-              command = "gopls";
+            gopls = {
+              command = "${lib.getExe pkgs.gopls}";
               filetypes = [ "go" ];
               rootPatterns = [ "go.work" "go.mod" ".vim/" ".git/" ];
               initalizationOptions = { usePlaceholders = true; };
             };
-            c = {
-              command = "ccls";
+            ccls = {
+              command = "${lib.getExe pkgs.ccls}";
               filetypes = [ "c" "cpp" "objc" "objcpp" "cuda" ];
-              rootPatterns = [ "compile_commands.json" ".ccls" ".git" ];
+              rootPatterns =
+                [ "compile_commands.json" ".ccls" ".git" ".ccls-root" ];
               initializationOptions = {
                 cache = { directory = ".ccls-cache"; };
                 client = { snippetSupport = true; };
               };
             };
-            rust-analyzer = { enable = true; };
+            rust-analyzer = {
+              command = "${lib.getExe pkgs.rust-analyzer}";
+              filetypes = [ "rust" ];
+              rootPatters = [ "Cargo.toml" ];
+            };
             pylance = {
               enable = true;
               filetypes = [ "python" ];
-              # "~/.vscode/extensions/ms-python.vscode-pylance-2020.7.3/server/server.bundle.js"
+              env = {
+                ELECTRON_RUN_AS_NODE = 1;
+                VSCODE_NLS_CONFIG = { locale = "en"; };
+              };
               module =
-                "${pkgs.vscode-extensions.ms-python.vscode-pylance}/server/server.bundle.js";
+                "${pkgs.vscode-extensions.ms-python.vscode-pylance}/share/vscode/extensions/MS-python.vscode-pylance/dist/server.bundle.js";
               initalizationOptions = { };
               settings = {
-                python.analysis = {
-                  typeCheckingMode = "basic";
-                  diagnosticMode = "openFilesOnly";
-                  stubPath = "./typings";
-                  autoSearchPaths = true;
-                  extraPaths = [ ];
-                  diagnosticSeverityOverrides = { };
-                  useLibraryCodeForTypes = true;
+                python = {
+                  languageserver = "Pylance";
+                  analysis = {
+                    typeCheckingMode = "strict";
+                    diagnosticMode = "openFilesOnly";
+                    stubPath = "./typings";
+                    autoSearchPaths = true;
+                    extraPaths = [ ];
+                    diagnosticSeverityOverrides = { };
+                    useLibraryCodeForTypes = true;
+                    autoImportCompletions = true;
+                    completeFunctionParens = true;
+                    variableTypes = true;
+                    functionReturnTypes = true;
+                    inlayHints.pytestParameters = true;
+                    enablePytestSupport = true;
+                    autoFormatStrings = true;
+                  };
                 };
               };
             };
