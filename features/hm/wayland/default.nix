@@ -56,6 +56,16 @@ in {
       enable = true;
       platformTheme = "gtk";
     };
+    systemd.user.services = {
+      shikane = {
+        Unit = {
+          Description = "Shikane service";
+          Documentation = [ "man:shikane(1)" "man:shikane(5)" ];
+          PartOf = [ "hyprland-session.target" ];
+        };
+        Service = { ExecStart = "${lib.getExe pkgs.shikane}"; };
+      };
+    };
     dconf.settings = {
       #"org/gnome/desktop/interface" = {
       #cursor-size = 32;
