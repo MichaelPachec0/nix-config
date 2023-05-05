@@ -23,4 +23,39 @@ position = { x = 0, y = 0 }
 scale = 1.0
 exec = [ "hyprctl keyword monitor DP-1, transform,1" ]
 
+[[ profile ]]
+name = "Home Docked"
+[[ profile.output ]]
+match = "eDP-1"
+enable = true
+mode  = { width = 3840, height = 2160, refresh = 59.99 }
+position  = { x = 0, y = 0 }
+scale = 1.5
+[[ profile.output ]]
+match = "/VG279/"
+enable = true
+mode = { width = 1920, height = 1080, refresh = 120, custom = true }
+position  = { x = 2560, y = 0 }
+scale = 1.0
+[[ profile.output ]]
+match = "/ET241Y/"
+enable = true
+mode = { width = 1920, height = 1080, refresh = 60 }
+position = { x = 4480, y = 0 }
+scale = 1.0
 
+
+[[ profile ]]
+name = "Home Only Asus"
+[[ profile.output ]]
+match = "eDP-1"
+enable = true
+mode  = { width = 3840, height = 2160, refresh = 59.99 }
+position  = { x = 0, y = 0 }
+scale = 1.5
+[[ profile.output ]]
+match = "/VG279/"
+enable = true
+mode = { width = 1920, height = 1080, refresh = 120, custom = true }
+position  = { x = 2560, y = 0 }
+scale = 1.0
