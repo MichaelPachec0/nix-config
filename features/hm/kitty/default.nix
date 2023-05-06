@@ -27,6 +27,20 @@
           # TODO: setup later
           # tab_bar_style = "custom";
         };
+        # need to set more keybindings
+        # ref: https://sw.kovidgoyal.net/kitty/layouts/#the-splits-layout
+        keybindings = {
+          # ctrl+shift+\
+          "kitty_mod+0x5c" = "launch --location=vsplit";
+          # ctrl+shift+-
+          "ctrl+shift+minus" = "launch --location=hsplit";
+          # ctrl+ "+"
+          "ctrl+equal" = "change_font_size all +2.0";
+          # ctrl+ "-"
+          "ctrl+minus" = "change_font_size all -2.0";
+          # map ctrl+shift+v paste_from_clipboard
+          # map ctrl+shift+c copy_to_clipboard
+        };
       };
     };
   };
