@@ -33,8 +33,7 @@
   exec-once = waybar
   # enable notification daemon, copy and paste provider, and bluetooth tray
   #exec-once = mako & cliphist & blueman-applet
-    
-  exec-once = cliphist & blueman-applet
+  exec-once = cliphist 
   # Source a file (multi-file configs)
   # source = ~/.config/hypr/myColors.conf
   # exec-once = polychromatic-cli -o brightness -p 100 & polychromatic-cli -o reactive medium
