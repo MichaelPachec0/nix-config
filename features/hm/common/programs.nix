@@ -55,6 +55,10 @@
         rofi = {
           enable = true;
           theme = "gruvbox-dark-hard";
+            # bt
+            rofi-bluetooth
+          ];
+
         };
         firefox = {
           enable = true;
