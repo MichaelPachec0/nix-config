@@ -56,14 +56,29 @@ in {
       enable = true;
       platformTheme = "gtk";
     };
-    systemd.user.services = {
+    systemd.user.services = let
+      unitRules = {
+        After = [ "hyprland-session.target" ];
+        Requisite = [ "hyprland-session.target" ];
+        PartOf = [ "hyprland-session.target" ];
+      };
+      wantedRule = unitRules.After;
+    in {
       shikane = {
         Unit = {
           Description = "Shikane service";
           Documentation = [ "man:shikane(1)" "man:shikane(5)" ];
-          PartOf = [ "hyprland-session.target" ];
+        } // unitRules;
+        Service = {
+          ExecStart = "${lib.getExe pkgs.shikane}";
+          Type = "simple";
+          Restart = "always";
+          Environment = [
+            # TODO: this is needed so that exec in shikane works, need to investigate later why, and if its isolated to my machine,home-manager,NixOS, or systemd.
+            "PATH=/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin"
+          ];
         };
-        Service = { ExecStart = "${lib.getExe pkgs.shikane}"; };
+        Install = { WantedBy = wantedRule; };
       };
     };
     dconf.settings = {
