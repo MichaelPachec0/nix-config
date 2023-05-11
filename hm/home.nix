@@ -44,7 +44,39 @@ in {
     enable = true;
     spicetifyPackage = pkgs.unstable.spicetify-cli;
     windowManagerPatch = true;
-    spotifyPackage = pkgs.unstable.spotify;
+    spotifyPackage = pkgs.unstable.spotify.overrideAttrs (old: rec {
+      version = "1.1.99.878.g1e4ccc6e";
+      pname = "spotify";
+      rev = "62";
+      src = pkgs.fetchurl {
+        url =
+          "https://api.snapcraft.io/api/v1/snaps/download/pOBIoZ2LrCB3rDohMxoYGnbN14EHOgD7_${rev}.snap";
+        sha512 =
+          "339r2q13nnpwi7gjd1axc6z2gycfm9gwz3x9dnqyaqd1g3rw7nk6nfbp6bmpkr68lfq1jfgvqwnimcgs84rsi7nmgsiabv3cz0673wv";
+      };
+
+      unpackPhase = ''
+        runHook preUnpack
+        unsquashfs "$src" '/usr/share/spotify' '/usr/bin/spotify' '/meta/snap.yaml'
+        cd squashfs-root
+        if ! grep -q 'grade: stable' meta/snap.yaml; then
+          # Unfortunately this check is not reliable: At the moment (2018-07-26) the
+          # latest version in the "edge" channel is also marked as stable.
+          echo "The snap package is marked as unstable:"
+          grep 'grade: ' meta/snap.yaml
+          echo "You probably chose the wrong revision."
+          exit 1
+        fi
+        if ! grep -q '${version}' meta/snap.yaml; then
+          echo "Package version differs from version found in snap metadata:"
+          grep 'version: ' meta/snap.yaml
+          echo "While the nix package specifies: ${version}."
+          echo "You probably chose the wrong revision or forgot to update the nix version."
+          exit 1
+        fi
+        runHook postUnpack
+      '';
+    });
     # theming causes extreme slowdown in spotify on 4k, disable for now.
     #theme = spicePkgs.themes.DefaultDynamic;
     # TODO: change to using nix-colors
