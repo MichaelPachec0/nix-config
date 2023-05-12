@@ -90,8 +90,8 @@ in {
         src = pkgs.fetchFromGitHub {
           owner = "jeroentvb";
           repo = "spicetify-power-bar";
-          rev = "dacaffb55b8e06954e8b22ec4f23a597e795d83f";
-          sha256 = "1m30k1j8023yy0n4ia6m95scyi29i88pmx4vyxk6rxr07p3b9c7x";
+          rev = "3b7e0559e91e76975cca41bafdb4ea2990dd468a";
+          sha256 = "05cmx0y69rghs4jwbq307xzn4jbdg9av9ddlq6mw911hgiz6gip2";
         };
       }
       {
@@ -119,7 +119,16 @@ in {
     ];
     # Custom apps dont work on rolling release spotify,
     enabledCustomApps = with spicePkgs.apps; [
-      marketplace
+      {
+        name = "marketplace";
+        src = pkgs.fetchFromGitHub {
+          owner = "spicetify";
+          repo = "spicetify-marketplace";
+          rev = "865ba27733c885a7a4c9ab9e4b896cd8dc8769d2";
+          sha256 = "1xqkl37mw5jirm1ys4mmfp5qfc4zas9wzssfqag7q53qlj2j1v4n";
+        };
+        appendName = false;
+      }
       reddit
       new-releases
       lyrics-plus
