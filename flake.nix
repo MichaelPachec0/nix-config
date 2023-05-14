@@ -71,7 +71,8 @@
                     ./overlays/swaylock_effects/8_change_state_strings.patch
                   ];
                 });
-
+              electron-mail-latest =
+                (prev.callPackage ./pkgs/electron-mail { });
             })
 
           ];
