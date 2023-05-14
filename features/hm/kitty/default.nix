@@ -24,6 +24,10 @@
           bold_italic_font = "JetBrains Mono Bold Italic Nerd Font Complete";
           strip_trailing_spaces = "smart";
           enabled_layouts = "Splits";
+          window_border_width = "4.0pt";
+          inactive_border_color = "#5c5c5c";
+          draw_minimal_borders = "yes";
+          #window_margin_width = "1";
           # TODO: setup later
           # tab_bar_style = "custom";
         };
