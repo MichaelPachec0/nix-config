@@ -43,14 +43,12 @@
       #IO Scheduler
       DISK_IOSCHED = "kyber";
       SATA_LINKPWR_ON_AC = "medium_power";
-      #SATA_LINKPWR_ON_BAT = "min_power";
       SATA_LINKPWR_ON_BAT = "med_power_with_dipm";
       AHCI_RUNTIME_PM_ON_AC = "on";
       AHCI_RUNTIME_PM_ON_BAT = "auto";
 
       # Wifi powersave
-      # WIFI_PWR_ON_AC = "off";
-      WIFI_PWR_ON_AC = "on";
+      WIFI_PWR_ON_AC = "off";
       WIFI_PWR_ON_BAT = "on";
 
       # WOL
@@ -64,10 +62,13 @@
       SOUND_POWER_SAVE_CONTROLLER = "Y";
 
       # Runtime PCI-E PM
+      # The laptop will fail enumerating devices on the usb-c port with this enabled.
+      # a rescan is needed and there is always a chance that it will fail.
+      # rescan can be do with:
+      # sudo sh -c "echo 1 > /sys/bus/pci/rescan"
       RUNTIME_PM_ON_AC = "auto";
       RUNTIME_PM_ON_BAT = "auto";
-      RUNTIME_PM_DISABLE = "00:1d.6 24:00.0 07:02.0 07:01.0 07:00.0 06:00.0";
-      # PCIE_ASPM_ON_AC = "default";
+      # RUNTIME_PM_DISABLE = "00:1d.6 24:00.0 07:02.0 07:01.0 07:00.0 06:00.0";
       PCIE_ASPM_ON_AC = "powersave";
       PCIE_ASPM_ON_BAT = "powersupersave";
 
@@ -75,9 +76,9 @@
 
       # Need to make sure that both yubikey and logitech mouse are enumerated here
       # 046d:c52b - logitech unifiying receiver
-      # 1050:0407 - Yubikey
+      # 1050:0407 - Yubikey ( testing without it)
 
-      USB_DENYLIST = "046d:c52b 1050:0407";
+      USB_DENYLIST = "046d:c52b";
 
       # Include bluetooth in usb powersave
       USB_BLACKLIST_BTUSB = 0;
@@ -92,9 +93,6 @@
       # 0c45:6713 - Webcam
 
       USB_ALLOWLIST = "138a:0091 04f3:24a0 05ac:828d 0c45:6713";
-
-      # suspend usb devices on shutdown
-      # USB_AUTOSUSPEND_DISABLE_ON_SHUTDOWN = 1;
 
     };
   };
