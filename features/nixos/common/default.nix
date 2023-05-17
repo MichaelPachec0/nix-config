@@ -1,5 +1,5 @@
 { config, pkgs, lib, inputs, ... }: {
-  imports = [ ./deploy.nix ];
+  imports = [ ../../../overlays/modules/usbmuxd ];
   options = {
     audio.enable = lib.mkEnableOption "Installs common audio apps.";
     devMachine.enable = lib.mkEnableOption "Install common developer apps.";
@@ -42,12 +42,16 @@
         p7zip
         rpm
 
-        neovim
         # nix generation diff tool
         nvd
         # process mon
         btop
         unstable.home-manager
+
+        #iOS
+        libimobiledevice
+        ifuse
+        idevicerestore
       ]
       ++ lib.optionals (config.audio.enable) [ pavucontrol ncpamixer playerctl ]
       ++ lib.optionals (config.devMachine.enable) [
@@ -59,6 +63,10 @@
         # csv files in terminal
         tidy-viewer
       ] ++ lib.optionals (config.services.hardware.bolt.enable) [ bolt ];
+    services.usbmuxd = {
+      enable = true;
+      package = pkgs.unstable.usbmuxd2;
+    };
   };
 }
 
