@@ -98,7 +98,7 @@ in {
         tartube-yt-dlp
         # brightness control
         brightnessctl
-        shikane
+        unstable.shikane
       ] ++ lib.optionals (config.networking.wireless.iwd.enable) [ iwgtk ];
   };
 }
