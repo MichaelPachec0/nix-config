@@ -42,6 +42,10 @@
             inputs.hyprland.overlays.default
 
             (final: prev: {
+              vimPlugins = prev.vimPlugins // {
+                vimBeGood =
+                  import ./pkgs/vimPlugins/vim-be-good { inherit pkgs; };
+              };
               powertop-git = prev.unstable.powertop.overrideAttrs (oldAttrs: {
                 version = "2.15-pre";
                 src = prev.fetchFromGitHub {
