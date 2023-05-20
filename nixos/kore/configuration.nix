@@ -15,9 +15,10 @@ in {
     ./hardware-configuration.nix
     ../../features/nixos/common
     ../../features/nixos/kernel
+    ../../features/nixos/virtualization
     ../../features/nixos/common/deploy.nix
   ];
-
+  vfio.enable = true;
   # Use the systemd-boot EFI boot loader.
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = false;
