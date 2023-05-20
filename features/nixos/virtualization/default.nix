@@ -29,7 +29,11 @@ in {
       libvirtd = {
         enable = true;
         qemu = {
-          ovmf.enable = true;
+          ovmf = {
+            enable = true;
+            packages =
+              [ pkgs.OVMFFull.fd pkgs.pkgsCross.aarch64-multiplatform.OVMF.fd ];
+          };
           swtpm = { enable = true; };
         };
       };
