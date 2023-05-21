@@ -14,7 +14,7 @@ in {
       kernelParams = lib.optionals (amd) [
         "amd_iommu=on"
         "kvm_amd.npt=1"
-        "kvm_amd.avic=1"
+        #"kvm_amd.avic=1"
         "kvm_amd.nested=1"
         "kvm.ignore_msrs=1"
         "kvm.report_ignored_msrs=0"
