@@ -29,7 +29,9 @@ in {
 
       libvirtd = {
         enable = true;
+        package = pkgs.unstable.libvirt;
         qemu = {
+          package = pkgs.unstable.qemu;
           ovmf = {
             enable = true;
             packages =
