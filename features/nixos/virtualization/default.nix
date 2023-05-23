@@ -44,7 +44,7 @@ in {
         };
       };
     };
-    environment.systemPackages = with pkgs; [ libvirt qemu OVMFFull pciutils ];
+    environment.systemPackages = with pkgs; [ pciutils virt-manager ];
   };
 }
 
