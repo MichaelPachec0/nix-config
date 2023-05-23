@@ -29,6 +29,7 @@ in {
 
       libvirtd = {
         enable = true;
+        allowedBridges = [ "br-vm" ];
         package = pkgs.unstable.libvirt;
         qemu = {
           package = pkgs.unstable.qemu;
