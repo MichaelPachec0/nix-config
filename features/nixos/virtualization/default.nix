@@ -35,8 +35,12 @@ in {
           package = pkgs.unstable.qemu;
           ovmf = {
             enable = true;
-            packages =
-              [ pkgs.OVMF.fd pkgs.pkgsCross.aarch64-multiplatform.OVMF.fd ];
+            packages = [
+              # NOTE: OVMFFull DOES NOT WORK ON MY SYSTEM FOR SOME REASON < DEBUG ASAP
+              # VM WONT BOOT WITH CSM ENABLED
+              (pkgs.unstable.OVMFFull.override { csmSupport = false; }).fd
+              pkgs.pkgsCross.aarch64-multiplatform.OVMF.fd
+            ];
           };
           swtpm = {
             enable = true;
