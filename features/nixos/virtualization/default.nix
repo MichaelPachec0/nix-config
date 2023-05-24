@@ -42,9 +42,6 @@ in {
               pkgs.pkgsCross.aarch64-multiplatform.OVMF.fd
             ];
           };
-          swtpm = {
-            enable = true;
-          };
           swtpm = { enable = true; };
         };
       };
