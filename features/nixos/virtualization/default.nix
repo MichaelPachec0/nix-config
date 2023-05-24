@@ -22,7 +22,7 @@ in {
       ] ++ lib.optionals (intel) [
         # TODO: other options?
         "kvm_intel.nested=1"
-      ] ++ [ "vfio-pci.ids=10de:1e82,10de:10f8,10de:1ad8,10de:1ad9" ];
+      ];
     };
     virtualisation = {
       # as understood, since this will be headless and with no x11/wayland, ths will be unneeded
