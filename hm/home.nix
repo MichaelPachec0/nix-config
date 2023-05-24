@@ -77,10 +77,9 @@ in {
         runHook postUnpack
       '';
     });
+    #spotifyPackage = pkgs.unstable.spotify;
     # theming causes extreme slowdown in spotify on 4k, disable for now.
-    #theme = spicePkgs.themes.DefaultDynamic;
     # TODO: change to using nix-colors
-    # colorScheme = 
     enabledExtensions = with spicePkgs.extensions; [
       copyToClipboard
       showQueueDuration
@@ -132,8 +131,19 @@ in {
       reddit
       new-releases
       lyrics-plus
+      {
+        name = "eternal-jukebox";
+        src = pkgs.fetchFromGitHub {
+          owner = "Pithaya";
+          repo = "spicetify-apps-dist";
+          rev = "ed97b5f85f646e0c5d5bf26b9bfc3f5baa52c6b0";
+          sha256 = "0i5qbrwxx7rx2yij8iadrmqz937j0rfsf3s17nr7b0f985vhzh99";
+        };
+        appendName = false;
+      }
     ];
-
+    # spotify gruvbox theme
+    theme = spicePkgs.themes.Onepunch;
   };
   # Nicely reload system units when changing configs
   systemd.user.startServices = "sd-switch";
