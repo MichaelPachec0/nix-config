@@ -18,7 +18,6 @@ in {
         "kvm_amd.nested=1"
         "kvm.ignore_msrs=1"
         "kvm.report_ignored_msrs=0"
-        "tsc=nowatchdog"
       ] ++ lib.optionals (intel) [
         # TODO: other options?
         "kvm_intel.nested=1"
