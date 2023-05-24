@@ -142,7 +142,8 @@ in {
         appendName = false;
       }
     ];
-
+    # spotify gruvbox theme
+    theme = spicePkgs.themes.Onepunch;
   };
   # Nicely reload system units when changing configs
   systemd.user.startServices = "sd-switch";
