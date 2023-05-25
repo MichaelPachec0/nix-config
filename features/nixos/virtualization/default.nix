@@ -4,7 +4,11 @@ let
   amd = builtins.elem "kvm-amd" config.boot.kernelModules;
   cfg = config;
 in {
-  options = { vfio.enable = lib.mkEnableOption "Configure for vfio."; };
+  options = {
+    vfio.enable = lib.mkEnableOption "Configure for vfio.";
+    kernel.patch.sm.enable = lib.mkEnableOption
+      "Kernel patch to workaround faulty FLR for Sillicon Motion nvme controllers.";
+  };
 
   config = lib.mkIf (cfg.vfio.enable) {
     boot = {
@@ -46,6 +50,13 @@ in {
       };
     };
     environment.systemPackages = with pkgs; [ pciutils virt-manager ];
+
+    boot.kernelPatches = lib.optionals cfg.kernel.patch.sm.enable [
+      {
+        name = "SM2622en flr workaround";
+        patch = ./sm2262-nvme-subsystem-reset.diff;
+      }
+    ];
   };
 }
 
