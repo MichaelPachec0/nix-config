@@ -59,6 +59,10 @@ in {
         name = "SM2622en flr workaround";
         patch = ./sm2262-nvme-subsystem-reset.diff;
       }
+      {
+        name = "amd-noflr";
+        patch = ./amd-noflr.patch;
+      }
     ];
   };
 }
