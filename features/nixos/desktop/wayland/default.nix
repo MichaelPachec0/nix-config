@@ -24,7 +24,54 @@ in {
         [ "https://nixpkgs-wayland.cachix.org" "https://hyprland.cachix.org" ];
     };
     nixpkgs.overlays = [
-      (final: prev: { waybar = nw.waybar; })
+      #(final: prev: { waybar = pkgs.unstable.waybar.override { withMediaPlayer = true;}; })
+      # waybar-hyprland will take on these options.
+      # TODO: might be better to shadow waybar-hyprland than the parent package.
+      # TODO #2: see if i can create patch that will accept both sway and hyprland commands.
+      (final: prev: {
+        waybar = pkgs.unstable.waybar.overrideAttrs (old:
+          let
+            date = "5-15-2023";
+            cava = prev.fetchFromGitHub {
+              owner = "LukashonakV";
+              repo = "cava";
+              rev = "0.8.4";
+              sha256 = "0hi5cam7gfyziplnlf1mfq8j263ggqxib8rl79bmz29b4789razb";
+            };
+            rev = "7b704071ff70d4888517c5018afe6b8783687888";
+            shortRev = builtins.substring 0 7 "${rev}";
+            version = "0.9.17";
+          in {
+            withMediaPlayer = true;
+
+            version = "${version}+date=${date}_${shortRev}";
+
+            nativeBuildInputs = (old.nativeBuildInputs or [ ])
+              ++ (with pkgs; [ cmake ]);
+
+            propagatedBuildInputs = (old.propagatedBuildInputs or [ ])
+              ++ (with pkgs; [
+                iniparser
+                fftw
+                ncurses
+                alsa-lib
+                libpulseaudio
+                portaudio
+                pipewire
+                SDL2
+              ]);
+            src = prev.fetchFromGitHub {
+              inherit rev;
+              owner = "Alexays";
+              repo = "Waybar";
+              sha256 = "SDi4KVnDwAeFo9HrnaYv1kkUS7sYROxttHSN4vsg2vA=";
+            };
+            postUnpack = ''
+              rm -rf source/subprojects/cava.wrap
+              ln -s ${cava} source/subprojects/cava
+            '';
+          });
+      })
 
     ];
 
