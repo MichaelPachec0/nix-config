@@ -41,6 +41,7 @@ in {
             packages = [
               # NOTE: OVMFFull DOES NOT WORK ON MY SYSTEM FOR SOME REASON < DEBUG ASAP
               # VM WONT BOOT WITH CSM ENABLED
+              # TODO: seperate fd's for all the options, or at least have the ability to use qemu's images for this
               (pkgs.unstable.OVMFFull.override { csmSupport = false; }).fd
               pkgs.pkgsCross.aarch64-multiplatform.OVMF.fd
             ];
@@ -54,6 +55,16 @@ in {
     };
     environment.systemPackages = with pkgs; [ pciutils virt-manager ];
 
+    environment.etc = {
+      "ovmf/edk2-x86_64-secure-code.fd" = {
+        source =
+          "${cfg.virtualisation.libvirtd.qemu.package}/share/qemu/edk2-x86_64-secure-code.fd";
+      };
+      "ovmf/edk2-i386-vars.fd" = {
+        source =
+          "${cfg.virtualisation.libvirtd.qemu.package}/share/qemu/edk2-i386-vars.fd";
+      };
+    };
     boot.kernelPatches = lib.optionals cfg.kernel.patch.sm.enable [
       {
         name = "SM2622en flr workaround";
