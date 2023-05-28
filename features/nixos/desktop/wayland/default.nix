@@ -172,6 +172,8 @@ in {
       nw.wlr-randr
       ## wayland pip video player (not part of the nix community wayland repo) but added here for wayland only config
       qt-video-wlr
+      # automation?
+      ydotool
     ];
     systemd.user.units."dunst" = { wantedBy = [ "graphical-session.target" ]; };
   };

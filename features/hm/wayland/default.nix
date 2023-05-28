@@ -62,6 +62,14 @@
       };
       wantedRule = unitRules.After;
     in {
+      ydotool = {
+        Unit = {
+          Description = "ydotool user service";
+          Documentation = [ "man:ydotool(1)" ];
+        };
+        Service = { ExecStart = "${pkgs.ydotool}/bin/ydotoold"; };
+        Install = { WantedBy = [ "default.target" ]; };
+      };
       shikane = {
         Unit = {
           Description = "Shikane service";
