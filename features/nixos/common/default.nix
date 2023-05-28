@@ -6,6 +6,10 @@
   };
   config = {
     nixpkgs.overlays = [ inputs.nix-your-shell.overlays.default ];
+    programs.neovim = {
+      enable = true;
+      defaultEditor = true;
+    };
 
     # Enable tor
     services.tor = {
