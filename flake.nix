@@ -24,6 +24,8 @@
       url = "github:MercuryTechnologies/nix-your-shell";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nixneovimplugins.url = "github:jooooscha/nixpkgs-vim-extra-plugins";
+    nixneovim.url = "github:nixneovim/nixneovim";
 
   };
   outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, ... }@inputs:
@@ -83,12 +85,15 @@
         })
       ];
       nixosModules = baseModules ++ [
+        inputs.nixneovim.nixosModules.nixos-22-11
         home-manager.nixosModules.home-manager
         {
           home-manager.useGlobalPkgs = true;
           home-manager.useUserPackages = true;
         }
       ];
+      homeManagerModules = baseModules
+        ++ [ inputs.nixneovim.nixosModules.homeManager-22-11 ];
     in {
       # overlays = import ./overlays {inherit inputs;};
       nixosConfigurations = with nixpkgs.lib; {
@@ -109,7 +114,7 @@
         in homeManagerConfiguration {
           pkgs = nixpkgs.legacyPackages.${system};
           extraSpecialArgs = { inherit inputs outputs; };
-          modules = baseModules ++ [ ./hm/home.nix ];
+          modules = homeManagerModules ++ [ ./hm/home.nix ];
         };
       };
     };
