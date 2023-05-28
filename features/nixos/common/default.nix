@@ -7,6 +7,24 @@
   config = {
     nixpkgs.overlays = [ inputs.nix-your-shell.overlays.default ];
 
+    # Enable tor
+    services.tor = {
+      enable = true;
+      client = {
+        enable = true;
+        socksListenAddress = {
+          addr = "127.0.0.1";
+          port = 9050;
+          IsolateDestAddr = true;
+        };
+        dns.enable = true;
+      };
+      settings = { ClientUseIPv4 = true; };
+    };
+    services.privoxy = {
+      enable = true;
+      enableTor = true;
+    };
     environment.systemPackages = with pkgs;
       [
         nix-your-shell
