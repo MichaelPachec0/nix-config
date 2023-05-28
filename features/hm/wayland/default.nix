@@ -1,6 +1,4 @@
-{ config, lib, pkgs, inputs, ... }:
-let nw = inputs.nixpkgs-wayland.packages.${pkgs.system};
-in {
+{ config, lib, pkgs, ... }: {
   imports = [ ./swayidle.nix ];
   config = {
     wayland.windowManager.hyprland = {
@@ -70,7 +68,7 @@ in {
           Documentation = [ "man:shikane(1)" "man:shikane(5)" ];
         } // unitRules;
         Service = {
-          ExecStart = "${lib.getExe pkgs.shikane}";
+          ExecStart = "${lib.getExe pkgs.unstable.shikane}";
           Type = "simple";
           Restart = "always";
           Environment = [
@@ -101,7 +99,8 @@ in {
         enable = true;
         source = ./waybar;
       };
-      configFile."shikane/config.toml".source = ../shikane/config.toml;
+      configFile."shikane/config.toml".text =
+        import ../shikane/config.toml.nix { inherit config lib pkgs; };
     };
     services.dunst = {
       enable = true;
