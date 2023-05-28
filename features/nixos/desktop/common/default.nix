@@ -30,6 +30,22 @@ in {
       enable = true;
       package = pkgs.firefox-devedition-bin;
     };
+    nixpkgs.overlays = [
+      (final: prev: {
+        wpsoffice = prev.wpsoffice.overrideAttrs (old: rec {
+          version = "11.1.0.11698";
+          src = prev.fetchurl {
+            url =
+              "https://wdl1.pcfg.cache.wpscdn.com/wpsdl/wpsoffice/download/linux/${
+                lib.last (lib.splitString "." version)
+              }/wps-office_${version}.XA_amd64.deb";
+            sha256 = "sha256-spqxQK/xTE8yFPmGbSbrDY1vSxkan2kwAWpCWIExhgs=";
+            curlOpts =
+              "--resolve wdl1.pcfg.cache.wpscdn.com:443:104.17.187.189";
+          };
+        });
+      })
+    ];
     environment.systemPackages = with pkgs;
       [
         nmap
@@ -53,6 +69,7 @@ in {
 
         # mail clients
         neomutt
+        electron-mail-latest
 
         # video players
         mpv
