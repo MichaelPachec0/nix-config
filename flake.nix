@@ -5,8 +5,14 @@
     nixpkgs = { url = "nixpkgs/nixos-22.11"; };
     nixpkgs-unstable = { url = "nixpkgs/nixos-unstable"; };
     home-manager = {
-      url = "github:nix-community/home-manager";
-      inputs.nixpkgs.follows = "nixpkgs";
+      # TODO: Decide whether to either to move on using 23.05 (once it gets stable) or revert back to hm-22.11 or the hackiest
+      # way, overlay the file with one from unstable.
+      # it will probably be easier to move to 23.05 as there are some options that are not avaible in the hm-22.11 branch.
+      # For now, stick to a revsion before the breaking change. This should not be a problem since following an unstable channel
+      # should give the required function with the right arguments (unless misunderstood).
+      url =
+        "github:nix-community/home-manager/6a1922568337e7cf21175213d3aafd1ac79c9a2e";
+      inputs.nixpkgs.follows = "/nixpkgs-unstable";
     };
     hardware = { url = "github:nixos/nixos-hardware/master"; };
 
