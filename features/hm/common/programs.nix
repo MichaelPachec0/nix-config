@@ -55,6 +55,7 @@
         rofi = {
           enable = true;
           theme = "gruvbox-dark-hard";
+          plugins = with pkgs; [
             # bt
             rofi-bluetooth
           ];
