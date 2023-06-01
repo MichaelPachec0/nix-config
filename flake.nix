@@ -81,12 +81,12 @@
                     ./overlays/swaylock_effects/37_cairo_bilinear.patch
                     ./overlays/swaylock_effects/38_red_screen_fix.patch
                     ./overlays/swaylock_effects/8_change_state_strings.patch
+                    ./overlays/swaylock_effects/32_unlock_on_USR1_accept_input.patch
                   ];
                 });
               electron-mail-latest =
                 (prev.callPackage ./pkgs/electron-mail { });
             })
-
           ];
         })
       ];
