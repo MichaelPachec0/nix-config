@@ -371,6 +371,9 @@
     gcc_multi
     openssl
     niv
+    # intel specific tools
+    inteltool
+    intel-gpu-tools
     # to format nix files
     nixfmt
     # create docs from nix files
@@ -416,6 +419,7 @@
     common.enable = true;
     wayland.laptop = true;
   };
+
   virtualisation = {
     podman = {
       enable = true;
