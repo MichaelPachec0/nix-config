@@ -1,0 +1,118 @@
+From aaccf36f7f8fd84febb1f8f3a2d2a6040c2a027c Mon Sep 17 00:00:00 2001
+From: mati <matias@matiascontilde.com>
+Date: Thu, 9 Feb 2023 11:49:08 +0100
+Subject: [PATCH 1/2] Unlock the screen on SIGUSR1 From
+ dafbef3ade130317ad0d941f9ce312bb68a708df
+
+---
+ loop.c         |  2 +-
+ main.c         | 19 +++++++++++++++++++
+ swaylock.1.scd |  5 +++++
+ 3 files changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/loop.c b/loop.c
+index 674b31078..8cbfaa6fc 100644
+--- a/loop.c
++++ b/loop.c
+@@ -82,7 +82,7 @@ void loop_poll(struct loop *loop) {
+ 	}
+ 
+ 	int ret = poll(loop->fds, loop->fd_length, ms);
+-	if (ret < 0) {
++	if (ret < 0 && errno != EINTR) {
+ 		swaylock_log_errno(LOG_ERROR, "poll failed");
+ 		exit(1);
+ 	}
+diff --git a/main.c b/main.c
+index a361c16e3..1f196c231 100644
+--- a/main.c
++++ b/main.c
+@@ -5,6 +5,7 @@
+ #include <fcntl.h>
+ #include <getopt.h>
+ #include <poll.h>
++#include <signal.h>
+ #include <stdbool.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -1760,6 +1761,16 @@ static void timer_render(void *data) {
+ 	loop_add_timer(state->eventloop, 1000, timer_render, state);
+ }
+ 
++static int sigusr_fds[2] = {-1, -1};
++
++void do_sigusr(int sig) {
++	(void)write(sigusr_fds[1], "1", 1);
++}
++
++static void term_in(int fd, short mask, void *data) {
++	state.run_display = false;
++}
++
+ int main(int argc, char **argv) {
+ 	swaylock_log_init(LOG_ERROR);
+ 	initialize_pw_backend(argc, argv);
+@@ -1839,6 +1850,11 @@ int main(int argc, char **argv) {
+ 		state.auth_state = AUTH_STATE_GRACE;
+ 	}
+ 
++	if (pipe(sigusr_fds) != 0) {
++		swaylock_log(LOG_ERROR, "Failed to pipe");
++		return 1;
++	}
++
+ #ifdef __linux__
+ 	// Most non-linux platforms require root to mlock()
+ 	if (mlock(state.password.buffer, sizeof(state.password.buffer)) != 0) {
+@@ -1949,6 +1965,9 @@ int main(int argc, char **argv) {
+ 
+ 	loop_add_timer(state.eventloop, 1000, timer_render, &state);
+ 
++	loop_add_fd(state.eventloop, sigusr_fds[0], POLLIN, term_in, NULL);
++	signal(SIGUSR1, do_sigusr);
++
+ 	if (state.args.fade_in) {
+ 		loop_add_timer(state.eventloop, state.args.fade_in, end_allow_fade_period, &state);
+ 	}
+diff --git a/swaylock.1.scd b/swaylock.1.scd
+index 2b708fd16..98092bfc0 100644
+--- a/swaylock.1.scd
++++ b/swaylock.1.scd
+@@ -252,6 +252,11 @@ or an *uint32\_t swaylock_pixel(uint32\_t pix, int x, int y, int width, int heig
+ *--time-effects*
+ 	Measure the time it takes to run each effect.
+ 
++# SIGNALS
++
++*SIGUSR1*
++	Unlock the screen and exit.
++
+ # AUTHORS
+ 
+ Maintained by Martin Dørum, forked from upstream Swaylock which is maintained
+
+From b4c3ade55e1a341cbaead4f4b801e97c9b727faf Mon Sep 17 00:00:00 2001
+From: mati <matias@matiascontilde.com>
+Date: Thu, 9 Feb 2023 12:14:10 +0100
+Subject: [PATCH 2/2] Accept input while validating From
+ 7d6d2a8cae0b496290c94d1678edd3e7a0acc518
+
+---
+ password.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/password.c b/password.c
+index a77ae5c20..891f0f359 100644
+--- a/password.c
++++ b/password.c
+@@ -113,10 +113,6 @@ void swaylock_handle_key(struct swaylock_state *state,
+ 		state->run_display = false;
+ 		return;
+ 	}
+-	// Ignore input events if validating
+-	if (state->auth_state == AUTH_STATE_VALIDATING) {
+-		return;
+-	}
+ 
+ 	switch (keysym) {
+ 	case XKB_KEY_KP_Enter: /* fallthrough */
