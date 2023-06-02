@@ -40,6 +40,12 @@ in {
               PreferredAuthentications = "publickey";
             };
           };
+          # in-progress
+          "rescue@khaos" = mkHost {
+            hostname = "172.30.0.20";
+            user = "root";
+            port = 2222;
+          };
           "charon" = mkHost {
             hostname = "172.30.0.8";
             user = "root";
@@ -58,12 +64,6 @@ in {
           };
           # aarch64 master node prev known as atlas
           "hades" = mkHost { hostname = "172.30.0.4"; };
-          # in-progress
-          "khaos-rescue" = mkHost {
-            hostname = "172.30.0.20";
-            user = "root";
-            port = 2222;
-          };
         };
       };
     };
