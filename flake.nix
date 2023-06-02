@@ -2,7 +2,7 @@
   description = " Nix infrastructure config";
 
   inputs = {
-    nixpkgs = { url = "nixpkgs/nixos-22.11"; };
+    nixpkgs = { url = "nixpkgs/nixos-23.05"; };
     nixpkgs-unstable = { url = "nixpkgs/nixos-unstable"; };
     home-manager = {
       # TODO: Decide whether to either to move on using 23.05 (once it gets stable) or revert back to hm-22.11 or the hackiest
@@ -11,8 +11,9 @@
       # For now, stick to a revsion before the breaking change. This should not be a problem since following an unstable channel
       # should give the required function with the right arguments (unless misunderstood).
       url =
-        "github:nix-community/home-manager/6a1922568337e7cf21175213d3aafd1ac79c9a2e";
-      inputs.nixpkgs.follows = "/nixpkgs-unstable";
+        # if using 22.11
+        #"github:nix-community/home-manager/6a1922568337e7cf21175213d3aafd1ac79c9a2e";
+        "github:nix-community/home-manager";
     };
     hardware = { url = "github:nixos/nixos-hardware/master"; };
 
