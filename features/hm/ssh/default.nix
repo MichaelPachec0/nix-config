@@ -40,6 +40,16 @@ in {
               PreferredAuthentications = "publickey";
             };
           };
+          # in-progress
+          "rescue@khaos" = mkHost {
+            hostname = "172.30.0.20";
+            user = "root";
+            port = 2222;
+          };
+          "charon" = mkHost {
+            hostname = "172.30.0.8";
+            user = "root";
+          };
           # local ryzen server prev known as zeus
           # local ip is 192.168.5
           "kore" = mkHost { hostname = "172.30.0.5"; };
@@ -49,12 +59,6 @@ in {
           };
           # aarch64 master node prev known as atlas
           "hades" = mkHost { hostname = "172.30.0.4"; };
-          # in-progress
-          "khaos-rescue" = mkHost {
-            hostname = "172.30.0.20";
-            user = "root";
-            port = 2222;
-          };
         };
       };
     };
