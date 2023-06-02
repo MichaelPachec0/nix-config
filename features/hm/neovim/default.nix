@@ -1,6 +1,7 @@
 { config, lib, pkgs, ... }: {
   options = {
-    devMachine.enable = lib.mkEnableOption "Enables lsp's for neovim.";
+    devMachine.enable = lib.mkEnableOption
+      "Enables developer configuration. This includes certain packages as well as configuration.";
   };
   config = {
     home.packages = with pkgs;
