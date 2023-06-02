@@ -88,6 +88,8 @@
       coc = {
         enable = true;
         settings = {
+          semanticTokens = { filetypes = [ ]; };
+          coc.preferences.formatOnSaveFiletypes = [ "nix" ];
           languageserver = {
             # need to enable other language servers, like js, rust, go, elixir, c? c++ 
             nix = {
