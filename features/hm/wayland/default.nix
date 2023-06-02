@@ -115,9 +115,7 @@
     };
     services.dunst = {
       enable = true;
-      package = nw.dunst;
-
+      package = pkgs.unstable.dunst;
     };
-
   };
 }
