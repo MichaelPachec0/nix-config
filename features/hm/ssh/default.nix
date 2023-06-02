@@ -65,6 +65,8 @@ in {
           };
           # aarch64 master node prev known as atlas
           "hades" = mkHost { hostname = "172.30.0.4"; };
+          # vm: local ip is 192.168.1.8
+          "odin" = mkHost { hostname = "172.30.0.11"; };
         };
       };
     };
