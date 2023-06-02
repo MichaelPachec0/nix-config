@@ -86,6 +86,9 @@
         };
         Install = { WantedBy = wantedRule; };
       };
+      # for later reading
+      # https://pychao.com/2021/02/24/difference-between-partof-and-bindsto-in-a-systemd-unit/
+      dunst = { Unit = unitRules; };
     };
     dconf.settings = {
       #"org/gnome/desktop/interface" = {
