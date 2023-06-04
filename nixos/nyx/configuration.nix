@@ -424,7 +424,7 @@
     podman = {
       enable = true;
       dockerCompat = true;
-      defaultNetwork.dnsname.enable = true;
+      defaultNetwork = { settings = { dns_enabled = true; }; };
     };
     libvirtd = { enable = true; };
     kvmgt = { enable = true; };
