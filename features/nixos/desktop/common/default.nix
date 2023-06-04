@@ -53,7 +53,7 @@ in {
         keepassxc
         # telegram
         tdesktop
-        kotatogram-desktop
+        #kotatogram-desktop
 
         # vnc
         unstable.wayvnc
