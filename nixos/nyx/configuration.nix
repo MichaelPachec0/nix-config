@@ -374,7 +374,7 @@
     curl
     nerdfonts
     gcc_multi
-    openssl
+    #openssl
     niv
     # intel specific tools
     inteltool
