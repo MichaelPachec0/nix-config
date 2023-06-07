@@ -17,7 +17,7 @@
           size = 9;
         };
         settings = {
-          scrollback_lines = 10000;
+          scrollback_lines = 100000;
           enable_audio_bell = true;
           bold_font = "JetBrains Mono Bold Nerd Font Complete";
           italic_font = "JetBrains Mono SemiBold Italic Nerd Font Complete";
