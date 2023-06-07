@@ -46,6 +46,7 @@
     systemd-boot = {
       enable = true;
       memtest86.enable = true;
+      consoleMode = "auto";
     };
     efi.canTouchEfiVariables = false;
   };
