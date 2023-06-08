@@ -228,16 +228,33 @@
   services.udev = {
     packages = let
       command = "${pkgs.systemd}/bin/loginctl";
-#      commandPkg = pkgs.writeShellScript "yubikey-lock.sh" ''
-#        if [ -z "$(lsusb | grep Yubikey)" ] ; then
-#          ${command} lock-sessions --no-ask-password
-#        fi
-#      '';
+      check = pkgs.writeShellScriptBin "yubicheck.sh" ''
+        #!${pkgs.stdenv.shell}
+        sleep 1
+        check=$(${
+          lib.getExe pkgs.yubikey-manager
+        } list | ${pkgs.busybox}/bin/wc -l)
+        if [[ $check -lt 1 ]]; then
+          ${command} lock-sessions --no-ask-password
+        fi
+      '';
+      # Reminder to test unlock with sleep timer so that all the screens are init'ed before the
+      # screenlock is killed.
+      # NOTE: will probably use this but with a check if swaylock is already running
+      # ps aux | grep swaylock | wc -l 
+      #   is going to be >=2 when swaylock is not running else it is running
+      #      commandPkg = pkgs.writeShellScript "yubikey-lock.sh" ''
+      #        if [ -z "$(lsusb | grep Yubikey)" ] ; then
+      #          ${command} lock-sessions --no-ask-password
+      #        fi
+      #      '';
     in [
       (pkgs.writeTextFile {
         name = "yubikey-lock";
         text = ''
-          SUBSYSTEM=="usb", ENV{PRODUCT}=="1050/407/543", ACTION=="remove", RUN+="${command} lock-sessions --no-ask-password"
+          SUBSYSTEM=="usb", ENV{PRODUCT}=="1050/407/543", ACTION=="remove", RUN+="${
+            lib.getExe check
+          }"
         '';
         destination = "/etc/udev/rules.d/5-yubikey-lock.rules";
       })
