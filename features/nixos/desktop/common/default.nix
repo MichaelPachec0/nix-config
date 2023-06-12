@@ -53,7 +53,9 @@ in {
         keepassxc
         # telegram
         tdesktop
-        kotatogram-desktop
+        # the package below still uses openssl 1.1.x, until 
+        # https://github.com/NixOS/nixpkgs/pull/234359 gets merged, keep commented out.
+        #kotatogram-desktop
 
         # vnc
         unstable.wayvnc

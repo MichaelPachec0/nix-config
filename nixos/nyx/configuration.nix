@@ -46,6 +46,7 @@
     systemd-boot = {
       enable = true;
       memtest86.enable = true;
+      consoleMode = "auto";
     };
     efi.canTouchEfiVariables = false;
   };
@@ -83,6 +84,10 @@
     "/dev/disk/by-uuid/c20f4b7d-5f67-4f24-b796-c6d1446ecd26";
 
   kernel-mod.ntfs3.enable = true;
+  console = {
+    font = "${pkgs.terminus_font}/share/consolefonts/ter-v32n.psf.gz";
+    earlySetup = true;
+  };
   audio.enable = true;
   devMachine.enable = true;
   nixpkgs = {
@@ -369,7 +374,7 @@
     curl
     nerdfonts
     gcc_multi
-    openssl
+    #openssl
     niv
     # intel specific tools
     inteltool
@@ -409,11 +414,20 @@
   environment.pathsToLink = [ "/share/zsh" ];
 
   fonts = {
-    fonts = with pkgs; [ noto-fonts noto-fonts-emoji nerdfonts powerline ];
+    fonts = with pkgs; [
+      noto-fonts
+      noto-fonts-emoji
+      (nerdfonts.overrideAttrs (prev: { enableWindowsFonts = true; }))
+      winePackages.fonts
+      vistafonts
+      powerline
+    ];
     enableDefaultFonts = true;
+    fontconfig = {
+      subpixel = { lcdfilter = "default"; };
+      defaultFonts.monospace = lib.mkForce [ "Source Code Pro for Powerline" ];
 
-    fontconfig.defaultFonts.monospace =
-      lib.mkForce [ "Source Code Pro for Powerline" ];
+    };
   };
   desktop = {
     common.enable = true;
@@ -424,7 +438,7 @@
     podman = {
       enable = true;
       dockerCompat = true;
-      defaultNetwork.dnsname.enable = true;
+      defaultNetwork = { settings = { dns_enabled = true; }; };
     };
     libvirtd = { enable = true; };
     kvmgt = { enable = true; };
