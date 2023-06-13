@@ -11,7 +11,11 @@ in {
       };
     };
   };
-  imports = [ inputs.hyprland.nixosModules.default ];
+  imports = [
+  inputs.hyprland.nixosModules.default
+  "${inputs.slh}/nixos/modules/services/systemd-lock-handler"
+  ];
+
   config = let nw = inputs.nixpkgs-wayland.packages.${pkgs.system};
   in lib.mkIf (cfg.wayland.laptop || cfg.wayland.desktop) {
     nix = {
@@ -74,6 +78,9 @@ in {
       })
 
     ];
+    services.systemd-lock-handler = {
+      enable = true;
+    };
 
     programs.hyprland = {
       enable = true;
