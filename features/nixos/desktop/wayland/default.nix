@@ -12,8 +12,8 @@ in {
     };
   };
   imports = [
-  inputs.hyprland.nixosModules.default
-  "${inputs.slh}/nixos/modules/services/systemd-lock-handler"
+    inputs.hyprland.nixosModules.default
+    ../../../../overlays/modules/systemd-lock-handler
   ];
 
   config = let nw = inputs.nixpkgs-wayland.packages.${pkgs.system};
