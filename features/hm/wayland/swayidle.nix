@@ -1,28 +1,32 @@
-{ inputs, pkgs, config, ... }:
-let nw = inputs.nixpkgs-wayland.packages.${pkgs.system};
+{ inputs, pkgs, config, lib, ... }:
+let
+  nw = inputs.nixpkgs-wayland.packages.${pkgs.system};
+  cfg = config;
+  sys = "/run/current-system/sw";
 in {
-  config = {
-    xdg.configFile."swaylock/config".source = let
-      config = pkgs.writeText "swaylockConfig" ''
-        screenshots
-        clock
-        indicator
-        indicator-radius=100
-        indicator-thickness=7
-        effect-blur=7x5
-        effect-vignette=0.5:0.5
-        ring-color=bb00cc
-        key-hl-color=880033
-        line-color=00000000
-        inside-color=00000088
-        seperator-color=00000000
-        grace=2
-        fade-in=0.2
-        show-failed-attempts
-      '';
-    in config;
+  config = let
+    configPkg = pkgs.writeText "swaylockConfig" ''
+      indicator-idle-visible
+      indicator-radius=100
+      indicator-thickness=7 ring-color=bb00cc
+      key-hl-color=880033
+      line-color=FFFFFF00
+      inside-color=FFFFFF88
+      show-failed-attempts
+      color=000000
+    '';
+    swaylockScript = pkgs.writeShellScript "swaylockDebug" ''
+      (echo -e "\n\nStarting swaylock:\n"; WAYLAND_DEBUG=1 ${
+        lib.getExe nw.swaylock
+      } -f 2>&1 ) >> ~/swaylock_logfile
+    '';
+  in {
+    xdg.configFile."swaylock/config".source = configPkg;
+    # xdg
     services.swayidle = let
-      lockScreen = "${pkgs.swaylock-effects-pr}/bin/swaylock -f";
+      # lockScreen = "${pkgs.swaylock-effects-pr}/bin/swaylock -f";
+      # TODO: decide wether to manually override or keep using nixpkgs-wayland.
+      lockScreen = "${nw.swaylock}/bin/swaylock -f";
       hyprctl = "${config.wayland.windowManager.hyprland.package}/bin/hyprctl";
     in {
       enable = true;
