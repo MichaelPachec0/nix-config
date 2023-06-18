@@ -23,6 +23,27 @@ in {
   in {
     xdg.configFile."swaylock/config".source = configPkg;
     # xdg
+    systemd.user = {
+      services = {
+        # NOTE: taken from example here: https://sr.ht/~whynothugo/systemd-lock-handler/#usage
+        swaylock = {
+          Unit = {
+            Description =
+              "service runs on dbus lock event. (systemd-lock-handler is required)";
+            OnSuccess = [ "unlock.target" ];
+            PartOf = [ "lock.target" ];
+            After = [ "lock.target" ];
+          };
+          Service = {
+            Type = "forking";
+            # TODO: change this so that it can configurable by the user.
+            ExecStart = "${lib.getExe nw.swaylock} -f";
+            Restart = "on-failure";
+          };
+          Install = { WantedBy = [ "lock.target" ]; };
+        };
+      };
+    };
     services.swayidle = let
       # lockScreen = "${pkgs.swaylock-effects-pr}/bin/swaylock -f";
       # TODO: decide wether to manually override or keep using nixpkgs-wayland.
@@ -31,20 +52,13 @@ in {
     in {
       enable = true;
       package = pkgs.unstable.swayidle;
-      events = [
-        {
-          event = "before-sleep";
-          command = "${lockScreen}";
-        }
-        {
-          event = "lock";
-          command = "${lockScreen}";
-        }
-      ];
+      # NOTE: move towards letting logind handle most of the locking work
+      # since there is a push to remove events and simply the codebase.
+      # See: https://github.com/swaywm/swayidle/issues/117
       timeouts = [
         {
           timeout = 300;
-          command = "${lockScreen}";
+          command = "${sys}/bin/loginctl lock-session";
         }
         {
           timeout = 800;
