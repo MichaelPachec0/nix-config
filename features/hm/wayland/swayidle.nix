@@ -51,10 +51,10 @@ in {
       hyprctl = "${config.wayland.windowManager.hyprland.package}/bin/hyprctl";
     in {
       enable = true;
-      package = pkgs.unstable.swayidle;
       # NOTE: move towards letting logind handle most of the locking work
       # since there is a push to remove events and simply the codebase.
       # See: https://github.com/swaywm/swayidle/issues/117
+      package = nw.swayidle.override ({ systemdSupport = false; });
       timeouts = [
         {
           timeout = 300;
