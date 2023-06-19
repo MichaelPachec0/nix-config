@@ -56,6 +56,8 @@
               vimPlugins = prev.vimPlugins // {
                 vimBeGood =
                   import ./pkgs/vimPlugins/vim-be-good { inherit pkgs; };
+                stay-centered =
+                  import ./pkgs/vimPlugins/stay-centered { inherit pkgs; };
               };
               powertop-git = prev.unstable.powertop.overrideAttrs (oldAttrs: {
                 version = "2.15-pre";
