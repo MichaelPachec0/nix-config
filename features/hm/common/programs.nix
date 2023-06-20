@@ -54,6 +54,7 @@
         # launcher
         rofi = {
           enable = true;
+          package = pkgs.unstable.rofi-wayland;
           theme = "gruvbox-dark-hard";
           plugins = with pkgs; [
             # bt
