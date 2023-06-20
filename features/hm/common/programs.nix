@@ -57,8 +57,35 @@
           package = pkgs.unstable.rofi-wayland;
           theme = "gruvbox-dark-hard";
           plugins = with pkgs; [
+            # network manager for dmenu
+            networkmanager_dmenu
+            # clipboard
+            clipmenu
+            # keepass
+            unstable.keepmenu
+            # vpn
+            rofi-vpn
+            # top
+            rofi-top
+            # calc
+            rofi-calc
+            # emoji TODO: decide between emojipick or this
+            rofi-emoji
+            # systemd
+            rofi-systemd
+            # menus?
+            rofi-menugen
             # bt
             rofi-bluetooth
+            # power
+            rofi-power-menu
+            # audio routing
+            rofi-pulse-select
+            # rofi file-browser
+            rofi-file-browser
+            # pinentry
+            pinentry-rofi
+            tor-browser-bundle-bin
           ];
 
         };
