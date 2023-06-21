@@ -87,6 +87,8 @@
             pinentry-rofi
             tor-browser-bundle-bin
           ];
+          terminal = "${lib.getExe pkgs.unstable.kitty}";
+          location = "center";
 
         };
         firefox = {
