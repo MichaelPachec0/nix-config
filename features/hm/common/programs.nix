@@ -97,6 +97,10 @@
         };
 
       })) (lib.attrsets.optionalAttrs (config.devMachine.enable) {
+        direnv = {
+          enable = true;
+          nix-direnv.enable = true;
+        };
         gh = {
           enable = true;
           extensions = [ pkgs.gh-eco pkgs.gh-dash ];
