@@ -19,7 +19,7 @@ let
   };
 
   # need to build a custom version of lldb and llvm for enhanced rust support
-  lldb = (import ./lldb.nix { inherit fetchFromGitHub runCommand llvmPackages; });
+  lldb = (import ./lldb.nix { inherit fetchFromGitHub runCommand llvmPackages python3; });
 
   adapter = rustPlatform.buildRustPackage {
     pname = "${pname}-adapter";
@@ -38,7 +38,7 @@ let
       "--bin=codelldb"
     ];
 
-    patches = [ ./adapter-output-shared_object.patch ];
+    patches = [ ./adapter-output-shared_object.patch ./codelldb_debug.patch ];
 
     # Tests are linked to liblldb but it is not available here.
     doCheck = false;
@@ -110,12 +110,13 @@ in stdenv.mkDerivation {
     wrapProgram $ext/adapter/codelldb \
       --set-default LLDB_DEBUGSERVER_PATH "${lldb.out}/bin/lldb-server"
     cp -t $ext/formatters ../formatters/*.py
-    # ln -s ${lldb.lib} $ext/lldb
-    mkdir  $ext/lldb/
-for file in ${lldb.lib}/*; do if [[ ! "$file" =~ lldb-argdumper ]]; then ln -s "$file" "$ext/lldb/$file"; fi; done
-    ln -s ${lldb.out}/bin/lldb-argdumper $ext/lldb/lib/python3.10/site-packages/lldb/lldb-argdumper
+    ln -s ${lldb.lib} $ext/lldb
+    # mkdir  $ext/lldb/
+    # for file in ${lldb.lib}/*; do if [[ ! "$file" =~ lldb-argdumper ]]; then ln -s "$file" "$ext/lldb/"; fi; done
+    #for file in ${lldb.lib}/*; do ln -s "${lldb.lib}/$link" $ext/lldb/; done
+    # ln -s ${lldb.out}/bin/lldb-argdumper $ext/lldb/lib/python3.10/site-packages/lldb/lldb-argdumper
     # for link in ${lldb.lib}/*; do ln -s "$link" $ext/lldb/; done
-    # unlink $ext/lldb/lib/python3.10/site-packages/lldb/lldb-argdumper
+    # whoami
     # Mark that all components are installed.
     touch $ext/platform.ok
 

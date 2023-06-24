@@ -1,0 +1,52 @@
+diff --git a/adapter/src/debug_session.rs b/adapter/src/debug_session.rs
+index d4cdef1..f772e93 100644
+--- a/adapter/src/debug_session.rs
++++ b/adapter/src/debug_session.rs
+@@ -112,14 +112,19 @@ impl DebugSession {
+         // Initialize Python
+         let (con_reader, con_writer) = pipe().unwrap();
+         let current_exe = env::current_exe().unwrap();
++        let d = debugger.command_interpreter();
++        let exe = current_exe.parent().unwrap();
++        let con = con_writer.try_clone().ok();
++        let a = d.is_valid();
++        error!(" DEBUG: Initialize Python interpreter:  debugger!: {a:?} EXE!: {exe:?} CON!: {con:?}" );
+         let (python, python_events) = match python::initialize(
+-            debugger.command_interpreter(),
+-            current_exe.parent().unwrap(),
+-            Some(con_writer.try_clone().unwrap()),
++            d,
++            exe,
++            con,
+         ) {
+             Ok((python, events)) => (Some(python), Some(events)),
+             Err(err) => {
+-                error!("Initialize Python interpreter: {}", err);
++                error!("Initialize Python interpreter: {err}" );
+                 (None, None)
+             }
+         };
+diff --git a/adapter/src/python.rs b/adapter/src/python.rs
+index 3d9e05c..71cb85f 100644
+--- a/adapter/src/python.rs
++++ b/adapter/src/python.rs
+@@ -93,6 +93,8 @@ pub fn initialize(
+     let init_script = adapter_dir.join("scripts/debugger.py");
+     let command = format!("command script import '{}'", init_script.to_str().unwrap());
+     interpreter.handle_command(&command, &mut command_result, false);
++    let out = command_result.output().to_str().unwrap();
++    error!("COMMAND: 97 CMD: {command} OUT: {out}");
+     if !command_result.succeeded() {
+         bail!(format!("{:?}", command_result));
+     }
+@@ -156,6 +158,10 @@ pub fn initialize(
+         py_log_level, init_callback as *const c_void, send_message_callback as *const c_void, interface
+     );
+     interface.interpreter.handle_command(&command, &mut command_result, false);
++    let out = command_result.output().to_str().unwrap();
++    let inter = interface.adapter_dir.to_str().unwrap();
++    error!("COMMAND: 162 CMD: {command} OUT: {out} ADAP_DIR {inter}");
++
+     if !command_result.succeeded() {
+         bail!(format!("{:?}", command_result));
+     }
