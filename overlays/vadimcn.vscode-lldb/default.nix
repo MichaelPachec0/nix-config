@@ -135,11 +135,74 @@ in stdenv.mkDerivation {
     updateScript = ./update.sh;
   };
 
-  meta = {
-    description = "A native debugger extension for VSCode based on LLDB";
-    homepage = "https://github.com/vadimcn/vscode-lldb";
-    license = [ lib.licenses.mit ];
-    maintainers = [ lib.maintainers.nigelgbanks ];
-    platforms = lib.platforms.all;
-  };
-}
+    nativeBuildInputs = [cmake nodejs unzip makeWrapper];
+    patches = [./cmake-build-extension-only.patch];
+
+    postConfigure = ''
+      cp -r ${nodeDeps}/lib/node_modules .
+    '';
+
+    cmakeFlags = [
+      # Do not append timestamp to version.
+      "-DVERSION_SUFFIX="
+    ];
+    makeFlags = ["vsix_bootstrap"];
+
+    preBuild = lib.optionalString stdenv.isDarwin ''
+      export HOME=$TMPDIR
+    '';
+
+    installPhase = ''
+      ext=$out/$installPrefix
+      runHook preInstall
+
+      unzip ./codelldb-bootstrap.vsix 'extension/*' -d ./vsix-extracted
+
+      mkdir -p $ext/{adapter,formatters}
+      mv -t $ext vsix-extracted/extension/*
+      cp -t $ext/adapter ${adapter}/{bin,lib}/* ../adapter/*.py
+      wrapProgram $ext/adapter/codelldb \
+        --set-default LLDB_DEBUGSERVER_PATH "${lldb.out}/bin/lldb-server"
+      cp -t $ext/formatters ../formatters/*.py
+      ln -s ${lldb.lib} $ext/lldb
+      # mkdir  $ext/lldb/
+      # for file in ${lldb.lib}/*; do if [[ ! "$file" =~ lldb-argdumper ]]; then ln -s "$file" "$ext/lldb/"; fi; done
+      #for file in ${lldb.lib}/*; do ln -s "${lldb.lib}/$link" $ext/lldb/; done
+      # ln -s ${lldb.out}/bin/lldb-argdumper $ext/lldb/lib/python3.10/site-packages/lldb/lldb-argdumper
+      # for link in ${lldb.lib}/*; do ln -s "$link" $ext/lldb/; done
+      # whoami
+      # Mark that all components are installed.
+      touch $ext/platform.ok
+
+      runHook postInstall
+    '';
+
+    postInstall = ''
+      ls -lah $src/adapter/scripts
+
+      cp -r $src/adapter/scripts $out/adapter/
+      ls -lah $out/
+      ls -lah $out/bin
+      ls -lah $out/lib
+
+    '';
+    # `adapter` will find python binary and libraries at runtime.
+    postFixup = ''
+      wrapProgram $out/$installPrefix/adapter/codelldb \
+        --prefix PATH : "${python3}/bin" \
+        --prefix LD_LIBRARY_PATH : "${python3}/lib"
+    '';
+
+    passthru = {
+      inherit lldb adapter;
+      updateScript = ./update.sh;
+    };
+
+    meta = {
+      description = "A native debugger extension for VSCode based on LLDB";
+      homepage = "https://github.com/vadimcn/vscode-lldb";
+      license = [lib.licenses.mit];
+      maintainers = [lib.maintainers.nigelgbanks];
+      platforms = lib.platforms.all;
+    };
+  }
