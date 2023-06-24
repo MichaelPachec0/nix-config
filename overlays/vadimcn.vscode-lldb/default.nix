@@ -110,11 +110,12 @@ in stdenv.mkDerivation {
     wrapProgram $ext/adapter/codelldb \
       --set-default LLDB_DEBUGSERVER_PATH "${lldb.out}/bin/lldb-server"
     cp -t $ext/formatters ../formatters/*.py
-    #ln -s ${lldb.lib} $ext/lldb
-    mkdir  $ext/lldb
-    for link in ${lldb.lib}/*; do ln -s "$link" $ext/lldb/; done
-    unlink $ext/lldb/lib/python3.10/site-packages/lldb/lldb-argdumper
+    # ln -s ${lldb.lib} $ext/lldb
+    mkdir  $ext/lldb/
+for file in ${lldb.lib}/*; do if [[ ! "$file" =~ lldb-argdumper ]]; then ln -s "$file" "$ext/lldb/$file"; fi; done
     ln -s ${lldb.out}/bin/lldb-argdumper $ext/lldb/lib/python3.10/site-packages/lldb/lldb-argdumper
+    # for link in ${lldb.lib}/*; do ln -s "$link" $ext/lldb/; done
+    # unlink $ext/lldb/lib/python3.10/site-packages/lldb/lldb-argdumper
     # Mark that all components are installed.
     touch $ext/platform.ok
 
