@@ -111,6 +111,9 @@ in stdenv.mkDerivation {
       --set-default LLDB_DEBUGSERVER_PATH "${lldb.out}/bin/lldb-server"
     cp -t $ext/formatters ../formatters/*.py
     ln -s ${lldb.lib} $ext/lldb
+    rm $ext/lldb/lib/python3.10/site-packages/lldb/lldb-argdumper
+    ln -s ${lldb.bin}/bin/lldb-argdumper $ext/lldb/lib/python3.10/site-packages/lldb/lldb-argdumper
+
     # Mark that all components are installed.
     touch $ext/platform.ok
 
