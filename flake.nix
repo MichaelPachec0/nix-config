@@ -60,6 +60,8 @@
                   import ./pkgs/vimPlugins/coc-elixir {inherit pkgs;};
                 stay-centered =
                   import ./pkgs/vimPlugins/stay-centered { inherit pkgs; };
+                block-nvim =
+                  import ./pkgs/vimPlugins/block-nvim {inherit pkgs;};
               };
               powertop-git = prev.unstable.powertop.overrideAttrs (oldAttrs: {
                 version = "2.15-pre";
