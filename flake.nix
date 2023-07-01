@@ -64,6 +64,8 @@
                   import ./pkgs/vimPlugins/stay-centered { inherit pkgs; };
                 block-nvim =
                   import ./pkgs/vimPlugins/block-nvim {inherit pkgs;};
+                indentmini =
+                  import ./pkgs/vimPlugins/indentmini {inherit pkgs;};
               };
               powertop-git = prev.unstable.powertop.overrideAttrs (oldAttrs: {
                 version = "2.15-pre";
