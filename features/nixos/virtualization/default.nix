@@ -13,6 +13,7 @@ in {
     kernel.patch.sm.enable =
       mkEnableOption
       "Kernel patch to workaround faulty FLR for Sillicon Motion nvme controllers.";
+    kernel.patch.timer.enable = mkEnableOption "Kernel timer patch to workaround vmexits with rdtsc.";
   };
 
   config = lib.mkIf (cfg.vfio.enable) {
@@ -79,16 +80,22 @@ in {
           "${cfg.virtualisation.libvirtd.qemu.package}/share/qemu/edk2-i386-vars.fd";
       };
     };
-    boot.kernelPatches = lib.optionals cfg.kernel.patch.sm.enable [
-      {
-        name = "SM2622en flr workaround";
-        patch = ./sm2262-nvme-subsystem-reset.diff;
-      }
-      {
-        name = "amd-noflr";
-        patch = ./amd-noflr.patch;
-      }
-    ];
+    boot.kernelPatches =
+      lib.optionals cfg.kernel.patch.sm.enable [
+        {
+          # NOTE: This is needed since one of the nvme's being passed is sm2622en based (ex920) it cannot be passed
+          # unless this kernel patch is integrated.
+          name = "SM2622en flr workaround";
+          patch = ./sm2262-nvme-subsystem-reset.diff;
+        }
+      ]
+      ++ lib.optionals cfg.kernel.patch.timer.enable [
+        {
+          # NOTE: this tries to patch rdtsc so it is harder to track vmexits.
+          name = "Timer patches";
+          patch = ./timer.patch;
+        }
+      ];
   };
 }
 
