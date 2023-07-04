@@ -40,7 +40,16 @@ in {
         allowedBridges = [ "br-vm" ];
         package = pkgs.unstable.libvirt;
         qemu = {
-          package = pkgs.unstable.qemu;
+          # NOTE: overwritten so that we remove all mentions of QEMU.
+          package = pkgs.qemu_full.overrideAttrs (old: rec {
+            pname = "qemu-patched";
+            version = "8.0.2";
+            src = builtins.fetchurl {
+              url = "https://download.qemu.org/qemu-${version}.tar.xz";
+              sha256 = "19gn9jixr3mim03njna201aglg7wixb9ihz24m0pkrpv6paanq7h";
+            };
+            patches = (old.patches or []) ++ [./qemu-8.0.2.patch];
+          });
           ovmf = {
             enable = true;
             packages = [
