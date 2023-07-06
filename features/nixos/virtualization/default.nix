@@ -23,17 +23,21 @@ in {
       initrd.kernelModules =
         [ "vfio" "vfio_pci" "vfio_iommu_type1" "vfio_virqfd" ];
 
-      kernelParams = lib.optionals (amd) [
-        "amd_iommu=on"
-        "kvm_amd.npt=1"
-        "kvm_amd.avic=1"
-        "kvm_amd.nested=1"
-        "kvm.ignore_msrs=1"
-        "kvm.report_ignored_msrs=0"
-      ] ++ lib.optionals (intel) [
-        # TODO: other options?
-        "kvm_intel.nested=1"
-      ];
+      kernelParams =
+        ["iommu=pt" "kvm.ignore_msrs=1" "kvm.report_ignored_msrs=0"]
+        ++ lib.optionals amd [
+          "amd_iommu=on"
+          "kvm_amd.npt=1"
+          # NOTE: avic and nested do not currently work side by side yet, need to disable one or the other
+          #
+          "kvm_amd.avic=1"
+          "kvm_amd.nested=1"
+          "kvm_amd.sev=0"
+        ]
+        ++ lib.optionals intel [
+          # TODO: (low prio) other options?
+          "kvm_intel.nested=1"
+        ];
     };
     virtualisation = {
       # as understood, since this will be headless and with no x11/wayland, ths will be unneeded
