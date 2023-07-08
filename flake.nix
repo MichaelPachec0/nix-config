@@ -34,6 +34,8 @@
     nixneovimplugins.url = "github:jooooscha/nixpkgs-vim-extra-plugins";
     nixneovim.url = "github:nixneovim/nixneovim";
 
+    # this is for pr's that have not been merged yet.
+    slh.url = "github:MatthewCroughan/nixpkgs/mc/systemd-lock-handler";
   };
   outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, ... }@inputs:
     let
@@ -87,6 +89,7 @@
                 });
               electron-mail-latest =
                 (prev.callPackage ./pkgs/electron-mail { });
+              inherit (inputs.slh.legacyPackages.${prev.system}) systemd-lock-handler;
             })
           ];
         })

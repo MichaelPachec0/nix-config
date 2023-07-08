@@ -11,7 +11,11 @@ in {
       };
     };
   };
-  imports = [ inputs.hyprland.nixosModules.default ];
+  imports = [
+    inputs.hyprland.nixosModules.default
+    ../../../../overlays/modules/systemd-lock-handler
+  ];
+
   config = let nw = inputs.nixpkgs-wayland.packages.${pkgs.system};
   in lib.mkIf (cfg.wayland.laptop || cfg.wayland.desktop) {
     nix = {
@@ -74,6 +78,19 @@ in {
       })
 
     ];
+    services.systemd-lock-handler = {
+      enable = true;
+      package = pkgs.systemd-lock-handler.overrideAttrs (old: rec {
+        version = "2.4.2";
+        src = pkgs.fetchFromSourcehut {
+          owner = "~whynothugo";
+          repo = "systemd-lock-handler";
+          rev = "v${version}";
+          hash = "sha256-sTVAabwWtyvHuDp/+8FKNbfej1x/egoa9z1jLIMJuBg=";
+        };
+        vendorHash = "";
+      });
+    };
 
     programs.hyprland = {
       enable = true;
