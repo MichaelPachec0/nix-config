@@ -1,3 +1,8 @@
+  env = XCURSOR_SIZE,${cursorSZ}
+{pkgs, ...}: let
+  cursorSZ = "24";
+  scale = "2";
+in ''
 { pkgs, ... }: ''
   # See https://wiki.hyprland.org/Configuring/Monitors/
   #monitor=eDP-1,3840x2160@60,1080x0,1.5
@@ -14,12 +19,11 @@
   #monitor=,preferred,auto,1
   #monitor=desc:SCD T9AAA0024209
   #
-  # See 
-  # Xwayland config https://wiki.hyprland.org/Configuring/XWayland/#hidpi-xwaylands
-  #monitor=,highres,auto,1.5
-  exec=xprop -root -f _XWAYLAND_GLOBAL_OUTPUT_SCALE 32c -set _XWAYLAND_GLOBAL_OUTPUT_SCALE 2
-  env = XCURSOR_SIZE,24
-  #exec-once=kanshi
+  # See Xwayland config https://wiki.hyprland.org/Configuring/XWayland/#hidpi-xwaylands
+  #monitor=,highres,auto,${scale}
+  # exec = xprop -root -f _XWAYLAND_GLOBAL_OUTPUT_SCALE ${cursorSZ}c -set _XWAYLAND_GLOBAL_OUTPUT_SCALE ${scale}
+  env = XCURSOR_SIZE,${cursorSZ}
+  monitor=,preferred,auto,auto
 
 
 
