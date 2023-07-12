@@ -1,8 +1,4 @@
   env = XCURSOR_SIZE,${cursorSZ}
-{pkgs, ...}: let
-  cursorSZ = "24";
-  scale = "2";
-in ''
 { pkgs, ... }: ''
   # See https://wiki.hyprland.org/Configuring/Monitors/
   #monitor=eDP-1,3840x2160@60,1080x0,1.5
@@ -40,13 +36,7 @@ in ''
   exec-once = cliphist 
   # Source a file (multi-file configs)
   # source = ~/.config/hypr/myColors.conf
-  # exec-once = polychromatic-cli -o brightness -p 100 & polychromatic-cli -o reactive medium
-  # Some default env vars.
-  # env = XCURSOR_SIZE,60
-  env = EDITOR,vim
-  env = GDK_SCALE,1
-  env = GDK_DPI_SCALE,1
-  env = QT_AUTO_SCREEN_SCALE_FACTOR,1
+  exec-once = polychromatic-cli -o brightness -p 100 && polychromatic-cli -o reactive medium
 
   # For all categories, see https://wiki.hyprland.org/Configuring/Variables/
   input {
