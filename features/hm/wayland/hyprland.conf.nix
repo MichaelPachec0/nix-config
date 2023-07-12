@@ -33,7 +33,7 @@ in ''
   # Execute your favorite apps at launch
   # exec-once = waybar & hyprpaper & firefox
   exec-once= dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP
-  #exec-once=xprop -root -f _XWAYLAND_GLOBAL_OUTPUT_SCALE 24c -set _XWAYLAND_GLOBAL_OUTPUT_SCALE 1
+  exec-once = systemctl --user import-environment
   exec-once = waybar
   # enable notification daemon, copy and paste provider, and bluetooth tray
   #exec-once = mako & cliphist & blueman-applet
