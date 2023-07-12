@@ -49,9 +49,9 @@
       follow_mouse = 1
 
       touchpad {
-          natural_scroll = true
-  	tap-to-click = false
-  	disable_while_typing = true
+        natural_scroll = true
+  	    tap-to-click = false
+  	    disable_while_typing = true
       }
 
       sensitivity = 0 # -1.0 - 1.0, 0 means no modification.
@@ -210,7 +210,7 @@
 
 
   # brightness keybinds
-  bind = , XF86MonBrightnessUp,     exec, brightnessctl set 10%+ 
+  bind = , XF86MonBrightnessUp,     exec, brightnessctl set 10%+
   bind = , XF86MonBrightnessDown,   exec, brightnessctl set 10%-
 
   #bind = , XF86MonBrightnessUp,     exec, brillo -q -A 5
