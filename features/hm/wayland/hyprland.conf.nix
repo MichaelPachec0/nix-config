@@ -136,6 +136,9 @@
   # windowrulev2 = float,class:^(kitty)$,title:^(kitty)$
   # See https://wiki.hyprland.org/Configuring/Window-Rules/ for more
   windowrulev2 = opacity 0.94 0.94,class:Code|Slack|WebCord|Spotify|^(kitty)$
+  # throw sharing indicators away
+  windowrulev2 = workspace special silent, title:^(Firefox.* — Sharing Indicator)$
+  windowrulev2 = workspace special silent, title:^(.*is sharing (your screen|a window)\.)$
 
   # See https://wiki.hyprland.org/Configuring/Keywords/ for more
   $mainMod = SUPER
