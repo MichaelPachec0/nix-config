@@ -117,11 +117,16 @@
   }
 
   misc {
-  	disable_splash_rendering = false
-          vfr = true
-  	vrr = 2
-  	key_press_enables_dpms = true
-  	mouse_move_enables_dpms = false
+  	disable_splash_rendering = true 
+    vfr = true
+  	# vrr = 0
+    # TODO: RE-ENABLE AFTER TEST
+    key_press_enables_dpms = true
+  	mouse_move_enables_dpms = true
+    # apperantly there is performance on the table to be had when disbling it
+    disable_hyprland_logo = true
+    suppress_portal_warnings = true
+  }
   }
 
   # Example per-device config
