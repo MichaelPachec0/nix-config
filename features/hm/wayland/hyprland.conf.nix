@@ -1,5 +1,7 @@
-  env = XCURSOR_SIZE,${cursorSZ}
-{ pkgs, ... }: ''
+{pkgs, ...}: let
+  cursorSZ = "24";
+  scale = "2";
+in ''
   # See https://wiki.hyprland.org/Configuring/Monitors/
   #monitor=eDP-1,3840x2160@60,1080x0,1.5
   # Originally was 4480 when internal monitor is 0x0
