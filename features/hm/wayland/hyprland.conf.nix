@@ -32,10 +32,8 @@ in ''
   # exec-once = waybar & hyprpaper & firefox
   exec-once= dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP
   exec-once = systemctl --user import-environment
-  exec-once = waybar
-  # enable notification daemon, copy and paste provider, and bluetooth tray
-  #exec-once = mako & cliphist & blueman-applet
-  exec-once = cliphist 
+  # enable notification daemon, copy and paste provider 
+  exec-once = waybar & cliphist
   # Source a file (multi-file configs)
   # source = ~/.config/hypr/myColors.conf
   exec-once = polychromatic-cli -o brightness -p 100 && polychromatic-cli -o reactive medium
