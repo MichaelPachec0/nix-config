@@ -86,7 +86,8 @@ in ''
   }
 
   animations {
-      enabled = true
+      # was true
+      enabled = false
 
       # Some default animations, see https://wiki.hyprland.org/Configuring/Animations/ for more
 
