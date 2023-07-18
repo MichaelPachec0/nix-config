@@ -3,20 +3,6 @@
   scale = "2";
 in ''
   # See https://wiki.hyprland.org/Configuring/Monitors/
-  #monitor=eDP-1,3840x2160@60,1080x0,1.5
-  # Originally was 4480 when internal monitor is 0x0
-  #monitor=desc:Acer Technologies Acer ET241Y T9AAA0024209,1920x1080@60,5560x0,1
-  # was 2560
-  #monitor=desc:ASUSTek COMPUTER INC VG279 K5LMQS018158,1920x1080@120,3640x0,1
-  #monitor=desc:Stargate Technology MDS-15605,1080x1920@60,0x0,1
-  #monitor=desc:(null) (null) (DP-1),1920x1080,0x0,1,transform,1
-  #
-  #monitor=desc:Acer Technologies Acer ET241Y T9AAA0024209 (DP-2),1920x1080@60,1
-
-  #monitor=eDP-1,3840x2160@60,0x0,1.5
-  #monitor=,preferred,auto,1
-  #monitor=desc:SCD T9AAA0024209
-  #
   # See Xwayland config https://wiki.hyprland.org/Configuring/XWayland/#hidpi-xwaylands
   #monitor=,highres,auto,${scale}
   # exec = xprop -root -f _XWAYLAND_GLOBAL_OUTPUT_SCALE ${cursorSZ}c -set _XWAYLAND_GLOBAL_OUTPUT_SCALE ${scale}
