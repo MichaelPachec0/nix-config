@@ -132,6 +132,8 @@ in ''
     disable_hyprland_logo = true
     suppress_portal_warnings = true
   }
+  xwayland {
+    force_zero_scaling = true
   }
 
   # Example per-device config
