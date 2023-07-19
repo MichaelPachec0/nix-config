@@ -104,6 +104,23 @@
       platformTheme = "gtk";
     };
     systemd.user.services = let
+      # NOTE: for later reading:
+      # https://pychao.com/2021/02/24/difference-between-partof-and-bindsto-in-a-systemd-unit/
+      # NOTE: This makes sure that when both targets are stopped
+      # then the service is also stopped.
+      # Might redo this later.
+      waylandChecker = pkgs.writeShellApplication {
+        name = "waylandChecker.sh";
+        text = ''
+          hyprCheck=$(systemctl is-active --user --quiet hyprland-session.target)
+          swayCheck=$(systemctl is-active --user --quiet sway-session.target)
+          if [[ $hyprCheck  || $swayCheck ]]; then
+            exit 0
+          else
+            systemctl stop --user shikane.service
+          fi
+        '';
+      };
       unitRules = {
         After = [ "hyprland-session.target" ];
         Requisite = [ "hyprland-session.target" ];
@@ -120,20 +137,24 @@
         Install = { WantedBy = [ "default.target" ]; };
       };
       shikane = {
-        Unit = {
-          Description = "Shikane service";
-          Documentation = [ "man:shikane(1)" "man:shikane(5)" ];
-        } // unitRules;
+        Unit =
+          {
+            Description = "Shikane service";
+            Documentation = ["man:shikane(1)" "man:shikane(5)"];
+          }
+          // unitRules;
         Service = {
-          ExecStart = "${lib.getExe pkgs.unstable.shikane}";
+          ExecStart = "${lib.getExe pkgs.shikane}";
           Type = "simple";
           Restart = "always";
           Environment = [
-            # TODO: this is needed so that exec in shikane works, need to investigate later why, and if its isolated to my machine,home-manager,NixOS, or systemd.
+            # TODO: (low prio) this is needed so that exec in shikane works,
+            # need to investigate later why,
+            # and if its isolated to my machine,home-manager,NixOS, or systemd.
             "PATH=/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin"
           ];
         };
-        Install = { WantedBy = wantedRule; };
+        Install = {WantedBy = strongTargets;};
       };
       # for later reading
       # https://pychao.com/2021/02/24/difference-between-partof-and-bindsto-in-a-systemd-unit/
