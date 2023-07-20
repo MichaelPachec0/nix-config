@@ -121,20 +121,29 @@
           fi
         '';
       };
+      # NOTE: THIS MIGHT BE WRONG. #2 this was wrong, after research,
+      # only depend on graphical-session but start.
+      # But only start after either hyprland or sway start.
+      # TODO: (med prio) (research) investigate.
+      weakTargets = ["hyprland-session.target" "sway-session.target"];
+      strongTargets = ["graphical-session.target"];
       unitRules = {
-        After = [ "hyprland-session.target" ];
-        Requisite = [ "hyprland-session.target" ];
-        PartOf = [ "hyprland-session.target" ];
+        # NOTE: make sure that either hyprland or sway along with their
+        # target units are started.
+        # wants = weakTargets;
+        After = weakTargets;
+        Requisite = strongTargets;
+        # PartOf = strongTargets;
       };
-      wantedRule = unitRules.After;
+      # wantedRule = unitRules.After;
     in {
       ydotool = {
         Unit = {
           Description = "ydotool user service";
-          Documentation = [ "man:ydotool(1)" ];
+          Documentation = ["man:ydotool(1)"];
         };
-        Service = { ExecStart = "${pkgs.ydotool}/bin/ydotoold"; };
-        Install = { WantedBy = [ "default.target" ]; };
+        Service = {ExecStart = "${lib.getExe pkgs.ydotool}";};
+        Install = {WantedBy = ["default.target"];};
       };
       shikane = {
         Unit =
