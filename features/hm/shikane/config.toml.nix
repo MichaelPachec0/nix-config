@@ -90,17 +90,14 @@ in ''
   enable = true
   mode = { width = 3840, height = 2160, refresh = 59.99 }
   position = { x = 1080, y = 0 }
-  scale = 1.5
+  scale = ${scale}
   [[ profile.output ]]
   match  = "DP-1"
   enable = true
   mode = { width = 1920, height = 1080, refresh = 60.00 }
   position = { x = 0, y = 0 }
   scale = 1.0
-  exec = [ "${config.wayland.windowManager.hyprland.package}/bin/hyprctl keyword monitor DP-1, transform,1" ]
-  #exec = [ "${bin}/hyprctl " ]
-  #exec = [ "/bin/sh -c 'echo hello world'" ]
-  #exec = [ "${lib.getExe pkgs.bash} -c 'echo hello world'" ]
+
   [[ profile ]]
   name = "Home Docked"
   exec = [
@@ -116,13 +113,13 @@ in ''
   match = "/VG279/"
   enable = true
   mode = { width = 1920, height = 1080, refresh = 144 }
-  position  = { x = 2560, y = 0 }
+  position  = { x = 2194, y = 0 }
   scale = 1.0
   [[ profile.output ]]
   match = "/ET241Y/"
   enable = true
   mode = { width = 1920, height = 1080, refresh = 60 }
-  position = { x = 4480, y = 0 }
+  position = { x = 4114, y = 0 }
   scale = 1.0
 
 
@@ -133,7 +130,7 @@ in ''
   enable = true
   mode  = { width = 3840, height = 2160, refresh = 59.99 }
   position  = { x = 0, y = 0 }
-  scale = 1.5
+  scale = ${scale}
   [[ profile.output ]]
   match = "/VG279/"
   enable = true
@@ -157,7 +154,7 @@ in ''
   match  = "DP-2"
   enable = true
   mode = { width = 1920, height = 1080, refresh = 60.00 }
-  position = { x = 3640, y = 0 }
+  position = { x = 0, y = 0 }
   scale = 1.0
   exec = [ "${config.wayland.windowManager.hyprland.package}/bin/hyprctl keyword monitor DP-2, transform,1" ]
   #exec = [ "${bin}/hyprctl " ]
