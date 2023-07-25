@@ -1,9 +1,58 @@
-{ config, lib, pkgs, ... }: {
-  imports = [ ./swayidle.nix ];
-  config = {
-    wayland.windowManager.hyprland = {
+{
+  config,
+  lib,
+  pkgs,
+  inputs,
+  ...
+}: {
+  imports = [./swayidle.nix];
+  config = let
+    hyprland = inputs.hyprland.packages.${pkgs.system};
+  in {
+    wayland.windowManager.hyprland = let
+      # WARN: 23.0.3 mesa works with dpms, 23.1.3 does dont for some reason,
+      # this checks if 23.1.4 fixes it.
+      # NOTE: mesa 23.1.4 does fix this. dont see it in the changelog,
+      # so it might be a regression fix that was not worth noting?
+      mesa = pkgs.mesa.overrideAttrs (let
+        version = "23.1.4";
+        hash = "sha256-cmGhf7lIZ+PcWpDYofEA+gSwy73lHSUwLAhytemhCVk=";
+      in
+        old: {
+          version = "mesa-${version}-pre";
+          src = pkgs.fetchurl {
+            inherit hash;
+            urls = ["https://archive.mesa3d.org/mesa-${version}.tar.xz"];
+          };
+        });
+      wlroots = hyprland.wlroots-hyprland.override {
+        wlroots =
+          # pkgs
+          # .wlroots_0_16
+          (pkgs.wlroots_0_16.overrideAttrs (old: {
+            src = pkgs.fetchFromGitLab {
+              inherit (old.src) owner repo domain rev hash;
+          # NOTE: before wlr_output_layer (feb 20 2023)
+          # https://gitlab.freedesktop.org/wlroots/wlroots/-/merge_requests/3640
+          # https://gitlab.freedesktop.org/wlroots/wlroots/-/commits/master?search=output
+          # WORKS
+          # rev = "0335ae9566310e1aa06f17a4b87d98775fd03622";
+          # hash = "sha256-nFMSo4VsOHZD/UiPkHz2PSMbpSM8s0dHs0s/nUxfQBo=";
+          # rev = "9a425841b048897cf3ec38a8fe8376c6561d833a";
+          # hash = "sha256-ewTrU4QG5N+k6nCWvjy+HZabPBolOzIgWKIxD4joNps=";
+            };
+          }))
+          .override {
+            inherit mesa;
+          };
+      };
+      package = hyprland.default.override {
+      # HACK: use current mesa package.
+        inherit wlroots mesa;
+      };
+    in {
       enable = true;
-      #package = pkgs.unstable.hyprland;
+      inherit package;
       systemdIntegration = true;
       xwayland = {
         enable = true;
