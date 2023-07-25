@@ -17,7 +17,12 @@
     };
     hardware = { url = "github:nixos/nixos-hardware/master"; };
 
-    hyprland = { url = "github:hyprwm/Hyprland"; };
+    hyprland = {
+      # NOTE: for some reason even with follows removed or follows set to nixpkgs-unstable hyprland builds after this commit
+      # use a version of the wayland-protocols dependecy that is older than what i set it.
+      # todo: (low prio) (research) find out why this happens.
+      url = "github:hyprwm/hyprland/76d4a50af3db7f2123d580eb7520f5b2956f261f";
+      inputs.nixpkgs.follows = "nixpkgs";
 
     kmonad-pkgs = { url = "github:kmonad/kmonad?dir=nix"; };
 
