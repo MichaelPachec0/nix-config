@@ -1,0 +1,36 @@
+name: "Nix flake check"
+
+on:
+  pull_request:
+    # branches: [master dev]
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+jobs:
+  build:
+    name: Run on pr ready to merge
+    runs-on: ubuntu-latest
+    # if: ${{ !github.event.pull_request.draft }}
+    if: ${{ !github.event.pull_request.draft }}
+
+    permissions:
+      contents: read
+    env:
+      NIXPKGS_ALLOW_UNFREE: 1
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+
+      - name: nix install
+        uses: cachix/install-nix-action@v21
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+      - name: flake check
+        run: nix flake check
