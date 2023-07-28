@@ -40,7 +40,7 @@
     nixneovim.url = "github:nixneovim/nixneovim";
 
     # this is for pr's that have not been merged yet.
-    slh.url = "github:MatthewCroughan/nixpkgs/mc/systemd-lock-handler";
+    slh.url = "github:matthewcroughan/nixpkgs/mc/systemd-lock-handler";
   };
   outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, ... }@inputs:
     let
@@ -103,16 +103,17 @@
                     ./overlays/swaylock_effects/8_change_state_strings.patch
                     ./overlays/swaylock_effects/32_unlock_on_USR1_accept_input.patch
                   ];
-                });
-              electron-mail-latest =
-                (prev.callPackage ./pkgs/electron-mail { });
-              inherit (inputs.slh.legacyPackages.${prev.system}) systemd-lock-handler;
-            })
+              });
+            # capnnproto-rust = prev.callPackage ./overlays/capnproto-rust {};
+            # electron-mail-latest =
+            #   prev.callPackage ./pkgs/electron-mail {};
+            inherit (inputs.slh.legacyPackages.${prev.system}) systemd-lock-handler;
           ];
         })
       ];
       nixosModules = baseModules ++ [
         inputs.nixneovim.nixosModules.nixos-22-11
+          })
         home-manager.nixosModules.home-manager
         {
           home-manager.useGlobalPkgs = true;
