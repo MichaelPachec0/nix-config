@@ -1,7 +1,6 @@
 { config, lib, pkgs, ... }:
 let cfg = config.services.graphicalLogin;
 in {
-  imports = [ ../../../pkgs/regreet ];
   options = {
     services = {
       graphicalLogin = {
