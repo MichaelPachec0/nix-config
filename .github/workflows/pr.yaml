@@ -2,7 +2,8 @@ name: "Nix flake check"
 
 on:
   pull_request:
-    # branches: [master dev]
+    branches:
+      - '**'
     types:
       - opened
       - reopened
