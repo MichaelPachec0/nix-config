@@ -85,6 +85,14 @@
                   import ./pkgs/vimPlugins/indentmini {inherit pkgs;};
                 virt-column =
                   import ./pkgs/vimPlugins/virt-column {inherit pkgs;};
+                wtf-nvim =
+                  import ./pkgs/vimPlugins/wtf-nvim {inherit pkgs;};
+                nvim-dap-repl-highlights =
+                  import ./pkgs/vimPlugins/nvim-dap-repl-highlights {inherit pkgs;};
+                neoai-nvim =
+                  import ./pkgs/vimPlugins/neoai {inherit pkgs;};
+                osv-nvim =
+                  import ./pkgs/vimPlugins/ossfv {inherit pkgs;};
               };
             powertop-git = prev.unstable.powertop.overrideAttrs (oldAttrs: {
               version = "2.15-pre";
