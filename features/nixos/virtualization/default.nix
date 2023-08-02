@@ -14,6 +14,8 @@ in {
       mkEnableOption
       "Kernel patch to workaround faulty FLR for Sillicon Motion nvme controllers.";
     kernel.patch.timer.enable = mkEnableOption "Kernel timer patch to workaround vmexits with rdtsc.";
+    kernel.patch.noFlr.enable =
+      mkEnableOption "Kernel patch to workaround cpu usb controllers not supporting FLR correctly.";
   };
 
   config = lib.mkIf (cfg.vfio.enable) {
@@ -94,6 +96,13 @@ in {
           # NOTE: this tries to patch rdtsc so it is harder to track vmexits.
           name = "Timer patches";
           patch = ./timer.patch;
+        }
+      ]
+      ++ lib.optionals cfg.kernel.patch.noFlr.enable [
+        {
+          # NOTE: for passing cpu usb controllers, this makes it so it wont fail on complete vm reboot.
+          name = "amd-noflr";
+          patch = ./amd-noflr.patch;
         }
       ];
   };
