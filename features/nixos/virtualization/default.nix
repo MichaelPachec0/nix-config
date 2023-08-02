@@ -1,12 +1,17 @@
-{ pkgs, config, lib, ... }:
-let
+{
+  pkgs,
+  config,
+  lib,
+  ...
+}: let
   intel = builtins.elem "kvm-intel" config.boot.kernelModules;
   amd = builtins.elem "kvm-amd" config.boot.kernelModules;
   cfg = config;
 in {
-  options = {
-    vfio.enable = lib.mkEnableOption "Configure for vfio.";
-    kernel.patch.sm.enable = lib.mkEnableOption
+  options = with lib; {
+    vfio.enable = mkEnableOption "Configure for vfio.";
+    kernel.patch.sm.enable =
+      mkEnableOption
       "Kernel patch to workaround faulty FLR for Sillicon Motion nvme controllers.";
   };
 
