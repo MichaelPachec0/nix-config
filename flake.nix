@@ -66,6 +66,8 @@
                   import ./pkgs/vimPlugins/block-nvim {inherit pkgs;};
                 indentmini =
                   import ./pkgs/vimPlugins/indentmini {inherit pkgs;};
+                virt-column =
+                  import ./pkgs/vimPlugins/virt-column {inherit pkgs;};
               };
               powertop-git = prev.unstable.powertop.overrideAttrs (oldAttrs: {
                 version = "2.15-pre";
