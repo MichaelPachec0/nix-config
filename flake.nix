@@ -56,6 +56,8 @@
               vimPlugins = prev.vimPlugins // {
                 vimBeGood =
                   import ./pkgs/vimPlugins/vim-be-good { inherit pkgs; };
+                coc-lightbulb =
+                  import ./pkgs/vimPlugins/coc-lightbulb {inherit pkgs;};
                 coc-elixir =
                   import ./pkgs/vimPlugins/coc-elixir {inherit pkgs;};
                 stay-centered =
