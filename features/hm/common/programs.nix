@@ -95,7 +95,16 @@
         };
         firefox = {
           enable = true;
-          package = pkgs.firefox-devedition-bin;
+          package = pkgs.firefox-devedition-bin.overrideAttrs (let
+            # NOTE: This is for 116.0b8.
+            # TODO: (high prio) this is old now, either move to use another src (like
+            # mozilla's flake) or keep overriding it here.
+            url = "https://archive.mozilla.org/pub/devedition/releases/116.0b8/linux-x86_64/en-US/firefox-116.0b8.tar.bz2";
+            sha256 = "fdde9c378b5b184e8ed81d62eb03dd39bae52496e742ed960fd16eeb299c6662";
+          in
+            old: {
+              src = builtins.fetchurl {inherit url sha256;};
+            });
         };
       })) (lib.attrsets.optionalAttrs config.devMachine.enable {
       direnv = {
