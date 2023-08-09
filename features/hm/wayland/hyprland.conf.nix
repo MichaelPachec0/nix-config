@@ -1,25 +1,13 @@
-{ pkgs, ... }: ''
+{pkgs, ...}: let
+  cursorSZ = "24";
+  scale = "2";
+in ''
   # See https://wiki.hyprland.org/Configuring/Monitors/
-  #monitor=eDP-1,3840x2160@60,1080x0,1.5
-  # Originally was 4480 when internal monitor is 0x0
-  #monitor=desc:Acer Technologies Acer ET241Y T9AAA0024209,1920x1080@60,5560x0,1
-  # was 2560
-  #monitor=desc:ASUSTek COMPUTER INC VG279 K5LMQS018158,1920x1080@120,3640x0,1
-  #monitor=desc:Stargate Technology MDS-15605,1080x1920@60,0x0,1
-  #monitor=desc:(null) (null) (DP-1),1920x1080,0x0,1,transform,1
-  #
-  #monitor=desc:Acer Technologies Acer ET241Y T9AAA0024209 (DP-2),1920x1080@60,1
-
-  #monitor=eDP-1,3840x2160@60,0x0,1.5
-  #monitor=,preferred,auto,1
-  #monitor=desc:SCD T9AAA0024209
-  #
-  # See 
-  # Xwayland config https://wiki.hyprland.org/Configuring/XWayland/#hidpi-xwaylands
-  #monitor=,highres,auto,1.5
-  exec=xprop -root -f _XWAYLAND_GLOBAL_OUTPUT_SCALE 32c -set _XWAYLAND_GLOBAL_OUTPUT_SCALE 2
-  env = XCURSOR_SIZE,24
-  #exec-once=kanshi
+  # See Xwayland config https://wiki.hyprland.org/Configuring/XWayland/#hidpi-xwaylands
+  #monitor=,highres,auto,${scale}
+  # exec = xprop -root -f _XWAYLAND_GLOBAL_OUTPUT_SCALE ${cursorSZ}c -set _XWAYLAND_GLOBAL_OUTPUT_SCALE ${scale}
+  env = XCURSOR_SIZE,${cursorSZ}
+  monitor=,preferred,auto,auto
 
 
 
@@ -28,21 +16,13 @@
 
   # Execute your favorite apps at launch
   # exec-once = waybar & hyprpaper & firefox
-  exec-once= ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP
-  #exec-once=xprop -root -f _XWAYLAND_GLOBAL_OUTPUT_SCALE 24c -set _XWAYLAND_GLOBAL_OUTPUT_SCALE 1
-  exec-once = waybar
-  # enable notification daemon, copy and paste provider, and bluetooth tray
-  #exec-once = mako & cliphist & blueman-applet
-  exec-once = cliphist 
+  exec-once= dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP
+  exec-once = systemctl --user import-environment
+  # enable notification daemon, copy and paste provider 
+  exec-once = waybar & cliphist
   # Source a file (multi-file configs)
   # source = ~/.config/hypr/myColors.conf
-  # exec-once = polychromatic-cli -o brightness -p 100 & polychromatic-cli -o reactive medium
-  # Some default env vars.
-  # env = XCURSOR_SIZE,60
-  env = EDITOR,vim
-  env = GDK_SCALE,1
-  env = GDK_DPI_SCALE,1
-  env = QT_AUTO_SCREEN_SCALE_FACTOR,1
+  exec-once = polychromatic-cli -o brightness -p 100 && polychromatic-cli -o reactive medium
 
   # For all categories, see https://wiki.hyprland.org/Configuring/Variables/
   input {
@@ -55,9 +35,9 @@
       follow_mouse = 1
 
       touchpad {
-          natural_scroll = true
-  	tap-to-click = false
-  	disable_while_typing = true
+        natural_scroll = true
+  	    tap-to-click = false
+  	    disable_while_typing = true
       }
 
       sensitivity = 0 # -1.0 - 1.0, 0 means no modification.
@@ -80,10 +60,14 @@
       # See https://wiki.hyprland.org/Configuring/Variables/ for more
 
       rounding = 5
-      blur = true
-      blur_size = 5
-      blur_passes = 1
-      blur_new_optimizations = true
+      # was true
+      blur {
+        enabled = true
+        size = 5
+        passes = 1
+        new_optimizations = true
+        # xray = true
+      }
 
       drop_shadow = false
       shadow_range = 4
@@ -92,7 +76,8 @@
   }
 
   animations {
-      enabled = true
+      # was true
+      enabled = false
 
       # Some default animations, see https://wiki.hyprland.org/Configuring/Animations/ for more
 
@@ -123,11 +108,18 @@
   }
 
   misc {
-  	disable_splash_rendering = false
-          vfr = true
-  	vrr = 2
-  	key_press_enables_dpms = true
-  	mouse_move_enables_dpms = false
+  	disable_splash_rendering = true 
+    vfr = true
+  	# vrr = 0
+    # TODO: RE-ENABLE AFTER TEST
+    key_press_enables_dpms = true
+  	mouse_move_enables_dpms = true
+    # apperantly there is performance on the table to be had when disbling it
+    disable_hyprland_logo = true
+    suppress_portal_warnings = true
+  }
+  xwayland {
+    force_zero_scaling = true
   }
 
   # Example per-device config
@@ -141,7 +133,10 @@
   # Example windowrule v2
   # windowrulev2 = float,class:^(kitty)$,title:^(kitty)$
   # See https://wiki.hyprland.org/Configuring/Window-Rules/ for more
-  windowrulev2 = opacity 0.94 0.94,class:Code|Slack|WebCord|Spotify|^(kitty)$
+  windowrulev2 = opacity 0.94 0.94,class:Code|Slack|ArmCord|^(kitty)$
+  # throw sharing indicators away
+  windowrulev2 = workspace special silent, title:^(Firefox.* — Sharing Indicator)$
+  windowrulev2 = workspace special silent, title:^(.*is sharing (your screen|a window)\.)$
 
   # See https://wiki.hyprland.org/Configuring/Keywords/ for more
   $mainMod = SUPER
@@ -216,7 +211,7 @@
 
 
   # brightness keybinds
-  bind = , XF86MonBrightnessUp,     exec, brightnessctl set 10%+ 
+  bind = , XF86MonBrightnessUp,     exec, brightnessctl set 10%+
   bind = , XF86MonBrightnessDown,   exec, brightnessctl set 10%-
 
   #bind = , XF86MonBrightnessUp,     exec, brillo -q -A 5
