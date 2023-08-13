@@ -178,6 +178,22 @@ in {
     # spotify gruvbox theme
     theme = spicePkgs.themes.Onepunch;
   };
+  xdg.desktopEntries = {
+    spotify = {
+      name = "Spiced Spotify";
+      # exec = "spotify --ozone-platform-hint=auto --uri=%U";
+      # /run/wrappers/bin:/home/michael/.nix-profile/bin:/etc/profiles/per-user/michael/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin
+      # HACK: DO NOT KNOW WHY THE HELL THIS WORKS.
+      # TODO: (high prio) investigate why this works.
+
+      # PATH=/run/wrappers/bin:/home/michael/.nix-profile/bin:/etc/profiles/per-user/michael/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin sh -c "
+      exec = ''
+        spotify --ozone-platform-hint=auto --enable-zero-copy --use-gl=desktop
+      '';
+      icon = "spotify";
+      type = "Application";
+    };
+  };
   # Nicely reload system units when changing configs
   systemd.user.startServices = "sd-switch";
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
