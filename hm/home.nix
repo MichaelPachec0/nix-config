@@ -179,6 +179,14 @@ in {
     theme = spicePkgs.themes.Onepunch;
   };
   xdg.desktopEntries = {
+    spotify-dev = {
+      name = "Spiced Dev Spotify";
+      exec = ''
+        ${pkgs.spicetify-cli}/bin/spicetify-cli enable-devtools
+      '';
+      icon = "spotify";
+      type = "Application";
+    };
     spotify = {
       name = "Spiced Spotify";
       # exec = "spotify --ozone-platform-hint=auto --uri=%U";
