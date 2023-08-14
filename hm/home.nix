@@ -146,6 +146,8 @@ in {
       reddit
       new-releases
       lyrics-plus
+      # INFO: found using the following command:
+      # nix-prefetch-git https://github.com/Pithaya/spicetify-apps-dist --branch-name "dist/eternal-jukebox" <HASH>
       {
         name = "eternal-jukebox";
         src = pkgs.fetchFromGitHub {
