@@ -201,6 +201,17 @@ in {
       icon = "spotify";
       type = "Application";
     };
+    checkEnv = {
+      name = "printEnv";
+      # exec = ''sh -c "env > ~/env.txt"'';
+      exec = ''sh -c "PATH=/run/wrappers/bin:/home/michael/.nix-profile/bin:/etc/profiles/per-user/michael/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin env > ~/good-env.txt"'';
+      type = "Application";
+    };
+    checkZEnv = {
+      name = "printZEnv";
+      exec = ''zsh -c "env > ~/zenv.txt"'';
+      type = "Application";
+    };
   };
   # Nicely reload system units when changing configs
   systemd.user.startServices = "sd-switch";
