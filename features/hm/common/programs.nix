@@ -126,7 +126,20 @@
         mutableExtensionsDir = true;
         userSettings = {
           "nix.serverPath" = "nil";
+          "nix.enableLanguageServer" = true;
+          "nix.formatterPath" = "alenjandra";
+          "[nix]"."editor.defaultFormatter" = "jnoortheen.nix-ide";
         };
+        # NOTE: This is from nixpkgs (stable)
+        extensions = with pkgs.stable.vscode-extensions;
+          [
+          ]
+          # NOTE: This is from nixpkgs (unstable)
+          ++ (with pkgs.vscode-extensions; [
+            vadimcn.vscode-lldb
+            jnoortheen.nix-ide
+            kamadorueda.alejandra
+          ])
       };
       git = {
         enable = true;
