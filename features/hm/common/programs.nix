@@ -139,6 +139,16 @@
             vadimcn.vscode-lldb
             jnoortheen.nix-ide
             kamadorueda.alejandra
+          ])
+          # NOTE: for todo: plugins should stay compatible with the version of vscode in the near future.
+          # TODO: (low prio) Find a way to lock versions of these packages.
+          # WARN: These 2 are not locked the same way nixpkgs are in a flake (to my knowledge)
+          # NOTE: This is "prerelease" vscode plugins
+          ++ (with pkgs.vscode-marketplace; [
+            petrmaliarov.vscode-gruvbox-material-p-dark
+          ])
+          # NOTE: These are "stable" vscode plugins
+          ++ (with pkgs.vscode-marketplace-release; [
             ]);
       };
       git = {
