@@ -33,7 +33,7 @@
         nodePackages.pyright
         # vscode-extensions.ms-python.vscode-pylance
         lazygit
-
+        direnv
       ];
 
     programs.neovim = {
@@ -83,7 +83,7 @@
         vim.opt.nu = true
         vim.opt.relativenumber = true
         vim.opt.smartindent = true
-        vim.opt.syntax = on 
+        vim.opt.syntax = on
         vim.opt.laststatus = 2
         vim.opt.showcmd = true
         vim.opt.showmode = true

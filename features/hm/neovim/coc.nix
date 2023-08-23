@@ -74,6 +74,8 @@ in {
             action = ''"coc#refresh()"'';
           };
         };
+        semanticTokens = {filetypes = [];};
+        coc.preferences.formatOnSaveFiletypes = ["nix"];
         languageserver = {
           # need to enable other language servers, like js, rust, go, elixir, c? c++
           nix = {
@@ -86,6 +88,21 @@ in {
                 formatting = {command = ["${lib.getExe pkgs.nixfmt}"];};
               };
               binary = "/run/current-system/sw/bin/nix";
+            };
+          };
+          gopls = {
+            command = "${lib.getExe pkgs.gopls}";
+            filetypes = ["go"];
+            rootPatterns = ["go.work" "go.mod" ".vim/" ".git/"];
+            initalizationOptions = {usePlaceholders = true;};
+          };
+          ccls = {
+            command = "${lib.getExe pkgs.ccls}";
+            filetypes = ["c" "cpp" "objc" "objcpp" "cuda"];
+            rootPatterns = ["compile_commands.json" ".ccls" ".git" ".ccls-root"];
+            initializationOptions = {
+              cache = {directory = ".ccls-cache";};
+              client = {snippetSupport = true;};
             };
           };
           rust-analyzer = {
@@ -139,6 +156,10 @@ in {
                 };
               };
             };
+          };
+          erlang = {
+            command = "${lib.getExe pkgs.erlang-ls}";
+            filetypes = ["erlang"];
           };
         };
       };
