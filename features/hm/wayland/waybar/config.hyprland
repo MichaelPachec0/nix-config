@@ -5,7 +5,7 @@
     // "width": 1280, // Waybar width
     "spacing": 4, // Gaps between modules (4px)
     // Choose the order of the modules
-    "modules-left": ["sway/workspaces", "sway/window"  ],
+    "modules-left": ["wlr/workspaces", "hyprland/window"  ],
     //"modules-left": ["wlr/workspaces", "hyprland/submap", "hyprland/scratchpad", "custom/media",  "hyprland/window"  ],
     //"modules-left": ["hyprland/workspaces", "hyprland/submap", "hyprland/scratchpad", "custom/media",  "hyprland/window"  ],
     //"modules-center": ["hyprland/window"],
@@ -50,7 +50,7 @@
             "unlocked": ""
         }
     },
-    "sway/window": {
+    "hyprland/window": {
       //"format": "{}",
       "rewrite": {
         "(.*) — Firefox Developer Edition Private Browsing": " $1",
@@ -85,7 +85,7 @@
         "tooltip-format": "{app}: {title}"
     },
     "mpd": {
-        "format": "{stateIcon} {consumeIcon}{randomIcon}{repeatIcon}{singleIcon}{artist:} - {album} - {title} ({elapsedTime:%M:%S}/{totalTime:%M:%S}) ⸨{songPosition}|{queueLength}⸩ ",
+        "format": "{stateIcon} {consumeIcon}{randomIcon}{repeatIcon}{singleIcon}{artist} - {album} - {title} ({elapsedTime:%M:%S}/{totalTime:%M:%S}) ⸨{songPosition}|{queueLength}⸩ {volume}% ",
         "format-disconnected": "Disconnected ",
         "format-stopped": "{consumeIcon}{randomIcon}{repeatIcon}{singleIcon}Stopped ",
         "unknown-tag": "N/A",
