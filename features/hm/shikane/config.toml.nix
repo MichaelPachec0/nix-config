@@ -39,20 +39,26 @@
     echo "DEBUG: START $@"
     version=$1
     # TODO: Change this since only applies on l config.
+    # alternatively make this generic enough so that outputs can be defined at runtime
+    # TODO: how would this be checked? should it be checked? would failure be enough?
+    # would it be better to make this a rust app? :P
     outputs=("eDP-1", "HDMI-A-1", "DP-2")
     outputs_home=("eDP-1", "DP-2", "HDMI-A-1")
     function build_command() {
       # NOTE: $1 is the workspace, $2 is the output
       if [[ $XDG_CURRENT_DESKTOP == "sway"  ]]; then
-        workspace="swaymsg -- workspace $1"
+        # NOTE: this change was done with sworkstyle in mind, this actually chooses the workspace number and not representaion.
+        # this works regardless if sworkstyle is used or not.
+        workspace="swaymsg -- workspace number $1"
         if [[ $version == 1 ]]; then
-        command="swaymsg -- move workspace to output ''${outputs_home[$2]}"
+          command="swaymsg -- move workspace to output ''${outputs_home[$2]}"
         else
-        command="swaymsg -- move workspace to output ''${outputs[$2]}"
+          command="swaymsg -- move workspace to output ''${outputs[$2]}"
         fi
 
         $workspace
       elif [[ $XDG_CURRENT_DESKTOP == "hyprland" ]]; then
+        # TODO: test if this still works, most of the work on this script happened in sway.
         command="hyprctl dispatch moveworkspacetomonitor $1 $2"
       else
         echo "INVALID ENV! ENV: $XDG_CURRENT_DESKTOP "
@@ -71,6 +77,9 @@
             # $command $(((3*mon+work)))
       done
     done
+    sleep 1
+    # WARN: waybar is a being an asshole for some reason, this resets it to a known state.
+    pkill -USR2 waybar
   '';
 in ''
   [[ profile ]]
