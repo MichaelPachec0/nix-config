@@ -66,8 +66,19 @@
       echo "DEBUG: executing $command"
       $command
     }
+
+    # NOTE: this only works when window manager systemd support is enabled and in use.
+    # In theory to make this not depend on systemd you could use top / grep / cut but that would add a ton of complexity.
+    # This is just 2 extra lines an a branch
+    # TODO: make this apply to hyperland as well
+    startdate=$(date -d "$(systemctl show --property=ActiveEnterTimestamp --user sway-session.target | cut -d= -f2)" +%s)
+    deltadate=$(( $(date +%s) - startdate ))
     # NOTE: make sure that all workspaces are instatiated.
-    sleep 20
+    if [[ deltadate -lt 50 ]]; then
+      sleep 20
+    else
+      sleep 3
+    fi
     for mon in $(seq 0 2); do
       for work in $(seq 1 3); do
         echo "DEBUG: $mon $work"
@@ -165,10 +176,6 @@ in ''
   mode = { width = 1920, height = 1080, refresh = 60.00 }
   position = { x = 0, y = 0 }
   scale = 1.0
-  exec = [ "${config.wayland.windowManager.hyprland.package}/bin/hyprctl keyword monitor DP-2, transform,1" ]
-  #exec = [ "${bin}/hyprctl " ]
-  #exec = [ "/bin/sh -c 'echo hello world'" ]
-  #exec = [ "${lib.getExe pkgs.bash} -c 'echo hello world'" ]
   [[ profile.output ]]
   match  = "/OptiPlex 7460/"
   enable = true
