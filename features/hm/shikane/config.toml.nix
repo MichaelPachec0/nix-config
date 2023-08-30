@@ -158,6 +158,30 @@ in ''
   position  = { x = 2560, y = 0 }
   scale = 1.0
 
+  # [[ profile ]]
+  # name = "L profile"
+  # [[ profile.output ]]
+  # match = "eDP-1"
+  # enable = true mode = { width = 3840, height = 2160, refresh = 59.99 } # position = { x = 1080, y = 480 }
+  # position = { x = 1080, y = 1080 }
+  # scale = ${scale}
+  # [[ profile.output ]]
+  # match  = "DP-2"
+  # enable = true
+  # mode = { width = 1920, height = 1080, refresh = 60.00 }
+  # # position = { x = 3640, y = 0 }
+  # position = { x = 0, y = 0 }
+  # scale = 1.0
+  # exec = [ "${bin}/hyprctl keyword monitor DP-2, transform,1" ]
+  # #exec = [ "${bin}/hyprctl " ]
+  # #exec = [ "/bin/sh -c 'echo hello world'" ]
+  # #exec = [ "${lib.getExe pkgs.bash} -c 'echo hello world'" ]
+  # [[ profile.output ]]
+  # match  = "/OptiPlex 7460/"
+  # enable = true
+  # mode = { width = 1920, height = 1080, refresh = 60.00 }
+  # position = { x = 1080, y = 0 }
+  # scale = 1.0
   [[ profile ]]
   name = "LN profile"
   exec = [
