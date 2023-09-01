@@ -119,18 +119,6 @@
           git_protocol = "ssh";
         };
       };
-      lazygit = {
-        enable = true;
-        settings = {
-          gui = {
-            nerdFontsVersion = 3;
-          };
-          git = {
-            autoFetch = false;
-            parseEmoji = true;
-          };
-        };
-      };
       vscode = {
         enable = true;
         enableExtensionUpdateCheck = false;
@@ -179,6 +167,26 @@
           # NOTE: These are "stable" vscode plugins
           ++ (with pkgs.vscode-marketplace-release; [
             ]);
+      };
+      lazygit = {
+        enable = true;
+        settings = {
+          git = {
+            autoFetch = false;
+            autoRefresh = false;
+            parseEmoji = true;
+          };
+          gui = {
+            nerdFontsVersion = "3";
+            theme = {
+              selectedLineBgColor = ["reverse"];
+              selectedRangeBgColor = ["reverse"];
+            };
+          };
+          update = {
+            method = "never";
+          };
+        };
       };
       git = {
         enable = true;
