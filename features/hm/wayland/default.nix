@@ -11,65 +11,6 @@
     cfg = config;
   in {
     nixpkgs.overlays = [
-      (final: prev: let
-        # TODO: might be better to shadow waybar-hyprland than the parent package.
-        # TODO #2: see if i can create patch that will accept both sway
-        # and hyprland commands.
-        waybarOvr = {isHyprland ? false}: (old: let
-          date = "01-08-2023";
-          cava = prev.fetchFromGitHub {
-            owner = "LukashonakV";
-            repo = "cava";
-            # rev = "0.8.5";
-            rev = "ec4037502beff4dffc798c3a344dad0883a5a451";
-            sha256 = "06l0dsx4g4s7jmv59fwiinkc2nwla6j581nbsys7agkwp2ldzxbg";
-          };
-          rev = "9207fff627059b922fb790e30d68fea23f76146e";
-          sha256 = "09f4fsmwh6c3zzywwk738dyb6m1lqr4vn06q8vc58ymmx5i8h7gw";
-          shortRev = builtins.substring 0 7 "${rev}";
-          pversion = "0.9.22-pre";
-        in {
-          pname =
-            if isHyprland
-            then "${old.pname}-hyprland"
-            else old.pname;
-          withMediaPlayer = true;
-
-          version = "${pversion}+date=${date}_${shortRev}";
-
-          nativeBuildInputs =
-            (old.nativeBuildInputs or [])
-            ++ (with pkgs; [cmake]);
-
-          propagatedBuildInputs =
-            (old.propagatedBuildInputs or [])
-            ++ (with pkgs; [
-              iniparser
-              fftw
-              ncurses
-              alsa-lib
-              libpulseaudio
-              portaudio
-              pipewire
-              SDL2
-            ]);
-          src = prev.fetchFromGitHub {
-            inherit rev sha256;
-            owner = "Alexays";
-            repo = "Waybar";
-          };
-          mesonFlags =
-            (old.mesonFlags or [])
-            ++ (lib.optionals isHyprland ["-Dexperimental=true"]);
-          postUnpack = ''
-            rm -rf source/subprojects/cava.wrap
-            ln -s ${cava} source/subprojects/cava
-          '';
-        });
-        waybar = prev.waybar.overrideAttrs waybarOvr;
-      in {
-        inherit waybar;
-      })
     ];
     wayland.windowManager.hyprland = {
       enable = true;
