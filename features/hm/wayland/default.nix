@@ -20,7 +20,28 @@
         hidpi = true;
       };
     };
+    wayland.windowManager.sway = let
+    in {
+      enable = true;
+      config = rec {
+        modifier = "Mod4";
+        terminal = "kitty";
+        menu = "rofi -show combi -modes combi -combi-modes 'window,drun,run,ssh'";
 
+        keybindings = let
+          mod = modifier;
+        in {
+          # vim style navigation
+          "${mod}+j" = "focus down";
+          "${mod}+h" = "focus left";
+          "${mod}+l" = "focus right";
+          "${mod}+k" = "focus up";
+        };
+      };
+      wrapperFeatures = {
+        gtk = true;
+      };
+    };
     home.pointerCursor = {
       #name = "phinger-cursors";
       #package = pkgs.phinger-cursors;
