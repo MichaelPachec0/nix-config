@@ -28,6 +28,16 @@
         terminal = "kitty";
         menu = "rofi -show combi -modes combi -combi-modes 'window,drun,run,ssh'";
 
+        input = {
+          "type:touchpad" = {
+            natural_scroll = "enabled";
+            # pointer_accel = "1";
+            accel_profile = "adaptive";
+            # NOTE: disable while typing.
+            dwt = "enabled";
+            tap = "disabled";
+          };
+        };
         keybindings = let
           mod = modifier;
         in {
