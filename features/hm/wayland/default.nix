@@ -37,7 +37,13 @@
             dwt = "enabled";
             tap = "disabled";
           };
+          # NOTE: ps4 touchpad
+          "1356:2508:Sony_Interactive_Entertainment_Wireless_Controller_Touchpad" = {
+            dwt = "disabled";
+            tap = "enabled";
+          };
         };
+
         keybindings = let
           mod = modifier;
         in {
