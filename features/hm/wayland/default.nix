@@ -53,6 +53,11 @@
           "${mod}+l" = "focus right";
           "${mod}+k" = "focus up";
         };
+        output = {
+          eDP-1 = {
+            scale = "1.75";
+          };
+        };
       };
       wrapperFeatures = {
         gtk = true;
