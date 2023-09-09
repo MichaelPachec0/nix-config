@@ -46,12 +46,20 @@
 
         keybindings = let
           mod = modifier;
+          Print = let
+            f = "scrn-$(date +%Y-%m-%dT%H:%M:%S%:z).png";
+          in ''
+            exec grim -t png -g "$(slurp)" ~/Pictures/${f}
+          '';
         in {
           # vim style navigation
           "${mod}+j" = "focus down";
           "${mod}+h" = "focus left";
           "${mod}+l" = "focus right";
           "${mod}+k" = "focus up";
+
+          inherit Print;
+          "${mod}+p" = "${Print}";
         };
         output = {
           eDP-1 = {
