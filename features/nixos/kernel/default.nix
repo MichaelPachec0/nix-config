@@ -10,7 +10,7 @@ in {
           type = with types; raw;
           default = pkgs.linuxPackages;
         };
-        ntfs.enable = mkEnableOption "compiles ntfs3 support in the kernel";
+        ntfs3.enable = mkEnableOption "compiles ntfs3 support in the kernel";
         native.enable = mkEnableOption "compiles with native build flags.";
       };
     };
