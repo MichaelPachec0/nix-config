@@ -10,6 +10,7 @@
       enable = true;
       defaultEditor = true;
     };
+    programs.zsh.enable = true;
 
     # Enable tor
     services.tor = {
