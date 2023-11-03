@@ -1,8 +1,8 @@
 { pkgs, lib, config, ... }:
-let kernel-mod = config.kernel.mod;
+let mod = config.kernel.mod;
 in {
 
-  config = lib.mkIf kernel-mod.ntfs.enable {
+  config = lib.mkIf mod.ntfs3.enable {
     nixpkgs.overlays = [
       (self: super: {
         linuxPackages_6_2 = pkgs.linuxPackagesFor
