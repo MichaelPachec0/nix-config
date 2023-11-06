@@ -11,10 +11,34 @@ on:
       - ready_for_review
 
 jobs:
-  build:
-    name: Run on pr ready to merge
+  flake:
+    name: Standard flake test
     runs-on: ubuntu-latest
-    # if: ${{ !github.event.pull_request.draft }}
+    if: ${{ !github.event.pull_request.draft }}
+
+    permissions:
+      contents: read
+    env:
+      NIXPKGS_ALLOW_UNFREE: 1
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+
+      - name: nix install
+        uses: cachix/install-nix-action@v21
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+        # NOTE: The check below will evalute standard portions of the flake, like nixosConfigurations, packages, devshells.
+      - name: Standard flake check 
+        run: nix flake check
+      
+  homeManager:
+    name: Home-Manager check
+    runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
 
     permissions:
@@ -33,5 +57,20 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
-      - name: flake check
-        run: nix flake check
+        # NOTE: Since home-manager flake ouput is custom, a manual check needs to be done for it.
+      - name: Custom Home-manager flake check
+        run: |
+          # NOTE: This grabs all the users in the flake.
+          # WARN: Since this does not depend on a flake.lock, this operation needs to be marked impure.
+          # Since this only grabs a list of users, its inconsequential.
+          USERS=$(nix eval --expr 'builtins.attrNames (builtins.getFlake "${builtins.toString ./.}").outputs.homeConfigurations' --impure)
+          OIFS=$IFS
+          USERS="${USERS:2:-2}"
+          IFS=' ' read -r -a USERS <<< "$USERS"
+          for USER in "${USERS[@]}"; do
+            echo "HOME-MANAGER: CHECKING $USER"
+            # NOTE: use this for now to evaluate, there might be a better way to do this in the future.
+            # Also make sure to remove the quotes, as they were not removed earlier.
+            nix derivation show ".#homeConfigurations.${USER:1:-1}.activationPackage"
+          done
+          IFS=$OIFS
