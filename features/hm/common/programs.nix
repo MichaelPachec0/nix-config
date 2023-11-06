@@ -53,7 +53,7 @@
           ncmpcpp.enable = true;
         })) (lib.attrsets.optionalAttrs config.graphical.enable {
         # terminal that uses gpu for fast rendering
-        foot = { enable = true; };
+        foot = {enable = true;};
         # launcher
         rofi = {
           enable = true;
@@ -92,7 +92,6 @@
           ];
           terminal = "${lib.getExe pkgs.unstable.kitty}";
           location = "center";
-
         };
         firefox = {
           enable = true;
@@ -119,20 +118,21 @@
         userSettings = {
           "nix.serverPath" = "nil";
         };
-      git = {
-        enable = true;
-        package = pkgs.gitFull;
-        userName = "Michael Pacheco";
-        userEmail = "git@michaelpacheco.org";
-        ignores = ["*~" "*.swap" ".vscode" ".idea"];
-        diff-so-fancy = {
+        git = {
           enable = true;
-          markEmptyLines = true;
-          useUnicodeRuler = true;
-        };
-        signing = {
-          signByDefault = true;
-          key = "2A1E939CF48AC3CC";
+          package = pkgs.gitFull;
+          userName = "Michael Pacheco";
+          userEmail = "git@michaelpacheco.org";
+          ignores = ["*~" "*.swap" ".vscode" ".idea"];
+          diff-so-fancy = {
+            enable = true;
+            markEmptyLines = true;
+            useUnicodeRuler = true;
+          };
+          signing = {
+            signByDefault = true;
+            key = "2A1E939CF48AC3CC";
+          };
         };
       };
     });
