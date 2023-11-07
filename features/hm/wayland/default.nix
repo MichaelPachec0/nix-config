@@ -8,51 +8,71 @@
   imports = [./swayidle.nix];
   config = let
     hyprland = inputs.hyprland.packages.${pkgs.system};
+    cfg = config;
   in {
-    wayland.windowManager.hyprland = let
-      # WARN: 23.0.3 mesa works with dpms, 23.1.3 does dont for some reason,
-      # this checks if 23.1.4 fixes it.
-      # NOTE: mesa 23.1.4 does fix this. dont see it in the changelog,
-      # so it might be a regression fix that was not worth noting?
-      mesa = pkgs.mesa.overrideAttrs (let
-        version = "23.1.4";
-        hash = "sha256-cmGhf7lIZ+PcWpDYofEA+gSwy73lHSUwLAhytemhCVk=";
-      in
-        old: {
-          version = "mesa-${version}-pre";
-          src = pkgs.fetchurl {
-            inherit hash;
-            urls = ["https://archive.mesa3d.org/mesa-${version}.tar.xz"];
+    nixpkgs.overlays = [
+      (final: prev: let
+        # TODO: might be better to shadow waybar-hyprland than the parent package.
+        # TODO #2: see if i can create patch that will accept both sway
+        # and hyprland commands.
+        waybarOvr = {isHyprland ? false}: (old: let
+          date = "01-08-2023";
+          cava = prev.fetchFromGitHub {
+            owner = "LukashonakV";
+            repo = "cava";
+            # rev = "0.8.5";
+            rev = "ec4037502beff4dffc798c3a344dad0883a5a451";
+            sha256 = "06l0dsx4g4s7jmv59fwiinkc2nwla6j581nbsys7agkwp2ldzxbg";
           };
+          rev = "9207fff627059b922fb790e30d68fea23f76146e";
+          sha256 = "09f4fsmwh6c3zzywwk738dyb6m1lqr4vn06q8vc58ymmx5i8h7gw";
+          shortRev = builtins.substring 0 7 "${rev}";
+          pversion = "0.9.22-pre";
+        in {
+          pname =
+            if isHyprland
+            then "${old.pname}-hyprland"
+            else old.pname;
+          withMediaPlayer = true;
+
+          version = "${pversion}+date=${date}_${shortRev}";
+
+          nativeBuildInputs =
+            (old.nativeBuildInputs or [])
+            ++ (with pkgs; [cmake]);
+
+          propagatedBuildInputs =
+            (old.propagatedBuildInputs or [])
+            ++ (with pkgs; [
+              iniparser
+              fftw
+              ncurses
+              alsa-lib
+              libpulseaudio
+              portaudio
+              pipewire
+              SDL2
+            ]);
+          src = prev.fetchFromGitHub {
+            inherit rev sha256;
+            owner = "Alexays";
+            repo = "Waybar";
+          };
+          mesonFlags =
+            (old.mesonFlags or [])
+            ++ (lib.optionals isHyprland ["-Dexperimental=true"]);
+          postUnpack = ''
+            rm -rf source/subprojects/cava.wrap
+            ln -s ${cava} source/subprojects/cava
+          '';
         });
-      wlroots = hyprland.wlroots-hyprland.override {
-        wlroots =
-          # pkgs
-          # .wlroots_0_16
-          (pkgs.wlroots_0_16.overrideAttrs (old: {
-            src = pkgs.fetchFromGitLab {
-              inherit (old.src) owner repo domain rev hash;
-          # NOTE: before wlr_output_layer (feb 20 2023)
-          # https://gitlab.freedesktop.org/wlroots/wlroots/-/merge_requests/3640
-          # https://gitlab.freedesktop.org/wlroots/wlroots/-/commits/master?search=output
-          # WORKS
-          # rev = "0335ae9566310e1aa06f17a4b87d98775fd03622";
-          # hash = "sha256-nFMSo4VsOHZD/UiPkHz2PSMbpSM8s0dHs0s/nUxfQBo=";
-          # rev = "9a425841b048897cf3ec38a8fe8376c6561d833a";
-          # hash = "sha256-ewTrU4QG5N+k6nCWvjy+HZabPBolOzIgWKIxD4joNps=";
-            };
-          }))
-          .override {
-            inherit mesa;
-          };
-      };
-      package = hyprland.default.override {
-      # HACK: use current mesa package.
-        inherit wlroots mesa;
-      };
-    in {
+        waybar = prev.waybar.overrideAttrs waybarOvr;
+      in {
+        inherit waybar;
+      })
+    ];
+    wayland.windowManager.hyprland = {
       enable = true;
-      inherit package;
       systemdIntegration = true;
       xwayland = {
         enable = true;

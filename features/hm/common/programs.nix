@@ -53,7 +53,7 @@
           ncmpcpp.enable = true;
         })) (lib.attrsets.optionalAttrs config.graphical.enable {
         # terminal that uses gpu for fast rendering
-        foot = { enable = true; };
+        foot = {enable = true;};
         # launcher
         rofi = {
           enable = true;
@@ -92,7 +92,6 @@
           ];
           terminal = "${lib.getExe pkgs.unstable.kitty}";
           location = "center";
-
         };
         firefox = {
           enable = true;
@@ -119,6 +118,7 @@
         userSettings = {
           "nix.serverPath" = "nil";
         };
+      };
       git = {
         enable = true;
         package = pkgs.gitFull;
