@@ -1,6 +1,7 @@
-{ }:
-
-''
-  reader-port Yubico Yubikey
+_: ''
+  verbose
   disable-ccid
+  pcsc-shared
 ''
+# shared-access
+# reader-port Yubico Yubi
