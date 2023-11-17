@@ -38,6 +38,7 @@
     };
     nixneovimplugins.url = "github:jooooscha/nixpkgs-vim-extra-plugins";
     nixneovim.url = "github:nixneovim/nixneovim";
+    nix-vscode-extensions.url = "github:nix-community/nix-vscode-extensions";
 
     # this is for pr's that have not been merged yet.
     slh.url = "github:MatthewCroughan/nixpkgs/mc/systemd-lock-handler";
@@ -66,6 +67,7 @@
         nixpkgs.overlays = [
           overlayUnstable
           inputs.hyprland.overlays.default
+          inputs.nix-vscode-extensions.overlays.default
 
           (final: prev: {
             vimPlugins =

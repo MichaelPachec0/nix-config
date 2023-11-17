@@ -126,7 +126,47 @@
         mutableExtensionsDir = true;
         userSettings = {
           "nix.serverPath" = "nil";
+          "nix.enableLanguageServer" = true;
+          "nix.formatterPath" = "alenjandra";
+          "[nix]"."editor.defaultFormatter" = "jnoortheen.nix-ide";
         };
+        # NOTE: This is from nixpkgs (stable)
+        extensions = with pkgs.stable.vscode-extensions;
+          [
+          ]
+          # NOTE: This is from nixpkgs (unstable)
+          ++ (with pkgs.vscode-extensions; [
+            vadimcn.vscode-lldb
+            (ms-python.vscode-pylance.overrideAttrs (old: {
+              nativeBuildInputs = (old.nativeBuildInputs or []) ++ (with pkgs; [jsbeautifier]);
+              # NOTE: sssh :)
+              patcher = ''
+                server="$out/${old.installPrefix}/dist/server.bundle.js"
+                js-beautify -r $server
+                # sed -n -E '/if(.*(process|startsWith).*return !0x1)/p' $server
+                sed -i -E "/if(.*(process|startsWith).*return\s+\!0x1;)/d" $server
+                # NOTE: need to specify numbering style [number all lines] (-b a) since nl by default uses
+                #  non-empty line numbering (-bt)
+                start=$( nl -b a -n ln $server | sed -n -E '/.*const.*of\s+process.+\)/p' | cut -d " " -f 1 )
+                end=$(( $start + 1 ))
+                # echo $start , $end
+                sed -i "''${start},''${end}d" $server
+              '';
+              preFixupPhases = ["patcher"];
+            }))
+            jnoortheen.nix-ide
+            kamadorueda.alejandra
+          ])
+          # NOTE: for todo: plugins should stay compatible with the version of vscode in the near future.
+          # TODO: (low prio) Find a way to lock versions of these packages.
+          # WARN: These 2 are not locked the same way nixpkgs are in a flake (to my knowledge)
+          # NOTE: This is "prerelease" vscode plugins
+          ++ (with pkgs.vscode-marketplace; [
+            petrmaliarov.vscode-gruvbox-material-p-dark
+          ])
+          # NOTE: These are "stable" vscode plugins
+          ++ (with pkgs.vscode-marketplace-release; [
+            ]);
       };
       git = {
         enable = true;
