@@ -132,6 +132,12 @@
             electron-mail-latest =
               prev.callPackage ./pkgs/electron-mail {};
             inherit (inputs.slh.legacyPackages.${prev.system}) systemd-lock-handler;
+            nw = let
+              nw-pkgs = inputs.nixpkgs-wayland.packages.${prev.system};
+            in
+              nw-pkgs
+              // {
+              };
           })
         ];
       })

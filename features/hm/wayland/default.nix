@@ -5,7 +5,7 @@
   inputs,
   ...
 }: {
-  imports = [./swayidle.nix];
+  imports = [./swayidle.nix ./waybar];
   config = let
     hyprland = inputs.hyprland.packages.${pkgs.system};
     cfg = config;
