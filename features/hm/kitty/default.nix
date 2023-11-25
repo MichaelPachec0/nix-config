@@ -1,3 +1,13 @@
+#⋅kitty-scrollback.nvim⋅Kitten⋅alias↴
+
+# action_alias⋅kitty_scrollback_nvim⋅kitten⋅/home/michael/.config/nvim/lazyPlugins/pack/lazyPlugins/start/kitty-scrollback.nvim/python/kitty_scrollback_nvim.py↴
+# ↴
+#⋅Browse⋅scrollback⋅buffer⋅in⋅nvim↴
+# map⋅kitty_mod+h⋅kitty_scrollback_nvim↴
+#⋅Browse⋅output⋅of⋅the⋅last⋅shell⋅command⋅in⋅nvim↴
+# map⋅kitty_mod+g⋅kitty_scrollback_nvim⋅--config⋅ksb_builtin_last_cmd_output↴
+#⋅Show⋅clicked⋅command⋅output⋅in⋅nvim↴
+# mouse_map⋅ctrl+shift+right⋅press⋅ungrabbed⋅combine⋅:⋅mouse_select_command_output⋅:⋅kitty_scrollback_nvim⋅--config⋅ksb_builtin_last_visited_cmd_output↴
 {pkgs, ...}: {
   imports = [];
   options = {};
@@ -18,6 +28,7 @@
           name = "JetBrainsMono NF Regular";
           size = 9;
         };
+        shellIntegration.enableZshIntegration = true;
         settings = {
           # NOTE: want a *huge* buffer, dont really care about the memory usuage,
           #   should have enough.
@@ -35,6 +46,8 @@
           # window_margin_width = "1";
           # TODO: (med prio) setup later
           # tab_bar_style = "custom";
+          allow_remote_control = "socket-only";
+          listen_on = "unix:/tmp/kitty";
         };
         # TODO: (low prio) need to set more keybindings
         # ref: https://sw.kovidgoyal.net/kitty/layouts/#the-splits-layout
@@ -50,7 +63,14 @@
           "ctrl+minus" = "change_font_size all -2.0";
           # map ctrl+shift+v paste_from_clipboard
           # map ctrl+shift+c copy_to_clipboard
+          "kitty_mod+h" = "kitty_scrollback_nvim";
+          "kitty_mod+g" = "kitty_scrollback_nvim⋅--config⋅ksb_builtin_last_cmd_output";
         };
+        extraConfig = ''
+          action_alias kitty_scrollback_nvim kitten ${pkgs.vimPlugins.kitty-scrollback-nvim}/python/kitty-scrollback-nvim.py
+          mouse_map⋅ctrl+shift+right⋅press⋅ungrabbed⋅combine⋅:⋅mouse_select_command_output⋅:⋅kitty_scrollback_nvim⋅--config⋅ksb_builtin_last_visited_cmd_output↴
+
+        '';
       };
     };
   };

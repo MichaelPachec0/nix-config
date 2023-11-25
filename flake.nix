@@ -95,6 +95,7 @@
                   import ./pkgs/vimPlugins/neoai {inherit pkgs;};
                 osv-nvim =
                   import ./pkgs/vimPlugins/ossfv {inherit pkgs;};
+                kitty-scrollback-nvim = pkgs.callPackage ./pkgs/vimPlugins/kitty-scrollback {};
               };
             powertop-git = prev.unstable.powertop.overrideAttrs (oldAttrs: {
               version = "2.15-pre";
