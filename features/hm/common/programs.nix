@@ -119,6 +119,18 @@
           git_protocol = "ssh";
         };
       };
+      lazygit = {
+        enable = true;
+        settings = {
+          gui = {
+            nerdFontsVersion = 3;
+          };
+          git = {
+            autoFetch = false;
+            parseEmoji = true;
+          };
+        };
+      };
       vscode = {
         enable = true;
         enableExtensionUpdateCheck = false;
@@ -182,6 +194,13 @@
         signing = {
           signByDefault = true;
           key = "2A1E939CF48AC3CC";
+        };
+        extraConfig = {
+          # NOTE: taken from https://gist.github.com/ugultopu/0b6412674073a5b603f8227cb108441c?permalink_comment_id=4647857#gistcomment-4647857
+          # this makes it possible to preserve timestamps for GIT_COMMITTER_DATE.
+          rebase.instructionFormat = ''
+            %s%nexec GIT_COMMITTER_DATE="%cD" git commit --amend --no-edit --reset-author --date="%cD"
+          '';
         };
       };
     });

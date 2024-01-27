@@ -1,5 +1,5 @@
-{ lib, ... }: {
-  imports = [ ./programs.nix ./services.nix ];
+{lib, ...}: {
+  imports = [./programs.nix ./services.nix];
   options = {
     graphical.enable =
       lib.mkEnableOption "Enable graphical programs common in all desktops";
