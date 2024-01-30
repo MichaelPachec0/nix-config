@@ -1,6 +1,6 @@
-{ pkgs, ... }: {
-  imports = [ ];
-  options = { };
+{pkgs, ...}: {
+  imports = [];
+  options = {};
   config = {
     programs.zsh = {
       plugins = [

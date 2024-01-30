@@ -1,6 +1,6 @@
-{ ... }: {
-  imports = [ ];
-  options = { };
+{...}: {
+  imports = [];
+  options = {};
   config = {
     programs.zsh = {
       oh-my-zsh = {
@@ -16,6 +16,7 @@
           "docker-compose"
           "docker-machine"
           "gitfast"
+          "git"
           "dotenv"
           "encode64"
           "extract"
@@ -43,10 +44,8 @@
           "sudo"
           "systemd"
           #"systemadmin"
-
         ];
       };
     };
   };
 }
-
