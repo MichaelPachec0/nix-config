@@ -38,6 +38,7 @@
     };
     nixneovimplugins.url = "github:jooooscha/nixpkgs-vim-extra-plugins";
     nixneovim.url = "github:nixneovim/nixneovim";
+    nix-vscode-extensions.url = "github:nix-community/nix-vscode-extensions";
 
     # this is for pr's that have not been merged yet.
     slh.url = "github:MatthewCroughan/nixpkgs/mc/systemd-lock-handler";
@@ -66,6 +67,7 @@
         nixpkgs.overlays = [
           overlayUnstable
           inputs.hyprland.overlays.default
+          inputs.nix-vscode-extensions.overlays.default
 
           (final: prev: {
             vimPlugins =
@@ -85,6 +87,15 @@
                   import ./pkgs/vimPlugins/indentmini {inherit pkgs;};
                 virt-column =
                   import ./pkgs/vimPlugins/virt-column {inherit pkgs;};
+                wtf-nvim =
+                  import ./pkgs/vimPlugins/wtf-nvim {inherit pkgs;};
+                nvim-dap-repl-highlights =
+                  import ./pkgs/vimPlugins/nvim-dap-repl-highlights {inherit pkgs;};
+                neoai-nvim =
+                  import ./pkgs/vimPlugins/neoai {inherit pkgs;};
+                osv-nvim =
+                  import ./pkgs/vimPlugins/ossfv {inherit pkgs;};
+                kitty-scrollback-nvim = pkgs.callPackage ./pkgs/vimPlugins/kitty-scrollback {};
               };
             powertop-git = prev.unstable.powertop.overrideAttrs (oldAttrs: {
               version = "2.15-pre";
@@ -122,6 +133,12 @@
             electron-mail-latest =
               prev.callPackage ./pkgs/electron-mail {};
             inherit (inputs.slh.legacyPackages.${prev.system}) systemd-lock-handler;
+            nw = let
+              nw-pkgs = inputs.nixpkgs-wayland.packages.${prev.system};
+            in
+              nw-pkgs
+              // {
+              };
           })
         ];
       })

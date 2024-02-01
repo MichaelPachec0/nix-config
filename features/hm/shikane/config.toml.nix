@@ -39,20 +39,26 @@
     echo "DEBUG: START $@"
     version=$1
     # TODO: Change this since only applies on l config.
+    # alternatively make this generic enough so that outputs can be defined at runtime
+    # TODO: how would this be checked? should it be checked? would failure be enough?
+    # would it be better to make this a rust app? :P
     outputs=("eDP-1", "HDMI-A-1", "DP-2")
     outputs_home=("eDP-1", "DP-2", "HDMI-A-1")
     function build_command() {
       # NOTE: $1 is the workspace, $2 is the output
       if [[ $XDG_CURRENT_DESKTOP == "sway"  ]]; then
-        workspace="swaymsg -- workspace $1"
+        # NOTE: this change was done with sworkstyle in mind, this actually chooses the workspace number and not representaion.
+        # this works regardless if sworkstyle is used or not.
+        workspace="swaymsg -- workspace number $1"
         if [[ $version == 1 ]]; then
-        command="swaymsg -- move workspace to output ''${outputs_home[$2]}"
+          command="swaymsg -- move workspace to output ''${outputs_home[$2]}"
         else
-        command="swaymsg -- move workspace to output ''${outputs[$2]}"
+          command="swaymsg -- move workspace to output ''${outputs[$2]}"
         fi
 
         $workspace
       elif [[ $XDG_CURRENT_DESKTOP == "hyprland" ]]; then
+        # TODO: test if this still works, most of the work on this script happened in sway.
         command="hyprctl dispatch moveworkspacetomonitor $1 $2"
       else
         echo "INVALID ENV! ENV: $XDG_CURRENT_DESKTOP "
@@ -60,8 +66,19 @@
       echo "DEBUG: executing $command"
       $command
     }
+
+    # NOTE: this only works when window manager systemd support is enabled and in use.
+    # In theory to make this not depend on systemd you could use top / grep / cut but that would add a ton of complexity.
+    # This is just 2 extra lines an a branch
+    # TODO: make this apply to hyperland as well
+    startdate=$(date -d "$(systemctl show --property=ActiveEnterTimestamp --user sway-session.target | cut -d= -f2)" +%s)
+    deltadate=$(( $(date +%s) - startdate ))
     # NOTE: make sure that all workspaces are instatiated.
-    sleep 20
+    if [[ deltadate -lt 50 ]]; then
+      sleep 20
+    else
+      sleep 3
+    fi
     for mon in $(seq 0 2); do
       for work in $(seq 1 3); do
         echo "DEBUG: $mon $work"
@@ -71,6 +88,9 @@
             # $command $(((3*mon+work)))
       done
     done
+    sleep 1
+    # WARN: waybar is a being an asshole for some reason, this resets it to a known state.
+    pkill -USR2 waybar
   '';
 in ''
   [[ profile ]]
@@ -138,6 +158,30 @@ in ''
   position  = { x = 2560, y = 0 }
   scale = 1.0
 
+  # [[ profile ]]
+  # name = "L profile"
+  # [[ profile.output ]]
+  # match = "eDP-1"
+  # enable = true mode = { width = 3840, height = 2160, refresh = 59.99 } # position = { x = 1080, y = 480 }
+  # position = { x = 1080, y = 1080 }
+  # scale = ${scale}
+  # [[ profile.output ]]
+  # match  = "DP-2"
+  # enable = true
+  # mode = { width = 1920, height = 1080, refresh = 60.00 }
+  # # position = { x = 3640, y = 0 }
+  # position = { x = 0, y = 0 }
+  # scale = 1.0
+  # exec = [ "${bin}/hyprctl keyword monitor DP-2, transform,1" ]
+  # #exec = [ "${bin}/hyprctl " ]
+  # #exec = [ "/bin/sh -c 'echo hello world'" ]
+  # #exec = [ "${lib.getExe pkgs.bash} -c 'echo hello world'" ]
+  # [[ profile.output ]]
+  # match  = "/OptiPlex 7460/"
+  # enable = true
+  # mode = { width = 1920, height = 1080, refresh = 60.00 }
+  # position = { x = 1080, y = 0 }
+  # scale = 1.0
   [[ profile ]]
   name = "LN profile"
   exec = [
@@ -156,10 +200,6 @@ in ''
   mode = { width = 1920, height = 1080, refresh = 60.00 }
   position = { x = 0, y = 0 }
   scale = 1.0
-  exec = [ "${config.wayland.windowManager.hyprland.package}/bin/hyprctl keyword monitor DP-2, transform,1" ]
-  #exec = [ "${bin}/hyprctl " ]
-  #exec = [ "/bin/sh -c 'echo hello world'" ]
-  #exec = [ "${lib.getExe pkgs.bash} -c 'echo hello world'" ]
   [[ profile.output ]]
   match  = "/OptiPlex 7460/"
   enable = true

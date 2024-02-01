@@ -1,11 +1,25 @@
-{ config, lib, pkgs, ... }: {
+# TODO: remaps
+# leader + [ ] switch windows?
+# leader + { } ( shift + [ ]) switch tabs
+# leader + | hsplit
+# leader + - vsplit
+# leader +
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}: {
+  imports = [./coc.nix];
   options = {
-    devMachine.enable = lib.mkEnableOption
+    devMachine.enable =
+      lib.mkEnableOption
       "Enables developer configuration. This includes certain packages as well as configuration.";
   };
   config = {
     home.packages = with pkgs;
-      [ ] ++ lib.optionals (config.devMachine.enable) [
+      []
+      ++ lib.optionals config.devMachine.enable [
         # nix
         unstable.nil
         # go
@@ -17,19 +31,19 @@
         #python
         black
         nodePackages.pyright
-        vscode-extensions.ms-python.vscode-pylance
+        # vscode-extensions.ms-python.vscode-pylance
         lazygit
-
+        direnv
       ];
 
-    programs.neovim = lib.attrsets.recursiveUpdate {
+    programs.neovim = {
       enable = true;
       plugins = with pkgs.vimPlugins;
         [
           vim-sensible
           vim-cool
-
-        ] ++ lib.optionals (config.devMachine.enable) [
+        ]
+        ++ lib.optionals config.devMachine.enable [
           rust-vim
           nvim-treesitter.withAllGrammars
           coc-go
@@ -69,7 +83,7 @@
         vim.opt.nu = true
         vim.opt.relativenumber = true
         vim.opt.smartindent = true
-        vim.opt.syntax = on 
+        vim.opt.syntax = on
         vim.opt.laststatus = 2
         vim.opt.showcmd = true
         vim.opt.showmode = true
@@ -84,94 +98,6 @@
       #        set autoindent
       #
       #      '';
-    } (lib.attrsets.optionalAttrs (config.devMachine.enable) {
-      coc = {
-        enable = true;
-        settings = {
-          semanticTokens = { filetypes = [ ]; };
-          coc.preferences.formatOnSaveFiletypes = [ "nix" ];
-          languageserver = {
-            # need to enable other language servers, like js, rust, go, elixir, c? c++ 
-            nix = {
-              command = "${lib.getExe pkgs.unstable.nil}";
-              filetypes = [ "nix" ];
-              rootPatterns = [ "flake.nix" ];
-              settings = {
-                nil = {
-                  formatting = { command = [ "${lib.getExe pkgs.nixfmt}" ]; };
-                };
-                binary = "/run/current-system/sw/bin/nix";
-              };
-            };
-            gopls = {
-              command = "${lib.getExe pkgs.gopls}";
-              filetypes = [ "go" ];
-              rootPatterns = [ "go.work" "go.mod" ".vim/" ".git/" ];
-              initalizationOptions = { usePlaceholders = true; };
-            };
-            ccls = {
-              command = "${lib.getExe pkgs.ccls}";
-              filetypes = [ "c" "cpp" "objc" "objcpp" "cuda" ];
-              rootPatterns =
-                [ "compile_commands.json" ".ccls" ".git" ".ccls-root" ];
-              initializationOptions = {
-                cache = { directory = ".ccls-cache"; };
-                client = { snippetSupport = true; };
-              };
-            };
-            rust-analyzer = {
-              command = "${lib.getExe pkgs.rust-analyzer}";
-              filetypes = [ "rust" ];
-              rootPatters = [ "Cargo.toml" ];
-            };
-            pylance = {
-              enable = true;
-              filetypes = [ "python" ];
-              env = {
-                ELECTRON_RUN_AS_NODE = 1;
-                VSCODE_NLS_CONFIG = { locale = "en"; };
-              };
-              rootPatterns = [
-                "Pipfile"
-                "requirements.txt"
-                "setup.py"
-                "setup.cfg"
-                "pyrightconfig.json"
-                "pyrproject.toml"
-              ];
-              module =
-                "${pkgs.vscode-extensions.ms-python.vscode-pylance}/share/vscode/extensions/MS-python.vscode-pylance/dist/server.bundle.js";
-              initalizationOptions = { };
-              settings = {
-                telemetry.telemetryLevel = "off";
-                python = {
-                  languageserver = "Pylance";
-                  analysis = {
-                    typeCheckingMode = "strict";
-                    diagnosticMode = "workspace";
-                    stubPath = "./typings";
-                    autoSearchPaths = true;
-                    extraPaths = [ ];
-                    diagnosticSeverityOverrides = { };
-                    useLibraryCodeForTypes = true;
-                    autoImportCompletions = true;
-                    completeFunctionParens = true;
-                    variableTypes = true;
-                    functionReturnTypes = true;
-                    enablePytestSupport = true;
-                    autoFormatStrings = true;
-                    inlayHints = {
-                      variableTypes = true;
-                      functionReturnTypes = true;
-                      pytestParameters = true;
-                    };
-                  };
-                };
-              };
-            };
-          };
-        };
-      };
-    });
+    };
   };
 }
