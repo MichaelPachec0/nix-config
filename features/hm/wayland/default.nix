@@ -11,65 +11,6 @@
     cfg = config;
   in {
     nixpkgs.overlays = [
-      (final: prev: let
-        # TODO: might be better to shadow waybar-hyprland than the parent package.
-        # TODO #2: see if i can create patch that will accept both sway
-        # and hyprland commands.
-        waybarOvr = {isHyprland ? false}: (old: let
-          date = "01-08-2023";
-          cava = prev.fetchFromGitHub {
-            owner = "LukashonakV";
-            repo = "cava";
-            # rev = "0.8.5";
-            rev = "ec4037502beff4dffc798c3a344dad0883a5a451";
-            sha256 = "06l0dsx4g4s7jmv59fwiinkc2nwla6j581nbsys7agkwp2ldzxbg";
-          };
-          rev = "9207fff627059b922fb790e30d68fea23f76146e";
-          sha256 = "09f4fsmwh6c3zzywwk738dyb6m1lqr4vn06q8vc58ymmx5i8h7gw";
-          shortRev = builtins.substring 0 7 "${rev}";
-          pversion = "0.9.22-pre";
-        in {
-          pname =
-            if isHyprland
-            then "${old.pname}-hyprland"
-            else old.pname;
-          withMediaPlayer = true;
-
-          version = "${pversion}+date=${date}_${shortRev}";
-
-          nativeBuildInputs =
-            (old.nativeBuildInputs or [])
-            ++ (with pkgs; [cmake]);
-
-          propagatedBuildInputs =
-            (old.propagatedBuildInputs or [])
-            ++ (with pkgs; [
-              iniparser
-              fftw
-              ncurses
-              alsa-lib
-              libpulseaudio
-              portaudio
-              pipewire
-              SDL2
-            ]);
-          src = prev.fetchFromGitHub {
-            inherit rev sha256;
-            owner = "Alexays";
-            repo = "Waybar";
-          };
-          mesonFlags =
-            (old.mesonFlags or [])
-            ++ (lib.optionals isHyprland ["-Dexperimental=true"]);
-          postUnpack = ''
-            rm -rf source/subprojects/cava.wrap
-            ln -s ${cava} source/subprojects/cava
-          '';
-        });
-        waybar = prev.waybar.overrideAttrs waybarOvr;
-      in {
-        inherit waybar;
-      })
     ];
     wayland.windowManager.hyprland = {
       enable = true;
@@ -79,7 +20,57 @@
         hidpi = true;
       };
     };
+    wayland.windowManager.sway = let
+    in {
+      enable = true;
+      config = rec {
+        modifier = "Mod4";
+        terminal = "kitty";
+        menu = "rofi -show combi -modes combi -combi-modes 'window,drun,run,ssh'";
 
+        input = {
+          "type:touchpad" = {
+            natural_scroll = "enabled";
+            # pointer_accel = "1";
+            accel_profile = "adaptive";
+            # NOTE: disable while typing.
+            dwt = "enabled";
+            tap = "disabled";
+          };
+          # NOTE: ps4 touchpad
+          "1356:2508:Sony_Interactive_Entertainment_Wireless_Controller_Touchpad" = {
+            dwt = "disabled";
+            tap = "enabled";
+          };
+        };
+
+        keybindings = let
+          mod = modifier;
+          Print = let
+            f = "scrn-$(date +%Y-%m-%dT%H:%M:%S%:z).png";
+          in ''
+            exec grim -t png -g "$(slurp)" ~/Pictures/${f}
+          '';
+        in {
+          # vim style navigation
+          "${mod}+j" = "focus down";
+          "${mod}+h" = "focus left";
+          "${mod}+l" = "focus right";
+          "${mod}+k" = "focus up";
+
+          inherit Print;
+          "${mod}+p" = "${Print}";
+        };
+        output = {
+          eDP-1 = {
+            scale = "1.75";
+          };
+        };
+      };
+      wrapperFeatures = {
+        gtk = true;
+      };
+    };
     home.pointerCursor = {
       #name = "phinger-cursors";
       #package = pkgs.phinger-cursors;
