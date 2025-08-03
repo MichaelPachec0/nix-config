@@ -1,0 +1,49 @@
+diff --git a/src/dfu.c b/src/dfu.c
+index 8557c29..915b98b 100644
+--- a/src/dfu.c
++++ b/src/dfu.c
+@@ -34,6 +34,8 @@
+ #include "idevicerestore.h"
+ #include "common.h"
+ 
++const int DFU_TIMEOUT = 20000000;
++
+ static int dfu_progress_callback(irecv_client_t client, const irecv_event_t* event) {
+ 	if (event->type == IRECV_PROGRESS) {
+ 		print_progress_bar(event->progress);
+@@ -469,7 +471,7 @@ int dfu_enter_recovery(struct idevicerestore_client_t* client, plist_t build_ide
+ 	if (client->build_major > 8) {
+ 		/* reconnect */
+ 		debug("Waiting for device to disconnect...\n");
+-		cond_wait_timeout(&client->device_event_cond, &client->device_event_mutex, 10000);
++		cond_wait_timeout(&client->device_event_cond, &client->device_event_mutex, DFU_TIMEOUT);
+ 		if (client->mode != MODE_UNKNOWN || (client->flags & FLAG_QUIT)) {
+ 			mutex_unlock(&client->device_event_mutex);
+ 			if (!(client->flags & FLAG_QUIT)) {
+@@ -478,7 +480,7 @@ int dfu_enter_recovery(struct idevicerestore_client_t* client, plist_t build_ide
+ 			return -1;
+ 		}
+ 		debug("Waiting for device to reconnect...\n");
+-		cond_wait_timeout(&client->device_event_cond, &client->device_event_mutex, 10000);
++		cond_wait_timeout(&client->device_event_cond, &client->device_event_mutex, DFU_TIMEOUT);
+ 		if ((client->mode != MODE_DFU && client->mode != MODE_RECOVERY) || (client->flags & FLAG_QUIT)) {
+ 			mutex_unlock(&client->device_event_mutex);
+ 			if (!(client->flags & FLAG_QUIT)) {
+@@ -644,7 +646,7 @@ int dfu_enter_recovery(struct idevicerestore_client_t* client, plist_t build_ide
+ 	}
+ 
+ 	debug("Waiting for device to disconnect...\n");
+-	cond_wait_timeout(&client->device_event_cond, &client->device_event_mutex, 10000);
++	cond_wait_timeout(&client->device_event_cond, &client->device_event_mutex, DFU_TIMEOUT);
+ 	if (client->mode != MODE_UNKNOWN || (client->flags & FLAG_QUIT)) {
+ 		mutex_unlock(&client->device_event_mutex);
+ 		if (!(client->flags & FLAG_QUIT)) {
+@@ -653,7 +655,7 @@ int dfu_enter_recovery(struct idevicerestore_client_t* client, plist_t build_ide
+ 		return -1;
+ 	}
+ 	debug("Waiting for device to reconnect in recovery mode...\n");
+-	cond_wait_timeout(&client->device_event_cond, &client->device_event_mutex, 10000);
++	cond_wait_timeout(&client->device_event_cond, &client->device_event_mutex, DFU_TIMEOUT);
+ 	if (client->mode != MODE_RECOVERY || (client->flags & FLAG_QUIT)) {
+ 		mutex_unlock(&client->device_event_mutex);
+ 		if (!(client->flags & FLAG_QUIT)) {
