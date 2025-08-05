@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{pkgs, ...}:
 pkgs.vimUtils.buildVimPlugin rec {
   name = "coc-lightbulb";
   src = pkgs.fetchFromGitHub {

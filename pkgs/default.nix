@@ -1,3 +1,3 @@
-{ pkgs ? (import ../helpers/nixpkgs.nix) { } }: {
-  shikane = pkgs.callPackage ./shikane { };
+{pkgs ? (import ../helpers/nixpkgs.nix) {}}: {
+  shikane = pkgs.callPackage ./shikane {};
 }

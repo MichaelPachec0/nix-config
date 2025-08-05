@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{pkgs, ...}:
 pkgs.vimUtils.buildVimPlugin rec {
   name = "coc-elixir";
   src = pkgs.fetchFromGitHub {

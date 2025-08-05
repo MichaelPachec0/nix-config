@@ -1,9 +1,10 @@
-{ pkgs, ... }:
+{pkgs, ...}:
 pkgs.vimUtils.buildVimPlugin rec {
-  name = "block";
+  pname = "block.nvim";
+  version = "0.0.1-master";
   src = pkgs.fetchFromGitHub {
     owner = "HampusHauffman";
-    repo = "${name}.nvim";
+    repo = "${pname}";
     rev = "26fc996788cfecf7c9ebc9ac42f2133094092822";
     sha256 = "i9ZvuaXRPu2duZkjH2y6Sxexf+BfmUdE3YHVKgG6Yz4=";
   };
