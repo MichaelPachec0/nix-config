@@ -1,4 +1,4 @@
-{ ... }: {
-  disabledModules = [ "services/hardware/usbmuxd.nix" ];
-  imports = [ ./usbmuxd.nix ];
+{...}: {
+  disabledModules = ["services/hardware/usbmuxd.nix"];
+  imports = [./usbmuxd.nix];
 }

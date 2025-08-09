@@ -1,8 +1,22 @@
-{ pkgs, lib, stdenv, fetchFromGitHub, runCommand, rustPlatform, makeWrapper, llvmPackages
-, buildNpmPackage, cmake, nodejs, unzip, python3, pkg-config, libsecret, darwin
+{
+  pkgs,
+  lib,
+  stdenv,
+  fetchFromGitHub,
+  runCommand,
+  rustPlatform,
+  makeWrapper,
+  llvmPackages,
+  buildNpmPackage,
+  cmake,
+  nodejs,
+  unzip,
+  python3,
+  pkg-config,
+  libsecret,
+  darwin,
 }:
-assert lib.versionAtLeast python3.version "3.5";
-let
+assert lib.versionAtLeast python3.version "3.5"; let
   publisher = "vadimcn";
   pname = "vscode-lldb";
   version = "1.9.2";
@@ -19,7 +33,7 @@ let
   };
 
   # need to build a custom version of lldb and llvm for enhanced rust support
-  lldb = (import ./lldb.nix { inherit fetchFromGitHub runCommand llvmPackages python3; });
+  lldb = import ./lldb.nix {inherit fetchFromGitHub runCommand llvmPackages python3;};
 
   adapter = rustPlatform.buildRustPackage {
     pname = "${pname}-adapter";
@@ -27,18 +41,17 @@ let
 
     cargoHash = "sha256-Qq2igtH1XIB+NAEES6hdNZcMbEmaFN69qIJ+gTYupvQ=";
 
-    nativeBuildInputs = [ makeWrapper ];
+    nativeBuildInputs = [makeWrapper];
 
     buildAndTestSubdir = "adapter";
 
-    buildFeatures = [ "weak-linkage" ];
+    buildFeatures = ["weak-linkage"];
 
     cargoBuildFlags = [
       "--lib"
       "--bin=codelldb"
     ];
-
-    patches = [ ./adapter-output-shared_object.patch ./codelldb_debug.patch ];
+    patches = [./adapter-output-shared_object.patch ./codelldb_debug.patch];
 
     # Tests are linked to liblldb but it is not available here.
     doCheck = false;
@@ -55,12 +68,14 @@ let
       pkg-config
     ];
 
-    buildInputs = [
-      libsecret
-    ] ++ lib.optionals stdenv.isDarwin (with darwin.apple_sdk.frameworks; [
-      Security
-      AppKit
-    ]);
+    buildInputs =
+      [
+        libsecret
+      ]
+      ++ lib.optionals stdenv.isDarwin (with darwin.apple_sdk.frameworks; [
+        Security
+        AppKit
+      ]);
 
     dontNpmBuild = true;
 
@@ -106,7 +121,7 @@ in
       mkdir -p $ext/{adapter,formatters}
       mv -t $ext vsix-extracted/extension/*
       cp -t $ext/adapter ${adapter}/{bin,lib}/*
-      cp -r $src/adapter/scripts $out/adapter/
+      cp -r $ext/adapter/scripts $out/adapter/
       wrapProgram $ext/adapter/codelldb \
         --set-default LLDB_DEBUGSERVER_PATH "${lldb.out}/bin/lldb-server"
       cp -t $ext/formatters ../formatters/*.py

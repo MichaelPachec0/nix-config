@@ -1,17 +1,16 @@
-{ config, lib, pkgs, ... }:
-
-with lib;
-
-let
-
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+with lib; let
   defaultUserGroup = "usbmux";
   apple = "05ac";
 
   cfg = config.services.usbmuxd;
-
 in {
   options.services.usbmuxd = {
-
     enable = mkOption {
       type = types.bool;
       default = false;
@@ -44,13 +43,11 @@ in {
       default = pkgs.usbmuxd;
       defaultText = literalExpression "pkgs.usbmuxd";
       description = lib.mdDoc "Which package to use for the usbmuxd daemon.";
-      relatedPackages = [ "usbmuxd" "usbmuxd2" ];
+      relatedPackages = ["usbmuxd" "usbmuxd2"];
     };
-
   };
 
   config = mkIf cfg.enable {
-
     users.users = optionalAttrs (cfg.user == defaultUserGroup) {
       ${cfg.user} = {
         description = "usbmuxd user";
@@ -60,7 +57,7 @@ in {
     };
 
     users.groups =
-      optionalAttrs (cfg.group == defaultUserGroup) { ${cfg.group} = { }; };
+      optionalAttrs (cfg.group == defaultUserGroup) {${cfg.group} = {};};
 
     # Give usbmuxd permission for Apple devices
     services.udev.extraRules = ''
@@ -69,16 +66,14 @@ in {
 
     systemd.services.usbmuxd = {
       description = "usbmuxd";
-      wantedBy = [ "multi-user.target" ];
+      wantedBy = ["multi-user.target"];
       unitConfig.Documentation = "man:usbmuxd(8)";
       serviceConfig = {
         # Trigger the udev rule manually. This doesn't require replugging the
         # device when first enabling the option to get it to work
-        ExecStartPre =
-          "${pkgs.udev}/bin/udevadm trigger -s usb -a idVendor=${apple}";
+        ExecStartPre = "${pkgs.udev}/bin/udevadm trigger -s usb -a idVendor=${apple}";
         ExecStart = "${cfg.package}/bin/usbmuxd -U ${cfg.user} -v";
       };
     };
-
   };
 }
