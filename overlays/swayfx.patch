@@ -1,0 +1,47 @@
+diff --git a/meson.build b/meson.build
+index 74637d84..2442d146 100644
+--- a/meson.build
++++ b/meson.build
+@@ -1,5 +1,5 @@
+ project(
+-	'sway',
++	'swayfx',
+ 	'c',
+ 	version: '0.3.2',
+ 	license: 'MIT',
+@@ -248,7 +248,7 @@ configure_file(
+ )
+ 
+ install_data(
+-	'sway.desktop',
++	'swayfx.desktop',
+ 	install_dir: join_paths(datadir, 'wayland-sessions')
+ )
+ 
+diff --git a/sway/meson.build b/sway/meson.build
+index f0f26346..446a7ec9 100644
+--- a/sway/meson.build
++++ b/sway/meson.build
+@@ -268,7 +268,7 @@ if have_xwayland
+ endif
+ 
+ executable(
+-	'sway',
++	'swayfx',
+ 	sway_sources + wl_protos_src,
+ 	include_directories: [sway_inc],
+ 	dependencies: sway_deps,
+diff --git a/sway.desktop b/swayfx.desktop
+similarity index 88%
+rename from sway.desktop
+rename to swayfx.desktop
+index 9f33bcff..31e6cb41 100644
+--- a/sway.desktop
++++ b/swayfx.desktop
+@@ -1,5 +1,5 @@
+ [Desktop Entry]
+ Name=SwayFX
+ Comment=An i3-compatible Wayland compositor
+-Exec=sway
++Exec=swayfx
+ Type=Application

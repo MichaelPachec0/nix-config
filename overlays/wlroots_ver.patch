@@ -1,0 +1,13 @@
+diff --git a/meson.build b/meson.build
+index 32bc2f3c..7e8b59da 100644
+--- a/meson.build
++++ b/meson.build
+@@ -1,7 +1,7 @@
+ project(
+ 	'wlroots',
+ 	'c',
+-	version: '0.17.0-dev',
++	version: '0.17.0',
+ 	license: 'MIT',
+ 	meson_version: '>=0.59.0',
+ 	default_options: [

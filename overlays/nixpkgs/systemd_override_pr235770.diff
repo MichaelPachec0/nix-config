@@ -1,0 +1,472 @@
+diff --git a/nixos/tests/systemd-boot.nix b/nixos/tests/systemd-boot.nix
+index 94e269ff37b..1583b2f8147 100644
+--- a/nixos/tests/systemd-boot.nix
++++ b/nixos/tests/systemd-boot.nix
+@@ -251,4 +251,30 @@ in
+           machine.succeed("test -e /boot/efi/nixos/.extra-files/efi/netbootxyz/netboot.xyz.efi")
+     '';
+   };
++
++  # Some UEFI firmwares fail on large reads. Now that systemd-boot loads initrd
++  # itself, systems with such firmware won't boot without this fix
++  uefiLargeFileWorkaround = makeTest {
++    name = "uefi-large-file-workaround";
++
++    nodes.machine = { pkgs, ... }: {
++      imports = [common];
++      virtualisation.efi.OVMF = pkgs.OVMF.overrideAttrs (old: {
++        # This patch deliberately breaks the FAT driver in EDK2 to
++        # exhibit (part of) the firmware bug that we are testing
++        # for. Files greater than 10MiB will fail to be read in a
++        # single Read() call, so systemd-boot will fail to load the
++        # initrd without a workaround. The number 10MiB was chosen
++        # because if it were smaller than the kernel size, even the
++        # LoadImage call would fail, which is not the failure mode
++        # we're testing for. It needs to be between the kernel size
++        # and the initrd size.
++        patches = old.patches or [] ++ [ ./systemd-boot-ovmf-broken-fat-driver.patch ];
++      });
++    };
++
++    testScript = ''
++      machine.wait_for_unit("multi-user.target")
++    '';
++  };
+ }
+diff --git a/pkgs/os-specific/linux/systemd/0003-Fix-NixOS-containers.patch b/pkgs/os-specific/linux/systemd/0003-Fix-NixOS-containers.patch
+index c0d38c60202..08499a22834 100644
+--- a/pkgs/os-specific/linux/systemd/0003-Fix-NixOS-containers.patch
++++ b/pkgs/os-specific/linux/systemd/0003-Fix-NixOS-containers.patch
+@@ -10,10 +10,10 @@ container, so checking early whether it exists will fail.
+  1 file changed, 2 insertions(+)
+ 
+ diff --git a/src/nspawn/nspawn.c b/src/nspawn/nspawn.c
+-index a697ea5cb9..65d9e7e398 100644
++index 3dabe12672..e5aa4feb1e 100644
+ --- a/src/nspawn/nspawn.c
+ +++ b/src/nspawn/nspawn.c
+-@@ -5635,6 +5635,7 @@ static int run(int argc, char *argv[]) {
++@@ -5638,6 +5638,7 @@ static int run(int argc, char *argv[]) {
+                                  goto finish;
+                          }
+                  } else {
+@@ -21,7 +21,7 @@ index a697ea5cb9..65d9e7e398 100644
+                          _cleanup_free_ char *p = NULL;
+  
+                          if (arg_pivot_root_new)
+-@@ -5649,6 +5650,7 @@ static int run(int argc, char *argv[]) {
++@@ -5652,6 +5653,7 @@ static int run(int argc, char *argv[]) {
+                                                      "Directory %s doesn't look like it has an OS tree (/usr/ directory is missing). Refusing.", arg_directory);
+                                  goto finish;
+                          }
+diff --git a/pkgs/os-specific/linux/systemd/0005-Add-some-NixOS-specific-unit-directories.patch b/pkgs/os-specific/linux/systemd/0004-Add-some-NixOS-specific-unit-directories.patch
+similarity index 100%
+rename from pkgs/os-specific/linux/systemd/0005-Add-some-NixOS-specific-unit-directories.patch
+rename to pkgs/os-specific/linux/systemd/0004-Add-some-NixOS-specific-unit-directories.patch
+diff --git a/pkgs/os-specific/linux/systemd/0004-fsck-look-for-fsck-binary-not-just-in-sbin.patch b/pkgs/os-specific/linux/systemd/0004-fsck-look-for-fsck-binary-not-just-in-sbin.patch
+deleted file mode 100644
+index 617cef50cc3..00000000000
+--- a/pkgs/os-specific/linux/systemd/0004-fsck-look-for-fsck-binary-not-just-in-sbin.patch
++++ /dev/null
+@@ -1,152 +0,0 @@
+-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+-From: Florian Klink <flokli@flokli.de>
+-Date: Thu, 13 Apr 2023 22:54:54 +0200
+-Subject: [PATCH] fsck: look for fsck binary not just in /sbin
+-
+-This removes remaining hardcoded occurences of `/sbin/fsck`, and instead
+-uses `find_executable` to find `fsck`.
+-
+-We also use `fsck_exists_for_fstype` to check for the `fsck.*`
+-executable, which also checks in `$PATH`, so it's fair to assume fsck
+-itself is also available.
+----
+- man/systemd-fsck@.service.xml |  8 ++++----
+- src/fsck/fsck.c               |  9 ++++++++-
+- src/home/homework-luks.c      | 11 ++++++++++-
+- src/shared/dissect-image.c    | 13 +++++++++++--
+- 4 files changed, 33 insertions(+), 8 deletions(-)
+-
+-diff --git a/man/systemd-fsck@.service.xml b/man/systemd-fsck@.service.xml
+-index e928aebdb3..403286829e 100644
+---- a/man/systemd-fsck@.service.xml
+-+++ b/man/systemd-fsck@.service.xml
+-@@ -51,17 +51,17 @@
+-     <para><filename>systemd-fsck</filename> does not know any details
+-     about specific filesystems, and simply executes file system
+-     checkers specific to each filesystem type
+--    (<filename>/sbin/fsck.<replaceable>type</replaceable></filename>). These checkers will decide if
+-+    (<filename>fsck.<replaceable>type</replaceable></filename>). These checkers will decide if
+-     the filesystem should actually be checked based on the time since
+-     last check, number of mounts, unclean unmount, etc.</para>
+- 
+-     <para><filename>systemd-fsck-root.service</filename> and <filename>systemd-fsck-usr.service</filename>
+--    will activate <filename>reboot.target</filename> if <filename>/sbin/fsck</filename> returns the "System
+--    should reboot" condition, or <filename>emergency.target</filename> if <filename>/sbin/fsck</filename>
+-+    will activate <filename>reboot.target</filename> if <filename>fsck</filename> returns the "System
+-+    should reboot" condition, or <filename>emergency.target</filename> if <filename>fsck</filename>
+-     returns the "Filesystem errors left uncorrected" condition.</para>
+- 
+-     <para><filename>systemd-fsck@.service</filename> will fail if
+--    <filename>/sbin/fsck</filename> returns with either "System should reboot"
+-+    <filename>fsck</filename> returns with either "System should reboot"
+-     or "Filesystem errors left uncorrected" conditions. For filesystems
+-     listed in <filename>/etc/fstab</filename> without <literal>nofail</literal>
+-     or <literal>noauto</literal> options, <literal>local-fs.target</literal>
+-diff --git a/src/fsck/fsck.c b/src/fsck/fsck.c
+-index e25c5d5efa..0e0e73c9ac 100644
+---- a/src/fsck/fsck.c
+-+++ b/src/fsck/fsck.c
+-@@ -351,6 +351,7 @@ static int run(int argc, char *argv[]) {
+-         if (r == 0) {
+-                 char dash_c[STRLEN("-C") + DECIMAL_STR_MAX(int) + 1];
+-                 int progress_socket = -1;
+-+                _cleanup_free_ char *fsck_path = NULL;
+-                 const char *cmdline[9];
+-                 int i = 0;
+- 
+-@@ -371,7 +372,13 @@ static int run(int argc, char *argv[]) {
+-                 } else
+-                         dash_c[0] = 0;
+- 
+--                cmdline[i++] = "/sbin/fsck";
+-+                r = find_executable("fsck", &fsck_path);
+-+                if (r < 0) {
+-+                        log_error_errno(r, "Cannot find fsck binary: %m");
+-+                        _exit(FSCK_OPERATIONAL_ERROR);
+-+                }
+-+
+-+                cmdline[i++] = fsck_path;
+-                 cmdline[i++] =  arg_repair;
+-                 cmdline[i++] = "-T";
+- 
+-diff --git a/src/home/homework-luks.c b/src/home/homework-luks.c
+-index 2ea9887853..e267457b8e 100644
+---- a/src/home/homework-luks.c
+-+++ b/src/home/homework-luks.c
+-@@ -215,6 +215,7 @@ static int block_get_size_by_path(const char *path, uint64_t *ret) {
+- static int run_fsck(const char *node, const char *fstype) {
+-         int r, exit_status;
+-         pid_t fsck_pid;
+-+        _cleanup_free_ char *fsck_path = NULL;
+- 
+-         assert(node);
+-         assert(fstype);
+-@@ -227,6 +228,14 @@ static int run_fsck(const char *node, const char *fstype) {
+-                 return 0;
+-         }
+- 
+-+        r = find_executable("fsck", &fsck_path);
+-+        /* We proceed anyway if we can't determine whether the fsck
+-+         * binary for some specific fstype exists,
+-+         * but the lack of the main fsck binary should be considered
+-+         * an error. */
+-+        if (r < 0)
+-+                return log_error_errno(r, "Cannot find fsck binary: %m");
+-+
+-         r = safe_fork("(fsck)",
+-                       FORK_RESET_SIGNALS|FORK_RLIMIT_NOFILE_SAFE|FORK_DEATHSIG|FORK_LOG|FORK_STDOUT_TO_STDERR|FORK_CLOSE_ALL_FDS,
+-                       &fsck_pid);
+-@@ -234,7 +243,7 @@ static int run_fsck(const char *node, const char *fstype) {
+-                 return r;
+-         if (r == 0) {
+-                 /* Child */
+--                execl("/sbin/fsck", "/sbin/fsck", "-aTl", node, NULL);
+-+                execl(fsck_path, fsck_path, "-aTl", node, NULL);
+-                 log_open();
+-                 log_error_errno(errno, "Failed to execute fsck: %m");
+-                 _exit(FSCK_OPERATIONAL_ERROR);
+-diff --git a/src/shared/dissect-image.c b/src/shared/dissect-image.c
+-index 4749bdd230..2b6e1418dd 100644
+---- a/src/shared/dissect-image.c
+-+++ b/src/shared/dissect-image.c
+-@@ -1423,6 +1423,7 @@ static int is_loop_device(const char *path) {
+- static int run_fsck(int node_fd, const char *fstype) {
+-         int r, exit_status;
+-         pid_t pid;
+-+        _cleanup_free_ char *fsck_path = NULL;
+- 
+-         assert(node_fd >= 0);
+-         assert(fstype);
+-@@ -1437,6 +1438,14 @@ static int run_fsck(int node_fd, const char *fstype) {
+-                 return 0;
+-         }
+- 
+-+        r = find_executable("fsck", &fsck_path);
+-+        /* We proceed anyway if we can't determine whether the fsck
+-+         * binary for some specific fstype exists,
+-+         * but the lack of the main fsck binary should be considered
+-+         * an error. */
+-+        if (r < 0)
+-+                return log_error_errno(r, "Cannot find fsck binary: %m");
+-+
+-         r = safe_fork_full(
+-                         "(fsck)",
+-                         &node_fd, 1, /* Leave the node fd open */
+-@@ -1446,7 +1455,7 @@ static int run_fsck(int node_fd, const char *fstype) {
+-                 return log_debug_errno(r, "Failed to fork off fsck: %m");
+-         if (r == 0) {
+-                 /* Child */
+--                execl("/sbin/fsck", "/sbin/fsck", "-aT", FORMAT_PROC_FD_PATH(node_fd), NULL);
+-+                execl(fsck_path, fsck_path, "-aT", FORMAT_PROC_FD_PATH(node_fd), NULL);
+-                 log_open();
+-                 log_debug_errno(errno, "Failed to execl() fsck: %m");
+-                 _exit(FSCK_OPERATIONAL_ERROR);
+-@@ -1454,7 +1463,7 @@ static int run_fsck(int node_fd, const char *fstype) {
+- 
+-         exit_status = wait_for_terminate_and_check("fsck", pid, 0);
+-         if (exit_status < 0)
+--                return log_debug_errno(exit_status, "Failed to fork off /sbin/fsck: %m");
+-+                return log_debug_errno(exit_status, "Failed to fork off %s: %m", fsck_path);
+- 
+-         if ((exit_status & ~FSCK_ERROR_CORRECTED) != FSCK_SUCCESS) {
+-                 log_debug("fsck failed with exit status %i.", exit_status);
+diff --git a/pkgs/os-specific/linux/systemd/0006-Get-rid-of-a-useless-message-in-user-sessions.patch b/pkgs/os-specific/linux/systemd/0005-Get-rid-of-a-useless-message-in-user-sessions.patch
+similarity index 91%
+rename from pkgs/os-specific/linux/systemd/0006-Get-rid-of-a-useless-message-in-user-sessions.patch
+rename to pkgs/os-specific/linux/systemd/0005-Get-rid-of-a-useless-message-in-user-sessions.patch
+index 0a638dfbf0e..e9f73d7c772 100644
+--- a/pkgs/os-specific/linux/systemd/0006-Get-rid-of-a-useless-message-in-user-sessions.patch
++++ b/pkgs/os-specific/linux/systemd/0005-Get-rid-of-a-useless-message-in-user-sessions.patch
+@@ -13,10 +13,10 @@ in containers.
+  1 file changed, 2 insertions(+), 1 deletion(-)
+ 
+ diff --git a/src/core/manager.c b/src/core/manager.c
+-index 380a4e30d7..817acb87b8 100644
++index 4bc8a06bd2..342892490e 100644
+ --- a/src/core/manager.c
+ +++ b/src/core/manager.c
+-@@ -1437,7 +1437,8 @@ static unsigned manager_dispatch_stop_when_bound_queue(Manager *m) {
++@@ -1486,7 +1486,8 @@ static unsigned manager_dispatch_stop_when_bound_queue(Manager *m) {
+                  if (!unit_is_bound_by_inactive(u, &culprit))
+                          continue;
+  
+diff --git a/pkgs/os-specific/linux/systemd/0007-hostnamed-localed-timedated-disable-methods-that-cha.patch b/pkgs/os-specific/linux/systemd/0006-hostnamed-localed-timedated-disable-methods-that-cha.patch
+similarity index 100%
+rename from pkgs/os-specific/linux/systemd/0007-hostnamed-localed-timedated-disable-methods-that-cha.patch
+rename to pkgs/os-specific/linux/systemd/0006-hostnamed-localed-timedated-disable-methods-that-cha.patch
+diff --git a/pkgs/os-specific/linux/systemd/0008-Fix-hwdb-paths.patch b/pkgs/os-specific/linux/systemd/0007-Fix-hwdb-paths.patch
+similarity index 100%
+rename from pkgs/os-specific/linux/systemd/0008-Fix-hwdb-paths.patch
+rename to pkgs/os-specific/linux/systemd/0007-Fix-hwdb-paths.patch
+diff --git a/pkgs/os-specific/linux/systemd/0009-Change-usr-share-zoneinfo-to-etc-zoneinfo.patch b/pkgs/os-specific/linux/systemd/0008-Change-usr-share-zoneinfo-to-etc-zoneinfo.patch
+similarity index 98%
+rename from pkgs/os-specific/linux/systemd/0009-Change-usr-share-zoneinfo-to-etc-zoneinfo.patch
+rename to pkgs/os-specific/linux/systemd/0008-Change-usr-share-zoneinfo-to-etc-zoneinfo.patch
+index 52733a4c492..300906be04d 100644
+--- a/pkgs/os-specific/linux/systemd/0009-Change-usr-share-zoneinfo-to-etc-zoneinfo.patch
++++ b/pkgs/os-specific/linux/systemd/0008-Change-usr-share-zoneinfo-to-etc-zoneinfo.patch
+@@ -88,10 +88,10 @@ index 9e79f84691..1a1c75718c 100644
+          (void) mkdir_parents(etc_localtime, 0755);
+          r = symlink_atomic(e, etc_localtime);
+ diff --git a/src/nspawn/nspawn.c b/src/nspawn/nspawn.c
+-index 65d9e7e398..dd44d529ca 100644
++index e5aa4feb1e..a7a8fae860 100644
+ --- a/src/nspawn/nspawn.c
+ +++ b/src/nspawn/nspawn.c
+-@@ -1915,8 +1915,8 @@ int userns_mkdir(const char *root, const char *path, mode_t mode, uid_t uid, gid
++@@ -1918,8 +1918,8 @@ int userns_mkdir(const char *root, const char *path, mode_t mode, uid_t uid, gid
+  static const char *timezone_from_path(const char *path) {
+          return PATH_STARTSWITH_SET(
+                          path,
+diff --git a/pkgs/os-specific/linux/systemd/0010-localectl-use-etc-X11-xkb-for-list-x11.patch b/pkgs/os-specific/linux/systemd/0009-localectl-use-etc-X11-xkb-for-list-x11.patch
+similarity index 100%
+rename from pkgs/os-specific/linux/systemd/0010-localectl-use-etc-X11-xkb-for-list-x11.patch
+rename to pkgs/os-specific/linux/systemd/0009-localectl-use-etc-X11-xkb-for-list-x11.patch
+diff --git a/pkgs/os-specific/linux/systemd/0011-build-don-t-create-statedir-and-don-t-touch-prefixdi.patch b/pkgs/os-specific/linux/systemd/0010-build-don-t-create-statedir-and-don-t-touch-prefixdi.patch
+similarity index 100%
+rename from pkgs/os-specific/linux/systemd/0011-build-don-t-create-statedir-and-don-t-touch-prefixdi.patch
+rename to pkgs/os-specific/linux/systemd/0010-build-don-t-create-statedir-and-don-t-touch-prefixdi.patch
+diff --git a/pkgs/os-specific/linux/systemd/0012-add-rootprefix-to-lookup-dir-paths.patch b/pkgs/os-specific/linux/systemd/0011-add-rootprefix-to-lookup-dir-paths.patch
+similarity index 100%
+rename from pkgs/os-specific/linux/systemd/0012-add-rootprefix-to-lookup-dir-paths.patch
+rename to pkgs/os-specific/linux/systemd/0011-add-rootprefix-to-lookup-dir-paths.patch
+diff --git a/pkgs/os-specific/linux/systemd/0013-systemd-shutdown-execute-scripts-in-etc-systemd-syst.patch b/pkgs/os-specific/linux/systemd/0012-systemd-shutdown-execute-scripts-in-etc-systemd-syst.patch
+similarity index 89%
+rename from pkgs/os-specific/linux/systemd/0013-systemd-shutdown-execute-scripts-in-etc-systemd-syst.patch
+rename to pkgs/os-specific/linux/systemd/0012-systemd-shutdown-execute-scripts-in-etc-systemd-syst.patch
+index 84ac0d882d6..9d0565a6e76 100644
+--- a/pkgs/os-specific/linux/systemd/0013-systemd-shutdown-execute-scripts-in-etc-systemd-syst.patch
++++ b/pkgs/os-specific/linux/systemd/0012-systemd-shutdown-execute-scripts-in-etc-systemd-syst.patch
+@@ -10,10 +10,10 @@ This is needed for NixOS to use such scripts as systemd directory is immutable.
+  1 file changed, 1 insertion(+)
+ 
+ diff --git a/src/shutdown/shutdown.c b/src/shutdown/shutdown.c
+-index 42111d2772..53467ac229 100644
++index 5dee1b3a92..c08cf80548 100644
+ --- a/src/shutdown/shutdown.c
+ +++ b/src/shutdown/shutdown.c
+-@@ -335,6 +335,7 @@ static void init_watchdog(void) {
++@@ -339,6 +339,7 @@ static void init_watchdog(void) {
+  int main(int argc, char *argv[]) {
+          static const char* const dirs[] = {
+                  SYSTEM_SHUTDOWN_PATH,
+diff --git a/pkgs/os-specific/linux/systemd/0014-systemd-sleep-execute-scripts-in-etc-systemd-system-.patch b/pkgs/os-specific/linux/systemd/0013-systemd-sleep-execute-scripts-in-etc-systemd-system-.patch
+similarity index 100%
+rename from pkgs/os-specific/linux/systemd/0014-systemd-sleep-execute-scripts-in-etc-systemd-system-.patch
+rename to pkgs/os-specific/linux/systemd/0013-systemd-sleep-execute-scripts-in-etc-systemd-system-.patch
+diff --git a/pkgs/os-specific/linux/systemd/0015-path-util.h-add-placeholder-for-DEFAULT_PATH_NORMAL.patch b/pkgs/os-specific/linux/systemd/0014-path-util.h-add-placeholder-for-DEFAULT_PATH_NORMAL.patch
+similarity index 100%
+rename from pkgs/os-specific/linux/systemd/0015-path-util.h-add-placeholder-for-DEFAULT_PATH_NORMAL.patch
+rename to pkgs/os-specific/linux/systemd/0014-path-util.h-add-placeholder-for-DEFAULT_PATH_NORMAL.patch
+diff --git a/pkgs/os-specific/linux/systemd/0016-pkg-config-derive-prefix-from-prefix.patch b/pkgs/os-specific/linux/systemd/0015-pkg-config-derive-prefix-from-prefix.patch
+similarity index 100%
+rename from pkgs/os-specific/linux/systemd/0016-pkg-config-derive-prefix-from-prefix.patch
+rename to pkgs/os-specific/linux/systemd/0015-pkg-config-derive-prefix-from-prefix.patch
+diff --git a/pkgs/os-specific/linux/systemd/0017-inherit-systemd-environment-when-calling-generators.patch b/pkgs/os-specific/linux/systemd/0016-inherit-systemd-environment-when-calling-generators.patch
+similarity index 94%
+rename from pkgs/os-specific/linux/systemd/0017-inherit-systemd-environment-when-calling-generators.patch
+rename to pkgs/os-specific/linux/systemd/0016-inherit-systemd-environment-when-calling-generators.patch
+index 236af4b2c97..0f67abe795c 100644
+--- a/pkgs/os-specific/linux/systemd/0017-inherit-systemd-environment-when-calling-generators.patch
++++ b/pkgs/os-specific/linux/systemd/0016-inherit-systemd-environment-when-calling-generators.patch
+@@ -16,10 +16,10 @@ executables that are being called from managers.
+  1 file changed, 8 insertions(+)
+ 
+ diff --git a/src/core/manager.c b/src/core/manager.c
+-index 817acb87b8..3f31359f8a 100644
++index 342892490e..1117251fe0 100644
+ --- a/src/core/manager.c
+ +++ b/src/core/manager.c
+-@@ -3714,9 +3714,17 @@ static int build_generator_environment(Manager *m, char ***ret) {
++@@ -3771,9 +3771,17 @@ static int build_generator_environment(Manager *m, char ***ret) {
+           * adjust generated units to that. Let's pass down some bits of information that are easy for us to
+           * determine (but a bit harder for generator scripts to determine), as environment variables. */
+  
+diff --git a/pkgs/os-specific/linux/systemd/0018-core-don-t-taint-on-unmerged-usr.patch b/pkgs/os-specific/linux/systemd/0017-core-don-t-taint-on-unmerged-usr.patch
+similarity index 92%
+rename from pkgs/os-specific/linux/systemd/0018-core-don-t-taint-on-unmerged-usr.patch
+rename to pkgs/os-specific/linux/systemd/0017-core-don-t-taint-on-unmerged-usr.patch
+index 18982ecd04b..f509eb39ece 100644
+--- a/pkgs/os-specific/linux/systemd/0018-core-don-t-taint-on-unmerged-usr.patch
++++ b/pkgs/os-specific/linux/systemd/0017-core-don-t-taint-on-unmerged-usr.patch
+@@ -17,10 +17,10 @@ See also: https://github.com/systemd/systemd/issues/24191
+  1 file changed, 4 deletions(-)
+ 
+ diff --git a/src/core/manager.c b/src/core/manager.c
+-index 3f31359f8a..0c4ec0b4fb 100644
++index 1117251fe0..bf5600a6cf 100644
+ --- a/src/core/manager.c
+ +++ b/src/core/manager.c
+-@@ -4556,10 +4556,6 @@ char* manager_taint_string(const Manager *m) {
++@@ -4617,10 +4617,6 @@ char* manager_taint_string(const Manager *m) {
+          if (m->taint_usr)
+                  stage[n++] = "split-usr";
+  
+diff --git a/pkgs/os-specific/linux/systemd/0019-tpm2_context_init-fix-driver-name-checking.patch b/pkgs/os-specific/linux/systemd/0018-tpm2_context_init-fix-driver-name-checking.patch
+similarity index 100%
+rename from pkgs/os-specific/linux/systemd/0019-tpm2_context_init-fix-driver-name-checking.patch
+rename to pkgs/os-specific/linux/systemd/0018-tpm2_context_init-fix-driver-name-checking.patch
+diff --git a/pkgs/os-specific/linux/systemd/0019-bootctl-also-print-efi-files-not-owned-by-systemd-in.patch b/pkgs/os-specific/linux/systemd/0019-bootctl-also-print-efi-files-not-owned-by-systemd-in.patch
+new file mode 100644
+index 00000000000..84fc6528b98
+--- /dev/null
++++ b/pkgs/os-specific/linux/systemd/0019-bootctl-also-print-efi-files-not-owned-by-systemd-in.patch
+@@ -0,0 +1,46 @@
++From bc0f378a1149b59e88e9345e579d62fec7f50cdf Mon Sep 17 00:00:00 2001
++From: Arian van Putten <arian.vanputten@gmail.com>
++Date: Wed, 31 May 2023 13:27:13 +0200
++Subject: [PATCH] bootctl: also print efi files not owned by systemd in status
++
++We should not skip over unknown entries in EFI/BOOT/ but
++also print them out in status so people are aware that they are there.
++
++(cherry picked from commit a680d4fb87bad829989949e5ea4fc6db90453456)
++---
++ src/boot/bootctl-status.c | 11 +++++------
++ 1 file changed, 5 insertions(+), 6 deletions(-)
++
++diff --git a/src/boot/bootctl-status.c b/src/boot/bootctl-status.c
++index 2e2bf1f7e1..f1ac4a9c8a 100644
++--- a/src/boot/bootctl-status.c
+++++ b/src/boot/bootctl-status.c
++@@ -225,9 +225,8 @@ static int enumerate_binaries(
++                         return log_error_errno(errno, "Failed to open file '%s' for reading: %m", filename);
++ 
++                 r = get_file_version(fd, &v);
++-                if (r == -ESRCH) /* Not the file we are looking for. */
++-                        continue;
++-                if (r < 0)
+++
+++                if (r < 0 && r != -ESRCH)
++                         return r;
++ 
++                 if (*previous) { /* Let's output the previous entry now, since now we know that there will be
++@@ -242,10 +241,10 @@ static int enumerate_binaries(
++                 /* Do not output this entry immediately, but store what should be printed in a state
++                  * variable, because we only will know the tree glyph to print (branch or final edge) once we
++                  * read one more entry */
++-                if (r > 0)
++-                        r = asprintf(previous, "/%s/%s (%s%s%s)", path, de->d_name, ansi_highlight(), v, ansi_normal());
++-                else
+++                if (r == -ESRCH) /* No systemd-owned file but still interesting to print */
++                         r = asprintf(previous, "/%s/%s", path, de->d_name);
+++                else /* if (r >= 0) */
+++                        r = asprintf(previous, "/%s/%s (%s%s%s)", path, de->d_name, ansi_highlight(), v, ansi_normal());
++                 if (r < 0)
++                         return log_oom();
++ 
++-- 
++2.39.2 (Apple Git-143)
++
+diff --git a/pkgs/os-specific/linux/systemd/default.nix b/pkgs/os-specific/linux/systemd/default.nix
+index fbf56b8c30a..fd5ca2df5a9 100644
+--- a/pkgs/os-specific/linux/systemd/default.nix
++++ b/pkgs/os-specific/linux/systemd/default.nix
+@@ -145,7 +145,7 @@ assert withUkify -> withEfi;
+ let
+   wantCurl = withRemote || withImportd;
+   wantGcrypt = withResolved || withImportd;
+-  version = "253.3";
++  version = "253.5";
+ 
+   # Bump this variable on every (major) version change. See below (in the meson options list) for why.
+   # command:
+@@ -162,7 +162,7 @@ stdenv.mkDerivation (finalAttrs: {
+     owner = "systemd";
+     repo = "systemd-stable";
+     rev = "v${version}";
+-    hash = "sha256-iy1kyqiVeXIhFJAQ+nYorrXm/xb2gfakyrEfMyNR5l8=";
++    hash = "sha256-B3A9AvpfZ8SYsiZvHnWO4RHs1/6EdczWF2NmrSqxQ7c=";
+   };
+ 
+   # On major changes, or when otherwise required, you *must* reformat the patches,
+@@ -174,22 +174,22 @@ stdenv.mkDerivation (finalAttrs: {
+     ./0001-Start-device-units-for-uninitialised-encrypted-devic.patch
+     ./0002-Don-t-try-to-unmount-nix-or-nix-store.patch
+     ./0003-Fix-NixOS-containers.patch
+-    ./0004-fsck-look-for-fsck-binary-not-just-in-sbin.patch
+-    ./0005-Add-some-NixOS-specific-unit-directories.patch
+-    ./0006-Get-rid-of-a-useless-message-in-user-sessions.patch
+-    ./0007-hostnamed-localed-timedated-disable-methods-that-cha.patch
+-    ./0008-Fix-hwdb-paths.patch
+-    ./0009-Change-usr-share-zoneinfo-to-etc-zoneinfo.patch
+-    ./0010-localectl-use-etc-X11-xkb-for-list-x11.patch
+-    ./0011-build-don-t-create-statedir-and-don-t-touch-prefixdi.patch
+-    ./0012-add-rootprefix-to-lookup-dir-paths.patch
+-    ./0013-systemd-shutdown-execute-scripts-in-etc-systemd-syst.patch
+-    ./0014-systemd-sleep-execute-scripts-in-etc-systemd-system-.patch
+-    ./0015-path-util.h-add-placeholder-for-DEFAULT_PATH_NORMAL.patch
+-    ./0016-pkg-config-derive-prefix-from-prefix.patch
+-    ./0017-inherit-systemd-environment-when-calling-generators.patch
+-    ./0018-core-don-t-taint-on-unmerged-usr.patch
+-    ./0019-tpm2_context_init-fix-driver-name-checking.patch
++    ./0004-Add-some-NixOS-specific-unit-directories.patch
++    ./0005-Get-rid-of-a-useless-message-in-user-sessions.patch
++    ./0006-hostnamed-localed-timedated-disable-methods-that-cha.patch
++    ./0007-Fix-hwdb-paths.patch
++    ./0008-Change-usr-share-zoneinfo-to-etc-zoneinfo.patch
++    ./0009-localectl-use-etc-X11-xkb-for-list-x11.patch
++    ./0010-build-don-t-create-statedir-and-don-t-touch-prefixdi.patch
++    ./0011-add-rootprefix-to-lookup-dir-paths.patch
++    ./0012-systemd-shutdown-execute-scripts-in-etc-systemd-syst.patch
++    ./0013-systemd-sleep-execute-scripts-in-etc-systemd-system-.patch
++    ./0014-path-util.h-add-placeholder-for-DEFAULT_PATH_NORMAL.patch
++    ./0015-pkg-config-derive-prefix-from-prefix.patch
++    ./0016-inherit-systemd-environment-when-calling-generators.patch
++    ./0017-core-don-t-taint-on-unmerged-usr.patch
++    ./0018-tpm2_context_init-fix-driver-name-checking.patch
++    ./0019-bootctl-also-print-efi-files-not-owned-by-systemd-in.patch
+   ] ++ lib.optional stdenv.hostPlatform.isMusl (
+     let
+       oe-core = fetchzip {
