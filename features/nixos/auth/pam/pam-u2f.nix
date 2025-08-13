@@ -12,41 +12,51 @@
 #   security.pam.services."sudo".use2Factor = false;
 # }
 # source: https://gist.github.com/vlaci/80bebce47a8ac6770035d362b3d004e0
-
-{ config, pkgs, lib, ... }:
-with lib;
-
-let
+# auth sufficient pam_u2f.so debug cue nouserok origin=pam://mydesktop appid=pam://mydesktop
+# auth sufficient /nix/store/7gj96mssp9yivkm7y75qd9hjwn3fbnf6-pam_u2f-1.4.0/lib/security/pam_u2f.so  appid=pam://pamauth authFile=/nix/store/fznaz77qisfw806ds23wfg5lbxh9hyb0-u2f_mapping cue origin=pam://pamauth
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
+with lib; let
   parentConfig = config;
-  overrideServices = { config, name, ... }:
-    let cfg = config;
-    in let config = parentConfig;
-    in {
-      options = {
-        use2Factor = mkOption {
-          description = "If set to true u2f is used as 2nd factor.";
-          default = parentConfig.security.pam.use2Factor;
-        };
-        u2fModuleArgs = mkOption {
-          description = "Additional arguments to pass to pam_u2f.so";
-          default = parentConfig.security.pam.u2fModuleArgs;
-        };
-        text = mkOption {
-          apply = txt:
-            let
-              ctrl = if cfg.use2Factor then "required" else "sufficient";
-              args = cfg.u2fModuleArgs;
-            in builtins.replaceStrings
-            [ "auth sufficient ${pkgs.pam_u2f}/lib/security/pam_u2f.so" ]
-            [ "auth ${ctrl} ${pkgs.pam_u2f}/lib/security/pam_u2f.so ${args}" ]
-            txt;
-        };
+  overrideServices = {
+    config,
+    name,
+    ...
+  }: let
+    cfg = config;
+  in {
+    options = {
+      use2Factor = mkOption {
+        description = "If set to true u2f is used as 2nd factor.";
+        default = parentConfig.security.pam.use2Factor;
+      };
+      u2fModuleArgs = mkOption {
+        description = "Additional arguments to pass to pam_u2f.so";
+        default = parentConfig.security.pam.u2fModuleArgs;
+      };
+      text = mkOption {
+        apply = txt: let
+          ctrl =
+            if cfg.use2Factor
+            then "required"
+            else "sufficient";
+          args = cfg.u2fModuleArgs;
+        in
+          builtins.replaceStrings
+          ["auth sufficient ${pkgs.pam_u2f}/lib/security/pam_u2f.so"]
+          ["auth ${ctrl} ${pkgs.pam_u2f}/lib/security/pam_u2f.so ${args}"]
+          txt;
       };
     };
+  };
 in {
   options = {
     security.pam.services =
-      mkOption { type = with types; attrsOf (submodule overrideServices); };
+      mkOption {type = with types; attrsOf (submodule overrideServices);};
     security.pam.u2fModuleArgs = mkOption {
       description = ''
         Additional arguments to pass to pam_u2f.so in all pam services.
