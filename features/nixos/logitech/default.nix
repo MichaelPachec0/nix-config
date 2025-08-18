@@ -1,6 +1,10 @@
 # TODO: convert this to a proper module. Add a config setting, ..ect.
-{ config, lib, pkgs, ... }:
-let
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}: let
   configText = ''
     // Logiops (Linux driver) configuration for Logitech MX Master 3.
     // Includes gestures, smartshift, DPI.
@@ -148,7 +152,7 @@ let
                   keys: [ "KEY_LEFTMETA", "KEY_UP" ]; // maximize window
                 }
     		  },
-    		  
+
     		  {
                 direction: "Down";
                 mode: "OnRelease";
@@ -160,7 +164,7 @@ let
             );
           };
         },
-    	
+
         // Top button
         {
           cid: 0xc4;
@@ -236,19 +240,21 @@ let
 in {
   options = {
     services = {
-      logid = { enable = lib.mkEnableOption "adds logid to the environment."; };
+      logid = {enable = lib.mkEnableOption "adds logid to the environment.";};
     };
   };
-  config = let logid = config.services.logid.enable;
-  in lib.mkIf logid {
-    environment.systemPackages = with pkgs; [ logiops ];
-    hardware.logitech.wireless = {
-      enable = true;
-      enableGraphical = true;
-    };
-    systemd.packages = [ pkgs.logiops ];
-    systemd.services."logid" = { wantedBy = [ "graphical.target" ]; };
+  config = let
+    logid = config.services.logid.enable;
+  in
+    lib.mkIf logid {
+      environment.systemPackages = with pkgs; [logiops];
+      hardware.logitech.wireless = {
+        enable = true;
+        enableGraphical = true;
+      };
+      systemd.packages = [pkgs.logiops];
+      systemd.services."logid" = {wantedBy = ["graphical.target"];};
 
-    environment.etc."logid.cfg".source = "${configFile}";
-  };
+      environment.etc."logid.cfg".source = "${configFile}";
+    };
 }
