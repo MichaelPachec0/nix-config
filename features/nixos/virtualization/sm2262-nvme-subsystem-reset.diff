@@ -1,8 +1,8 @@
 diff --git a/drivers/pci/pci.c b/drivers/pci/pci.c
-index 3d2fb394986a..68d3041766fc 100644
+index 67956bfebf87..e4d01bff2671 100644
 --- a/drivers/pci/pci.c
 +++ b/drivers/pci/pci.c
-@@ -5054,7 +5054,7 @@ int pci_bridge_secondary_bus_reset(struct pci_dev *dev)
+@@ -5113,7 +5113,7 @@ int pci_bridge_secondary_bus_reset(struct pci_dev *dev)
  }
  EXPORT_SYMBOL_GPL(pci_bridge_secondary_bus_reset);
  
@@ -12,7 +12,7 @@ index 3d2fb394986a..68d3041766fc 100644
  	struct pci_dev *pdev;
  
 diff --git a/drivers/pci/pci.h b/drivers/pci/pci.h
-index 3d60cabde1a1..499b3877e1fe 100644
+index 88576a22fecb..dc4225af449b 100644
 --- a/drivers/pci/pci.h
 +++ b/drivers/pci/pci.h
 @@ -36,6 +36,7 @@ int pci_mmap_fits(struct pci_dev *pdev, int resno, struct vm_area_struct *vmai,
@@ -24,10 +24,10 @@ index 3d60cabde1a1..499b3877e1fe 100644
  
  struct pci_cap_saved_data {
 diff --git a/drivers/pci/quirks.c b/drivers/pci/quirks.c
-index 20a932690738..3148f795d2fe 100644
+index 56dce858a693..2cb8ae3a4646 100644
 --- a/drivers/pci/quirks.c
 +++ b/drivers/pci/quirks.c
-@@ -4036,6 +4036,30 @@ static int reset_hinic_vf_dev(struct pci_dev *pdev, bool probe)
+@@ -4092,6 +4092,30 @@ static int reset_hinic_vf_dev(struct pci_dev *pdev, bool probe)
  	return 0;
  }
  
@@ -58,14 +58,13 @@ index 20a932690738..3148f795d2fe 100644
  static const struct pci_dev_reset_methods pci_dev_reset_methods[] = {
  	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82599_SFP_VF,
  		 reset_intel_82599_sfp_virtfn },
-@@ -4046,6 +4070,9 @@ static const struct pci_dev_reset_methods pci_dev_reset_methods[] = {
- 	{ PCI_VENDOR_ID_SAMSUNG, 0xa804, nvme_disable_and_flr },
+@@ -4103,6 +4127,9 @@ static const struct pci_dev_reset_methods pci_dev_reset_methods[] = {
  	{ PCI_VENDOR_ID_INTEL, 0x0953, delay_250ms_after_flr },
  	{ PCI_VENDOR_ID_INTEL, 0x0a54, delay_250ms_after_flr },
+ 	{ PCI_VENDOR_ID_SOLIDIGM, 0xf1ac, delay_250ms_after_flr },
 +	{ 0x126f, 0x2262, prefer_bus_reset },
 +	{ 0x126f, 0x2263, prefer_bus_reset },
 +	{ PCI_VENDOR_ID_INTEL, 0xf1a6, prefer_bus_reset },
  	{ PCI_VENDOR_ID_CHELSIO, PCI_ANY_ID,
  		reset_chelsio_generic_dev },
  	{ PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_HINIC_VF,
-

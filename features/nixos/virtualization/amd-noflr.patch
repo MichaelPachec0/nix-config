@@ -1,9 +1,9 @@
 diff --git a/drivers/pci/quirks.c b/drivers/pci/quirks.c
-index b7347bc6a24d..5ad877fd49d8 100644
+index 56dce858a693..cd209f3992ad 100644
 --- a/drivers/pci/quirks.c
 +++ b/drivers/pci/quirks.c
-@@ -5017,6 +5017,17 @@ int pci_dev_specific_disable_acs_redir(struct pci_dev *dev)
-        return -ENOTTY;
+@@ -5301,6 +5301,17 @@ int pci_dev_specific_disable_acs_redir(struct pci_dev *dev)
+ 	return -ENOTTY;
  }
  
 +/*
@@ -20,4 +20,3 @@ index b7347bc6a24d..5ad877fd49d8 100644
  /*
   * The PCI capabilities list for Intel DH895xCC VFs (device ID 0x0443) with
   * QuickAssist Technology (QAT) is prematurely terminated in hardware.  The
-
