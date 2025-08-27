@@ -1,0 +1,25 @@
+# diff --git a/lua/nvchad/utils.lua b/lua/nvchad/utils.lua
+# index 5ba88f9..1f247fe 100644
+# --- a/lua/nvchad/utils.lua
+# +++ b/lua/nvchad/utils.lua
+# @@ -2,7 +2,7 @@ local M = {}
+#  local fn = vim.fn
+#
+#  M.list_themes = function()
+# -  local default_themes = vim.fn.readdir(vim.fn.stdpath "data" .. "/lazy/base46/lua/base46/themes")
+# +  local default_themes = vim.fn.readdir(vim.fn.stdpath "config" .."/lazyPlugins/pack/lazyPlugins/start" .. "/base46/lua/base46/themes")
+#
+#    local custom_themes = vim.loop.fs_stat(fn.stdpath "config" .. "/lua/custom/themes")
+diff --git a/lua/nvchad/utils.lua b/lua/nvchad/utils.lua
+index 1b67910..853b343 100644
+--- a/lua/nvchad/utils.lua
++++ b/lua/nvchad/utils.lua
+@@ -3,7 +3,7 @@ local fn = vim.fn
+ local opt_local = vim.api.nvim_set_option_value
+ 
+ M.list_themes = function()
+-  local default_themes = vim.fn.readdir(vim.fn.stdpath "data" .. "/lazy/base46/lua/base46/themes")
++  local default_themes = vim.fn.readdir(vim.fn.stdpath "config" .. "/lazyPlugins/pack/lazyPlugins/start" .. "/base46/lua/base46/themes")
+   local custom_themes = vim.uv.fs_stat(fn.stdpath "config" .. "/lua/themes")
+ 
+   if custom_themes and custom_themes.type == "directory" then
