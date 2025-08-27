@@ -6,17 +6,32 @@
 }: let
   bin = "/run/current-system/sw/bin";
   scale = "1.75";
+  RESETD = pkgs.writeShellScriptBin "reset_displays.sh" ''
+    # NOTE: THIS RESETS ALL DISPLAY ROTATION on sway only
+    # TODO: need to generalize to use both sway and hyperland stuff
+    CMD=$(swaymsg -t get_outputs)
+    echo "$CMD" | while IFS= read -r line; do
+        if [[ $line =~ \"name\"  ]]; then
+            display=$(echo "$line" | tr -d " " | cut -d ":" -f 2 | sed 's/\"\(.*\)\",/\1/')
+            echo "$display"
+            command="swaymsg -- output $display transform 0"
+            $command
+        fi
+    done
+  '';
   RD = pkgs.writeShellScriptBin "rotate_display.sh" ''
     function build_command(){
         if [[ $XDG_CURRENT_DESKTOP == "sway"  ]]; then
           # NOTE: grabs the right display
           # TODO: make this more generic
-          display=$(swaymsg -t get_outputs  | rg \"DP | tr -d " " | cut -d ":" -f 2 | sed 's/\"\(.*\)\",/\1/')
-          display_debug=$(swaymsg -t get_outputs  | rg \"DP | tr -d " ")
+          display=$(swaymsg -t get_outputs  | rg \""$2" | tr -d " " | cut -d ":" -f 2 | sed 's/\"\(.*\)\",/\1/')
+          display_debug=$(swaymsg -t get_outputs  | rg \""$2" | tr -d " ")
           # NOTE: was DP-2, transform  270.
           echo "DEBUG $display_debug"
           echo "DEBUG2: $(swaymsg -t get_outputs)"
           if [[ $1 == 1 ]]; then
+            # this sets $1 to 270, as way to not just reuse the variable,
+            # but also to keep the scheme when calling the command.
             set --  "270"
           fi
           command="swaymsg -- output $display transform $1"
@@ -32,36 +47,56 @@
     }
     # NOTE: for now only rotate the mobile monitor, might want to later not
     # hardcode this.
-    build_command 1
+    build_command 1 $1
   '';
   WtM = pkgs.writeShellScriptBin "move_monitors.sh" ''
     echo $XDG_CURRENT_DESKTOP
     echo "DEBUG: START $@"
     version=$1
     # TODO: Change this since only applies on l config.
+    # alternatively make this generic enough so that outputs can be defined at runtime
+    # TODO: how would this be checked? should it be checked? would failure be enough?
+    # would it be better to make this a rust app? :P
     outputs=("eDP-1", "HDMI-A-1", "DP-2")
     outputs_home=("eDP-1", "DP-2", "HDMI-A-1")
     function build_command() {
       # NOTE: $1 is the workspace, $2 is the output
       if [[ $XDG_CURRENT_DESKTOP == "sway"  ]]; then
-        workspace="swaymsg -- workspace $1"
+        # NOTE: this change was done with sworkstyle in mind, this actually chooses the workspace number and not representaion.
+        # this works regardless if sworkstyle is used or not.
+        workspace="swaymsg -- workspace number $1"
         if [[ $version == 1 ]]; then
-        command="swaymsg -- move workspace to output ''${outputs_home[$2]}"
+          command="swaymsg -- move workspace to output ''${outputs_home[$2]}"
         else
-        command="swaymsg -- move workspace to output ''${outputs[$2]}"
+          command="swaymsg -- move workspace to output ''${outputs[$2]}"
         fi
 
         $workspace
       elif [[ $XDG_CURRENT_DESKTOP == "hyprland" ]]; then
+        # TODO: test if this still works, most of the work on this script happened in sway.
         command="hyprctl dispatch moveworkspacetomonitor $1 $2"
       else
         echo "INVALID ENV! ENV: $XDG_CURRENT_DESKTOP "
       fi
+      # TODO: do not know if i want to keep this here.
+      echo "DEBUG: RESET BEFORE ROTATE"
+      ${lib.getExe RESETD}
       echo "DEBUG: executing $command"
       $command
     }
+
+    # NOTE: this only works when window manager systemd support is enabled and in use.
+    # In theory to make this not depend on systemd you could use top / grep / cut but that would add a ton of complexity.
+    # This is just 2 extra lines an a branch
+    # TODO: make this apply to hyperland as well
+    startdate=$(date -d "$(systemctl show --property=ActiveEnterTimestamp --user sway-session.target | cut -d= -f2)" +%s)
+    deltadate=$(( $(date +%s) - startdate ))
     # NOTE: make sure that all workspaces are instatiated.
-    sleep 20
+    if [[ deltadate -lt 50 ]]; then
+      sleep 20
+    else
+      sleep 3
+    fi
     for mon in $(seq 0 2); do
       for work in $(seq 1 3); do
         echo "DEBUG: $mon $work"
@@ -71,6 +106,12 @@
             # $command $(((3*mon+work)))
       done
     done
+    sleep 1
+    # WARN: waybar is a being an asshole for some reason, this resets it to a known state.
+    # NOTE: this will also tend to crash waybar (or something else does). Rather than sending a bug report 
+    # (sorry alexays...) there is another piece of code that will make sure that its always running.
+    # TODO: (low prio) send that bug report...
+    pkill -USR2 waybar
   '';
 in ''
   [[ profile ]]
@@ -84,7 +125,10 @@ in ''
 
   [[ profile ]]
   name = "mobile with monitor"
-  exec = ["${lib.getExe RD}"]
+  exec = [
+
+  "${lib.getExe RESETD} && ${lib.getExe RD} DP 1"
+  ]
   [[ profile.output ]]
   match = "eDP-1"
   enable = true
@@ -101,7 +145,8 @@ in ''
   [[ profile ]]
   name = "Home Docked"
   exec = [
-    "${lib.getExe WtM} 1"
+    "${lib.getExe WtM} 1",
+  "${lib.getExe RESETD}"
   ]
   [[ profile.output ]]
   match = "eDP-1"
@@ -125,6 +170,9 @@ in ''
 
   [[ profile ]]
   name = "Home Only Asus"
+  exec = [
+  "${lib.getExe RESETD}"
+  ]
   [[ profile.output ]]
   match = "eDP-1"
   enable = true
@@ -138,10 +186,34 @@ in ''
   position  = { x = 2560, y = 0 }
   scale = 1.0
 
+  # [[ profile ]]
+  # name = "L profile"
+  # [[ profile.output ]]
+  # match = "eDP-1"
+  # enable = true mode = { width = 3840, height = 2160, refresh = 59.99 } # position = { x = 1080, y = 480 }
+  # position = { x = 1080, y = 1080 }
+  # scale = ${scale}
+  # [[ profile.output ]]
+  # match  = "DP-2"
+  # enable = true
+  # mode = { width = 1920, height = 1080, refresh = 60.00 }
+  # # position = { x = 3640, y = 0 }
+  # position = { x = 0, y = 0 }
+  # scale = 1.0
+  # exec = [ "${bin}/hyprctl keyword monitor DP-2, transform,1" ]
+  # #exec = [ "${bin}/hyprctl " ]
+  # #exec = [ "/bin/sh -c 'echo hello world'" ]
+  # #exec = [ "${lib.getExe pkgs.bash} -c 'echo hello world'" ]
+  # [[ profile.output ]]
+  # match  = "/OptiPlex 7460/"
+  # enable = true
+  # mode = { width = 1920, height = 1080, refresh = 60.00 }
+  # position = { x = 1080, y = 0 }
+  # scale = 1.0
   [[ profile ]]
   name = "LN profile"
   exec = [
-    "${lib.getExe RD}",
+    "${lib.getExe RD} DP",
     "${lib.getExe WtM} 1"
   ]
   [[ profile.output ]]
@@ -156,10 +228,6 @@ in ''
   mode = { width = 1920, height = 1080, refresh = 60.00 }
   position = { x = 0, y = 0 }
   scale = 1.0
-  exec = [ "${config.wayland.windowManager.hyprland.package}/bin/hyprctl keyword monitor DP-2, transform,1" ]
-  #exec = [ "${bin}/hyprctl " ]
-  #exec = [ "/bin/sh -c 'echo hello world'" ]
-  #exec = [ "${lib.getExe pkgs.bash} -c 'echo hello world'" ]
   [[ profile.output ]]
   match  = "/OptiPlex 7460/"
   enable = true
@@ -170,7 +238,7 @@ in ''
   [[ profile ]]
   name = "LV profile"
   exec = [
-    "${lib.getExe RD}",
+    "${lib.getExe RD} DP",
     "${lib.getExe WtM}"
   ]
   [[ profile.output ]]
@@ -190,5 +258,21 @@ in ''
   enable = true
   mode = { width = 1920, height = 1080, refresh = 60.00 }
   position = { x = 1080, y = 0 }
+
+  scale = 1.0
+  [[ profile ]]
+  name = "mobile with monitor hdmi style"
+  exec = [" ${lib.getExe RESETD} && ${lib.getExe RD} HDMI"]
+  [[ profile.output ]]
+  match = "eDP-1"
+  enable = true
+  mode = { width = 3840, height = 2160, refresh = 59.99 }
+  position = { x = 1080, y = 0 }
+  scale = ${scale}
+  [[ profile.output ]]
+  match  = "/MDS-15605/"
+  enable = true
+  mode = { width = 1920, height = 1080, refresh = 60.00 }
+  position = { x = 0, y = 0 }
   scale = 1.0
 ''
