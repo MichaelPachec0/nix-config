@@ -5,9 +5,11 @@
     // "width": 1280, // Waybar width
     "spacing": 4, // Gaps between modules (4px)
     // Choose the order of the modules
-    "modules-left": ["wlr/workspaces", "hyprland/submap", "hyprland/scratchpad", "custom/media",  "hyprland/window"  ],
+    "modules-left": ["wlr/workspaces", "hyprland/window"  ],
+    //"modules-left": ["wlr/workspaces", "hyprland/submap", "hyprland/scratchpad", "custom/media",  "hyprland/window"  ],
+    //"modules-left": ["hyprland/workspaces", "hyprland/submap", "hyprland/scratchpad", "custom/media",  "hyprland/window"  ],
     //"modules-center": ["hyprland/window"],
-    "modules-right": ["mpris", "idle_inhibitor", "pulseaudio", "network", "cpu", "memory", "temperature", "backlight", "hyprland/language", "battery", "clock", "tray"],
+    "modules-right": ["mpris", "idle_inhibitor", "pulseaudio", "network", "cpu", "memory", "temperature", "backlight", "battery", "clock", "tray"],
     // Modules configuration
      "wlr/workspaces": {
     //     "disable-scroll": true,
@@ -20,11 +22,19 @@
     //         "4": "",
     //         "5": "",
              "urgent": "",
-             "active": "",
-             "default": ""
+//             "active": "",
+//             "default": ""
              },
+//             "persistent_workspaces": {
+//               "1": ["eDP-1"],
+//               "2": ["eDP-1"],
+//               "3": ["eDP-1"],
+//               "4": ["DP"],
+//             }
 	"on-click": "activate",
-    	"on-click-right": "close"
+    	"on-click-right": "close",
+      "on-scroll-up": "hyprctl dispatch workspace e+1",
+      "on-scroll-down": "hyprctl dispatch workspace e-1",
 
      },
     // "wlr/taskbar": {
@@ -40,8 +50,32 @@
             "unlocked": ""
         }
     },
+    "hyprland/window": {
+      //"format": "{}",
+      "rewrite": {
+        "(.*) — Firefox Developer Edition Private Browsing": " $1",
+        "(.*) — Firefox Developer Edition": "🌎 $1",
+        "(.*)Firefox Developer Edition Private Browsing": "",
+        "(.*)Firefox Developer Edition": "",
+        "(.*) — Visual Studio Code": "$1 ",
+        "(.*)Spotify": "Spotify ",
+        "(.*) — zsh": "> [$1]",
+        "vim (.*)": " $1",
+        "(.*.(c|h)) - NVIM": "  $1",
+        "(.*.nix) - NVIM": " 󱄅 $1",
+        "(.*) - NVIM": " $1",
+        "vim": "",
+        "michael@nyx:(.*)": " $1",
+        "(.*) [—-] KeePassXC": ": $1",
+        "(.*) Discord (.*)": "󰙯 : $1 $2",
+        "nix-tree --derivation (.*)": "󱄅-󱘎 $1",
+        "kitty":  "KITTY",
+      },
+      "separate-outputs": true,
+      "max-length": 200,
+    },
     "hyprland/submap": {
-        "format": "<span style=\"italic\">{}</span>"
+        "format": "<span style=\"italic\">{:.30}</span>"
     },
     "hyprland/scratchpad": {
         "format": "{icon} {count}",
@@ -93,7 +127,8 @@
         "format-alt": "{:%Y-%m-%d}"
     },
     "cpu": {
-        "format": "{usage}% 󰻠",
+        //"format": "{usage}% ",
+        "format": "{usage}% ",
         "tooltip": false
     },
     "memory": {
@@ -114,7 +149,7 @@
     },
     "battery": {
         "states": {
-            // "good": 95,
+            "good": 84,
             "warning": 30,
             "critical": 15
         },
@@ -159,7 +194,7 @@
     },
     "mpris": {
 	"format": "{player} {player_icon} {dynamic}",
-	"format-paused": "{status_icon} <i>{dynamic}</i>",
+	"format-paused": "{status_icon} <i>{dynamic:.20}</i>",
 	"player-icons": {
 		"default": "▶",
 		"mpv": "🎵"
@@ -183,5 +218,4 @@
     }
 
 }
-
 
