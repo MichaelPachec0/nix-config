@@ -9,16 +9,34 @@ in ''
   env = XCURSOR_SIZE,${cursorSZ}
   monitor=,preferred,auto,auto
 
+  # env = WLR_EGL_NO_MODIFIERS, 1
+  env = WLR_DRM_NO_MODIFIERS, 1
 
+  env = GDK_BACKEND, wayland,x11
+  env = XDG_CURRENT_DESKTOP, Hyprland
+  env = XDG_SESSION_TYPE, wayland
+  env = XDG_SESSION_DESKTOP, Hyprland
+  env = QT_QPA_PLATFORM, wayland;xcb
+  env = QT_AUTO_SCREEN_SCALE_FACTOR, 1
+  env = QT_ENABLE_HIGHDPI_SCALING, 1
+  # env = QT_SCALE_FACTORS, .75;1;1
+  env = QT_SCALE_FACTOR, 1
+  env = QT_FONT_DPI, 96
+  env = _JAVA_AWT_WM_NONREPARENTING, 1
+  env = CLUTTER_BACKEND, wayland
+  env = OZONE_PLATFORM, wayland
+  # env = WLR_RENDERER,vulkan
 
   # See https://wiki.hyprland.org/Configuring/Keywords/ for more
 
 
   # Execute your favorite apps at launch
   # exec-once = waybar & hyprpaper & firefox
-  exec-once= dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP
-  exec-once = systemctl --user import-environment
-  # enable notification daemon, copy and paste provider 
+  # exec-once= dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP
+  exec-once= dbus-update-activation-environment --systemd --all
+  # exec-once = systemctl --user import-environment
+  exec-once = systemctl stop --user shikane@hyprland.service && systemctl start --user shikane@hyprland.service
+  # enable notification daemon, copy and paste provider
   exec-once = waybar & cliphist
   # Source a file (multi-file configs)
   # source = ~/.config/hypr/myColors.conf
@@ -108,7 +126,7 @@ in ''
   }
 
   misc {
-  	disable_splash_rendering = true 
+  	disable_splash_rendering = true
     vfr = true
   	# vrr = 0
     # TODO: RE-ENABLE AFTER TEST
