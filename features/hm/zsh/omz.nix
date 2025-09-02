@@ -1,12 +1,12 @@
-{ ... }: {
-  imports = [ ];
-  options = { };
+{...}: {
+  imports = [];
+  options = {};
   config = {
     programs.zsh = {
       oh-my-zsh = {
         enable = true;
         plugins = [
-          "thefuck"
+          # "thefuck"
           "aliases"
           "battery"
           "colored-man-pages"
@@ -14,8 +14,12 @@
           "cp"
           "docker"
           "docker-compose"
-          "docker-machine"
+
+          # gone: https://github.com/ohmyzsh/ohmyzsh/commit/ff62d39f023fbe2872078ce82ea9704b1bf09ea6
+          # "docker-machine"
+
           "gitfast"
+          "git"
           "dotenv"
           "encode64"
           "extract"
@@ -36,17 +40,18 @@
           "npm"
           "postgres"
           "python"
-          "ripgrep"
+
+          # gone: https://github.com/ohmyzsh/ohmyzsh/pull/12576
+          # "ripgrep"
+
           "rust"
           "safe-paste"
           "ssh-agent"
           "sudo"
           "systemd"
           #"systemadmin"
-
         ];
       };
     };
   };
 }
-
