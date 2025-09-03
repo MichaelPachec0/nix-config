@@ -1,168 +1,512 @@
 {
-  description = " Nix infrastructure config";
+  description = "Nix infrastructure config";
 
   inputs = {
-    nixpkgs = {url = "nixpkgs/nixos-23.05";};
-    nixpkgs-unstable = {url = "nixpkgs/nixos-unstable";};
+    # NOTE: keeping stable so that stable packages (sway) can be accessed, and when using defining system on server.
+    # IF LOGIN FAILS REMOVE THIS, this is also used because cross compilation of arm64 UEFI does not work on current stable.
+    nixpkgs-oldstable = {url = "nixpkgs/nixos-23.05";};
+    # nixpkgs-stable = {url = "nixpkgs/nixos-25.05";};
+    nixpkgs-stable = {url = "nixpkgs/nixos-25.11";};
+    # nixpkgs-stable = {url = "nixpkgs/nixos-23.11";};
+    # NixOS/nixpkgs/2057814051972fa1453ddfb0d98badbea9b83c06
+    nixpkgs = {url = "nixpkgs/nixos-unstable";};
+    nixpkgs-treesitter = {url = "github:nixos/nixpkgs/cad22e7d996aea55ecab064e84834289143e44a0";};
+    # NOTE: this is without nixos tests being done (ie does the installer work, DE's ...ect)
+    # a4073ec70f298e2941f4d3a7a0542135a9d24d04
+    nixpkgs-master = {url = "nixpkgs/master";};
+    nixpkgs-unstable-small.url = "nixpkgs/nixpkgs-unstable";
     home-manager = {
-      # TODO: Decide whether to either to move on using 23.05 (once it gets stable) or revert back to hm-22.11 or the hackiest
-      # way, overlay the file with one from unstable.
-      # it will probably be easier to move to 23.05 as there are some options that are not avaible in the hm-22.11 branch.
-      # For now, stick to a revsion before the breaking change. This should not be a problem since following an unstable channel
-      # should give the required function with the right arguments (unless misunderstood).
-      url =
-        # if using 22.11
-        #"github:nix-community/home-manager/6a1922568337e7cf21175213d3aafd1ac79c9a2e";
-        "github:nix-community/home-manager";
+      url = "github:nix-community/home-manager";
+      # inputs.nixpkgs.follows = "nixpkgs-treesitter";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
-    hardware = {url = "github:nixos/nixos-hardware/master";};
+    home-manager-stable = {
+      url = "github:nix-community/home-manager/release-25.05";
+      inputs.nixpkgs.follows = "nixpkgs-stable";
+    };
+    # hardware.url = "github:nixos/nixos-hardware";
+    hardware.url = "github:MichaelPachec0/nixos-hardware";
 
     hyprland = {
-      # NOTE: for some reason even with follows removed or follows set to nixpkgs-unstable hyprland builds after this commit
-      # use a version of the wayland-protocols dependecy that is older than what i set it.
-      # todo: (low prio) (research) find out why this happens.
-      url = "github:hyprwm/hyprland/76d4a50af3db7f2123d580eb7520f5b2956f261f";
+      url = "github:hyprwm/Hyprland?submodules=1";
+      # url = "git+https://github.com/hyprwm/Hyprland?submodules=1";
+      # url = "github:hyprwm/Hyprland/9f933da1c502989cadf7696971aa376d65847b95?submodules=1";
+      # NOTE: this is following nixos unstable matching the upstream flake.
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    kmonad-pkgs = {url = "github:kmonad/kmonad?dir=nix";};
+    hyprwm-contrib = {
+      url = "github:hyprwm/contrib";
+      inputs.nixpkgs.follows = "nixpkgs";
+      # inputs.nixpkgs.follows = "nixpkgs-unstable";
+    };
+    swayfx = {
+      url = "github:WillPower3309/swayfx?submodules=1";
+      inputs.nixpkgs.follows = "nixpkgs";
+      # 2025-11-19: flake.nix for swayfx is month old
+      inputs.scenefx.follows = "scenefx";
+    };
 
-    nwg-displays-pkgs = {url = "github:nwg-piotr/nwg-displays";};
+    kmonad-pkgs = {
+      url = "github:kmonad/kmonad?dir=nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
-    nixpkgs-wayland = {url = "github:nix-community/nixpkgs-wayland";};
+    # nwg-displays-pkgs = {
+    #   url = "github:nwg-piotr/nwg-displays";
+    #   inputs.nixpkgs.follows = "nixpkgs";
+    # };
 
-    spicetify = {url = "github:the-argus/spicetify-nix";};
+    nixpkgs-wayland = {
+      url = "github:nix-community/nixpkgs-wayland";
+      inputs.nixpkgs.follows = "nixpkgs";
+      # inputs.nixpkgs.follows = "nixpkgs-unstable";
+    };
+
+    spicetify = {
+      # url = "github:MichaelPachec0/spicetify-nix/fix-snap-err";
+      url = "github:MichaelPachec0/spicetify-nix";
+      # url = "path:/home/michael/old/git/github/personal/nix/repos/spicetify-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # spicetify = {url = "path:/home/michael/old/git/github/personal/nixos-config-actual/repos/spicetify-nix";};
+    # tch-nvim = {url = "path:/home/michael/old/git/github/forked/telescope-cheat.nvim";};
+    tch-nvim = {
+      url = "github:MichaelPachec0/telescope-cheat.nvim";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     nix-your-shell = {
-      url = "github:MercuryTechnologies/nix-your-shell";
+      url = "github:mercurytechnologies/nix-your-shell";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nixneovimplugins.url = "github:jooooscha/nixpkgs-vim-extra-plugins";
-    nixneovim.url = "github:nixneovim/nixneovim";
+    nixneovimplugins.url = "github:nixneovim/nixneovimplugins";
+    nixneovim = {
+      # url = "path:/home/michael/old/git/github/personal/nix/repos/NixNeovim";
+
+      # url = "path:/home/michael/git/public/NixNeovim";
+      url = "github:nixneovim/nixneovim";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nix-vscode-extensions.url = "github:nix-community/nix-vscode-extensions";
+
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     # this is for pr's that have not been merged yet.
-    slh.url = "github:MatthewCroughan/nixpkgs/mc/systemd-lock-handler";
+    # TODO: check if these have been merged into nixpkgs
+    # slh.url = "github:matthewcroughan/nixpkgs/mc/systemd-lock-handler";
+    # git-oxide.url = "github:jalil-salame/nixpkgs/fix-gitoxide";
+    # for devshell
+    flake-utils.url = "github:numtide/flake-utils";
+    # for cody
+    # TODO: move from using this to regular nixpkgs or create an overlay
+    # that uses this as the package.
+    sg = {
+      # TODO: move towards using nixpkgs version, as of now there is overlay in master.
+      # url = "github:sourcegraph/sg.nvim/72004c70f4bfc2d32bde8691f0ce0044d0fba07f";
+      url = "github:sourcegraph/sg.nvim";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # sp-test = {
+    #   url = "github:MichaelPachec0/spicetify-nix/";
+    #   inputs.nixpkgs.follows = "nixpkgs";
+    # };
+    nixd = {
+      url = "github:nix-community/nixd";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    waybar-git = {
+      url = "github:Alexays/Waybar";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    rustaceanvim = {
+      url = "github:mrcjkb/rustaceanvim";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    neovim = {
+      url = "github:nix-community/neovim-nightly-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+      # NOTE: this is based on nightly from 2024-02-18 issues abound with some plugins (my version of lspconfig)
+      # inputs.neovim-flake.url = "github:neovim/neovim?dir=contrib&rev=8f1f2a1d9f6af56ae928f6cdc29055a0ba13baea";
+    };
+    # mozilla.url = "github:mozilla/nixpkgs-mozilla";
+    joshuto = {
+      url = "github:kamiyaa/joshuto";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # waybar-test = {
+    #   # WARN: only needed for the moment where waybar cannot compile
+    #   url = "github:tokyovigilante/waybar/wireplumber-0.5";
+    #   inputs.nixpkgs.follows = "nixpkgs";
+    # };
+    #    easy-tether = {
+    #      # url = "github:Programmerino/easytether-flake";
+    #      url = "path:/home/michael/old/git/github/personal/nixos-config-actual/repos/easytether-flake";
+    #      inputs.nixpkgs.follows = "nixpkgs"; };
+    nix-gaming = {
+      url = "github:fufexan/nix-gaming";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    jlink = {
+      # 2025-11-18: this gets tied to 874a, which is should have a download at all times for
+      url = "github:liff/j-link-flake/a0a98d3";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    jerry = {
+      url = "github:justchokingaround/jerry";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixos-cli = {
+      url = "github:water-sucks/nixos";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    mpv-ai-upscale = {
+      url = "github:Alexkral/AviSynthAiUpscale";
+      flake = false;
+    };
+    anime4k = {
+      url = "github:bloc97/Anime4K";
+      flake = false;
+    };
+    nixos-conf-editor = {
+      url = "github:snowfallorg/nixos-conf-editor";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    fastanime = {
+      url = "github:MichaelPachec0/FastAnime";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    cspell-dicts = {
+      url = "github:streetsidesoftware/cspell-dicts";
+      flake = false;
+    };
+    zen-browser = {
+      url = "github:youwen5/zen-browser-flake";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    disko = {
+      url = "github:nix-community/disko/latest";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    impermanence.url = "github:nix-community/impermanence";
+    flake-playground = {
+      url = "github:MichaelPachec0/flake-playground";
+      # WARN: MAKE SURE TO CHANGE THIS!
+      # url = "path:/home/michael/git/personal/flake-playground";
+      # inputs.nixpkgs.follows = "nixpkgs";
+    };
+    none-ls = {
+      url = "github:nvimtools/none-ls.nvim";
+      flake = false;
+    };
+    lanzaboote = {
+      # 2025-11-11: upgraded to allow builing on unstable
+      url = "github:nix-community/lanzaboote/v0.4.3";
+
+      # Optional but recommended to limit the size of your system closure.
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    tuwunel = {
+      url = "github:matrix-construct/tuwunel/v1.1.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    firefox = {
+      url = "github:nix-community/flake-firefox-nightly";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    scenefx = {
+      # 2025-11-19: flake.nix for swayfx is month old
+      # url = "github:wlrfx/scenefx/b92dcb43bcf0da17ba8bfbdd7385dce75383628c";
+      url = "github:wlrfx/scenefx";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    claude-for-linux = {
+      url = "github:MichaelPachec0/claude-for-linux";
+      # inputs.nixpkgs.follows = "nixpkgs";
+      # inputs.flake-utils.follows = "flake-utils";
+    };
+    claude-code.url = "github:numtide/llm-agents.nix";
   };
   outputs = {
     self,
     nixpkgs,
-    nixpkgs-unstable,
+    nixpkgs-stable,
     home-manager,
+    home-manager-stable,
+    flake-utils,
     ...
   } @ inputs: let
     inherit (self) outputs;
-    unstable = import nixpkgs-unstable {
-      config.allowUnfree = true;
-      system = "x86_64-linux";
-      overlays = [];
-    };
-    overlayUnstable = final: prev: {inherit unstable;};
-    baseModules = [
-      ({
-        config,
-        pkgs,
-        lib,
-        ...
-      }: {
-        nixpkgs.overlays = [
-          overlayUnstable
-          inputs.hyprland.overlays.default
 
-          (final: prev: {
-            vimPlugins =
-              prev.vimPlugins
-              // {
-                vimBeGood =
-                  import ./pkgs/vimPlugins/vim-be-good {inherit pkgs;};
-                coc-lightbulb =
-                  import ./pkgs/vimPlugins/coc-lightbulb {inherit pkgs;};
-                coc-elixir =
-                  import ./pkgs/vimPlugins/coc-elixir {inherit pkgs;};
-                stay-centered =
-                  import ./pkgs/vimPlugins/stay-centered {inherit pkgs;};
-                block-nvim =
-                  import ./pkgs/vimPlugins/block-nvim {inherit pkgs;};
-                indentmini =
-                  import ./pkgs/vimPlugins/indentmini {inherit pkgs;};
-                virt-column =
-                  import ./pkgs/vimPlugins/virt-column {inherit pkgs;};
-              };
-            powertop-git = prev.unstable.powertop.overrideAttrs (oldAttrs: {
-              version = "2.15-pre";
-              src = prev.fetchFromGitHub {
-                owner = "fenrus75";
-                repo = oldAttrs.pname;
-                rev = "b6d1569203f32ec1c2aaa065d05961c552a76a6f";
-                hash = "sha256-JUqzyYyv2zi3UpuSnvjiJwecp9yYomlif6kla1wv7ZM=";
-              };
-              buildInputs = [
-                prev.gettext
-                prev.libnl
-                prev.libtraceevent
-                prev.libtracefs
-                prev.ncurses
-                prev.pciutils
-                prev.zlib
-              ];
-            });
-            swaylock-effects-pr =
-              pkgs.unstable.swaylock-effects.overrideAttrs
-              (oldAttrs: {
-                version =
-                  lib.strings.concatStrings [oldAttrs.version "-unstable"];
-                patches =
-                  (oldAttrs.patches or [])
-                  ++ [
-                    ./overlays/swaylock_effects/4_disp_img_insd_ind.patch
-                    ./overlays/swaylock_effects/37_cairo_bilinear.patch
-                    ./overlays/swaylock_effects/38_red_screen_fix.patch
-                    ./overlays/swaylock_effects/8_change_state_strings.patch
-                    ./overlays/swaylock_effects/32_unlock_on_USR1_accept_input.patch
-                  ];
-              });
-            electron-mail-latest =
-              prev.callPackage ./pkgs/electron-mail {};
-            inherit (inputs.slh.legacyPackages.${prev.system}) systemd-lock-handler;
-          })
-        ];
-      })
-    ];
-    nixosModules =
-      baseModules
-      ++ [
-        inputs.nixneovim.nixosModules.nixos-22-11
-        home-manager.nixosModules.home-manager
-        {
-          home-manager.useGlobalPkgs = true;
-          home-manager.useUserPackages = true;
-        }
-      ];
-    homeManagerModules =
-      baseModules
-      ++ [inputs.nixneovim.nixosModules.homeManager-22-11];
+    overlays = import ./helpers/overlays.nix {inherit inputs;};
   in {
+    # inputs.hyprland.packages.
     # overlays = import ./overlays {inherit inputs;};
-    nixosConfigurations = with nixpkgs.lib; {
-      nyx = nixosSystem {
-        system = "x86_64-linux";
-        specialArgs = {inherit inputs outputs;};
-        modules = nixosModules ++ [./nixos/nyx/configuration.nix];
-      };
-      kore = nixosSystem {
-        system = "x86_64-linux";
-        specialArgs = {inherit inputs outputs;};
-        modules = nixosModules ++ [./nixos/kore/configuration.nix];
-      };
-    };
-
-    homeConfigurations = with home-manager.lib; {
-      "michael-nyx" = let
+    nixosConfigurations = {
+      nyx = let
         system = "x86_64-linux";
       in
-        homeManagerConfiguration {
-          pkgs = nixpkgs.legacyPackages.${system};
-          extraSpecialArgs = {inherit inputs outputs;};
-          modules = homeManagerModules ++ [./hm/home.nix];
+        nixpkgs.lib.nixosSystem {
+          inherit system;
+
+          specialArgs = {inherit inputs outputs;};
+          # NOTE: include the stable module since this is going to run unstable.
+          modules =
+            overlays.unstable.nixosDesktop
+            ++ [
+              # changed to precision 5530/9570
+              # inputs.hardware.nixosModules.dell-xps-15-9560-intel
+              # inputs.hardware.nixosModules.dell-precision-5530
+              inputs.hardware.nixosModules.dell-xps-15-9570-intel
+              # secure boot
+              inputs.lanzaboote.nixosModules.lanzaboote
+              inputs.sops-nix.nixosModules.sops
+              ./nixos/nyx/configuration.nix
+              ./nixos/nyx/hardware-configuration.nix
+              ./nixos/nyx/intel.nix
+              ./nixos/nyx/boot.nix
+            ];
         };
+      thanatos = let
+        system = "x86_64-linux";
+      in
+        nixpkgs.lib.nixosSystem {
+          inherit system;
+
+          specialArgs = {inherit inputs outputs;};
+          # NOTE: include the stable module since this is going to run unstable.
+          modules =
+            overlays.unstable.nixosDesktop
+            ++ [
+              inputs.hardware.nixosModules.lenovo-thinkpad-p14s-amd-gen1
+              # secure boot
+              inputs.lanzaboote.nixosModules.lanzaboote
+              inputs.sops-nix.nixosModules.sops
+              inputs.jlink.nixosModule
+              # shared laptop config
+              # TODO: move away from here
+              ./nixos/nyx/boot.nix
+              ./nixos/nyx/configuration.nix
+              ./nixos/thanatos/amd.nix
+              ./nixos/thanatos/hardware-configuration.nix
+              inputs.disko.nixosModules.disko
+              ./nixos/thanatos/disk-config.nix
+              # ./nixos/thanatos/extras.nix
+            ];
+        };
+      aphrodite = let
+        system = "x86_64-linux";
+      in
+        nixpkgs.lib.nixosSystem {
+          inherit system;
+
+          specialArgs = {inherit inputs outputs;};
+          # NOTE: include the stable module since this is going to run unstable.
+          modules =
+            overlays.unstable.nixosDesktop
+            ++ [
+              inputs.hardware.nixosModules.apple-t2
+
+              inputs.sops-nix.nixosModules.sops
+              # shared laptop config
+              # TODO: move away from here
+              ./nixos/nyx/configuration.nix
+              # inputs.disko.nixosModules.disko
+              ./nixos/aphrodite/apple.nix
+              ./nixos/aphrodite/extras.nix
+              ./nixos/aphrodite/hardware-configuration.nix
+            ];
+        };
+      # NOTE: This will always use stable version of nixos.
+      # TODO: make sure that there is a boolean value (isServer?) to ensure that we pick packages in the stable branch.
+      kore = nixpkgs-stable.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs = {inherit inputs outputs;};
+        # modules = nixosModules ++ overlayModule ++ [./nixos/kore/configuration.nix];
+        # modules = overlay.nixos ++ overlay.channels ++ [./nixos/kore/configuration.nix];
+        # modules = [overlays.stable.nixosServer externalModules.stable.homeManager] ++ [./nixos/kore/configuration.nix];
+        modules =
+          overlays.stable.nixosServer
+          ++ [
+            inputs.impermanence.nixosModules.impermanence
+            inputs.disko.nixosModules.disko
+            ./nixos/kore/configuration.nix
+            # overlays.stable.homeManager
+          ];
+        # ++ externalModules.stable.homeManager;
+        # ++ ;
+      };
+      # This is commented out because there is no configuration.nix, which during a nix flake check, is checked for a root partition.
+      # These machines are not available but for future use.:which.
+      # NOTE: This is the server in the sky, perfect naming
+      #   this also follows the nixos stable like local server.
+      #   Given the small footprint, this also wont have as many packages as local, should not be a problem as zerotier will be
+      #   running on both.
+      # NOTE: Remote x86 server on RN.
+      atlas = nixpkgs-stable.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs = {inherit inputs outputs;};
+        modules =
+          overlays.stable.nixosServer
+          ++ [
+            inputs.impermanence.nixosModules.impermanence
+            inputs.disko.nixosModules.disko
+            ./nixos/atlas/configuration.nix
+          ];
+      };
+      # Ampere instance
+      # while it is preferable to keep with the greek mythos (selene), i just prefer the name luna :)
+      #NOTE: Remote arm64 server on OC
+      selene = nixpkgs-stable.lib.nixosSystem {
+        system = "aarch64-linux";
+        specialArgs = {inherit inputs outputs;};
+        modules =
+          overlays.stable.nixosServer
+          ++ [
+            inputs.disko.nixosModules.disko
+            ./nixos/selene/configuration.nix
+
+            inputs.sops-nix.nixosModules.sops
+          ];
+      };
+      #NOTE: Remote arm64 server on OC
+      # eos = nixpkgs-stable.lib.nixosSystem {
+      #   system = "aarch64-linux";
+      #   specialArgs = {inherit inputs outputs;};
+      #   modules = nixosModules ++ [];
+      # };
+      alex = nixpkgs-stable.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs = {inherit inputs outputs;};
+        modules = [
+          ./nixos/alex/configuration.nix
+        ];
+      };
     };
+
+    homeConfigurations = let
+      mkHomeConfig = {
+        pre_pkgs ? nixpkgs.legacyPackages,
+        # extraSpecialArgs ? {inherit inputs ouputs;},
+        extraSpecialArgs ? {
+          inputs = inputs;
+          outputs = outputs;
+        },
+        modules ?
+          overlays.unstable.homeManagerDesktop
+          ++ [./hm/home.nix inputs.hyprland.homeManagerModules.default],
+        system ? "x86_64-linux",
+        hm-instance ? home-manager,
+      }:
+        hm-instance.lib.homeManagerConfiguration {
+          pkgs = pre_pkgs.${system};
+          inherit extraSpecialArgs modules;
+        };
+    in {
+      "michael-nyx" = mkHomeConfig {
+        hm-instance = inputs.home-manager;
+        modules =
+          overlays.unstable.homeManagerDesktop
+          ++ [
+            ./hm/home.nix
+            inputs.hyprland.homeManagerModules.default
+            ./hm/home-nyx.nix
+          ];
+      };
+      "michael-thanatos" = mkHomeConfig {
+        hm-instance = inputs.home-manager;
+        modules =
+          overlays.unstable.homeManagerDesktop
+          ++ [
+            ./hm/home.nix
+            ./hm/home-thanatos.nix
+            inputs.hyprland.homeManagerModules.default
+          ];
+      };
+      "ubuntu-distrobox" = mkHomeConfig {
+        modules =
+          overlays.unstable.homeManagerDesktop
+          ++ [
+            ./hm/home-test.nix
+          ];
+      };
+      # TODO: configure home-manager stable for server configs.
+      # Also decide if its prefered to keep these seperate (as-is) or to integrate into nixosSystem
+      # NOTE: these users are on nixos stable, which is compatible with home-manager-stable.
+
+      # NOTE: Local server.
+      "sysadmin-kore" = mkHomeConfig {
+        pre_pkgs = nixpkgs-stable.legacyPackages;
+        hm-instance = inputs.home-manager-stable;
+        modules =
+          overlays.stable.homeManagerDesktop
+          ++ [
+            ./hm/sysadmin.nix
+          ];
+      };
+      # NOTE: Remote x86 server on RN.
+      "sysadmin-helios" = mkHomeConfig {
+        pre_pkgs = nixpkgs-stable.legacyPackages;
+        hm-instance = inputs.home-manager-stable;
+        modules =
+          overlays.stable.homeManagerDesktop
+          ++ [
+            ./hm/sysadmin.nix
+          ];
+      };
+      #NOTE: Remote arm64 server on OC
+      "sysadmin-luna" = mkHomeConfig {
+        pre_pkgs = nixpkgs-stable.legacyPackages;
+        hm-instance = inputs.home-manager-stable;
+        modules =
+          overlays.stable.homeManagerDesktop
+          ++ [
+            ./hm/sysadmin.nix
+          ];
+        system = "aarch64-linux";
+      };
+      #NOTE: Remote arm64 on OC
+      "sysadmin-eos" = mkHomeConfig {
+        pre_pkgs = nixpkgs-stable.legacyPackages;
+        hm-instance = inputs.home-manager-stable;
+        modules =
+          overlays.stable.homeManagerDesktop
+          ++ [
+            ./hm/sysadmin.nix
+          ];
+        system = "aarch64-linux";
+      };
+    };
+    # TODO: (low prio) still working on this, dont know if going to keep this, but at least this should make it easy start.
+    # might be worthwhile if this is starting out from a recovery disk since this can install needed pkgs in the future (like sops, alejandra, nil_ls, neovim ect)
+    devShells."x86_64-linux" = import ./shell.nix {pkgs = nixpkgs.legacyPackages."x86_64-linux";};
+    # packages = {
+    #
+    #   }
+    # apps."x86_64-linux" = let
+    #   # pkgs = prepNixpkgs inputs.nixpkgs "x86_64-linux";
+    #   pkgs = nixpkgs.legacyPackages."x86_64-linux";
+    # in {
+    #   update-vim-plugins = {
+    #     type = "app";
+    #     program = let
+    #       update-vim-plugins =
+    #         pkgs.writeShellScriptBin "update-vim-plugins"
+    #         ''
+    #           ${pkgs.vimPluginsUpdater}/bin/vim-plugins-updater \
+    #               --nixpkgs ${builtins.toString nixpkgs}
+    #         '';
+    #       # -i /neovim-plugins.txt \
+    #       # -o /neovim-plugins-generated.nix --no-commit \
+    #     in "${update-vim-plugins}/bin/update-vim-plugins";
+    #   };
+    # };
   };
 }
