@@ -1,0 +1,38 @@
+From d1b8066b30ac84355b40c86ab815c68487903706 Mon Sep 17 00:00:00 2001
+From: Mike Alexander <mike@axamendes.org>
+Date: Sat, 16 Sep 2023 07:41:39 -0700
+Subject: [PATCH] Fix incorrect ioctl numbers used for reading PSVT
+
+The current thermald source code uses ioctl numbers that are
+inconsistent with those used by the acpi_thermal_rel driver in the
+linux source tree. The effect of this mismatch is to cause a stack
+smash when running thermald against linux 6.5.3.
+---
+ src/acpi_thermal_rel_ioct.h | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/src/acpi_thermal_rel_ioct.h b/src/acpi_thermal_rel_ioct.h
+index dd045a96..9b12a69b 100644
+--- a/src/acpi_thermal_rel_ioct.h
++++ b/src/acpi_thermal_rel_ioct.h
+@@ -34,17 +34,14 @@
+ #define ACPI_THERMAL_GET_ART	_IOR(ACPI_THERMAL_MAGIC, 6, unsigned long)
+ 
+ /*
+- * ACPI_THERMAL_GET_PSVT_REV = Revision number
+- *   identifies limit type: 1=true proportional limit, 2=depth limit
+  * ACPI_THERMAL_GET_PSVT_COUNT = Number of PSVT entries
+  * ACPI_THERMAL_GET_PSVT_LEN = Total return data size (PSVT count x each
+  * PSVT entry size)
+  * ACPI_THERMAL_GET_PSVT = Get the data as an array of psvt_objects
+  */
+-#define ACPI_THERMAL_GET_PSVT_REV _IOR(ACPI_THERMAL_MAGIC, 7, unsigned long)
+-#define ACPI_THERMAL_GET_PSVT_LEN _IOR(ACPI_THERMAL_MAGIC, 8, unsigned long)
+-#define ACPI_THERMAL_GET_PSVT_COUNT _IOR(ACPI_THERMAL_MAGIC, 9, unsigned long)
+-#define ACPI_THERMAL_GET_PSVT	_IOR(ACPI_THERMAL_MAGIC, 10, unsigned long)
++#define ACPI_THERMAL_GET_PSVT_LEN _IOR(ACPI_THERMAL_MAGIC, 7, unsigned long)
++#define ACPI_THERMAL_GET_PSVT_COUNT _IOR(ACPI_THERMAL_MAGIC, 8, unsigned long)
++#define ACPI_THERMAL_GET_PSVT	_IOR(ACPI_THERMAL_MAGIC, 9, unsigned long)
+ 
+ #ifndef __KERNEL__
+ #define u64 unsigned long long
