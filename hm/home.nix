@@ -1,152 +1,470 @@
-{ inputs, lib, config, pkgs, ... }:
-let
-  spicePkgs = inputs.spicetify.packages.${pkgs.system}.default;
+{
+  inputs,
+  lib,
+  # config,
+  pkgs,
+  ...
+}: let
+  spicetify = inputs.spicetify;
+  spicePkgs = spicetify.packages.${pkgs.stdenv.hostPlatform.system}.default;
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-hard;
+  fluffychat = pkgs.callPackage (
+    {
+      lib,
+      fetchzip,
+      fetchFromGitHub,
+      imagemagick,
+      libgbm,
+      libdrm,
+      flutter327,
+      pulseaudio,
+      makeDesktopItem,
+      olm,
+      targetFlutterPlatform ? "linux",
+    }: let
+      libwebrtcRpath = lib.makeLibraryPath [
+        libgbm
+        libdrm
+      ];
+      pubspecLock = lib.importJSON ./pubspec.lock.json;
+    in
+      flutter327.buildFlutterApplication (
+        rec {
+          pname = "fluffychat-${targetFlutterPlatform}";
+          version = "1.25.1";
+
+          src = fetchFromGitHub {
+            owner = "krille-chan";
+            repo = "fluffychat";
+            tag = "v${version}";
+            hash = "sha256-5hdFc4JPtTmNVUGTKVBiG7unGsc3NQQ3SJ9I63kfUVc=";
+          };
+
+          inherit pubspecLock;
+
+          gitHashes = {
+            flutter_web_auth_2 = "sha256-3aci73SP8eXg6++IQTQoyS+erUUuSiuXymvR32sxHFw=";
+          };
+
+          inherit targetFlutterPlatform;
+
+          meta = with lib; {
+            description = "Chat with your friends (matrix client)";
+            homepage = "https://fluffychat.im/";
+            license = licenses.agpl3Plus;
+            mainProgram = "fluffychat";
+            maintainers = with maintainers; [
+              mkg20001
+              gilice
+            ];
+            platforms = [
+              "x86_64-linux"
+              "aarch64-linux"
+            ];
+            sourceProvenance = [sourceTypes.fromSource];
+            inherit (olm.meta) knownVulnerabilities;
+          };
+        }
+        // lib.optionalAttrs (targetFlutterPlatform == "linux") {
+          nativeBuildInputs = [imagemagick];
+
+          runtimeDependencies = [pulseaudio];
+
+          env.NIX_LDFLAGS = "-rpath-link ${libwebrtcRpath}";
+
+          desktopItem = makeDesktopItem {
+            name = "Fluffychat";
+            exec = "fluffychat";
+            icon = "fluffychat";
+            desktopName = "Fluffychat";
+            genericName = "Chat with your friends (matrix client)";
+            categories = [
+              "Chat"
+              "Network"
+              "InstantMessaging"
+            ];
+          };
+
+          postInstall = ''
+            FAV=$out/app/fluffychat-linux/data/flutter_assets/assets/favicon.png
+            ICO=$out/share/icons
+
+            install -D $FAV $ICO/fluffychat.png
+            mkdir $out/share/applications
+            cp $desktopItem/share/applications/*.desktop $out/share/applications
+            for size in 24 32 42 64 128 256 512; do
+              D=$ICO/hicolor/''${s}x''${s}/apps
+              mkdir -p $D
+              convert $FAV -resize ''${size}x''${size} $D/fluffychat.png
+            done
+
+            patchelf --add-rpath ${libwebrtcRpath} $out/app/fluffychat-linux/lib/libwebrtc.so
+          '';
+        }
+        // lib.optionalAttrs (targetFlutterPlatform == "web") {
+          prePatch =
+            # https://github.com/krille-chan/fluffychat/blob/v1.17.1/scripts/prepare-web.sh
+            let
+              # Use Olm 1.3.2, the oldest version, for FluffyChat 1.14.1 which depends on olm_flutter 1.2.0.
+              olmVersion = pubspecLock.packages.flutter_olm.version;
+              olmJs = fetchzip {
+                url = "https://github.com/famedly/olm/releases/download/v${olmVersion}/olm.zip";
+                stripRoot = false;
+                hash = "sha256-Vl3Cp2OaYzM5CPOOtTHtUb1W48VXePzOV6FeiIzyD1Y=";
+              };
+            in ''
+              rm -r assets/js/package
+              cp -r '${olmJs}/javascript' assets/js/package
+            '';
+        }
+      )
+  ) {};
 in {
   imports = [
-    inputs.hyprland.homeManagerModules.default
-    inputs.spicetify.homeManagerModule
+    # spicetify.homeManagerModule
     ../features/hm/gpg
     ../features/hm/kanshi
     ../features/hm/zsh
     ../features/hm/kitty
     ../features/hm/ssh
     ../features/hm/common
-    ../features/hm/neovim
+    ../features/hm/neovim/nixneovim.nix
     ../features/hm/wayland
+    ../features/hm/virtualization
+    ../helpers/caches.nix
+    inputs.claude-for-linux.homeManagerModules.default
   ];
-  nixpkgs = {
-    overlays = [ ];
-    config = {
-      allowUnfree = true;
-      allowUnfreePredicate = (_: true);
+  nixpkgs.overlays = [
+    inputs.claude-code.overlays.default
+  ];
+  nix = {
+    package = pkgs.nix;
+    settings = {
+      # Enable flakes and new 'nix' command
+      experimental-features = "nix-command flakes";
+      # Deduplicate and optimize nix store
+      auto-optimise-store = true;
+
+      # access-tokens = github.com=***GITHUB-TOKEN-REMOVED***
     };
   };
   home = {
     username = "michael";
     homeDirectory = "/home/michael";
+    sessionVariables = {
+    };
+  };
+  # NOTE: this is for testing.
+  systemd.user.sessionVariables = {
+  };
+  # {}
+  # programs.nixneovim.nvchad.enable = true;
+  home.packages = let
+    # fastanime = pkgs.fastanime.overrideAttrs (old: {
+    #   # TODO: add fzf to 
+    #   propagatedBuildInputs = (old.propagatedBuildInputs or []) ++ [pkgs.fzf];
+    # });
+  in with pkgs; [
+    fastanime
+    claude-code
+    # fluffychat
+  ];
+
+  services.udiskie = {
+    enable = true;
+    automount = true; 
+    notify = true;
+    tray = "always";
+    package = pkgs.udiskie;
+  };
+  programs.claude-desktop = {
+    enable = true;
+    fhs = true;  # FHS wrapper for MCP compatibility
   };
 
   graphical.enable = true;
   audio.enable = true;
   devMachine.enable = true;
+  report-changes.enable = true;
+  home.sessionPath = [
+  "$HOME/.local/bin"
+  ];
 
-  xdg = { enable = true; };
-  # make sure that apps run under wayland when possible
-  home.sessionVariables.NIXOS_OZONE_WL = "1";
-  # make sure vim is the default editor
-  home.sessionVariables."EDITOR" = lib.mkForce "vim";
-  # HiDPI setup
-  home.sessionVariables."GDK_SCALE" = 1;
-  home.sessionVariables."GDK_DPI_SCALE" = 1;
-  home.sessionVariables."QT_AUTO_SCREEN_SCALE_FACTOR" = 1;
-  programs.spicetify = {
+  xdg = {
     enable = true;
-    spicetifyPackage = pkgs.unstable.spicetify-cli;
-    windowManagerPatch = true;
-    spotifyPackage = pkgs.unstable.spotify.overrideAttrs (old: rec {
-      version = "1.1.99.878.g1e4ccc6e";
-      pname = "spotify";
-      rev = "62";
-      src = pkgs.fetchurl {
-        url =
-          "https://api.snapcraft.io/api/v1/snaps/download/pOBIoZ2LrCB3rDohMxoYGnbN14EHOgD7_${rev}.snap";
-        sha512 =
-          "339r2q13nnpwi7gjd1axc6z2gycfm9gwz3x9dnqyaqd1g3rw7nk6nfbp6bmpkr68lfq1jfgvqwnimcgs84rsi7nmgsiabv3cz0673wv";
+    dataFile = {
+      lockscreen = {
+        source = ../assets/img/consent-web-1920.png;
+        target = "lockscreen.png";
       };
+    };
+  };
 
-      unpackPhase = ''
-        runHook preUnpack
-        unsquashfs "$src" '/usr/share/spotify' '/usr/bin/spotify' '/meta/snap.yaml'
-        cd squashfs-root
-        if ! grep -q 'grade: stable' meta/snap.yaml; then
-          # Unfortunately this check is not reliable: At the moment (2018-07-26) the
-          # latest version in the "edge" channel is also marked as stable.
-          echo "The snap package is marked as unstable:"
-          grep 'grade: ' meta/snap.yaml
-          echo "You probably chose the wrong revision."
-          exit 1
-        fi
-        if ! grep -q '${version}' meta/snap.yaml; then
-          echo "Package version differs from version found in snap metadata:"
-          grep 'version: ' meta/snap.yaml
-          echo "While the nix package specifies: ${version}."
-          echo "You probably chose the wrong revision or forgot to update the nix version."
-          exit 1
-        fi
-        runHook postUnpack
+  # programs.spicetify = {
+  #   enable = false;
+  #   # spicetifyPackage = pkgs.spicetify-cli;
+  #   # spotifyPackage = pkgs.spotify;
+  #   # NOTE: This can be used when trying to calculate the vendor hash of a overlayed package.
+  #   # used: nix-prefetch --file 'fetchTarball "channel:nixos-unstable"' '{ sha256 }: (spicetify-cli.overrideAttrs(old: rec { version = "2.18.1"; pname = old.pname; src = builtins.fetchGit { url = "https://github.com/${old.src.owner}/${pname}"; rev = "v${version}"; sha256 = "sha256-BZuvuvbFCZ6VaztlZhlUZhJ7vf4W49mVHiORhH8oH2Y="; }; })).go-modules.overrideAttrs (_: { modSha256 = sha256; })'
+  #   # TODO: (low prio) Try to generalize this command so that boilerplate can be reduced to a minimum
+  #   # vendorHash = "sha256-mAtwbYuzkHUqG4fr2JffcM8PmBsBrnHWyl4DvVzfJCw=";
+  #   # ideally it should be nix-generate-goVendorHash {url} {rev}
+  #   # similar to nix-prefetch-git {url} {rev}
+  #
+  #   windowManagerPatch = true;
+  #   # HACK: this was used previously when lastest spotify would not work well in wayland (xwayland would work). As of now it
+  #   # works good enough to not be needed.
+  #   # TODO: (low prio) remove commented out code. This is now unneeded.
+  #
+  #   # spotifyPackage = pkgs.unstable.spotify.overrideAttrs (old: rec {
+  #   #      version = "1.1.99.878.g1e4ccc6e";
+  #   #      pname = "spotify";
+  #   #      rev = "62";
+  #   #      src = pkgs.fetchurl {
+  #   #        url =
+  #   #          "https://api.snapcraft.io/api/v1/snaps/download/pOBIoZ2LrCB3rDohMxoYGnbN14EHOgD7_${rev}.snap";
+  #   #        sha512 =
+  #   #          "339r2q13nnpwi7gjd1axc6z2gycfm9gwz3x9dnqyaqd1g3rw7nk6nfbp6bmpkr68lfq1jfgvqwnimcgs84rsi7nmgsiabv3cz0673wv";
+  #   #      };
+  #   #
+  #   #      unpackPhase = ''
+  #   #        runHook preUnpack
+  #   #        unsquashfs "$src" '/usr/share/spotify' '/usr/bin/spotify' '/meta/snap.yaml'
+  #   #        cd squashfs-root
+  #   #        if ! grep -q 'grade: stable' meta/snap.yaml; then
+  #   #          # Unfortunately this check is not reliable: At the moment (2018-07-26) the
+  #   #          # latest version in the "edge" channel is also marked as stable.
+  #   #          echo "The snap package is marked as unstable:"
+  #   #          grep 'grade: ' meta/snap.yaml
+  #   #          echo "You probably chose the wrong revision."
+  #   #          exit 1
+  #   #        fi
+  #   #        if ! grep -q '${version}' meta/snap.yaml; then
+  #   #          echo "Package version differs from version found in snap metadata:"
+  #   #          grep 'version: ' meta/snap.yaml
+  #   #          echo "While the nix package specifies: ${version}."
+  #   #          echo "You probably chose the wrong revision or forgot to update the nix version."
+  #   #          exit 1
+  #   #        fi
+  #   #        runHook postUnpack
+  #   #      '';
+  #   #    });
+  #   #spotifyPackage = pkgs.unstable.spotify;
+  #   enabledExtensions = with spicePkgs.extensions; [
+  #     copyToClipboard
+  #     showQueueDuration
+  #     fullAppDisplay
+  #     {
+  #       filename = "genre.js";
+  #       src = pkgs.fetchFromGitHub {
+  #         owner = "jeroentvb";
+  #         repo = "spicetify-genre";
+  #         rev = "f503568af59f9b5b14c7751f44c8e0b1bb86b6b5";
+  #         hash = "sha256-huN/1PDX5yzCdt+2yoVRrecv+zU59VG7f5ERnt62Sl8=";
+  #       };
+  #     }
+  #     # INFO: example for manually defined extension.
+  #     # {
+  #     #   filename = "playlist-icons.js";
+  #     #   src = pkgs.fetchFromGitHub {
+  #     #     owner = "jeroentvb";
+  #     #     repo = "spicetify-playlist-icons";
+  #     #     rev = "4e2fdda5079b441eca8d4d9f7479db82f6cc20b8";
+  #     #     sha256 = "1wiq1iq74g2y8g0yv5ldhf0dc7nnamr1ydfbb6fgq0c0ix3yrh51";
+  #     #   };
+  #     # }
+  #     # {
+  #     #   # HACK: powerbar does not work yet when specified from spicePkgs. Manually define it instead
+  #     #
+  #     #   filename = "power-bar.js";
+  #     #   src = pkgs.fetchFromGitHub {
+  #     #     owner = "jeroentvb";
+  #     #     repo = "spicetify-power-bar";
+  #     #     rev = "2044217153d070aab3a93bda796177e61e6c4a65";
+  #     #     hash = "sha256-ELTfhkqPusEzCwjopd7aXuo5loG14chg50nuMjkzYSI=";
+  #     #   };
+  #     # }
+  #     power-bar
+  #     playlist-icons
+  #
+  #     trashbin
+  #     seekSong
+  #     fullAlbumDate
+  #     skipStats
+  #     history
+  #     # genre
+  #     bookmark
+  #     loopyLoop
+  #     adblock
+  #     songStats
+  #     wikify
+  #     goToSong
+  #   ];
+  #   # Custom apps dont work on rolling release spotify,
+  #   enabledCustomApps = with spicePkgs.apps; [
+  #     # INFO: example when manually defining a plugin.
+  #     marketplace
+  #     reddit
+  #     new-releases
+  #     lyrics-plus
+  #     eternal-jukebox
+  #     spicetify-stats
+  #     # INFO: found using the following command:
+  #     # nix-prefetch-git https://github.com/Pithaya/spicetify-apps-dist --branch-name "dist/eternal-jukebox" <HASH>
+  #     # {
+  #     #   name = "eternal-jukebox";
+  #     #   src = pkgs.fetchFromGitHub {
+  #     #     owner = "Pithaya";
+  #     #     repo = "spicetify-apps-dist";
+  #     #     rev = "e5f52022e159b1f7c920e956d48c830903090d93";
+  #     #     hash = "sha256-sGuyKH1V/MZaB1Jc/t3tsfRr0iylbBBFbYVk0AcPzGI=";
+  #     #     # sha256 = "0i5qbrwxx7rx2yij8iadrmqz937j0rfsf3s17nr7b0f985vhzh99";
+  #     #   };
+  #     #   appendName = false;
+  #     # }
+  #     # {
+  #     #   name = "spicetify-stats";
+  #     #   src = pkgs.fetchFromGitHub {
+  #     #     owner = "harbassan";
+  #     #     repo = "spicetify-stats";
+  #     #     rev = "c0e8668a742edc47622cc6fb40cca0ff54bd0554";
+  #     #     hash = "sha256-w7gZ/F/AfgEd+KSOKivFjTnb3BNvZq1Md6qlV5fGhBI=";
+  #     #   };
+  #     #   appendName = false;
+  #     # }
+  #     # {
+  #     #   name = "spicetify-beat-saber";
+  #     #   src = pkgs.fetchzip {
+  #     #     url = "https://github.com/kuba2k2/spicetify-beat-saber/releases/download/v2.1.1/beatsaber-dist-2.1.1.zip";
+  #     #     hash = "sha256-DiCR0jx/oAnmNZKriDz09bGKDCVW9h78JWLT5TCoOXI=";
+  #     #   };
+  #     #   appendName = false;
+  #     # }
+  #   ];
+  #   # TODO: (very low prio) change to using nix-colors
+  #   # NOTE: previously dynamic was slow rendering, making it useless on a 4k display (still usuable on 1080p), transitioned to
+  #   # a gruvbox like theme instead.
+  #   # theme = spicePkgs.themes.Onepunch;
+  #   theme = spicePkgs.themes.text;
+  #   colorScheme = "gruvbox";
+  # };
+  xdg.desktopEntries = let
+    experimental-gpu = "--ignore-gpu-blacklist --enable-gpu-rasterization --enable-native-gpu-memory-buffers --use-vulkan --enable-angle-features";
+  in {
+    spotify = {
+      name = "Spiced Spotify";
+      # exec = "spotify --ozone-platform-hint=auto --uri=%U";
+
+      # PATH=/run/wrappers/bin:/home/michael/.nix-profile/bin:/etc/profiles/per-user/michael/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin sh -c "
+      # exec = ''
+      #   spotify --ozone-platform-hint=auto --enable-zero-copy --use-gl=desktop %U
+      # spotify --no-zygote --no-sandbox --ozone-platform-hint=auto --enable-zero-copy --single-process --use-angle=vulkan --uri=%U
+      # '';
+      # exec = ''
+      #   spotify --no-zygote --no-sandbox --ozone-platform-hint=auto --enable-zero-copy --single-process --uri=%U
+      # '';VaapiVideoDecoder
+      exec = ''
+        spotify --enable-features=VaapiVideoDecoder  --no-zygote --no-sandbox --ozone-platform-hint=auto --enable-zero-copy --single-process ${experimental-gpu} --uri=%U
       '';
-    });
-    #spotifyPackage = pkgs.unstable.spotify;
-    # theming causes extreme slowdown in spotify on 4k, disable for now.
-    # TODO: change to using nix-colors
-    enabledExtensions = with spicePkgs.extensions; [
-      copyToClipboard
-      showQueueDuration
-      fullAppDisplay
-      {
-        filename = "power-bar.js";
-        src = pkgs.fetchFromGitHub {
-          owner = "jeroentvb";
-          repo = "spicetify-power-bar";
-          rev = "3b7e0559e91e76975cca41bafdb4ea2990dd468a";
-          sha256 = "05cmx0y69rghs4jwbq307xzn4jbdg9av9ddlq6mw911hgiz6gip2";
-        };
-      }
-      {
-        filename = "playlist-icons.js";
-        src = pkgs.fetchFromGitHub {
-          owner = "jeroentvb";
-          repo = "spicetify-playlist-icons";
-          rev = "4e2fdda5079b441eca8d4d9f7479db82f6cc20b8";
-          sha256 = "1wiq1iq74g2y8g0yv5ldhf0dc7nnamr1ydfbb6fgq0c0ix3yrh51";
-        };
-      }
-      trashbin
-      seekSong
-      fullAlbumDate
-      skipStats
-      history
-      genre
-      bookmark
-      loopyLoop
-      adblock
-      songStats
-      wikify
-      goToSong
-
+      icon = "spotify-client";
+      type = "Application";
+      terminal = false;
+      genericName = "Music Player";
+      comment = "Spotify streaming music client";
+      categories = [
+        "Audio"
+        "Music"
+        "Player"
+        "AudioVideo"
+      ];
+      mimeType = ["x-scheme-handler/spotify"];
+      settings = {
+        StartupWMClass = "spotify";
+      };
+    };
+    checkEnv = {
+      name = "printEnv";
+      # exec = ''sh -c "env > ~/env.txt"'';
+      exec = ''sh -c "PATH=/run/wrappers/bin:/home/michael/.nix-profile/bin:/etc/profiles/per-user/michael/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin env > ~/good-env.txt"'';
+      type = "Application";
+    };
+    checkZEnv = {
+      name = "printZEnv";
+      exec = ''zsh -c "env > ~/zenv.txt"'';
+      type = "Application";
+    };
+    legcord = {
+      name = "legcord";
+      exec = ''
+        legcord --enable-features=UseOzonePlatform,WaylandWindowDecorations,WebRTCPipeWireCapturer --ozone-platform=wayland --enable-zero-copy ${experimental-gpu}
+      '';
+      type = "Application";
+    };
+  };
+  programs.ncspot = {
+    enable = true;
+    # package = null;
+    package = pkgs.emptyDirectory;
+    settings = {
+      default_keybindings = true;
+      # 1000MiB
+      audio_cache_size = 2000;
+      notify = true;
+      use_nerdfont = true;
+      keybindings = {
+        "p" = "playpause";
+        "Ctrl+d" = "move down 5";
+        "Ctrl+u" = "move up 5";
+        "gg" = "move top";
+        "Shift+g" = "move bottom";
+        # "Enter" = "playpause";
+        "d" = "";
+        "dd" = "delete";
+        "s" = "stop";
+        "Shift+s" = "save";
+        "Esc" = "back";
+      };
+      theme = {
+        background = "default";
+        primary = "#a89984";
+        secondary = "#928374";
+        title = "#8ec07c";
+        playing = "#689d6a";
+        playing_bg = "#383838";
+        playing_selected = "#ebdbb2";
+        highlight = "#d5c4a1";
+        highlight_bg = "#484848";
+        error = "#fbf1c7";
+        error_bg = "#cc241d";
+        statusbar_progress = "#458588";
+        statusbar_bg = "#282828";
+        statusbar = "#98971a";
+        cmdline = "#d5c4a1";
+        cmdline_bg = "#383838";
+        search_match = "#fabd2f";
+      };
+    };
+  };
+  programs.atuin = {
+    enable = true;
+    enableZshIntegration = true;
+    enableBashIntegration = true;
+    flags = [
+      "--disable-up-arrow"
     ];
-    # Custom apps dont work on rolling release spotify,
-    enabledCustomApps = with spicePkgs.apps; [
-      {
-        name = "marketplace";
-        src = pkgs.fetchFromGitHub {
-          owner = "spicetify";
-          repo = "spicetify-marketplace";
-          rev = "865ba27733c885a7a4c9ab9e4b896cd8dc8769d2";
-          sha256 = "1xqkl37mw5jirm1ys4mmfp5qfc4zas9wzssfqag7q53qlj2j1v4n";
-        };
-        appendName = false;
-      }
-      reddit
-      new-releases
-      lyrics-plus
-      {
-        name = "eternal-jukebox";
-        src = pkgs.fetchFromGitHub {
-          owner = "Pithaya";
-          repo = "spicetify-apps-dist";
-          rev = "ed97b5f85f646e0c5d5bf26b9bfc3f5baa52c6b0";
-          sha256 = "0i5qbrwxx7rx2yij8iadrmqz937j0rfsf3s17nr7b0f985vhzh99";
-        };
-        appendName = false;
-      }
-    ];
-    # spotify gruvbox theme
-    theme = spicePkgs.themes.Onepunch;
+    settings = {
+      auto_sync = true;
+      sync_address = "https://atuin.michaelpacheco.org";
+      sync_frequency = "10m";
+      style = "full";
+      enter_accept = false;
+      keymap_mode = "vim-normal";
+      filter_mode_shell_up_key_binding = "host";
+      scroll_exits = false;
+    };
   };
   # Nicely reload system units when changing configs
   systemd.user.startServices = "sd-switch";
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
-  home.stateVersion = "23.05";
-}
+  home.stateVersion = "23.11";
+} 
