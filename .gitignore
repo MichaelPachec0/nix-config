@@ -2,3 +2,6 @@
 result*
 .*
 !.gitignore
+flake.lock_*
+flake.lock*-*
+rootdir/
