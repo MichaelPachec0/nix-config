@@ -1,0 +1,1 @@
+NIX_SSHOPTS="-i /home/michael/.ssh/id_ed25519_sk_718" sudo -E nixos-install --log-format internal-json -v --flake ".#nyx" --show-trace --build-host "deploy@192.168.1.5" --use-remote-sudo --fast |&  nom --json
