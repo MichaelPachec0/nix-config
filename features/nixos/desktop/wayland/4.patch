@@ -1,0 +1,716 @@
+From 7050dd3b448fa23a496b23f92aa2baf7f9dca84d Mon Sep 17 00:00:00 2001
+From: Simon Ser <contact@emersion.fr>
+Date: Wed, 10 Feb 2021 17:41:50 +0100
+Subject: [PATCH 01/18] pool-buffer: handle zero-sized buffers
+
+mako does something similar.
+---
+ pool-buffer.c | 30 ++++++++++++++++--------------
+ 1 file changed, 16 insertions(+), 14 deletions(-)
+
+diff --git a/pool-buffer.c b/pool-buffer.c
+index aada4c078..76722834b 100644
+--- a/pool-buffer.c
++++ b/pool-buffer.c
+@@ -72,18 +72,22 @@ static struct pool_buffer *create_buffer(struct wl_shm *shm,
+ 	uint32_t stride = width * 4;
+ 	size_t size = stride * height;
+ 
+-	char *name;
+-	int fd = create_pool_file(size, &name);
+-	assert(fd != -1);
+-	void *data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+-	struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, size);
+-	buf->buffer = wl_shm_pool_create_buffer(pool, 0,
+-			width, height, stride, format);
+-	wl_shm_pool_destroy(pool);
+-	close(fd);
+-	unlink(name);
+-	free(name);
+-	fd = -1;
++	void *data = NULL;
++	if (size > 0) {
++		char *name;
++		int fd = create_pool_file(size, &name);
++		assert(fd != -1);
++		data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
++		struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, size);
++		buf->buffer = wl_shm_pool_create_buffer(pool, 0,
++				width, height, stride, format);
++		wl_buffer_add_listener(buf->buffer, &buffer_listener, buf);
++		wl_shm_pool_destroy(pool);
++		close(fd);
++		unlink(name);
++		free(name);
++		fd = -1;
++	}
+ 
+ 	buf->size = size;
+ 	buf->width = width;
+@@ -92,8 +96,6 @@ static struct pool_buffer *create_buffer(struct wl_shm *shm,
+ 	buf->surface = cairo_image_surface_create_for_data(data,
+ 			CAIRO_FORMAT_ARGB32, width, height, stride);
+ 	buf->cairo = cairo_create(buf->surface);
+-
+-	wl_buffer_add_listener(buf->buffer, &buffer_listener, buf);
+ 	return buf;
+ }
+ 
+
+From 6ad41707847c04a555f803605c112a43d6b014ea Mon Sep 17 00:00:00 2001
+From: Simon Ser <contact@emersion.fr>
+Date: Wed, 10 Feb 2021 17:42:36 +0100
+Subject: [PATCH 02/18] Initialize indicator size to zero
+
+Initializing to 1 is incorrect when the surface scale is > 1.
+---
+ main.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/main.c b/main.c
+index 276218744..23ba15268 100644
+--- a/main.c
++++ b/main.c
+@@ -351,8 +351,8 @@ static void layer_surface_configure(void *data,
+ 	struct swaylock_surface *surface = data;
+ 	surface->width = width;
+ 	surface->height = height;
+-	surface->indicator_width = 1;
+-	surface->indicator_height = 1;
++	surface->indicator_width = 0;
++	surface->indicator_height = 0;
+ 	zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
+ 
+ 	if (--surface->events_pending == 0) {
+
+From e4f37a214956928b2134fb4455de1156d962dd1e Mon Sep 17 00:00:00 2001
+From: Simon Ser <contact@emersion.fr>
+Date: Wed, 10 Feb 2021 17:45:42 +0100
+Subject: [PATCH 03/18] Use wl_surface.damage_buffer
+
+We incorrectly used the buffer size instead of the surface size.
+Let's not bother and just damage the maximum region.
+---
+ main.c   | 2 +-
+ render.c | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/main.c b/main.c
+index 23ba15268..f62a3a0fd 100644
+--- a/main.c
++++ b/main.c
+@@ -707,7 +707,7 @@ static void handle_global(void *data, struct wl_registry *registry,
+ 	struct swaylock_state *state = data;
+ 	if (strcmp(interface, wl_compositor_interface.name) == 0) {
+ 		state->compositor = wl_registry_bind(registry, name,
+-				&wl_compositor_interface, 3);
++				&wl_compositor_interface, 4);
+ 	} else if (strcmp(interface, wl_subcompositor_interface.name) == 0) {
+ 		state->subcompositor = wl_registry_bind(registry, name,
+ 				&wl_subcompositor_interface, 1);
+diff --git a/render.c b/render.c
+index 8866f6b87..47eda318b 100644
+--- a/render.c
++++ b/render.c
+@@ -95,7 +95,7 @@ void render_frame_background(struct swaylock_surface *surface) {
+ 
+ 	wl_surface_set_buffer_scale(surface->surface, surface->scale);
+ 	wl_surface_attach(surface->surface, surface->current_buffer->buffer, 0, 0);
+-	wl_surface_damage(surface->surface, 0, 0, surface->width, surface->height);
++	wl_surface_damage_buffer(surface->surface, 0, 0, INT32_MAX, INT32_MAX);
+ 	wl_surface_commit(surface->surface);
+ }
+ 
+@@ -454,7 +454,7 @@ void render_frame(struct swaylock_surface *surface) {
+ 
+ 	wl_surface_set_buffer_scale(surface->child, surface->scale);
+ 	wl_surface_attach(surface->child, surface->current_buffer->buffer, 0, 0);
+-	wl_surface_damage(surface->child, 0, 0, surface->current_buffer->width, surface->current_buffer->height);
++	wl_surface_damage_buffer(surface->child, 0, 0, INT32_MAX, INT32_MAX);
+ 	wl_surface_commit(surface->child);
+ 
+ 	wl_surface_commit(surface->surface);
+
+From 14baedc92de9b97f00aa6c35c2291a3af2d08ccd Mon Sep 17 00:00:00 2001
+From: Elyes HAOUAS <ehaouas@noos.fr>
+Date: Mon, 12 Apr 2021 18:21:01 +0200
+Subject: [PATCH 04/18] Fix some typos
+
+Signed-off-by: Elyes HAOUAS <ehaouas@noos.fr>
+---
+ render.c                        | 2 +-
+ wlr-layer-shell-unstable-v1.xml | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/render.c b/render.c
+index 47eda318b..56b042bb5 100644
+--- a/render.c
++++ b/render.c
+@@ -408,7 +408,7 @@ void render_frame(struct swaylock_surface *surface) {
+ 				arc_radius + arc_thickness / 2, 0, 2 * M_PI);
+ 		cairo_stroke(cairo);
+ 
+-		// display layout text seperately
++		// display layout text separately
+ 		if (layout_text) {
+ 			cairo_text_extents_t extents;
+ 			cairo_font_extents_t fe;
+diff --git a/wlr-layer-shell-unstable-v1.xml b/wlr-layer-shell-unstable-v1.xml
+index 2bb72eddc..f29eb8796 100644
+--- a/wlr-layer-shell-unstable-v1.xml
++++ b/wlr-layer-shell-unstable-v1.xml
+@@ -140,7 +140,7 @@
+         how they should interact with surfaces that do. If set to zero, the
+         surface indicates that it would like to be moved to avoid occluding
+         surfaces with a positive excluzive zone. If set to -1, the surface
+-        indicates that it would not like to be moved to accomodate for other
++        indicates that it would not like to be moved to accommodate for other
+         surfaces, and the compositor should extend it all the way to the edges
+         it is anchored to.
+ 
+
+From db2e60a8767dff6820c1633d3076213205d0352a Mon Sep 17 00:00:00 2001
+From: loserMcloser <reebydobalina@gmail.com>
+Date: Mon, 31 May 2021 15:01:59 -0600
+Subject: [PATCH 05/18] Draw ring and inner fill separately
+
+---
+ render.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/render.c b/render.c
+index 56b042bb5..846cc0765 100644
+--- a/render.c
++++ b/render.c
+@@ -214,12 +214,18 @@ void render_frame(struct swaylock_surface *surface) {
+ 
+ 	if (state->args.indicator ||
+ 			(upstream_show_indicator && state->auth_state != AUTH_STATE_GRACE)) {
+-		// Draw circle
++		// Fill inner circle
++		cairo_set_line_width(cairo, 0);
++		cairo_arc(cairo, buffer_width / 2, buffer_diameter / 2,
++				arc_radius - arc_thickness / 2, 0, 2 * M_PI);
++		set_color_for_state(cairo, state, &state->args.colors.inside);
++		cairo_fill_preserve(cairo);
++		cairo_stroke(cairo);
++
++		// Draw ring
+ 		cairo_set_line_width(cairo, arc_thickness);
+ 		cairo_arc(cairo, buffer_width / 2, buffer_diameter / 2, arc_radius,
+ 				0, 2 * M_PI);
+-		set_color_for_state(cairo, state, &state->args.colors.inside);
+-		cairo_fill_preserve(cairo);
+ 		set_color_for_state(cairo, state, &state->args.colors.ring);
+ 		cairo_stroke(cairo);
+ 
+
+From b834e01b51816096867797a3d36ed69b4ce226f5 Mon Sep 17 00:00:00 2001
+From: Simon Plakolb <s.plakolb@gmail.com>
+Date: Tue, 1 Jun 2021 01:49:58 +0200
+Subject: [PATCH 06/18] Ensure buffer size is multiple of buffer scale
+
+An odd value of fe.height lead to the indicator disappearing. This was
+due to the buffer size no longer being a multiple of the buffer scale.
+This commit fixes the issue by checking both height and width to be a
+multiple of scale.
+
+This is done early to avoid excessive re-calls of create_buffer if the
+buffer_height != new_height in render.c line 314 (now 318).
+---
+ render.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/render.c b/render.c
+index 846cc0765..e2449e713 100644
+--- a/render.c
++++ b/render.c
+@@ -450,6 +450,10 @@ void render_frame(struct swaylock_surface *surface) {
+ 			}
+ 		}
+ 
++		// Ensure buffer size is multiple of buffer scale - required by protocol
++		new_height += surface->scale - (new_height % surface->scale);
++		new_width += surface->scale - (new_width % surface->scale);
++
+ 		if (buffer_width != new_width || buffer_height != new_height) {
+ 			destroy_buffer(surface->current_buffer);
+ 			surface->indicator_width = new_width;
+
+From 7b3212761d0eef56a8cfb4b1034a3129220b7819 Mon Sep 17 00:00:00 2001
+From: Michael Swiger <mokkan@gmail.com>
+Date: Sun, 27 Jun 2021 20:46:01 -0700
+Subject: [PATCH 07/18] Fix indicator buffer not resizing after display powers
+ off
+
+---
+ render.c | 18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/render.c b/render.c
+index e2449e713..241367e77 100644
+--- a/render.c
++++ b/render.c
+@@ -449,17 +449,17 @@ void render_frame(struct swaylock_surface *surface) {
+ 				new_width = extents.width + 2 * box_padding;
+ 			}
+ 		}
++	}
+ 
+-		// Ensure buffer size is multiple of buffer scale - required by protocol
+-		new_height += surface->scale - (new_height % surface->scale);
+-		new_width += surface->scale - (new_width % surface->scale);
++	// Ensure buffer size is multiple of buffer scale - required by protocol
++	new_height += surface->scale - (new_height % surface->scale);
++	new_width += surface->scale - (new_width % surface->scale);
+ 
+-		if (buffer_width != new_width || buffer_height != new_height) {
+-			destroy_buffer(surface->current_buffer);
+-			surface->indicator_width = new_width;
+-			surface->indicator_height = new_height;
+-			render_frame(surface);
+-		}
++	if (buffer_width != new_width || buffer_height != new_height) {
++		destroy_buffer(surface->current_buffer);
++		surface->indicator_width = new_width;
++		surface->indicator_height = new_height;
++		render_frame(surface);
+ 	}
+ 
+ 	wl_surface_set_buffer_scale(surface->child, surface->scale);
+
+From 1271020bc51353bfd96c8de393579da8670c8d75 Mon Sep 17 00:00:00 2001
+From: Michael Swiger <mokkan@gmail.com>
+Date: Mon, 5 Jul 2021 13:52:47 -0700
+Subject: [PATCH 08/18] Prevent attaching and committing the surface twice
+
+---
+ render.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/render.c b/render.c
+index 241367e77..ebf8bfb7b 100644
+--- a/render.c
++++ b/render.c
+@@ -460,6 +460,7 @@ void render_frame(struct swaylock_surface *surface) {
+ 		surface->indicator_width = new_width;
+ 		surface->indicator_height = new_height;
+ 		render_frame(surface);
++		return;
+ 	}
+ 
+ 	wl_surface_set_buffer_scale(surface->child, surface->scale);
+
+From dfff235b09b475e79d75a040a0307a359974d360 Mon Sep 17 00:00:00 2001
+From: grumpey <grumpey0@gmail.com>
+Date: Sun, 11 Jul 2021 13:40:46 -0400
+Subject: [PATCH 09/18] Call fclose vice free, fixes #198
+
+---
+ main.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/main.c b/main.c
+index f62a3a0fd..50504ce90 100644
+--- a/main.c
++++ b/main.c
+@@ -1667,7 +1667,7 @@ static int load_config(char *path, struct swaylock_state *state,
+ 		char *flag = malloc(nread + 3);
+ 		if (flag == NULL) {
+ 			free(line);
+-			free(config);
++			fclose(config);
+ 			swaylock_log(LOG_ERROR, "Failed to allocate memory");
+ 			return 0;
+ 		}
+
+From d16fad6453c2ea3ca349713b6d275426ea094a3b Mon Sep 17 00:00:00 2001
+From: Simon Ser <contact@emersion.fr>
+Date: Thu, 29 Jul 2021 09:08:39 +0200
+Subject: [PATCH 10/18] Check for poll errors
+
+---
+ loop.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/loop.c b/loop.c
+index 5cce8677f..674b31078 100644
+--- a/loop.c
++++ b/loop.c
+@@ -81,7 +81,11 @@ void loop_poll(struct loop *loop) {
+ 		ms = 0;
+ 	}
+ 
+-	poll(loop->fds, loop->fd_length, ms);
++	int ret = poll(loop->fds, loop->fd_length, ms);
++	if (ret < 0) {
++		swaylock_log_errno(LOG_ERROR, "poll failed");
++		exit(1);
++	}
+ 
+ 	// Dispatch fds
+ 	size_t fd_index = 0;
+
+From 91f49024fc5febb676b235be3138e7d720a7f263 Mon Sep 17 00:00:00 2001
+From: Erik Reider <35975961+ErikReider@users.noreply.github.com>
+Date: Thu, 10 Mar 2022 20:55:39 +0100
+Subject: [PATCH 11/18] Display image inside of indicator
+
+---
+ completions/bash/swaylock      |  3 ++-
+ completions/fish/swaylock.fish |  1 +
+ completions/zsh/_swaylock      |  1 +
+ include/swaylock.h             |  3 +++
+ main.c                         | 45 ++++++++++++++++++++++++++++++++++
+ render.c                       | 28 +++++++++++++++++++++
+ 6 files changed, 80 insertions(+), 1 deletion(-)
+
+diff --git a/completions/bash/swaylock b/completions/bash/swaylock
+index 713fb4c0d..a2f2f52ca 100644
+--- a/completions/bash/swaylock
++++ b/completions/bash/swaylock
+@@ -47,6 +47,7 @@ _swaylock()
+     --indicator-thickness
+     --indicator-x-position
+     --indicator-y-position
++    --indicator-image
+     --inside-caps-lock-color
+     --inside-clear-color
+     --inside-color
+@@ -99,7 +100,7 @@ _swaylock()
+       COMPREPLY=($(compgen -W "${scaling[*]}" -- "$cur"))
+       return
+       ;;
+-    -i|--image)
++    -i|--image|--indicator-image)
+       if grep -q : <<< "$cur"; then
+         output="${cur%%:*}:"
+         cur="${cur#*:}"
+diff --git a/completions/fish/swaylock.fish b/completions/fish/swaylock.fish
+index 41416a393..f73a1ec2b 100644
+--- a/completions/fish/swaylock.fish
++++ b/completions/fish/swaylock.fish
+@@ -20,6 +20,7 @@ complete -c swaylock -l indicator-radius            --description "Sets the indi
+ complete -c swaylock -l indicator-thickness         --description "Sets the indicator thickness."
+ complete -c swaylock -l indicator-x-position        --description "Sets the horizontal position of the indicator."
+ complete -c swaylock -l indicator-y-position        --description "Sets the vertical position of the indicator."
++complete -c swaylock -l indicator-image             --description "Display the given image inside of the indicator."
+ complete -c swaylock -l inside-caps-lock-color      --description "Sets the color of the inside of the indicator when Caps Lock is active."
+ complete -c swaylock -l inside-clear-color          --description "Sets the color of the inside of the indicator when cleared."
+ complete -c swaylock -l inside-color                --description "Sets the color of the inside of the indicator."
+diff --git a/completions/zsh/_swaylock b/completions/zsh/_swaylock
+index 9e9f78866..a16577d16 100644
+--- a/completions/zsh/_swaylock
++++ b/completions/zsh/_swaylock
+@@ -24,6 +24,7 @@ _arguments -s \
+ 	'(--indicator-thickness)'--indicator-thickness'[Sets the indicator thickness]:thickness:' \
+ 	'(--indicator-x-position)'--indicator-x-position'[Sets the horizontal position of the indicator]' \
+ 	'(--indicator-y-position)'--indicator-y-position'[Sets the vertical position of the indicator]' \
++	'(--indicator-image)'--indicator-image'[Display the given image inside of the indicator]:filename:_files' \
+ 	'(--inside-caps-lock-color)'--inside-caps-lock-color'[Sets the color of the inside of the indicator when Caps Lock is active]:color:' \
+ 	'(--inside-clear-color)'--inside-clear-color'[Sets the color of the inside of the indicator when cleared]:color:' \
+ 	'(--inside-color)'--inside-color'[Sets the color of the inside of the indicator]:color:' \
+diff --git a/include/swaylock.h b/include/swaylock.h
+index eb86486cd..43d623de8 100644
+--- a/include/swaylock.h
++++ b/include/swaylock.h
+@@ -100,6 +100,9 @@ struct swaylock_state {
+ 	struct wl_shm *shm;
+ 	struct wl_list surfaces;
+ 	struct wl_list images;
++	cairo_surface_t *indicator_image;
++	int indicator_image_width;
++	int indicator_image_height;
+ 	struct swaylock_args args;
+ 	struct swaylock_password password;
+ 	struct swaylock_xkb xkb;
+diff --git a/main.c b/main.c
+index 4afb6aef2..4e4ec276c 100644
+--- a/main.c
++++ b/main.c
+@@ -799,6 +799,42 @@ static char *join_args(char **argv, int argc) {
+ 	return res;
+ }
+ 
++static void load_indicator_image(char* path, struct swaylock_state *state){
++	if (!strcmp(path, "")) return;
++
++	cairo_surface_t *image;
++#if HAVE_GDK_PIXBUF
++	GError *err = NULL;
++	GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(path, &err);
++	if (!pixbuf) {
++		swaylock_log(LOG_ERROR, "Failed to load indicator image (%s).",
++				err->message);
++		return;
++	}
++	image = gdk_cairo_image_surface_create_from_pixbuf(pixbuf);
++	g_object_unref(pixbuf);
++#else
++	image = cairo_image_surface_create_from_png(path);
++#endif // HAVE_GDK_PIXBUF
++	if (!image) {
++		swaylock_log(LOG_ERROR, "Failed to read indicator image.");
++		return;
++	}
++	if (cairo_surface_status(image) != CAIRO_STATUS_SUCCESS) {
++		swaylock_log(LOG_ERROR, "Failed to read indicator image: %s."
++#if !HAVE_GDK_PIXBUF
++				"\nSway was compiled without gdk_pixbuf support, so only"
++				"\nPNG images can be loaded. This is the likely cause."
++#endif // !HAVE_GDK_PIXBUF
++				, cairo_status_to_string(cairo_surface_status(image)));
++		return;
++	}
++
++	state->indicator_image = image;
++	state->indicator_image_height = cairo_image_surface_get_height (image);
++	state->indicator_image_width = cairo_image_surface_get_width (image);
++}
++
+ static void load_image(char *arg, struct swaylock_state *state) {
+ 	// [[<output>]:]<path>
+ 	struct swaylock_image *image = calloc(1, sizeof(struct swaylock_image));
+@@ -920,6 +956,7 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 		LO_IND_X_POSITION,
+ 		LO_IND_Y_POSITION,
+ 		LO_IND_THICKNESS,
++		LO_IND_IMAGE,
+ 		LO_INSIDE_COLOR,
+ 		LO_INSIDE_CLEAR_COLOR,
+ 		LO_INSIDE_CAPS_LOCK_COLOR,
+@@ -995,6 +1032,7 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 		{"indicator-thickness", required_argument, NULL, LO_IND_THICKNESS},
+ 		{"indicator-x-position", required_argument, NULL, LO_IND_X_POSITION},
+ 		{"indicator-y-position", required_argument, NULL, LO_IND_Y_POSITION},
++		{"indicator-image", required_argument, NULL, LO_IND_IMAGE},
+ 		{"inside-color", required_argument, NULL, LO_INSIDE_COLOR},
+ 		{"inside-clear-color", required_argument, NULL, LO_INSIDE_CLEAR_COLOR},
+ 		{"inside-caps-lock-color", required_argument, NULL, LO_INSIDE_CAPS_LOCK_COLOR},
+@@ -1119,6 +1157,8 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 			"Sets the horizontal position of the indicator.\n"
+ 		"  --indicator-y-position <y>       "
+ 			"Sets the vertical position of the indicator.\n"
++		"  --indicator-image <path>       "
++			"Display the given image inside of the indicator.\n"
+ 		"  --inside-color <color>           "
+ 			"Sets the color of the inside of the indicator.\n"
+ 		"  --inside-clear-color <color>     "
+@@ -1352,6 +1392,11 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 				state->args.indicator_y_position = atoi(optarg);
+ 			}
+ 			break;
++		case LO_IND_IMAGE:
++			if (state) {
++				load_indicator_image(optarg, state);
++			}
++			break;
+ 		case LO_INSIDE_COLOR:
+ 			if (state) {
+ 				state->args.colors.inside.input = parse_color(optarg);
+diff --git a/render.c b/render.c
+index ebf8bfb7b..490007ad8 100644
+--- a/render.c
++++ b/render.c
+@@ -214,6 +214,34 @@ void render_frame(struct swaylock_surface *surface) {
+ 
+ 	if (state->args.indicator ||
+ 			(upstream_show_indicator && state->auth_state != AUTH_STATE_GRACE)) {
++		// Draw indicator image
++		cairo_surface_t * image = state->indicator_image;
++		if (image) {
++			int height = state->indicator_image_height;
++			int width = state->indicator_image_height;
++			int smallest = MIN(height, width);
++			double radius = arc_radius - arc_thickness * 0.5;
++			double scale = radius * 2 / smallest;
++			double offset = buffer_height * 0.5 / scale - smallest * 0.5;
++
++			// Create the arc that clips the image
++			cairo_arc(cairo,
++					buffer_diameter * 0.5,
++					buffer_diameter * 0.5,
++					radius,
++					0, 2 * M_PI);
++
++			// Scale cairo to make image fit the indicator
++			cairo_scale (cairo, scale, scale);
++
++			cairo_set_source_surface(cairo, image, offset, offset);
++
++			// Scale cairo back
++			cairo_scale (cairo, 1 / scale, 1 / scale);
++
++			cairo_fill(cairo);
++		}
++
+ 		// Fill inner circle
+ 		cairo_set_line_width(cairo, 0);
+ 		cairo_arc(cairo, buffer_width / 2, buffer_diameter / 2,
+
+From 2fb009870d6f9068d8cddf8d7c548959a594195a Mon Sep 17 00:00:00 2001
+From: Erik Reider <35975961+ErikReider@users.noreply.github.com>
+Date: Fri, 11 Mar 2022 10:11:03 +0100
+Subject: [PATCH 12/18] Added --indicator-image to man page
+
+---
+ swaylock.1.scd | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/swaylock.1.scd b/swaylock.1.scd
+index 2b708fd16..f7a1c2eff 100644
+--- a/swaylock.1.scd
++++ b/swaylock.1.scd
+@@ -141,6 +141,9 @@ Locks your Wayland session.
+ *--indicator-y-position* <y>
+ 	Sets the vertical position of the indicator.
+ 
++*--indicator-image* <path>
++	Display the given image inside of the indicator.
++
+ *--inside-color* <rrggbb[aa]>
+ 	Sets the color of the inside of the indicator.
+ 
+
+From a563e804c019fdc60bd16c230fdd42100cab2ca0 Mon Sep 17 00:00:00 2001
+From: Erik Reider <35975961+ErikReider@users.noreply.github.com>
+Date: Fri, 11 Mar 2022 10:16:54 +0100
+Subject: [PATCH 13/18] Use buffer_diameter instead of buffer_height
+
+---
+ render.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/render.c b/render.c
+index 490007ad8..bdde3c253 100644
+--- a/render.c
++++ b/render.c
+@@ -222,7 +222,7 @@ void render_frame(struct swaylock_surface *surface) {
+ 			int smallest = MIN(height, width);
+ 			double radius = arc_radius - arc_thickness * 0.5;
+ 			double scale = radius * 2 / smallest;
+-			double offset = buffer_height * 0.5 / scale - smallest * 0.5;
++			double offset = buffer_diameter * 0.5 / scale - smallest * 0.5;
+ 
+ 			// Create the arc that clips the image
+ 			cairo_arc(cairo,
+
+From daa1d7a913428eb153e534931675f158b92ff311 Mon Sep 17 00:00:00 2001
+From: Edd Salkield <edd@salkield.uk>
+Date: Wed, 12 Oct 2022 15:36:22 +0100
+Subject: [PATCH 14/18] Update README.md to reflect Fedora COPR maintenance
+ change
+
+---
+ README.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index aaf839e48..7e6d057fc 100644
+--- a/README.md
++++ b/README.md
+@@ -70,7 +70,7 @@ implement them), new feature implementations are welcome as pull requests :)
+ * Alpine Linux: [swaylock-effects](https://pkgs.alpinelinux.org/packages?name=swaylock-effects)
+ * Arch Linux (AUR): [swaylock-effects-git](https://aur.archlinux.org/packages/swaylock-effects-git/)
+ * Fedora (Copr): [swaylock-effects](https://copr.fedorainfracloud.org/coprs/eddsalkield/swaylock-effects/)
+-  (thanks to Edd Salkield)
++  (originally by Edd Salkield, now looking for a new maintainer)
+ * FreeBSD: [swaylock-effects](https://www.freshports.org/x11/swaylock-effects/)
+ * Gentoo (GURU overlay): [swaylock-effects](https://gpo.zugaina.org/Overlays/guru/gui-apps/swaylock-effects)
+ * T2 SDE: [swaylock-effects](https://t2sde.org/packages/swaylock-effects)
+
+From 20ecc6a0a5b61bb1a66cfb513bc357f74d040868 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Martin=20D=C3=B8rum?= <martid0311@gmail.com>
+Date: Tue, 10 Jan 2023 23:35:32 +0100
+Subject: [PATCH 15/18] v1.6-4
+
+---
+ meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/meson.build b/meson.build
+index 308dabd74..06b5070de 100644
+--- a/meson.build
++++ b/meson.build
+@@ -1,7 +1,7 @@
+ project(
+ 	'swaylock',
+ 	'c',
+-	version: '1.6-3',
++	version: '1.6-4',
+ 	license: 'MIT',
+ 	meson_version: '>=0.48.0',
+ 	default_options: [
+
+From b3b735f20ed52f9b1d7952e1451893d21232432e Mon Sep 17 00:00:00 2001
+From: Erik Reider <35975961+ErikReider@users.noreply.github.com>
+Date: Fri, 13 Jan 2023 13:48:34 +0100
+Subject: [PATCH 16/18] Fixed help separator spacing
+
+---
+ main.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/main.c b/main.c
+index 67f92ac40..add18467a 100644
+--- a/main.c
++++ b/main.c
+@@ -1192,7 +1192,7 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
+ 			"Sets the horizontal position of the indicator.\n"
+ 		"  --indicator-y-position <y>       "
+ 			"Sets the vertical position of the indicator.\n"
+-		"  --indicator-image <path>       "
++		"  --indicator-image <path>         "
+ 			"Display the given image inside of the indicator.\n"
+ 		"  --inside-color <color>           "
+ 			"Sets the color of the inside of the indicator.\n"
+
+From 456231e37d76ea281925d737c1419b1e6b885714 Mon Sep 17 00:00:00 2001
+From: Erik Reider <35975961+ErikReider@users.noreply.github.com>
+Date: Fri, 13 Jan 2023 14:02:07 +0100
+Subject: [PATCH 17/18] Redefine MIN in render.c
+
+---
+ render.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/render.c b/render.c
+index 235793239..394a0cef8 100644
+--- a/render.c
++++ b/render.c
+@@ -7,6 +7,12 @@
+ #include "background-image.h"
+ #include "swaylock.h"
+ 
++// glib might or might not have already defined MIN,
++// depending on whether we have pixbuf or not...
++#ifndef MIN
++#define MIN(a, b) ((a) < (b) ? (a) : (b))
++#endif
++
+ #define M_PI 3.14159265358979323846
+ const float TYPE_INDICATOR_RANGE = M_PI / 3.0f;
+ const float TYPE_INDICATOR_BORDER_THICKNESS = M_PI / 128.0f;
+
+From 04741424a349d5652c0025d87ddddc52dedc9286 Mon Sep 17 00:00:00 2001
+From: Erik Reider <35975961+ErikReider@users.noreply.github.com>
+Date: Fri, 13 Jan 2023 14:12:45 +0100
+Subject: [PATCH 18/18] Undid master rebase README change
+
+---
+ README.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index 38ce27ba3..e5545a47d 100644
+--- a/README.md
++++ b/README.md
+@@ -92,7 +92,7 @@ The original [mortie/swaylock-effects](https://github.com/mortie/swaylock-effect
+ has been packaged for:
+ 
+ * Fedora (Copr): [swaylock-effects](https://copr.fedorainfracloud.org/coprs/eddsalkield/swaylock-effects/)
+-  (originally by Edd Salkield, now looking for a new maintainer)
++  (thanks to Edd Salkield)
+ * FreeBSD: [swaylock-effects](https://www.freshports.org/x11/swaylock-effects/)
+ * Gentoo (GURU overlay): [swaylock-effects](https://gpo.zugaina.org/Overlays/guru/gui-apps/swaylock-effects)
+ * T2 SDE: [swaylock-effects](https://t2sde.org/packages/swaylock-effects)
