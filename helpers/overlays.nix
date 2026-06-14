@@ -21,8 +21,9 @@
   };
   lspServers = let
     local = final: prev: {
-      emmet-language-server = prev.callPackage ./pkgs/emmet-ls {};
-      autotools-language-server = prev.callPackage ./pkgs/autotools-ls {};
+      # NOTE: pkgs/emmet-ls is a WIP stub (npmDepsHash = lib.fakeHash) that does
+      # not build; fall back to the nixpkgs emmet-language-server instead.
+      autotools-language-server = prev.callPackage ../pkgs/autotools-ls {};
     };
   in [
     local
@@ -540,6 +541,13 @@ in {
         home-manager.useUserPackages = true;
       };
   in {
+    # Stable-channel counterpart of unstable.hmIntegrationOverlays (see below);
+    # only hoisted for stable *desktop* hosts. Servers (kore) set desktop = false
+    # and never force this.
+    hmIntegrationOverlays =
+      vimPluginsOverlayList
+      ++ lspServers
+      ++ [inputs.claude-code.overlays.default];
     # base =
     # mkOverlayModules base
     # ++ inputs.sops-nix.nixosModules.sops;

@@ -302,7 +302,7 @@
               ./nixos/thanatos/hardware-configuration.nix
               inputs.disko.nixosModules.disko
               ./nixos/thanatos/disk-config.nix
-              # ./nixos/thanatos/extras.nix
+              ./nixos/thanatos/extras.nix
             ];
         };
       aphrodite = let
@@ -342,7 +342,7 @@
             inputs.impermanence.nixosModules.impermanence
             inputs.disko.nixosModules.disko
             ./nixos/kore/configuration.nix
-            # overlays.stable.homeManager
+            ./nixos/kore/extras.nix
           ];
         # ++ externalModules.stable.homeManager;
         # ++ ;
