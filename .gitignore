@@ -5,3 +5,5 @@ result*
 flake.lock_*
 flake.lock*-*
 rootdir/
+scratchpad/
+logs/
