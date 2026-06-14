@@ -342,7 +342,7 @@
             inputs.impermanence.nixosModules.impermanence
             inputs.disko.nixosModules.disko
             ./nixos/kore/configuration.nix
-            ./nixos/kore/extras.nix
+            ./features/nixos/home/server.nix
           ];
         # ++ externalModules.stable.homeManager;
         # ++ ;
@@ -378,6 +378,7 @@
             ./nixos/selene/configuration.nix
 
             inputs.sops-nix.nixosModules.sops
+            ./features/nixos/home/server.nix
           ];
       };
       #NOTE: Remote arm64 server on OC
