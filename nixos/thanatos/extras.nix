@@ -1,15 +1,15 @@
-{
-  config,
-  pkgs,
-  lib,
-  ...
-}: {
-  home-manager.useGlobalPkgs = true;
-  home-manager.useUserPackages = true;
-  home-manager.users.michael = ../../hm/home.nix;
-  # home-manager.users.michael = { pkgs, ... }: {
-  #   imports = [
-  #     ../../hm/home.nix
-  #   ];
-  # };
+# Integrated home-manager pilot for thanatos.
+#
+# Enable by uncommenting `./nixos/thanatos/extras.nix` in flake.nix's thanatos
+# module list, then test BEFORE switching:
+#   nix build .#nixosConfigurations.thanatos.config.system.build.toplevel
+#
+# The standalone path keeps working independently:
+#   home-manager switch --flake .#michael-thanatos
+{...}: {
+  imports = [../../features/nixos/home];
+  local.hm = {
+    enable = true;
+    perHost = [../../hm/home-thanatos.nix];
+  };
 }

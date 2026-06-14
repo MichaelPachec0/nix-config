@@ -591,6 +591,13 @@ in {
       home-manager.useUserPackages = true;
     };
   in {
+    # Overlays the home-manager desktop config needs that the NixOS desktop config
+    # does not apply on its own. With useGlobalPkgs = true the integrated home
+    # config reuses the system pkgs, so features/nixos/home hoists these up.
+    hmIntegrationOverlays =
+      vimPluginsOverlayList
+      ++ lspServers
+      ++ [inputs.claude-code.overlays.default];
     nixosServer = mkOverlayModules (base
       ++ [
         powertop-unstable
