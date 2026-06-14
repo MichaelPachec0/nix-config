@@ -81,6 +81,67 @@ _(none currently open — see Fixed log / Reviewed below)_
 
 ---
 
+## Home-manager as a NixOS module (rollout in progress, started 2026-06-14)
+
+Goal: build each user's home-manager config as part of `nixos-rebuild` while keeping
+standalone `home-manager switch` working from the same modules. Decision:
+`home-manager.useGlobalPkgs = true` (HM reuses system `pkgs`). Full design, blockers,
+and rationale in `docs/hm-nixos-integration.md`.
+
+Key invariant: a `standalone` module arg (default true, supplied via `extraSpecialArgs`)
+toggles whether HM applies its own `nixpkgs.*`; under integration the system owns pkgs and
+the HM-only overlay delta (`overlays.unstable.hmIntegrationOverlays`) is hoisted onto it.
+
+### Done (committed)
+- [x] **Shared module builder + `standalone` guard** · `helpers/home.nix`, `flake.nix`,
+  `hm/home.nix`, `features/hm/common/default.nix`, `features/hm/wayland/default.nix` ·
+  commit `fd448e7`. Standalone `michael-thanatos` activationPackage still evaluates.
+- [x] **Integrated module + thanatos pilot + docs** · `features/nixos/home/default.nix`
+  (`local.hm.*`), `helpers/overlays.nix` (`hmIntegrationOverlays`), `nixos/thanatos/extras.nix`,
+  `docs/hm-nixos-integration.md` · commit `6139426`.
+
+### In flight (uncommitted — fold into the test commit once thanatos/nyx build green)
+- [ ] **nyx wired active** · `nixos/nyx/extras.nix` (new) + `flake.nix` nyx module list · **S**.
+- [ ] **thanatos activated** · uncommented `./nixos/thanatos/extras.nix` in `flake.nix` · **S**.
+- [ ] **`lspServers` path bug** · `helpers/overlays.nix:23-25` `./pkgs/...` -> `../pkgs/...`
+  (was resolving under `helpers/`; latent until hoisted to the system) · **S** · done, uncommitted.
+- [ ] **Dropped broken `pkgs/emmet-ls` override** · `helpers/overlays.nix` — it is a WIP stub
+  (`npmDepsHash = lib.fakeHash`); now falls back to nixpkgs `emmet-language-server` · **S** · done, uncommitted.
+- [ ] **kore wired (stable server)** · `nixos/kore/extras.nix` (new); `features/nixos/home/` split into
+  `common.nix` (channel-agnostic core) + `default.nix` (unstable) + `stable.nix` (new); `helpers/overlays.nix`
+  `stable.hmIntegrationOverlays`; `helpers/home.nix` non-desktop integrated branch (`[]`); `flake.nix` kore
+  list (replaced `# overlays.stable.homeManager`). `desktop = false` -> no overlay hoist / no nixneovim · **M**.
+
+### Remaining
+- [ ] **Verify + switch thanatos, then nyx** · `nix build .#nixosConfigurations.<host>.config.system.build.toplevel`
+  before any switch. Watch for further `fakeHash`/stub packages pulled into `system-path`
+  (next candidate: local `autotools-language-server`) · **S-M**.
+- [ ] **aphrodite** · set `local.hm.enable`; then remove the now-redundant
+  `inputs.home-manager.nixosModules.home-manager` import (`nixos/aphrodite/apple.nix:24-26`) and the
+  `home-manager.useGlobalPkgs`/`useUserPackages` lines (`nixos/aphrodite/extras.nix:73-74`) —
+  `features/nixos/home` owns them · **M**.
+- [ ] **Delete `pkgs/emmet-ls`** stub dir now that nothing references it · **S** (pairs with the
+  `fakeHash` cleanup already tracked under Low / `nvchad_b.nix`).
+- [ ] **Servers (sysadmin, stable channel)** · stable variant now exists
+  (`features/nixos/home/stable.nix`; kore wired with `desktop = false`, so no overlay hoist or nixneovim).
+  Remaining: atlas/selene, and standalone `sysadmin-{helios,luna,eos}` parity · **M**.
+- [ ] **Delete dead scaffolding** once the new path is proven · `helpers/externalModules.nix`,
+  `overlays.{stable,unstable}.homeManager` (`helpers/overlays.nix`) · **S** (also in Low / dead files).
+- [ ] **Gate `report-changes` HM activation on `standalone`** · `features/hm/common/services.nix:18-22`
+  — redundant with the system-level `nvd diff` under integration · **S**.
+- [ ] **Move cache substituters to system `nix.settings`** for integrated hosts ·
+  `helpers/caches.nix` — per-user nix.conf substituters are ignored for non-trusted users · **S**.
+- [ ] **CI** · add integrated `nixosConfigurations.<host>...toplevel` builds to
+  `.github/workflows/pr.yaml`; `home-manager-check.sh` only checks `homeConfigurations` · **S**.
+
+### Security / hygiene (surfaced during testing)
+- [ ] **Rotate the GitHub token exposed via the `nrsf` output**, then stop passing it on the
+  command line · `features/hm/zsh/default.nix:124-125` (`hmsf`/`nrsf` inject
+  `--option access-tokens "github.com=$(gh auth token)"`, which lands in logs/transcripts).
+  Switch to reading from `GH_TOKEN`/a file or `~/.config/nix/nix.conf` `access-tokens` · **S**.
+
+---
+
 ## Fixed log
 
 ### 2026-06-08 / 2026-06-09
