@@ -246,6 +246,9 @@
     inherit (self) outputs;
 
     overlays = import ./helpers/overlays.nix {inherit inputs;};
+    # Single source of truth for per-user HM module lists, shared with the
+    # integrated NixOS path (features/nixos/home). See docs/hm-nixos-integration.md.
+    homeModules = import ./helpers/home.nix {inherit inputs;};
   in {
     # inputs.hyprland.packages.
     # overlays = import ./overlays {inherit inputs;};
@@ -398,6 +401,10 @@
         extraSpecialArgs ? {
           inputs = inputs;
           outputs = outputs;
+          # standalone `home-manager switch`; the integrated NixOS path
+          # (features/nixos/home) passes standalone = false. Module args do not
+          # honor `? true` defaults, so it must be supplied here for every config.
+          standalone = true;
         },
         modules ?
           overlays.unstable.homeManagerDesktop
@@ -412,23 +419,17 @@
     in {
       "michael-nyx" = mkHomeConfig {
         hm-instance = inputs.home-manager;
-        modules =
-          overlays.unstable.homeManagerDesktop
-          ++ [
-            ./hm/home.nix
-            inputs.hyprland.homeManagerModules.default
-            ./hm/home-nyx.nix
-          ];
+        modules = homeModules.mkHomeModules {
+          entry = ./hm/home.nix;
+          perHost = [./hm/home-nyx.nix];
+        };
       };
       "michael-thanatos" = mkHomeConfig {
         hm-instance = inputs.home-manager;
-        modules =
-          overlays.unstable.homeManagerDesktop
-          ++ [
-            ./hm/home.nix
-            ./hm/home-thanatos.nix
-            inputs.hyprland.homeManagerModules.default
-          ];
+        modules = homeModules.mkHomeModules {
+          entry = ./hm/home.nix;
+          perHost = [./hm/home-thanatos.nix];
+        };
       };
       "ubuntu-distrobox" = mkHomeConfig {
         modules =

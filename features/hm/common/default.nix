@@ -1,4 +1,9 @@
-{lib, ...}: {
+{
+  lib,
+  # true standalone; false when integrated as a NixOS module (useGlobalPkgs).
+  standalone ? true,
+  ...
+}: {
   imports = [./programs.nix ./services.nix];
   options = {
     graphical.enable =
@@ -14,9 +19,12 @@
       "device has a strong/discrete GPU; enables heavier visual effects (e.g. full-quality Hyprland blur)";
   };
   # Shared across all home-manager entrypoints (home.nix, home-test.nix, sysadmin.nix),
-  # all of which import this module.
-  config.nixpkgs.config = {
-    allowUnfree = true;
-    allowUnfreePredicate = _: true;
+  # all of which import this module. Only applied for standalone HM; when integrated
+  # as a NixOS module (useGlobalPkgs) the system owns nixpkgs.config.
+  config = lib.mkIf standalone {
+    nixpkgs.config = {
+      allowUnfree = true;
+      allowUnfreePredicate = _: true;
+    };
   };
 }

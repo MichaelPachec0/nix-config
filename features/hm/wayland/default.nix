@@ -220,11 +220,6 @@ toHypr = combo: cmd:
   hyprBinds =
     lib.mapAttrsToList toHypr swayKeybindings;
   in {
-    nixpkgs.overlays = [
-      # (final: prev: {
-      #   sway = prev.sway.override {inherit (inputs.nixpkgs-wayland.packages.${prev.system}) sway-unwrapped;};
-      # })
-    ];
     wayland = {
       windowManager.hyprland = {
         enable = true;

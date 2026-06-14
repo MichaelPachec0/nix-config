@@ -3,6 +3,10 @@
   lib,
   # config,
   pkgs,
+  # true for `home-manager switch`; false when integrated as a NixOS module
+  # (useGlobalPkgs), where the system owns nixpkgs/nix config. See
+  # docs/hm-nixos-integration.md.
+  standalone ? true,
   ...
 }: let
   spicetify = inputs.spicetify;
@@ -134,10 +138,13 @@ in {
     ../helpers/caches.nix
     inputs.claude-for-linux.homeManagerModules.default
   ];
-  nixpkgs.overlays = [
+  # Only applied for standalone HM; when integrated (useGlobalPkgs) the system pkgs
+  # already carry this overlay via helpers/overlays.nix hmIntegrationOverlays.
+  nixpkgs.overlays = lib.mkIf standalone [
     inputs.claude-code.overlays.default
   ];
-  nix = {
+  # The system owns nix config when integrated as a NixOS module.
+  nix = lib.mkIf standalone {
     package = pkgs.nix;
     settings = {
       # Enable flakes and new 'nix' command
