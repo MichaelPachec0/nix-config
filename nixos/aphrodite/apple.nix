@@ -21,9 +21,9 @@
   # NOTE: This is not needed anymore. This is for compat reasons.
   thermald = pkgs.thermald;
 in {
-  imports = [
-    inputs.home-manager.nixosModules.home-manager
-  ];
+  # NOTE: the home-manager NixOS module is now provided by features/nixos/home
+  # (imported via ./extras.nix); do not import it here too.
+  imports = [];
   config = {
     nixpkgs.overlays = [
 

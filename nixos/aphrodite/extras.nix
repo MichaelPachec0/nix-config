@@ -7,7 +7,7 @@
   ...
 } @ args: let
 in {
-  imports = [];
+  imports = [../../features/nixos/home];
   config = {
     nix.gc = {
       automatic = true;
@@ -70,8 +70,9 @@ in {
         };
       };
     };
-    home-manager.useGlobalPkgs = true;
-    home-manager.useUserPackages = true;
-    # home-manager.users.michael = ../../hm/home.nix;
+    # Integrated home-manager for michael. useGlobalPkgs/useUserPackages, the HM
+    # NixOS module, extraSpecialArgs, the overlay hoist, and users.michael are all
+    # owned by features/nixos/home. perHost defaults to [] (no hm/home-aphrodite.nix).
+    local.hm.enable = true;
   };
 }
