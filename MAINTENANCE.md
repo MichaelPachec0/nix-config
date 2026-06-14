@@ -122,9 +122,9 @@ the HM-only overlay delta (`overlays.unstable.hmIntegrationOverlays`) is hoisted
   `features/nixos/home` owns them · **M**.
 - [ ] **Delete `pkgs/emmet-ls`** stub dir now that nothing references it · **S** (pairs with the
   `fakeHash` cleanup already tracked under Low / `nvchad_b.nix`).
-- [ ] **Servers (sysadmin, stable channel)** · stable variant now exists
-  (`features/nixos/home/stable.nix`; kore wired with `desktop = false`, so no overlay hoist or nixneovim).
-  Remaining: atlas/selene, and standalone `sysadmin-{helios,luna,eos}` parity · **M**.
+- [x] **Servers (sysadmin, stable channel)** · shared preset `features/nixos/home/server.nix`
+  wires kore + selene + atlas (stable, `desktop = false`; kore/selene `toplevel` eval green).
+  No server hosts left (eos has no `nixosConfiguration`). Standalone `sysadmin-*` configs untouched.
 - [ ] **Delete dead scaffolding** once the new path is proven · `helpers/externalModules.nix`,
   `overlays.{stable,unstable}.homeManager` (`helpers/overlays.nix`) · **S** (also in Low / dead files).
 - [ ] **Gate `report-changes` HM activation on `standalone`** · `features/hm/common/services.nix:18-22`

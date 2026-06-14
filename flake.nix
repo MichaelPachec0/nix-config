@@ -363,6 +363,7 @@
             inputs.impermanence.nixosModules.impermanence
             inputs.disko.nixosModules.disko
             ./nixos/atlas/configuration.nix
+            ./features/nixos/home/server.nix
           ];
       };
       # Ampere instance
