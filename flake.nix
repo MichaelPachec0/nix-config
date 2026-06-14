@@ -275,6 +275,7 @@
               ./nixos/nyx/hardware-configuration.nix
               ./nixos/nyx/intel.nix
               ./nixos/nyx/boot.nix
+              ./nixos/nyx/extras.nix
             ];
         };
       thanatos = let
