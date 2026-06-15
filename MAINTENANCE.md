@@ -43,7 +43,7 @@ _(none currently open — see Fixed log / Reviewed below)_
   (`vpnStatus`, `waylandChecker`, `weakTargets`, `shaderFolder`, `denoise`, `geisha`…),
   `features/nixos/kernel/native.nix`, `features/hm/wayland/swayidle.nix` · **S** (`deadnix --edit`).
 - [ ] **~340-line dead block** + dead `overlayList`/`mkOverlay` · `helpers/overlays.nix:655-996` · **S**.
-- [ ] **Dead files (imported nowhere)** · top-level `gpg/`, `features/nixos/desktop/wayland/hyprModule.nix`,
+- [ ] **Dead files (imported nowhere)** · `features/nixos/desktop/wayland/hyprModule.nix`,
   `features/hm/wayland/hydots.nix` (foreign dotfile w/ `/home/snes/` paths), `hyprland.conf.nix`,
   `waybar/config.hyprland`, `shaders/{reading_mode*,main.glsl}`, `helpers/externalModules.nix` · **S**.
 - [ ] **Broken-if-imported files** · `pkgs/default.nix` (`callPackage ./shikane` — dir missing),
