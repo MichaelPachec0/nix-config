@@ -5,7 +5,7 @@
   pkgs,
   ...
 }: let
-  spicetify = inputs.sp-test;
+  inherit (inputs) spicetify;
   spicePkgs = spicetify.packages.${pkgs.system}.default;
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-hard;
 in {
@@ -25,7 +25,8 @@ in {
     enable = true;
     spicetifyPackage = pkgs.spicetify-cli;
     windowManagerPatch = true;
-    theme = spicePkgs.themes.Glaze;
+    theme = spicePkgs.themes.Onepunch;
     colorScheme = "Base";
   };
+  home.stateVersion = "23.11";
 }

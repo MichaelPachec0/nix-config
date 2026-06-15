@@ -28,7 +28,11 @@
         if desktop
         then sets.homeManagerDesktop
         else sets.homeManagerMinmal
-      else [inputs.nixneovim.nixosModules.homeManager];
+      # integrated (useGlobalPkgs): overlays live on the system. Only a desktop
+      # neovim config needs the nixneovim HM module's options; servers need none.
+      else if desktop
+      then [inputs.nixneovim.nixosModules.homeManager]
+      else [];
     desktopModules =
       if desktop
       then [inputs.hyprland.homeManagerModules.default]

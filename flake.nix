@@ -110,10 +110,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # sp-test = {
-    #   url = "github:MichaelPachec0/spicetify-nix/";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    # };
     nixd = {
       url = "github:nix-community/nixd";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -275,6 +271,7 @@
               ./nixos/nyx/hardware-configuration.nix
               ./nixos/nyx/intel.nix
               ./nixos/nyx/boot.nix
+              ./nixos/nyx/extras.nix
             ];
         };
       thanatos = let
@@ -301,7 +298,7 @@
               ./nixos/thanatos/hardware-configuration.nix
               inputs.disko.nixosModules.disko
               ./nixos/thanatos/disk-config.nix
-              # ./nixos/thanatos/extras.nix
+              ./nixos/thanatos/extras.nix
             ];
         };
       aphrodite = let
@@ -341,7 +338,7 @@
             inputs.impermanence.nixosModules.impermanence
             inputs.disko.nixosModules.disko
             ./nixos/kore/configuration.nix
-            # overlays.stable.homeManager
+            ./features/nixos/home/server.nix
           ];
         # ++ externalModules.stable.homeManager;
         # ++ ;
@@ -362,6 +359,7 @@
             inputs.impermanence.nixosModules.impermanence
             inputs.disko.nixosModules.disko
             ./nixos/atlas/configuration.nix
+            ./features/nixos/home/server.nix
           ];
       };
       # Ampere instance
@@ -377,6 +375,7 @@
             ./nixos/selene/configuration.nix
 
             inputs.sops-nix.nixosModules.sops
+            ./features/nixos/home/server.nix
           ];
       };
       #NOTE: Remote arm64 server on OC

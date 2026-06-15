@@ -23,19 +23,27 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      # NOTE: register aarch64 binfmt so the x86_64 runner can build aarch64
+      # derivations under emulation. nix flake check evaluates every
+      # nixosConfiguration (incl. the aarch64 selene), and that eval forces an
+      # aarch64-only import-from-derivation (rust-overlay channel manifest).
+      - name: set up QEMU (aarch64 emulation)
+        uses: docker/setup-qemu-action@v3
 
       - name: nix install
-        uses: cachix/install-nix-action@v21
+        uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
             experimental-features = nix-command flakes
+            extra-platforms = aarch64-linux
         # NOTE: The check below will evalute standard portions of the flake, like nixosConfigurations, packages, devshells.
-      - name: Standard flake check 
+      - name: Standard flake check
         run: nix flake check
-      
+
   homeManager:
     name: Home-Manager check
     runs-on: ubuntu-latest
@@ -48,15 +56,22 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      # NOTE: aarch64 emulation, same as the flake job: the loop below evaluates
+      # the aarch64 home configs (sysadmin-luna, sysadmin-eos), which pull the
+      # rust-overlay channel manifest IFD that only builds on aarch64.
+      - name: set up QEMU (aarch64 emulation)
+        uses: docker/setup-qemu-action@v3
 
       - name: nix install
-        uses: cachix/install-nix-action@v21
+        uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
             experimental-features = nix-command flakes
-            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+            extra-platforms = aarch64-linux
         # NOTE: Since home-manager flake ouput is custom, a manual check needs to be done for it.
       - name: Custom Home-manager flake check
         run: |
@@ -71,6 +86,8 @@ jobs:
             echo "HOME-MANAGER: CHECKING $USER"
             # NOTE: use this for now to evaluate, there might be a better way to do this in the future.
             # Also make sure to remove the quotes, as they were not removed earlier.
-            nix derivation show ".#homeConfigurations.${USER:1:-1}.activationPackage"
+            # WARN: --impure so NIXPKGS_ALLOW_UNFREE is honored; the standalone homeConfigurations
+            # receive nixpkgs.legacyPackages (no allowUnfree in config), so unfree pkgs need the env var.
+            nix derivation show --impure ".#homeConfigurations.${USER:1:-1}.activationPackage"
           done
           IFS=$OIFS
