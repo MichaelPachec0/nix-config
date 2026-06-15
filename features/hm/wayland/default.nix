@@ -318,8 +318,6 @@ toHypr = combo: cmd:
           render = {
             cm_enabled = true;
             cm_auto_hdr = 1;
-            # deprecated
-            # cm_fs_passthrough = 0;
             cm_sdr_eotf = 0;
           };
           general = {
