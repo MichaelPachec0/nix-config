@@ -23,19 +23,19 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: nix install
-        uses: cachix/install-nix-action@v21
+        uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
             experimental-features = nix-command flakes
         # NOTE: The check below will evalute standard portions of the flake, like nixosConfigurations, packages, devshells.
-      - name: Standard flake check 
+      - name: Standard flake check
         run: nix flake check
-      
+
   homeManager:
     name: Home-Manager check
     runs-on: ubuntu-latest
@@ -48,15 +48,15 @@ jobs:
 
     steps:
       - name: checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: nix install
-        uses: cachix/install-nix-action@v21
+        uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
             experimental-features = nix-command flakes
-            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
         # NOTE: Since home-manager flake ouput is custom, a manual check needs to be done for it.
       - name: Custom Home-manager flake check
         run: |
@@ -71,6 +71,8 @@ jobs:
             echo "HOME-MANAGER: CHECKING $USER"
             # NOTE: use this for now to evaluate, there might be a better way to do this in the future.
             # Also make sure to remove the quotes, as they were not removed earlier.
-            nix derivation show ".#homeConfigurations.${USER:1:-1}.activationPackage"
+            # WARN: --impure so NIXPKGS_ALLOW_UNFREE is honored; the standalone homeConfigurations
+            # receive nixpkgs.legacyPackages (no allowUnfree in config), so unfree pkgs need the env var.
+            nix derivation show --impure ".#homeConfigurations.${USER:1:-1}.activationPackage"
           done
           IFS=$OIFS
