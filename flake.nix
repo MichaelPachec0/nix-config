@@ -110,10 +110,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # sp-test = {
-    #   url = "github:MichaelPachec0/spicetify-nix/";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    # };
     nixd = {
       url = "github:nix-community/nixd";
       inputs.nixpkgs.follows = "nixpkgs";
