@@ -10,7 +10,7 @@
 }: let
   # TODO: check if this changes!
   ipAddress = "152.70.124.65";
-  keys = import ../../keys.nix;
+  keys = import ../../helpers/keys.nix;
 in {
   imports = [
     # Include the results of the hardware scan.

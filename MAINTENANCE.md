@@ -152,7 +152,7 @@ the HM-only overlay delta (`overlays.unstable.hmIntegrationOverlays`) is hoisted
 - **Fixed `michael-nyx`/`michael-thanatos` home build** — `wayland.windowManager.sway.config.input`
   had bare int `repeat_rate`/`repeat_delay`; moved them under a `"type:keyboard"` criteria with
   string values (`features/hm/wayland/default.nix`). Both activationPackages now evaluate.
-- **Deduped SSH public keys** — every authorized key now lives once in `keys.nix` (9 named keys
+- **Deduped SSH public keys** — every authorized key now lives once in `helpers/keys.nix` (9 named keys
   + `all`/`laptops`/`initrd` bundles), referenced from the 4 hosts + `deploy.nix` (was ~41
   copy-pasted lines across 6 files, including kore's internal duplicates and a trailing-space
   variant). Verified **access-preserving**: the resolved authorized-key set for every

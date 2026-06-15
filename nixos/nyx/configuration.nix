@@ -8,7 +8,7 @@
   pkgs,
   ...
 } @ args: let
-  keys = import ../../keys.nix;
+  keys = import ../../helpers/keys.nix;
   # yubikey-manager = pkgs.master.yubikey-manager;
   # thermald = pkgs.master.thermald.overrideAttrs (old: {
   #   patches =
