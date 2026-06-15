@@ -2,10 +2,8 @@
   config,
   lib,
   pkgs,
-  inputs,
   ...
-}: let
-in {
+}: {
   # LSP servers / formatters / linters are developer tooling -- only install them
   # on machines that opt in via `devMachine.enable` (declared in
   # features/nixos/common/default.nix). neovim itself is installed unconditionally

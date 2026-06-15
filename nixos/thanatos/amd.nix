@@ -1,19 +1,16 @@
 {
-  inputs,
-  outputs,
   lib,
   config,
   pkgs,
   ...
-} @ args: let
-in {
+}: {
   imports = [
     ./tlp.nix
   ];
   config = {
     nixpkgs.overlays = [
       # TODO: make sure to change this!
-      (self: super: {
+      (self: _super: {
         thinkfan = self.master.thinkfan;
       })
     ];
@@ -331,46 +328,7 @@ in {
         "8080"
       ];
     };
-    services.udev.packages = let
-      slowBoi = let
-        # wattage = toString 10000;
-        wattage = toString 7000;
-        temp = toString 80;
-        time = toString 5;
-      in
-        pkgs.writeShellScriptBin "slowBoi.sh" ''
-          # wait for tlp to get settings in
-          sleep 3
-          # don't mind if boost is disabled on battery
-          # ${lib.getExe pkgs.ryzenadj} --stapm-limit ${wattage} --fast-limit ${wattage} --slow-limit ${wattage} \
-          #   --apu-slow-limit ${wattage} --slow-time 5 --tctl-temp 95 --apu-skin-temp 65
-          ${lib.getExe pkgs.ryzenadj} --stapm-limit ${wattage} --fast-limit ${wattage} --slow-limit ${wattage} \
-            --apu-slow-limit ${wattage} --slow-time ${time} --tctl-temp ${temp}
-        '';
-      fastAfBoi = let
-        wattage = toString 45000;
-        temp = toString 80;
-        time = toString 5;
-      in
-        pkgs.writeShellScriptBin "fastAfBoi.sh" ''
-          # wait for tlp to get settings in
-          sleep 3
-          while true; do
-            # BOOST = $(cat /sys/devices/cpu/cpufreq/boost)
-            AC=$(cat /sys/class/power_supply/AC/online)
-            if [[ $AC -eq 0 ]];  then
-              echo "KILLING BOOST"
-              break
-            fi
-            echo 1 > /sys/devices/system/cpu/cpufreq/boost
-            ${lib.getExe pkgs.ryzenadj} --stapm-limit ${wattage} --fast-limit ${wattage} --slow-limit ${wattage} \
-              --apu-slow-limit ${wattage} --slow-time ${time} --tctl-temp ${temp}
-            # ${lib.getExe pkgs.ryzenadj} --stapm-limit ${wattage} --fast-limit ${wattage} --slow-limit ${wattage} \
-            #   --apu-slow-limit ${wattage} --slow-time 5 --tctl-temp 95 --apu-skin-temp 65
-            sleep 10
-          done
-        '';
-    in [
+    services.udev.packages = [
       # (pkgs.writeTextFile {
       #   name = "ryzen_laptop";
       #   text = ''

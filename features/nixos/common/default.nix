@@ -4,9 +4,7 @@
   lib,
   inputs,
   ...
-}: let
-  report-changes = config.report-changes.enable;
-in {
+}: {
   # imports = [../../../overlays/modules/usbmuxd];
   options = {
     audio.enable = lib.mkEnableOption "Installs common audio apps.";
@@ -14,8 +12,7 @@ in {
     report-changes.enable = lib.mkEnableOption "Create a report after successful nixOS generation creation";
     machine.vm.enable = lib.mkEnableOption "Not a real machine";
   };
-  config = let
-  in {
+  config = {
     programs.neovim = {
       package = inputs.neovim.packages.${pkgs.stdenv.hostPlatform.system}.default;
       enable = true;
@@ -35,7 +32,7 @@ in {
     programs.zsh.enable = true;
     nixpkgs.overlays = [
       # 2025-1-10 removed these as these are old
-      (final: prev: {
+      (_final: _prev: {
         # libplist = prev.libplist.overrideAttrs (old: rec {
         #   version = "2.6.1";
         #   src = prev.fetchFromGitHub {

@@ -2,12 +2,8 @@
   config,
   lib,
   pkgs,
-  inputs,
   ...
-}: let
-  cfg = config;
-  # jerry = inputs.jerry;
-in {
+}: {
   imports = [
     # jerry.homeManagerModules.default
   ];
@@ -43,7 +39,7 @@ in {
       pkgs.rofi-bluetooth.overrideAttrs
       # WARN: --status complains about bc not found, add it.
       # TODO: check if this is fixed.
-      (old: {
+      (_old: {
         installPhase = ''
           runHook preInstall
 
@@ -57,7 +53,6 @@ in {
         '';
       });
     # mkRofiPlugin = plugin: rofi-unwrapped: plugin.override {inherit rofi-unwrapped;};
-    mkRofiUPlugin = plugin: rofi: plugin.override {inherit rofi;};
 
     # rofi-vpn = mkRofiPlugin pkgs.rofi-vpn rofi-unwrapped;
 

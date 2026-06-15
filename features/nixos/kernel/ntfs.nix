@@ -8,7 +8,7 @@
 in {
   config = lib.mkIf mod.enable {
     nixpkgs.overlays = [
-      (self: super: {
+      (_self: super: {
         # linuxPackages_6_2 =
         linuxPackages = 
           pkgs.linuxPackagesFor

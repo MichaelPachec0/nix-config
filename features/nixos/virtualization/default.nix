@@ -96,7 +96,7 @@ in {
                 #       })
                 #     ];
                 # });
-                package = pkgs.qemu.overrideAttrs (old: rec {
+                package = pkgs.qemu.overrideAttrs (_old: rec {
                   pname = "qemu-patched";
                   version = "8.2.0";
                   src = pkgs.pkgs.fetchurl {

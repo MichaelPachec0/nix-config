@@ -7,7 +7,7 @@
   cfgWM = config.wayland.windowManager;
   # generate a list of wayalnd window managers containing only enablement condition.
   # This assumes that only a attrset of window managers will be here.
-  waylandWMList = lib.attrsets.mapAttrsToList (n: v: v.enable) cfgWM;
+  waylandWMList = lib.attrsets.mapAttrsToList (_n: v: v.enable) cfgWM;
   # If there are any wm's enabled this will be true.
   # NOTE: findFirst accepts a function that returns a boolean, since this is just a list of booleans, a simple function
   # returning the value is enough

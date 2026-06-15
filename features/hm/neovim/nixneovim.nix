@@ -4,9 +4,7 @@
   pkgs,
   inputs,
   ...
-}: let
-  cfg = config;
-in {
+}: {
   imports = [./coc.nix ./nvchad_b.nix];
   options = {
   };
@@ -25,10 +23,7 @@ in {
           #     };
           #   };
           # });
-          programs.nixneovim = let
-            # pkg = pkgs.neovim;
-            # unwrapped = pkgs.neovim.neovim-unwrapped;
-          in {
+          programs.nixneovim = {
             enable = true;
             # package = inputs.neovim.packages.${pkgs.system}.default;
             # package = pkgs.master.neovim-unwrapped;
@@ -58,14 +53,7 @@ in {
               # code_action_menu_show_diff = true;
               # code_action_menu_action_kind = true;
             };
-            mappings = let
-              tabConfig = {
-                silent = true;
-                expr = true;
-                noremap = true;
-                replace_keycodes = false;
-              };
-            in {
+            mappings = {
               # TODO: remaps
               # leader + [ ] switch windows?
               # leader + { } ( shift + [ ]) switch tabs
@@ -247,197 +235,7 @@ in {
             # dofile("${config.xdg.configHome}/nvim/lua/custom/init.lua")
             nvchad.extraEarlyPlugins = with pkgs.vimPlugins; [
             ];
-            nvchad.extraLazyPlugins = let
-              plug = with pkgs.vimPlugins;
-                [
-                  fidget-nvim # for notifications
-                  # Rust
-
-                  # rust-tools-nvim # setup for rust-lsp and other tools (deprecated)
-                  rustaceanvim # rust-tools sucessor
-                  crates-nvim # rust
-                  telescope-dap-nvim # debug view for telescope
-
-                  # Lua/neovim lua stuff
-                  neodev-nvim # testing
-                  nvim-luadev
-
-                  # nix
-                  vim-nix # nix highlight
-                  vim-nixhash
-
-                  # Debug
-                  nvim-dap # debug support
-                  nvim-dap-ui # debug views for neovim
-                  nvim-nio # for nvim-dap
-
-                  lsp-format-nvim # TODO: how to use, this gets into conform or more generically none-ls/null-ls
-                  nvim-dap-virtual-text # show debug info inline
-
-                  # misc
-                  telescope-undo-nvim # visualize undo actions
-                  # TODO: (med prio) learn org mode.
-                  orgmode # org mode in vim,
-                  # nvim-lspconfig # sane defaults for lsp's
-                  telescope-media-files-nvim
-                  telescope-github-nvim
-                  telescope-cheat-nvim # for tldr in the neovim
-                  # (telescope-cheat-nvim.overrideAttrs (old: {
-                  #   src = ../../../forked/telescope-cheat.nvim;
-                  #   }))
-                  telescope-manix # nixpkgs docs search in telescope
-                  hop-nvim # semantic cursor pointing TODO: learn how to use
-                  hydra-nvim
-                  telescope-fzf-writer-nvim # fzf in nvim
-                  telescope-fzf-native-nvim # fzf in nvim
-                  nui-nvim # floating windowing ui in nvim
-                  neoconf-nvim
-                  inc-rename-nvim # lsp rename
-                  # vscode bar for nvim
-                  barbecue-nvim
-                  lspsaga-nvim # lsp helper plugin
-                  nvim-navic # for the
-                  nvim-web-devicons
-                  # WARN: This is nixneovim pkgs
-                  dropbar-nvim
-
-                  # TODO: (med prio) are the below plugins needed?
-                  telescope-ui-select-nvim # ui select support for telescope
-
-                  sqlite-lua # dependcy for
-                  nvim-treesitter-context # shows location in program structure
-                  # nvim-code-action-menu # pop code actions
-                  actions-preview-nvim # ^ alternative
-                  dressing-nvim # makes it possible to draw ui elements on top
-                  # of buffers ie LSP rename
-                  trouble-nvim # Colorful diagnostics/lsp/telescope
-                  todo-comments-nvim # colorful todo comments
-                  nvim-lightbulb # show lightbulb hints when line is actionable
-                  lsp-inlayhints-nvim # self-explanatory
-                  vim-wakatime # time-tracker
-                  null-ls-nvim # code action/lint/diagnostics configurator.
-
-                  # TODO: (low prio) learn.
-                  harpoon # mark files for later use
-
-                  # TODO: (med prio) learn.
-                  vim-visual-multi # multi cursor
-                  # ai
-                  ChatGPT-nvim
-                  windsurf-vim
-                  # rename from above: 2025-04-09
-                  # codeium-vim
-                  # sg-nvim this is deprecated
-
-                  osv-nvim
-                  # testing
-                  neotest
-                  neotest-rust
-                  neotest-python
-                  neotest-plenary
-                  neotest-go
-                  neotest-elixir
-                  neotest-dart
-                  neotest-deno
-                  neotest-haskell
-                  neotest-elixir
-                  neotest-gtest
-
-                  elixir-tools-nvim
-                  clangd_extensions-nvim
-                  telescope-file-browser-nvim
-                  telescope-project-nvim
-                  telescope-live-grep-args-nvim
-                  telescope-frecency-nvim
-
-                  # TODO: plugins that i need more time to implement in my
-                  # workflow.
-                  yankring # synchronize yank deleted between different instances of vim
-                  windows-nvim # enables auto resizing of windows, might or might enable
-                  lazygit-nvim
-                  git-nvim
-                  ts-software-licenses-nvim
-                  minimap-vim
-                  cmp-tabnine
-                  none-ls-extras-nvim
-                  # obsidian-nvim
-                ]
-                # ++ (with pkgs.stable.vimPlugins; [
-                #   neotest
-                #   neotest-rust
-                #   neotest-python
-                #   neotest-plenary
-                #   neotest-go
-                #   neotest-elixir
-                #   neotest-dart
-                #   neotest-deno
-                #   neotest-haskell
-                #   neotest-elixir
-                # ])
-                ++ (with pkgs.vimExtraPlugins; [
-                  # vlog-nvim
-                ])
-                ++ (with pkgs.vimPlugins; [
-                  # Custom plugins, these are not included in nixpkgs
-                  stay-centered # keeps cursor centered whenever possible
-                  virt-column # show char on colorcolum.
-                  vimBeGood # game inside vim to practice motions
-                  indentmini # show indentations using nvim decoration api
-                  wtf-nvim
-                  nvim-dap-repl-highlights
-                  neoai-nvim
-                  telescope-docker-nvim
-                  nvim-emmet
-                  kitty-scrollback-nvim
-                  clear-action-nvim
-                  # none-ls-nvim
-                  (
-                    pkgs.vimUtils.buildVimPlugin {
-                      pname = "none-ls.nvim";
-                      version = "2025-02-24";
-                      src = inputs.none-ls;
-                    }
-                  )
-                  inlay-hints-nvim
-                  guihua-lua
-                  pfp-vim
-                  cspell-nvim
-                  render-markdown-nvim
-                ])
-                ++ (with pkgs.stable.vimPlugins; [])
-                ++ (with pkgs.master.vimPlugins; [
-                  typescript-tools-nvim
-                  godbolt-nvim
-                  # go-nvim
-
-                  (pkgs.master.vimPlugins.go-nvim.overrideAttrs (
-                    old: {
-                      # _GO_NVIM_CFG = 1;
-                      checkInputs =
-                        (with pkgs; [
-                          guihua-lua
-                          nvim-lspconfig
-                        ])
-                        ++ old.checkInputs;
-                      doCheck = false;
-                      # dependencies =
-                      #   (with pkgs; [
-                      #     # guihua-lua
-                      #     # nvim-lspconfig
-                      #   ])
-                      #   ++ old.dependencies;
-                      # doCheck = false;
-                      # TODO: FIND OUT WHY THIS NEEDS FIXING
-                      nvimSkipModules = [
-                        # "go.ts.utils"
-                        # "go.fixplurals"
-                        # "guihua.ts_obsolete"
-                      ];
-                    }
-                  ))
-                ]);
-            in
-              [];
+            nvchad.extraLazyPlugins = [];
               # plug;
           };
 

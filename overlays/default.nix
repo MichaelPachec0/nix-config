@@ -1,14 +1,12 @@
 {
-  lib,
   inputs,
-  pkgs,
   ...
 }: {
   # additions = final: _: import ./pkgs { pkgs = final; };
   modifications = {
-    common = final: prev: {
+    common = _final: _prev: {
     };
-    nixos = final: prev: {
+    nixos = _final: _prev: {
     };
   };
   unstablePackages = final: _: {

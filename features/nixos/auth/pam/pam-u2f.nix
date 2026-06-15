@@ -24,7 +24,6 @@ with lib; let
   parentConfig = config;
   overrideServices = {
     config,
-    name,
     ...
   }: let
     cfg = config;

@@ -1,14 +1,9 @@
 
 {
-  inputs,
-  outputs,
   lib,
-  config,
   pkgs,
   ...
-} @ args: let
-# lanzaboote = inputs.lanzaboote {inherit pkgs;};
-in {
+}: {
   imports = [
     ../../features/nixos/kernel
     # TODO: move somewhere else

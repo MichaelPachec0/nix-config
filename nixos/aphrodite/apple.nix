@@ -1,26 +1,7 @@
 {
-  inputs,
-  outputs,
-  lib,
-  config,
   pkgs,
   ...
-} @ args: let
-  # yubikey-manager = pkgs.master.yubikey-manager;
-  # thermald = pkgs.master.thermald.overrideAttrs (old: {
-  #   patches =
-  #     (old.patches or [])
-  #     ++ [
-  #       # NOTE: this to workaround thermald crashes on more recent kernels (last remember encountered on 6.5.9, also applies
-  #       # on 6.6.0) thermald
-  #       # ref: https://github.com/intel/thermal_daemon/pull/422
-  #       ./stack-smash-thermald.patch
-  #     ];
-  # });
-  yubikey-manager = pkgs.yubikey-manager;
-  # NOTE: This is not needed anymore. This is for compat reasons.
-  thermald = pkgs.thermald;
-in {
+}: {
   # NOTE: the home-manager NixOS module is now provided by features/nixos/home
   # (imported via ./extras.nix); do not import it here too.
   imports = [];

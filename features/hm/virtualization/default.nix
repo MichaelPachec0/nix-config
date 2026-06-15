@@ -1,12 +1,8 @@
 {
   config,
-  lib,
-  pkgs,
   ...
 }: {
-  config = let
-    cfg = config;
-  in {
+  config = {
     dconf.settings = {
       "org/virt-manager/virt-manager/connections" = {
         autoconnect = ["qemu:///system"];

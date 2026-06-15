@@ -16,7 +16,7 @@ in
       nixpkgs = fetchTarball (buildpkgs lock);
     in
       import nixpkgs {
-        overlays = [(final: prev: {inherit unstable;})];
+        overlays = [(_final: _prev: {inherit unstable;})];
       },
     ...
   }: let

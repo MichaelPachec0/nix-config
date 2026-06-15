@@ -12,7 +12,6 @@
   inputs,
   config,
   lib,
-  pkgs,
   ...
 }: {
   systemd.services."zerotierone" = {after = ["dhcpcd.service"];};
@@ -51,9 +50,7 @@
     joinNetworks = ["565799d8f65ab6a3"];
   };
 
-  nix = let
-    flakeInputs = lib.filterAttrs (_: lib.isType "flake") inputs;
-  in {
+  nix = {
     settings = {
       # Enable flakes and new 'nix' command
       experimental-features = "nix-command flakes";

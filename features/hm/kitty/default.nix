@@ -17,7 +17,6 @@
     # };
     programs = {
       kitty = let
-        test_font = "FranSans-Tile";
         base_font = "JetBrainsMonoNFM";
         font = "${base_font}-Regular";
         bold_font = "${base_font}-Bold";

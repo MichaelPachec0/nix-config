@@ -2,7 +2,6 @@
 #   to the public language api, that being said, it would be apt in the future to migrate to private language server.
 {
   lib,
-  pkgs,
   config,
   ...
 }: let

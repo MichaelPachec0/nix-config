@@ -34,12 +34,15 @@ _(none currently open — see Fixed log / Reviewed below)_
   (pulls the entire `nerd-fonts` set) · **M**.
 - [ ] **nyx eval/closure outliers** · `nyx:189-195` copies every input into `nix.registry`+`nixPath`;
   `nyx:768-769` `enableAllFirmware` + `enableAllHardware` together · **S**.
-- [ ] **6 unused flake inputs + missing `follows`** · `flake.nix`
-  (`nixpkgs-treesitter`, `hyprwm-contrib`, `nixos-cli`, `nixos-conf-editor`, `none-ls`, `jerry`;
-  ~10 inputs lack `inputs.nixpkgs.follows`) · **S-M**.
+- [x] **Unused flake inputs removed + nixpkgs deduped (2026-06-14)** · `flake.nix` — dropped 5
+  unused inputs (`nixpkgs-treesitter`, `hyprwm-contrib`, `nixos-cli`, `nixos-conf-editor`, `jerry`).
+  `none-ls` was wrongly listed: it IS used (`features/hm/neovim/nixneovim.nix`,
+  `pkgs/vimPlugins/none-ls-nvim`), so it stays. Added `inputs.nixpkgs.follows` to `impermanence`,
+  `nixneovimplugins`, `nix-vscode-extensions`; left `claude-for-linux`/`flake-playground`
+  (their `follows` were deliberately commented out). `kore` toplevel drvPath unchanged · **S-M**.
 
 ### Low
-- [ ] **~72 unused `let` bindings** (deadnix) · heaviest in `features/hm/wayland/default.nix`
+- [x] **~72 unused `let` bindings swept** (deadnix --edit, 2026-06-14; behavior-preserving — `kore`/`michael-nyx` drvPath unchanged, `nyx` delta confined to baked-in flake source) · heaviest in `features/hm/wayland/default.nix`
   (`vpnStatus`, `waylandChecker`, `weakTargets`, `shaderFolder`, `denoise`, `geisha`…),
   `features/nixos/kernel/native.nix`, `features/hm/wayland/swayidle.nix` · **S** (`deadnix --edit`).
 - [ ] **~340-line dead block** + dead `overlayList`/`mkOverlay` · `helpers/overlays.nix:655-996` · **S**.
@@ -62,6 +65,9 @@ _(none currently open — see Fixed log / Reviewed below)_
   unused `ipAddress` (`selene:12`); `kanshi` **and** `shikane` both active (pick one);
   two parallel waybar config sources · **S** each.
 - [ ] **deadnix can't parse 5 files** — investigate (likely large inline-config-string modules) · **S**.
+- [ ] **statix cosmetic lints (~46)** — useless parens / manual inherit etc. across `nixos` (30),
+  `helpers` (7), `hm` (5), `overlays`/`pkgs` (2 ea). Deferred (cosmetic). NOTE: `statix check .`
+  under-reports (its walker bails on the same files deadnix can't parse) — run per-directory · **S** (`statix fix <dir>`).
 
 ### Duplication (deferred 2026-06-09)
 - [ ] **No `mkHost` builder** — `flake.nix:253-391` repeats the

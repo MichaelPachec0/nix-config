@@ -2,12 +2,11 @@
 # Use this to configure your system environment (it replaces /etc/nixos/configuration.nix)
 {
   inputs,
-  outputs,
   lib,
   config,
   pkgs,
   ...
-} @ args: let
+}: let
   keys = import ../../helpers/keys.nix;
   # yubikey-manager = pkgs.master.yubikey-manager;
   # thermald = pkgs.master.thermald.overrideAttrs (old: {
@@ -20,7 +19,6 @@
   #       ./stack-smash-thermald.patch
   #     ];
   # });
-  yubikey-manager = pkgs.yubikey-manager;
   # NOTE: This is not needed anymore. This is for compat reasons.
   thermald = pkgs.thermald;
 in {
@@ -455,7 +453,7 @@ in {
 
     services.onedrive = {
       enable = true;
-      package = pkgs.onedrive.overrideAttrs (old: {
+      package = pkgs.onedrive.overrideAttrs (_old: {
         version = "master-07-18-2025";
         src = pkgs.fetchFromGitHub {
           owner = "abraunegg";
@@ -788,45 +786,7 @@ in {
       #         ];
       #       };
       # };
-      configPackages = let
-        roc-android =
-          pkgs.writeTextDir "share/pipewire/pipewire.conf.d/android-roc-sink.conf"
-          # fec.code = disable
-          ''
-             context.modules = [
-              # {   name = libpipewire-module-roc-sink
-              #     args = {
-              #         fec.code = rs8m
-              #         remote.ip = 192.168.1.18
-              #         remote.source.port = 10001
-              #         remote.repair.port = 10002
-              #         remote.control.port = 10003
-              #         sink.name = "ROC Sink"
-              #         sink.props = {
-              #            node.name = "roc-sink"
-              #            node.description = "ROC Sink localhost"
-              #            node.passive = true
-              #         }
-              #     }
-              # }
-              {   name = libpipewire-module-roc-sink
-                  args = {
-                      fec.code = rs8m
-                      remote.ip = 192.168.86.47
-                      remote.source.port = 10001
-                      remote.repair.port = 10002
-                      remote.control.port = 10003
-                      sink.name = "ROC Sink"
-                      sink.props = {
-                         node.name = "roc-sink"
-                         node.description = "ROC Sink im"
-                         node.passive = true
-                      }
-                  }
-              }
-            ]
-          '';
-      in [
+      configPackages = [
         # roc-android
       ];
       extraConfig.pipewire = {
@@ -876,74 +836,6 @@ in {
           #   }
           # '';
           # R   96   2048  48000 309.8us  31.1us  0.01  0.00    0    S16LE 2 48000 alsa_output.usb-FiiO_FiiO_BTR3K_ABCDEF0123456789-00.analog-stereo
-          gbuds_output =
-            pkgs.writeTextDir "share/wireplumber/wireplumber.conf.d/51-gbuds_output.conf"
-            ''
-
-              monitor.alsa.rules = [
-                {
-                  matches = [
-                    {
-                      ## Matches all sources.
-                      node.name = "~bluez_output.B0_54_76_4E_6B_43.1*"
-                    }
-                  ]
-                  actions = {
-                    update-props = {
-                      ## this is what the it shows as the input?
-                      audio.format = "S24_32"
-                      ## audio.format = "S16_LE"
-                      ## Force 48000 as the btr3k in dac mode does not work with anything else.
-                      audio.rate = 32000
-
-                      # Tighten up latency/buffers.
-                      # api.alsa.period-num = 2
-                      ## Default: 1024
-                      api.alsa.period-size = 768
-                      ## Default: 0
-                      # api.alsa.headroom = 128
-
-                      ## generally, USB soundcards use the batch mode
-                      api.alsa.disable-batch = false
-                    }
-                  }
-                }
-              ]
-            '';
-          gbuds_input =
-            pkgs.writeTextDir "share/wireplumber/wireplumber.conf.d/51-gbuds_input.conf"
-            ''
-
-              monitor.alsa.rules = [
-                {
-                  matches = [
-                    {
-                      ## Matches all sources.
-                      node.name = "~bluez_input.B0_54_76_4E_6B_43.0*"
-                    }
-                  ]
-                  actions = {
-                    update-props = {
-                      ## this is what the it shows as the input?
-                      audio.format = "S24_32"
-                      ## audio.format = "S16_LE"
-                      ## Force 48000 as the btr3k in dac mode does not work with anything else.
-                      audio.rate = 16000
-
-                      # Tighten up latency/buffers.
-                      # api.alsa.period-num = 2
-                      ## Default: 1024
-                      api.alsa.period-size = 768
-                      ## Default: 0
-                      # api.alsa.headroom = 128
-
-                      ## generally, USB soundcards use the batch mode
-                      api.alsa.disable-batch = false
-                    }
-                  }
-                }
-              ]
-            '';
           fiio_audio =
             pkgs.writeTextDir "share/wireplumber/wireplumber.conf.d/51-fiio.conf"
             ''
@@ -976,27 +868,6 @@ in {
 
                       ## generally, USB soundcards use the batch mode
                       api.alsa.disable-batch = false
-                    }
-                  }
-                }
-              ]
-            '';
-          pixel_phone_input =
-            pkgs.writeTextDir "share/wireplumber/wireplumber.conf.d/51-pixel_phone.conf"
-            ''
-
-              # Pipewire opus and current pixel phone do not mix, force aptx-hd for the time being
-              # TODO: check once in awhile to see if this is fixed
-              monitor.bluez.rules = [
-                {
-                  matches = [
-                    {
-                      node.name = "~bluez_card.D4_3A_2C_99_CB_B2"
-                    }
-                  ]
-                  actions = {
-                    update-props = {
-                      api.bluez5.codec = "aptx_hd"
                     }
                   }
                 }
