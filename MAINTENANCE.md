@@ -132,7 +132,7 @@ the HM-only overlay delta (`overlays.unstable.hmIntegrationOverlays`) is hoisted
 - [ ] **Move cache substituters to system `nix.settings`** for integrated hosts ·
   `helpers/caches.nix` — per-user nix.conf substituters are ignored for non-trusted users · **S**.
 - [ ] **CI** · add integrated `nixosConfigurations.<host>...toplevel` builds to
-  `.github/workflows/pr.yaml`; `home-manager-check.sh` only checks `homeConfigurations` · **S**.
+  `.github/workflows/pr.yaml`; `scripts/home-manager-check.sh` only checks `homeConfigurations` · **S**.
 
 ### Security / hygiene (surfaced during testing)
 - [ ] **Rotate the GitHub token exposed via the `nrsf` output**, then stop passing it on the

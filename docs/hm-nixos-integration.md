@@ -124,7 +124,7 @@ If something fails, comment that one line back out; nothing else depends on it.
   a non-desktop module set; deferred.
 - Delete the dead scaffolding (`helpers/externalModules.nix`, `overlays.*.homeManager`)
   once the new path is proven.
-- Add the integrated builds to CI (`.github/workflows/pr.yaml`); `home-manager-check.sh`
+- Add the integrated builds to CI (`.github/workflows/pr.yaml`); `scripts/home-manager-check.sh`
   only checks `homeConfigurations`.
 - Decide whether to gate `report-changes` on `standalone` and move cache substituters
   to system `nix.settings`.
