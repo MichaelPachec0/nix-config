@@ -1,5 +1,5 @@
 # NOTE: this does not work with the current version of charles that is being pulled by nixpkgs
-_final: prev: {
+final: prev: {
   charles = prev.charles.overrideAttrs (old: {
     inherit (old) pname src;
     version = "${old.version}-bad";

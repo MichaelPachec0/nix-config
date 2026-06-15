@@ -9,9 +9,81 @@
 }:
 with lib; let
   cfg = config.programs.nixneovim;
+  v = pkgs.vimUtils;
+  p = pkgs.vimPlugins;
   # inherit (pkgs) nvchad nvchad-ui base46;
   # TODO: (med prio) migrate from v2.0 to v2.5, there is some work that needs to be done here.
   # minimally these plugins and their patches will need to be revamped
+  nvchad = pkgs.vimPlugins.nvchad.overrideAttrs (old: {
+    src = pkgs.fetchFromGitHub {
+      inherit (old.src) owner repo;
+      rev = "6f25b2739684389ca69ea8229386c098c566c408";
+      hash = "sha256-w/ZRxWxuU/ECq3ntkXek5BgJiBcUCBOjrvNBc4U94V4=";
+    };
+    postPatch = ''
+      # substituteInPlace lua/plugins/init.lua \
+      substituteInPlace lua/nvchad/plugins/init.lua \
+      --replace-fail '"L3MON4D3/LuaSnip"' '"L3MON4D3/luasnip"' \
+      --replace-fail '"nvchad/ui",' '"nvchad/ui", name = "nvchad-ui",' \
+      # These were removed
+      # --replace '"numToStr/Comment.nvim"' '"numToStr/comment.nvim"' \
+      # --replace '"NvChad/nvim-colorizer.lua"' '"catgoose/nvim-colorizer.lua"'
+
+      # nvchad colorizer was moved to a new repo
+      # hope and pray that nvchad-ui still works
+    '';
+  });
+  nvchad-ui = pkgs.vimPlugins.nvchad-ui.overrideAttrs (old: {
+    src = pkgs.fetchFromGitHub {
+      inherit (old.src) owner repo;
+      rev = "adcc97d7c7b97d3527a31338615751d2503fe0a4";
+      hash = "sha256-lwFWqJy0yR/wGOF3T2yO9ZiIuBTIGcWr06G0510G+/k=";
+    };
+    # this should still work
+    patches = [
+      ./ui.patch
+    ];
+  });
+  base46 = pkgs.vimPlugins.base46.overrideAttrs (old: {
+    version = "2025-01-17-master";
+    src = pkgs.fetchFromGitHub {
+      inherit (old.src) owner repo;
+      rev = "670189db7eb4f474343411a30a97b01f74b5a5fc";
+      hash = "sha256-6cbeVN6w0j+qOwzebHZlVu5u14eJEB30H+1ocOCKLlY=";
+    };
+  });
+  minty = v.buildVimPlugin rec {
+    pname = "minty";
+    version = "2025-01-17-master";
+    src = pkgs.fetchFromGitHub {
+      owner = "nvzone";
+      repo = pname;
+      rev = "6dce9f097667862537823d515a0250ce58faab05";
+      hash = "sha256-U6IxF/i1agIGzcePYg/k388GdemBtA7igBUMwyQ3d3I=";
+    };
+    dependencies = [volt];
+  };
+  volt = v.buildVimPlugin rec {
+    pname = "volt";
+    version = "2025-01-17-master";
+    src = pkgs.fetchFromGitHub {
+      owner = "nvzone";
+      repo = pname;
+      rev = "f02b065caf0327bf4d443ff6d91cb0edd6948ddb";
+      hash = "sha256-2SO847Un74kNFGxARaebB+WCCgexnaJdjUkQLZ6ROQ8=";
+    };
+  };
+  menu = v.buildVimPlugin rec {
+    pname = "menu";
+    version = "2025-01-17-master";
+    src = pkgs.fetchFromGitHub {
+      owner = "nvzone";
+      repo = pname;
+      rev = "7769b17c2a131108c02b10e9f844e504aa605cc2";
+      hash = "sha256-VEFUUo3h1Wg2+Yn7n83DZYoScKKLl6oIbmBt0WClAb0=";
+    };
+    dependencies = with p; [volt nvim-tree-lua];
+  };
 in {
   options = {
     programs.nixneovim.nvchad = {

@@ -1,6 +1,7 @@
 # Patched lldb for Rust language support.
 {
   fetchFromGitHub,
+  runCommand,
   llvmPackages,
   python3,
 }: let

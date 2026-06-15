@@ -1,6 +1,12 @@
 {
+  inputs,
+  outputs,
+  lib,
+  config,
+  pkgs,
   ...
-}: {
+} @ args: let
+in {
   imports = [../../features/nixos/home];
   config = {
     nix.gc = {

@@ -1,4 +1,4 @@
-{ ...}: let
+{pkgs, ...}: let
   cursorSZ = "24";
   scale = "2";
 in ''

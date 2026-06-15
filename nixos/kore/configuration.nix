@@ -8,6 +8,7 @@
   inputs,
   ...
 }: let
+  fsOptions = ["compress=zstd" "noatime"];
   cfg = config;
   keys = import ../../helpers/keys.nix;
 in {
@@ -160,7 +161,7 @@ in {
       #   });
       # })
       # for ccache shit
-      (_self: super: {
+      (self: super: {
         ccacheWrapper = super.ccacheWrapper.override {
           extraConfig = ''
             export CCACHE_COMPRESS=1

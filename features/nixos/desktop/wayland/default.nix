@@ -2,10 +2,16 @@
   config,
   pkgs,
   lib,
+  inputs,
   ...
 }: let
   cfg = config.desktop;
   # nwg-displays = inputs.nwg-displays-pkgs.packages.${pkgs.system}.default;
+  rust-bin = pkgs.rust-bin.stable."1.87.0".default;
+  rustPlatform = pkgs.makeRustPlatform {
+    cargo = rust-bin;
+    rustc = rust-bin;
+  };
   # swayfx = pkgs.nw.swayfx.overrideAttrs (old: {
   #       src = prev.fetchFromGitHub {
   #         owner = "WillPower3309";

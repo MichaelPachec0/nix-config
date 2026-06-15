@@ -31,6 +31,12 @@
     gpg --card-status 2>/dev/null 1>/dev/null || true
   '';
 
+  clearYubikeyUser = user:
+    pkgs.writeScript "clear-yubikey-user-${user}" ''
+      #!${pkgs.stdenv.shell}
+      ${pkgs.sudo}/bin/sudo -u ${user} ${clearYubikey}
+    '';
+
   importYubikey = pkgs.writeShellScriptBin "import-yubikey" ''
     set -euo pipefail
     export PATH=${

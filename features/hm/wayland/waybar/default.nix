@@ -4,6 +4,7 @@
   config,
   ...
 }: let
+  cfg = config;
   waybar-yubikey = pkgs.writeShellScriptBin "waybar-yubikey" (builtins.readFile ./waybar-yubikey.sh);
 in {
   config = {
@@ -13,7 +14,19 @@ in {
       package = pkgs.emptyDirectory;
       # package = pkgs.nw.waybar;
       systemd.enable = false;
-      settings = {
+      settings = let
+        vpnStatus = pkgs.writeShellApplication {
+          name = "vpn-status";
+          text = ''
+            vpn_conn=$(systemctl list-units --state=active | sed -n "s/^openvpn-\(\w*\).*$/\1/p" | head -n1)
+            if test "$vpn_conn" = ""; then
+                echo '{"text": "󰒙", "alt": "none", "tooltip": "No VPN"}'
+            else
+                echo "{\"text\": \"󰕥\", \"tooltip\": \"''${vpn_conn^}\", \"alt\": \"connected\"}"
+            fi
+          '';
+        };
+      in {
         sway = {
           position = "top";
           height = 30;

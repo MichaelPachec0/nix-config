@@ -1,7 +1,26 @@
 {
+  inputs,
+  outputs,
+  lib,
+  config,
   pkgs,
   ...
-}: {
+} @ args: let
+  # yubikey-manager = pkgs.master.yubikey-manager;
+  # thermald = pkgs.master.thermald.overrideAttrs (old: {
+  #   patches =
+  #     (old.patches or [])
+  #     ++ [
+  #       # NOTE: this to workaround thermald crashes on more recent kernels (last remember encountered on 6.5.9, also applies
+  #       # on 6.6.0) thermald
+  #       # ref: https://github.com/intel/thermal_daemon/pull/422
+  #       ./stack-smash-thermald.patch
+  #     ];
+  # });
+  yubikey-manager = pkgs.yubikey-manager;
+  # NOTE: This is not needed anymore. This is for compat reasons.
+  thermald = pkgs.thermald;
+in {
   imports = [
     ./tlp.nix
     ./dell.nix
@@ -224,7 +243,22 @@
         };
       };
     };
-    services.udev.packages = [
+    services.udev.packages = let
+      nvidia = pkgs.writeTextFile {
+        name = "nvidia rules";
+        text = ''
+          # Remove NVIDIA USB xHCI Host Controller devices, if present
+          # ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x0c0330", ATTR{power/control}="auto", ATTR{remove}="1"
+          # Remove NVIDIA USB Type-C UCSI devices, if present
+          # ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x0c8000", ATTR{power/control}="auto", ATTR{remove}="1"
+          # Remove NVIDIA Audio devices, if present
+          # ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x040300", ATTR{power/control}="auto", ATTR{remove}="1"
+          # Remove NVIDIA VGA/3D controller devices
+          # ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x03[0-9]*", ATTR{power/control}="auto", ATTR{remove}="1"
+        '';
+        destination = "/etc/udev/rules.d/99-esp32.rules";
+      };
+    in [
       # This is picked up by nixos-hardware btw
     ];
   };

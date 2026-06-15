@@ -1,4 +1,6 @@
 {
+  pkgs,
+  lib,
   vimUtils,
   fetchFromGitHub,
   ...

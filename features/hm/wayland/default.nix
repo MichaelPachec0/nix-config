@@ -10,6 +10,9 @@
 }: {
   imports = [./swayidle.nix ./waybar ./rofi.nix];
   config = let
+    hyprland = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.default;
+    cfg = config;
+    browser = "firefox";
 
         firefox = "${lib.getExe config.programs.firefox.package}";
 
@@ -739,6 +742,47 @@ toHypr = combo: cmd:
             nohup fastanime --log-file anilist notifier >/dev/null 2>&1 &
           fi
         '';
+        extraExtraConfig = ''
+          ## SWAYFX CONFIG
+          corner_radius 14
+          shadows on
+          shadow_offset 0 0
+          shadow_blur_radius 20
+          shadow_color #000000BB
+          shadow_inactive_color #000000B0
+
+          default_dim_inactive 0.2
+
+          layer_effects "notif" blur enable; shadows enable; corner_radius 20
+          layer_effects "osd" blur enable; shadows enable; corner_radius 20
+          layer_effects "work"  shadows enable
+          layer_effects "panel" shadows enable
+          layer_effects "calendarbox"shadows enable; corner_radius 12
+          layer_effects "rofi" {
+            blur enable
+            corner_radius 15
+            shadows enable
+          }
+          layer_effects "wofi" {
+              blur enable;
+              blur_xray disable;
+              corner_radius 18;
+          }
+
+
+          # window colors
+          #                       border              background         text                 indicator
+          client.focused          $bg-color           $bg-color          $text-color          $bg-color
+          client.unfocused        $inactive-bg-color $inactive-bg-color $inactive-text-color  $inactive-bg-color
+          client.focused_inactive $inactive-bg-color $inactive-bg-color $inactive-text-color  $inactive-bg-color
+          client.urgent           $urgent-bg-color    $urgent-bg-color   $text-color          $urgent-bg-color
+
+          titlebar_separator enable
+          titlebar_padding 16
+          title_align center
+          default_border normal 2
+          default_floating_border normal 2
+        '';
       in ''
         # NOTE: This lets nixos know that we prefer to use wayland for electron
         # apps.
@@ -921,7 +965,40 @@ toHypr = combo: cmd:
       # style.package = with pkgs; [adwaita-qt adwaita-qt6];
       style.name = "Gruvbox-Yellow-Dark";
     };
-    systemd.user.services = {
+    systemd.user.services = let
+      # NOTE: for later reading:
+      # https://pychao.com/2021/02/24/difference-between-partof-and-bindsto-in-a-systemd-unit/
+      # NOTE: This makes sure that when both targets are stopped
+      # then the service is also stopped.
+      # Might redo this later.
+      waylandChecker = pkgs.writeShellApplication {
+        name = "waylandChecker.sh";
+        text = ''
+          hyprCheck=$(systemctl is-active --user --quiet hyprland-session.target)
+          swayCheck=$(systemctl is-active --user --quiet sway-session.target)
+          if [[ $hyprCheck  || $swayCheck ]]; then
+            exit 0
+          else
+            systemctl stop --user shikane.service
+          fi
+        '';
+      };
+      # NOTE: THIS MIGHT BE WRONG. #2 this was wrong, after research,
+      # only depend on graphical-session but start.
+      # But only start after either hyprland or sway start.
+      # TODO: (med prio) (research) investigate.
+      weakTargets = ["hyprland-session.target" "sway-session.target"];
+      strongTargets = ["graphical-session.target"];
+      unitRules = {
+        # NOTE: make sure that either hyprland or sway along with their
+        # target units are started.
+        # wants = weakTargets;
+        After = weakTargets;
+        Requisite = strongTargets;
+        # PartOf = strongTargets;
+      };
+      # wantedRule = unitRules.After;
+    in {
       ydotool = {
         Unit = {
           Description = "ydotool user service";
@@ -1899,7 +1976,10 @@ toHypr = combo: cmd:
         };
       };
       bindings = let
+        shaderFolder = ./mpv/shaders;
         aishaders = "${inputs.anime4k}/glsl";
+        denoise = "${aishaders}/Denoise";
+        deblur = "${aishaders}/Deblur";
         restore = "${aishaders}/Restore";
         upscale = "${aishaders}/Upscale";
       in {
@@ -2049,7 +2129,11 @@ toHypr = combo: cmd:
 
     services.hyprpaper = let
       # NOTE: test for now
+      geisha = ../../../assets/img/geisha-tattoos-flowers.png;
       treeFlower = ../../../assets/img/red-flowering-tree-illustration-minimalism-texture.jpg;
+      samurai = ../../../assets/img/xavier-cuenca-samurai-mountains.jpg;
+      hills = ../../../assets/img/chinese-hills.jpg;
+      cyber = ../../../assets/img/cyber-asian-girl-1080.png;
       img = treeFlower;
     in {
       enable = false;

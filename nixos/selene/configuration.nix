@@ -9,6 +9,7 @@
   ...
 }: let
   # TODO: check if this changes!
+  ipAddress = "152.70.124.65";
   keys = import ../../helpers/keys.nix;
 in {
   imports = [
@@ -142,7 +143,18 @@ in {
       # environment = {
       #   "TOKEN1" = "%d/token";
       # };
-      serviceConfig = {
+      serviceConfig = let
+        # test = pkgs.writeShellScriptBin "tuwunel-wrapper" ''
+        #   # echo $CREDENTIALS_DIRECTORY
+        #   # ls $CREDENTIALS_DIRECTORY/token
+        #   # cat $CREDENTIALS_DIRECTORY/token
+        #   # cat $TOKEN
+        #   # sha256sum $CREDENTIALS_DIRECTORY/token
+        #   # sha256sum $TOKEN1
+        #   # sha256sum $(cat $CREDENTIALS_DIRECTORY/token)
+        #   ${lib.getExe inputs.tuwunel.packages.${pkgs.stdenv.hostPlatform.system}.default} -O registration_token_file=\"$CREDENTIALS_DIRECTORY/token\"
+        # '';
+      in {
         LoadCredential = "token:${config.sops.secrets."selene/conduwuit/registration_token".path}";
         ExecStart = lib.mkForce ''
           ${lib.getExe inputs.tuwunel.packages.${pkgs.stdenv.hostPlatform.system}.default} -O registration_token_file=\"%d/token\"
@@ -192,6 +204,7 @@ in {
         matrixPort = config.services.matrix-conduit.settings.global.port;
         atuinPort = config.services.atuin.port;
         matrixHost = "http://localhost:${toString matrixPort}";
+        kumaPort = config.services.uptime-kuma.settings.PORT;
       in {
         # "${ipAddress}" = {
         #   locations = {

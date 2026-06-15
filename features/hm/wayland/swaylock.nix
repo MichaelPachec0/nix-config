@@ -1,5 +1,8 @@
 {
   pkgs,
+  config,
+  lib,
+  inputs,
   ...
 }:
 # let nw = inputs.nixpkgs-wayland.packages.${pkgs.system};

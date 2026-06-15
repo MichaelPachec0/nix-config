@@ -1,10 +1,12 @@
 {
+  inputs,
   pkgs,
   config,
   lib,
   ...
 }: let
   # nw = inputs.nixpkgs-wayland.packages.${pkgs.system};
+  cfg = config;
   sys = "/run/current-system/sw";
 in {
   config = let
@@ -17,6 +19,11 @@ in {
       inside-color=FFFFFF88
       show-failed-attempts
       color=000000
+    '';
+    swaylockScript = pkgs.writeShellScript "swaylockDebug" ''
+      (echo -e "\n\nStarting swaylock:\n"; WAYLAND_DEBUG=1 ${
+        lib.getExe pkgs.nw.swaylock
+      } -f 2>&1 ) >> ~/swaylock_logfile
     '';
   in {
     xdg.configFile."swaylock/config".source = configPkg;
@@ -59,7 +66,9 @@ in {
         # TODO: (med prio) decide wether to manually override or keep using nixpkgs-wayland. Might even make this configurable
         # lockScreen = "${pkgs.nw.swaylock}/bin/swaylock -f";
         # TODO: redo service? makesure that sway starts this?
+        lockScreen = "${lib.getExe pkgs.nw.swaylock} -f";
         bin = "/run/current-system/sw";
+        hyprctl = "${bin}/bin/hyprctl";
         swaymsg = "${bin}/bin/swaymsg";
       in {
         enable = true;
