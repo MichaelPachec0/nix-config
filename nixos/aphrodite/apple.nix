@@ -6,17 +6,6 @@
   pkgs,
   ...
 } @ args: let
-  # yubikey-manager = pkgs.master.yubikey-manager;
-  # thermald = pkgs.master.thermald.overrideAttrs (old: {
-  #   patches =
-  #     (old.patches or [])
-  #     ++ [
-  #       # NOTE: this to workaround thermald crashes on more recent kernels (last remember encountered on 6.5.9, also applies
-  #       # on 6.6.0) thermald
-  #       # ref: https://github.com/intel/thermal_daemon/pull/422
-  #       ./stack-smash-thermald.patch
-  #     ];
-  # });
   yubikey-manager = pkgs.yubikey-manager;
   # NOTE: This is not needed anymore. This is for compat reasons.
   thermald = pkgs.thermald;
@@ -73,7 +62,9 @@ in {
       firmware = [
         (pkgs.stdenvNoCC.mkDerivation (final: {
           name = "brcm-firmware";
-          src = ./rootdir/lib/firmware/brcm;
+          # Firmware blobs live in a dedicated input (github:RNGDesign/t2-apple-fw)
+          # so they are not vendored in this repo; its root holds the brcm files.
+          src = inputs.t2-apple-fw;
           installPhase = ''
             mkdir -p $out/lib/firmware/brcm
             cp ${final.src}/* "$out/lib/firmware/brcm"

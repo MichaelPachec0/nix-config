@@ -10,7 +10,6 @@
     # nixpkgs-stable = {url = "nixpkgs/nixos-23.11";};
     # NixOS/nixpkgs/2057814051972fa1453ddfb0d98badbea9b83c06
     nixpkgs = {url = "nixpkgs/nixos-unstable";};
-    nixpkgs-treesitter = {url = "github:nixos/nixpkgs/cad22e7d996aea55ecab064e84834289143e44a0";};
     # NOTE: this is without nixos tests being done (ie does the installer work, DE's ...ect)
     # a4073ec70f298e2941f4d3a7a0542135a9d24d04
     nixpkgs-master = {url = "nixpkgs/master";};
@@ -33,11 +32,6 @@
       # url = "github:hyprwm/Hyprland/9f933da1c502989cadf7696971aa376d65847b95?submodules=1";
       # NOTE: this is following nixos unstable matching the upstream flake.
       inputs.nixpkgs.follows = "nixpkgs";
-    };
-    hyprwm-contrib = {
-      url = "github:hyprwm/contrib";
-      inputs.nixpkgs.follows = "nixpkgs";
-      # inputs.nixpkgs.follows = "nixpkgs-unstable";
     };
     swayfx = {
       url = "github:WillPower3309/swayfx?submodules=1";
@@ -79,7 +73,10 @@
       url = "github:mercurytechnologies/nix-your-shell";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nixneovimplugins.url = "github:nixneovim/nixneovimplugins";
+    nixneovimplugins = {
+      url = "github:nixneovim/nixneovimplugins";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     nixneovim = {
       # url = "path:/home/michael/old/git/github/personal/nix/repos/NixNeovim";
 
@@ -87,7 +84,10 @@
       url = "github:nixneovim/nixneovim";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nix-vscode-extensions.url = "github:nix-community/nix-vscode-extensions";
+    nix-vscode-extensions = {
+      url = "github:nix-community/nix-vscode-extensions";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     sops-nix = {
       url = "github:Mic92/sops-nix";
@@ -151,14 +151,6 @@
       url = "github:liff/j-link-flake/a0a98d3";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    jerry = {
-      url = "github:justchokingaround/jerry";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    nixos-cli = {
-      url = "github:water-sucks/nixos";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     mpv-ai-upscale = {
       url = "github:Alexkral/AviSynthAiUpscale";
       flake = false;
@@ -167,16 +159,18 @@
       url = "github:bloc97/Anime4K";
       flake = false;
     };
-    nixos-conf-editor = {
-      url = "github:snowfallorg/nixos-conf-editor";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     fastanime = {
       url = "github:MichaelPachec0/FastAnime";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     cspell-dicts = {
       url = "github:streetsidesoftware/cspell-dicts";
+      flake = false;
+    };
+    # Broadcom firmware for the Apple T2 (aphrodite), extracted from macOS and
+    # not redistributable via nixpkgs; consumed as a plain source tree.
+    t2-apple-fw = {
+      url = "github:RNGDesign/t2-apple-fw/d25434275e67a4230f1c5d27f0e32a41fb5de404";
       flake = false;
     };
     zen-browser = {
@@ -187,7 +181,10 @@
       url = "github:nix-community/disko/latest";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    impermanence.url = "github:nix-community/impermanence";
+    impermanence = {
+      url = "github:nix-community/impermanence";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     flake-playground = {
       url = "github:MichaelPachec0/flake-playground";
       # WARN: MAKE SURE TO CHANGE THIS!

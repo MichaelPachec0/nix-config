@@ -8,7 +8,7 @@
   pkgs,
   ...
 }: let
-  keys = import ../../keys.nix;
+  keys = import ../../helpers/keys.nix;
 in {
   imports = [
     # Include the results of the hardware scan.

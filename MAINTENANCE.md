@@ -43,7 +43,7 @@ _(none currently open — see Fixed log / Reviewed below)_
   (`vpnStatus`, `waylandChecker`, `weakTargets`, `shaderFolder`, `denoise`, `geisha`…),
   `features/nixos/kernel/native.nix`, `features/hm/wayland/swayidle.nix` · **S** (`deadnix --edit`).
 - [ ] **~340-line dead block** + dead `overlayList`/`mkOverlay` · `helpers/overlays.nix:655-996` · **S**.
-- [ ] **Dead files (imported nowhere)** · top-level `gpg/`, `features/nixos/desktop/wayland/hyprModule.nix`,
+- [ ] **Dead files (imported nowhere)** · `features/nixos/desktop/wayland/hyprModule.nix`,
   `features/hm/wayland/hydots.nix` (foreign dotfile w/ `/home/snes/` paths), `hyprland.conf.nix`,
   `waybar/config.hyprland`, `shaders/{reading_mode*,main.glsl}`, `helpers/externalModules.nix` · **S**.
 - [ ] **Broken-if-imported files** · `pkgs/default.nix` (`callPackage ./shikane` — dir missing),
@@ -132,7 +132,7 @@ the HM-only overlay delta (`overlays.unstable.hmIntegrationOverlays`) is hoisted
 - [ ] **Move cache substituters to system `nix.settings`** for integrated hosts ·
   `helpers/caches.nix` — per-user nix.conf substituters are ignored for non-trusted users · **S**.
 - [ ] **CI** · add integrated `nixosConfigurations.<host>...toplevel` builds to
-  `.github/workflows/pr.yaml`; `home-manager-check.sh` only checks `homeConfigurations` · **S**.
+  `.github/workflows/pr.yaml`; `scripts/home-manager-check.sh` only checks `homeConfigurations` · **S**.
 
 ### Security / hygiene (surfaced during testing)
 - [ ] **Rotate the GitHub token exposed via the `nrsf` output**, then stop passing it on the
@@ -152,7 +152,7 @@ the HM-only overlay delta (`overlays.unstable.hmIntegrationOverlays`) is hoisted
 - **Fixed `michael-nyx`/`michael-thanatos` home build** — `wayland.windowManager.sway.config.input`
   had bare int `repeat_rate`/`repeat_delay`; moved them under a `"type:keyboard"` criteria with
   string values (`features/hm/wayland/default.nix`). Both activationPackages now evaluate.
-- **Deduped SSH public keys** — every authorized key now lives once in `keys.nix` (9 named keys
+- **Deduped SSH public keys** — every authorized key now lives once in `helpers/keys.nix` (9 named keys
   + `all`/`laptops`/`initrd` bundles), referenced from the 4 hosts + `deploy.nix` (was ~41
   copy-pasted lines across 6 files, including kore's internal duplicates and a trailing-space
   variant). Verified **access-preserving**: the resolved authorized-key set for every

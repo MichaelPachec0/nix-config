@@ -1,5 +1,5 @@
 {pkgs, ...}: let
-  keys = import ../../../keys.nix;
+  keys = import ../../../helpers/keys.nix;
 in {
   # make sure that this user is allowed to manipulate the store.
   nix.settings.allowed-users = ["deploy"];
@@ -9,7 +9,7 @@ in {
     group = "deploy";
     shell = pkgs.bash;
 
-    # michael's YubiKey sk-keys + thanatos, restricted with no-pty (see ../../../keys.nix).
+    # michael's YubiKey sk-keys + thanatos, restricted with no-pty (see ../../../helpers/keys.nix).
     openssh.authorizedKeys.keys = map (k: "no-pty ${k}") keys.all;
   };
 

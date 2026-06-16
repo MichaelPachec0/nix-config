@@ -8,18 +8,7 @@
   pkgs,
   ...
 } @ args: let
-  keys = import ../../keys.nix;
-  # yubikey-manager = pkgs.master.yubikey-manager;
-  # thermald = pkgs.master.thermald.overrideAttrs (old: {
-  #   patches =
-  #     (old.patches or [])
-  #     ++ [
-  #       # NOTE: this to workaround thermald crashes on more recent kernels (last remember encountered on 6.5.9, also applies
-  #       # on 6.6.0) thermald
-  #       # ref: https://github.com/intel/thermal_daemon/pull/422
-  #       ./stack-smash-thermald.patch
-  #     ];
-  # });
+  keys = import ../../helpers/keys.nix;
   yubikey-manager = pkgs.yubikey-manager;
   # NOTE: This is not needed anymore. This is for compat reasons.
   thermald = pkgs.thermald;
@@ -762,9 +751,6 @@ in {
     hardware.graphics.extraPackages = with pkgs; [vulkan-validation-layers];
     hardware.enableAllFirmware = true;
     hardware.enableAllHardware = true;
-    # TODO: remove, this was needed initally when updating the old version of Ergodox's firmware, not needed
-    # since specifying my own rules.
-    # hardware.keyboard.zsa.enable = true;
     hardware.ksm.enable = true;
 
     # NOTE: as of 2024-02-29 this is the way of specifying configs.

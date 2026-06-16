@@ -62,8 +62,6 @@ in
 
     # TODO: make this use the nixos_wl
     extraInstallCommands = ''
-      # this is not needed anymore
-      # mv $out/bin/${name} $out/bin/${pname}
       source "${makeWrapper}/nix-support/setup-hook"
       wrapProgram $out/bin/${pname}\
         --add-flags "\''${NIXOS_OZONE_WL:+\''${WAYLAND_DISPLAY:+--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations}}"

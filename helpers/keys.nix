@@ -1,6 +1,6 @@
 # Canonical SSH public keys, referenced across hosts/users instead of being
 # copy-pasted. Each key is named by the YubiKey serial it lives on where known.
-# Import with `keys = import ../../keys.nix;` (adjust depth) and use the named
+# Import with `keys = import ../../helpers/keys.nix;` (adjust depth) and use the named
 # keys or the bundles below. See MAINTENANCE.md for context.
 rec {
   m718 = "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAICFSUN6IGskLmeq7ip+oTbYuE+WRLcbYGGGOAyH/ECWaAAAABHNzaDo= michael@nyx";
