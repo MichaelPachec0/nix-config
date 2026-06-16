@@ -62,7 +62,9 @@ in {
       firmware = [
         (pkgs.stdenvNoCC.mkDerivation (final: {
           name = "brcm-firmware";
-          src = ./rootdir/lib/firmware/brcm;
+          # Firmware blobs live in a dedicated input (github:RNGDesign/t2-apple-fw)
+          # so they are not vendored in this repo; its root holds the brcm files.
+          src = inputs.t2-apple-fw;
           installPhase = ''
             mkdir -p $out/lib/firmware/brcm
             cp ${final.src}/* "$out/lib/firmware/brcm"

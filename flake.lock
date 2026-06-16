@@ -3562,6 +3562,7 @@
         "sops-nix": "sops-nix",
         "spicetify": "spicetify",
         "swayfx": "swayfx",
+        "t2-apple-fw": "t2-apple-fw",
         "tch-nvim": "tch-nvim",
         "tuwunel": "tuwunel",
         "waybar-git": "waybar-git",
@@ -4090,6 +4091,23 @@
       "original": {
         "owner": "nix-systems",
         "repo": "default",
+        "type": "github"
+      }
+    },
+    "t2-apple-fw": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1781582295,
+        "narHash": "sha256-Q0/JWiCHi+OjiYXXDyLIcU5hrIa/K1Zq5Fkbeg5TLb4=",
+        "owner": "RNGDesign",
+        "repo": "t2-apple-fw",
+        "rev": "d25434275e67a4230f1c5d27f0e32a41fb5de404",
+        "type": "github"
+      },
+      "original": {
+        "owner": "RNGDesign",
+        "repo": "t2-apple-fw",
+        "rev": "d25434275e67a4230f1c5d27f0e32a41fb5de404",
         "type": "github"
       }
     },

@@ -167,6 +167,12 @@
       url = "github:streetsidesoftware/cspell-dicts";
       flake = false;
     };
+    # Broadcom firmware for the Apple T2 (aphrodite), extracted from macOS and
+    # not redistributable via nixpkgs; consumed as a plain source tree.
+    t2-apple-fw = {
+      url = "github:RNGDesign/t2-apple-fw/d25434275e67a4230f1c5d27f0e32a41fb5de404";
+      flake = false;
+    };
     zen-browser = {
       url = "github:youwen5/zen-browser-flake";
       inputs.nixpkgs.follows = "nixpkgs";
