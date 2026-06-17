@@ -92,12 +92,6 @@
     # for cody
     # TODO: move from using this to regular nixpkgs or create an overlay
     # that uses this as the package.
-    sg = {
-      # TODO: move towards using nixpkgs version, as of now there is overlay in master.
-      # url = "github:sourcegraph/sg.nvim/72004c70f4bfc2d32bde8691f0ce0044d0fba07f";
-      url = "github:sourcegraph/sg.nvim";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
 
     nixd = {
       url = "github:nix-community/nixd";
@@ -175,10 +169,6 @@
       # WARN: MAKE SURE TO CHANGE THIS!
       # url = "path:/home/michael/git/personal/flake-playground";
       # inputs.nixpkgs.follows = "nixpkgs";
-    };
-    none-ls = {
-      url = "github:nvimtools/none-ls.nvim";
-      flake = false;
     };
     lanzaboote = {
       # 2025-11-11: upgraded to allow builing on unstable

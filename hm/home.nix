@@ -234,22 +234,9 @@
       nvim-emmet
       kitty-scrollback-nvim
       clear-action-nvim
-      (pkgs.vimUtils.buildVimPlugin {
-        pname = "none-ls.nvim";
-        version = "2025-02-24";
-        src = inputs.none-ls;
-        # none-ls (null-ls fork) needs plenary on the rtp for its require-check.
-        dependencies = [plenary-nvim];
-        # these diagnostics builtins can't be required standalone (they reference
-        # external linters); skip them in the check, as nixpkgs does for none-ls.
-        nvimSkipModules = [
-          "null-ls.builtins.diagnostics.sqruff"
-          "null-ls.builtins.diagnostics.sqlfluff"
-          "null-ls.builtins.diagnostics.kube_linter"
-          "null-ls.builtins.diagnostics.phpmd"
-          "null-ls.builtins.diagnostics.twigcs"
-        ];
-      })
+      # from flake-playground's vimPlugins overlay (tracks nvimtools/none-ls.nvim,
+      # with the plenary dep + diagnostics-builtin skips baked in there).
+      none-ls-nvim
       inlay-hints-nvim
       guihua-lua
       pfp-vim

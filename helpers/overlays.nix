@@ -40,43 +40,17 @@
           };
         };
       });
+      # The custom vim plugins now live in flake-playground and are injected via
+      # inputs.flake-playground.overlays.vimPlugins (added to the list below).
+      # Only the two non-moved overrides remain here.
       vimPlugins =
-        # TOOD: convert to vimPlugins extend
         prev.vimPlugins
         // {
-          # neotest = prev.vimPlugins.neotest.overrideAttrs {
-          #   doCheck = false;
-          # };
-          # TODO: (low prio) convert import to callPackage
-          vimBeGood =
-            prev.callPackage ../pkgs/vimPlugins/vim-be-good {};
-          coc-lightbulb =
-            prev.callPackage ../pkgs/vimPlugins/coc-lightbulb {};
-          coc-elixir =
-            prev.callPackage ../pkgs/vimPlugins/coc-elixir {};
-          stay-centered =
-            prev.callPackage ../pkgs/vimPlugins/stay-centered {};
-          block-nvim =
-            prev.callPackage ../pkgs/vimPlugins/block-nvim {};
-          indentmini =
-            prev.callPackage ../pkgs/vimPlugins/indentmini {};
-          virt-column =
-            prev.callPackage ../pkgs/vimPlugins/virt-column {};
-          wtf-nvim =
-            prev.callPackage ../pkgs/vimPlugins/wtf-nvim {};
-          nvim-dap-repl-highlights =
-            prev.callPackage ../pkgs/vimPlugins/nvim-dap-repl-highlights {};
-          neoai-nvim =
-            prev.callPackage ../pkgs/vimPlugins/neoai {};
-          osv-nvim =
-            prev.callPackage ../pkgs/vimPlugins/ossfv {};
-          neotest-gtest = prev.callPackage ../pkgs/vimPlugins/neotest-gtest {};
-          telescope-docker-nvim = prev.callPackage ../pkgs/vimPlugins/telescope-docker {};
-          nvim-emmet = prev.callPackage ../pkgs/vimPlugins/nvim-emmet {};
+          # fermyon-spin is a CLI tool historically parked in the vimPlugins
+          # namespace, not a neovim plugin, so it stayed behind.
           fermyon-spin = prev.callPackage ../pkgs/fermyon-spin;
-          git-nvim = prev.callPackage ../pkgs/vimPlugins/git-nvim {};
-          ts-software-licenses-nvim = prev.callPackage ../pkgs/vimPlugins/ts-software-license {};
-          # kitty-scrollback-nvim = prev.callPackage ../pkgs/vimPlugins/kitty-scrollback {};
+          # fidget-nvim is pinned to an older rev for compatibility; it's an
+          # override of the nixpkgs plugin (not a packaged dir), so not moved.
           fidget-nvim = prev.vimPlugins.fidget-nvim.overrideAttrs (old: {
             version = "2024-02-13-master";
             src = prev.fetchFromGitHub {
@@ -86,42 +60,6 @@
               hash = "sha256-cfoz2nGX7yzDLjTitposErJpC8EVX0DBy69kFKY0jps=";
             };
           });
-          clear-action-nvim = prev.callPackage ../pkgs/vimPlugins/clear-action-nvim {};
-          none-ls-nvim = prev.callPackage ../pkgs/vimPlugins/none-ls-nvim {};
-          inlay-hints-nvim = prev.callPackage ../pkgs/vimPlugins/inlay-hints {};
-          guihua-lua = prev.callPackage ../pkgs/vimPlugins/guihua-lua {};
-          pfp-vim = prev.callPackage ../pkgs/vimPlugins/pfp-vim {};
-
-          # sg-nvim =  inputs.sg.packages.${prev.stdenv.hostPlatform.system}.sg-nvim;
-          inherit (inputs.sg.packages.${prev.stdenv.hostPlatform.system}) sg-nvim;
-          # inherit (inputs.git-oxide.legacyPackages.${prev.stdenv.hostPlatform.system}) gitoxide;
-          cspell-nvim = prev.callPackage ../pkgs/vimPlugins/cspell-nvim {};
-          none-ls-extras-nvim = prev.callPackage ../pkgs/vimPlugins/none-ls-extras-nvim {};
-
-          # go-nvim = prev.go-nvim.overrideAttrs (
-          #   old: {
-          #     checkInputs =
-          #       (with prev; [
-          #         guihua-lua
-          #         nvim-lspconfig
-          #         # nvim-treesitter
-          #       ])
-          #       ++ old.checkInputs;
-          #     dependencies =
-          #       (with prev; [
-          #         guihua-lua
-          #         nvim-lspconfig
-          #       ])
-          #       ++ old.dependencies;
-          #     doCheck = false;
-          #     # TODO: FIND OUT WHY THIS NEEDS FIXING
-          #     nvimSkipModules = [
-          #       "ts.utils"
-          #       "fixplurals"
-          #       "guihua.ts_obsolete"
-          #     ];
-          #   }
-          # );
         };
 
       # WARN: this avoids the failing tests when packaging neovim plugins
@@ -138,6 +76,8 @@
   in [
     inputs.rustaceanvim.overlays.default
     inputs.tch-nvim.overlays.default
+    # custom vim plugins (nvfetcher-tracked), moved out of ../pkgs/vimPlugins.
+    inputs.flake-playground.overlays.vimPlugins
     local
   ];
   powertop-unstable = final: prev: {

@@ -1,5 +1,0 @@
-nvchad/ui,,
-nvchad/base46,,
-nvzone/volt,,
-nvzone/menu,
-nvzone/minty,,
