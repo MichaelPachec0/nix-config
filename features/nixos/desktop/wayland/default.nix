@@ -36,8 +36,6 @@ in {
   imports = [
     # NOTE: this was already merged
     # ../../../../overlays/modules/systemd-lock-handler
-
-    # ./hyprModule.nix
   ];
 
   config = lib.mkIf (cfg.wayland.laptop || cfg.wayland.desktop) {

@@ -10,7 +10,6 @@
 }: {
   imports = [./swayidle.nix ./waybar ./rofi.nix];
   config = let
-    hyprland = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.default;
     cfg = config;
     browser = "firefox";
 
@@ -1139,10 +1138,6 @@ toHypr = combo: cmd:
         enable = true;
         createDirectories = true;
       };
-      # configFile."hypr/hyprland.conf".text =
-      #   import ./hyprland.conf.nix {inherit pkgs;};
-      # configFile."hypr/hyprlandd.conf".text =
-      #   import ./hyprland.conf.nix {inherit pkgs;};
       configFile."waybar/" = {
         enable = false;
         source = ./waybar;
