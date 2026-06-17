@@ -136,8 +136,6 @@
       #   };
     };
   in [
-    inputs.nixneovim.overlays.default
-    inputs.nixneovimplugins.overlays.default
     inputs.rustaceanvim.overlays.default
     inputs.tch-nvim.overlays.default
     local
@@ -564,8 +562,6 @@ in {
         base
         ++ baseDesktop
       ))
-
-      inputs.nixneovim.nixosModules.default
     ];
     homeManager = hm;
     homeManagerMinmal = mkOverlayModules base;
@@ -588,9 +584,6 @@ in {
             ]
             ++ lspServers
           ))
-      ]
-      ++ [
-        inputs.nixneovim.nixosModules.homeManager
       ];
   };
   unstable = let
@@ -625,7 +618,6 @@ in {
           ))
       ]
       ++ [
-        inputs.nixneovim.nixosModules.nixos
         inputs.sops-nix.nixosModules.sops
         # WARN: this needs to be either idsabled on first install or the segger
         #  software needs to be added in manually by sshing and nix-store -ing it
@@ -649,9 +641,6 @@ in {
             ]
             ++ lspServers
           ))
-      ]
-      ++ [
-        inputs.nixneovim.nixosModules.homeManager
       ];
     # nixosDesktop =
   };

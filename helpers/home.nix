@@ -10,8 +10,7 @@
   #                       and the `standalone` guards in home.nix / common.
   # standalone = false -> NixOS provides pkgs (useGlobalPkgs = true); the overlay
   #                       delta is hoisted onto the system in features/nixos/home,
-  #                       so here we only pull in the nixneovim HM *module* (its
-  #                       options), not the overlay-applying wrappers.
+  #                       so here we pull in no extra overlay modules.
   mkHomeModules = {
     # primary per-user entrypoint, e.g. ./hm/home.nix or ./hm/sysadmin.nix
     entry,
@@ -28,10 +27,9 @@
         if desktop
         then sets.homeManagerDesktop
         else sets.homeManagerMinmal
-      # integrated (useGlobalPkgs): overlays live on the system. Only a desktop
-      # neovim config needs the nixneovim HM module's options; servers need none.
-      else if desktop
-      then [inputs.nixneovim.nixosModules.homeManager]
+      # integrated (useGlobalPkgs): overlays live on the system (hoisted by
+      # features/nixos/home). The HM config needs no extra overlay modules - the
+      # neovim/NvChad config now comes from flake-playground via the entry module.
       else [];
     desktopModules =
       if desktop

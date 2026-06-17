@@ -123,6 +123,152 @@
         }
       )
   ) {};
+
+  # Plugins beyond the NvChad default set, materialised into lazy.nvim's local
+  # search path via programs.nvchad.extraLazyPlugins below. These are only
+  # *installed* here; their lua config is managed separately in the nvim config.
+  # (Moved out of the old features/hm/neovim/nixneovim.nix, where the list had
+  # been parked behind `in []`.)
+  nvchadExtraPlugins =
+    (with pkgs.vimPlugins; [
+      fidget-nvim # for notifications
+
+      # Rust
+      rustaceanvim # rust-tools successor
+      crates-nvim # rust
+      telescope-dap-nvim # debug view for telescope
+
+      # Lua/neovim lua stuff
+      neodev-nvim
+      nvim-luadev
+
+      # nix
+      vim-nix # nix highlight
+      vim-nixhash
+
+      # Debug
+      nvim-dap # debug support
+      nvim-dap-ui # debug views for neovim
+      nvim-nio # for nvim-dap
+      lsp-format-nvim
+      nvim-dap-virtual-text # show debug info inline
+
+      # misc
+      telescope-undo-nvim # visualize undo actions
+      orgmode # org mode in vim
+      telescope-media-files-nvim
+      telescope-github-nvim
+      telescope-cheat-nvim # for tldr in neovim
+      telescope-manix # nixpkgs docs search in telescope
+      hop-nvim # semantic cursor pointing
+      hydra-nvim
+      telescope-fzf-writer-nvim # fzf in nvim
+      telescope-fzf-native-nvim # fzf in nvim
+      nui-nvim # floating windowing ui in nvim
+      neoconf-nvim
+      inc-rename-nvim # lsp rename
+      barbecue-nvim # vscode bar for nvim
+      lspsaga-nvim # lsp helper plugin
+      nvim-navic
+      nvim-web-devicons
+      # NOTE: dropbar-nvim used to come from the nixneovim overlay (now removed).
+      # If eval reports it missing from stock nixpkgs, drop or replace it.
+      dropbar-nvim
+      telescope-ui-select-nvim # ui select support for telescope
+      sqlite-lua
+      nvim-treesitter-context # shows location in program structure
+      actions-preview-nvim
+      dressing-nvim # draw ui elements on top of buffers (e.g. LSP rename)
+      trouble-nvim # colorful diagnostics/lsp/telescope
+      todo-comments-nvim # colorful todo comments
+      nvim-lightbulb # lightbulb hints when a line is actionable
+      lsp-inlayhints-nvim
+      vim-wakatime # time-tracker
+      null-ls-nvim # code action/lint/diagnostics configurator
+      harpoon # mark files for later use
+      vim-visual-multi # multi cursor
+
+      # ai
+      ChatGPT-nvim
+      windsurf-vim
+
+      osv-nvim
+
+      # testing
+      neotest
+      neotest-rust
+      neotest-python
+      neotest-plenary
+      neotest-go
+      neotest-elixir
+      neotest-dart
+      neotest-deno
+      neotest-haskell
+      neotest-gtest
+
+      elixir-tools-nvim
+      clangd_extensions-nvim
+      telescope-file-browser-nvim
+      telescope-project-nvim
+      telescope-live-grep-args-nvim
+      telescope-frecency-nvim
+
+      yankring # synchronize yank/delete between vim instances
+      windows-nvim # auto-resizing of windows
+      lazygit-nvim
+      git-nvim
+      ts-software-licenses-nvim
+      minimap-vim
+      cmp-tabnine
+      none-ls-extras-nvim
+
+      # Custom plugins from helpers/overlays.nix (the `local` vim-plugins overlay).
+      stay-centered # keeps cursor centered whenever possible
+      virt-column # show char on colorcolumn
+      vimBeGood # game inside vim to practice motions
+      indentmini # show indentations using nvim decoration api
+      wtf-nvim
+      nvim-dap-repl-highlights
+      neoai-nvim
+      telescope-docker-nvim
+      nvim-emmet
+      kitty-scrollback-nvim
+      clear-action-nvim
+      (pkgs.vimUtils.buildVimPlugin {
+        pname = "none-ls.nvim";
+        version = "2025-02-24";
+        src = inputs.none-ls;
+        # none-ls (null-ls fork) needs plenary on the rtp for its require-check.
+        dependencies = [plenary-nvim];
+        # these diagnostics builtins can't be required standalone (they reference
+        # external linters); skip them in the check, as nixpkgs does for none-ls.
+        nvimSkipModules = [
+          "null-ls.builtins.diagnostics.sqruff"
+          "null-ls.builtins.diagnostics.sqlfluff"
+          "null-ls.builtins.diagnostics.kube_linter"
+          "null-ls.builtins.diagnostics.phpmd"
+          "null-ls.builtins.diagnostics.twigcs"
+        ];
+      })
+      inlay-hints-nvim
+      guihua-lua
+      pfp-vim
+      cspell-nvim
+      render-markdown-nvim
+    ])
+    ++ (with pkgs.master.vimPlugins; [
+      typescript-tools-nvim
+      godbolt-nvim
+      (pkgs.master.vimPlugins.go-nvim.overrideAttrs (old: {
+        checkInputs =
+          (with pkgs; [
+            guihua-lua
+            nvim-lspconfig
+          ])
+          ++ old.checkInputs;
+        doCheck = false;
+      }))
+    ]);
 in {
   imports = [
     # spicetify.homeManagerModule
@@ -132,11 +278,14 @@ in {
     ../features/hm/kitty
     ../features/hm/ssh
     ../features/hm/common
-    ../features/hm/neovim/nixneovim.nix
     ../features/hm/wayland
     ../features/hm/virtualization
     ../helpers/caches.nix
     inputs.claude-for-linux.homeManagerModules.default
+    # neovim (NvChad) + cspell now live in flake-playground; see programs.nvchad
+    # / programs.cspell below.
+    inputs.flake-playground.homeManagerModules.nvchad
+    inputs.flake-playground.homeManagerModules.cspell
   ];
   # Only applied for standalone HM; when integrated (useGlobalPkgs) the system pkgs
   # already carry this overlay via helpers/overlays.nix hmIntegrationOverlays.
@@ -187,6 +336,27 @@ in {
   programs.claude-desktop = {
     enable = true;
     fhs = true;  # FHS wrapper for MCP compatibility
+  };
+
+  # NvChad + neovim, from flake-playground's homeManagerModules.nvchad. The
+  # module's defaults carry the full NvChad runtime set (cmp/treesitter/
+  # telescope/lsp/...) and drive stock programs.neovim; extraLazyPlugins adds the
+  # plugins formerly parked in features/hm/neovim. cspell config comes from the
+  # sibling homeManagerModules.cspell.
+  programs.nvchad = {
+    enable = true;
+    extraLazyPlugins = nvchadExtraPlugins;
+    extraConfig = ''
+	dofile(vim.fn.stdpath "config" .. "/nv/init.lua")
+    '';
+  };
+  programs.cspell.enable = true;
+  # Preserve the aliases/defaultEditor the old nixneovim config set (these merge
+  # into the programs.neovim the nvchad module already enables).
+  programs.neovim = {
+    defaultEditor = true;
+    viAlias = true;
+    vimAlias = true;
   };
 
   graphical.enable = true;

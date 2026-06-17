@@ -73,17 +73,6 @@
       url = "github:mercurytechnologies/nix-your-shell";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nixneovimplugins = {
-      url = "github:nixneovim/nixneovimplugins";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    nixneovim = {
-      # url = "path:/home/michael/old/git/github/personal/nix/repos/NixNeovim";
-
-      # url = "path:/home/michael/git/public/NixNeovim";
-      url = "github:nixneovim/nixneovim";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     nix-vscode-extensions = {
       url = "github:nix-community/nix-vscode-extensions";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -162,10 +151,6 @@
     fastanime = {
       url = "github:MichaelPachec0/FastAnime";
       inputs.nixpkgs.follows = "nixpkgs";
-    };
-    cspell-dicts = {
-      url = "github:streetsidesoftware/cspell-dicts";
-      flake = false;
     };
     # Broadcom firmware for the Apple T2 (aphrodite), extracted from macOS and
     # not redistributable via nixpkgs; consumed as a plain source tree.
