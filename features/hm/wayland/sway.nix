@@ -394,17 +394,9 @@
 
 
 
-        # Make sure that hyrpland is stopped.
-        # these should not be an issue anymore.
-        # exec systemctl stop --user hyprland-session.target
-        # exec systemctl stop --user xdg-desktop-portal-hyprland.service
-
         # Make sure that shikane is enabled.
         exec systemctl enable --user shikane@sway.service
-        # make sure we start swayidle.
-        exec systemctl start --user swayidle.service
-        # exec echo $PATH > ~/tmp/path.log
-        # exec export SIGNAL_USE_WAYLAND="1"
+        # swayidle now starts via graphical-session.target (see ./swayidle.nix).
 
         # Allow switching between workspaces with left and right swipes
         bindgesture swipe:right workspace prev
