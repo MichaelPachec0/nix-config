@@ -4,6 +4,7 @@
 # (the shared sway keybindings translated through toHypr).
 {
   config,
+  lib,
   pkgs,
   generatedHyprBinds,
   waybarLaunch,
@@ -175,6 +176,10 @@
           };
           exec-once = [
             waybarLaunch
+            # sworkstyle auto-detects sway vs hyprland, so the bare PATH call
+            # works the same as the sway session (see ./sway.nix).
+            "sworkstyle >/tmp/sworkstyle.log 2>&1"
+            "${lib.getExe pkgs.activate-linux} -t \"Activate NixOS\" -m \"Edit configuration.nix to activate NixOS.\" -x 360 -c \"1-1-1-0.10\""
             # "${lib.getExe pkgs.hyprshade} on ${./shaders/main.glsl}"
           ];
         };
