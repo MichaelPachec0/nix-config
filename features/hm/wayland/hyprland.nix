@@ -6,6 +6,7 @@
   config,
   pkgs,
   generatedHyprBinds,
+  waybarLaunch,
   ...
 }: {
   config = {
@@ -173,8 +174,8 @@
             ];
           };
           exec-once = [
-          # "${lib.getExe pkgs.hyprshade} on ${./shaders/main.glsl}"
-
+            waybarLaunch
+            # "${lib.getExe pkgs.hyprshade} on ${./shaders/main.glsl}"
           ];
         };
         systemd.variables = ["--all"];

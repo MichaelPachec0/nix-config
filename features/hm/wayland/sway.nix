@@ -7,6 +7,7 @@
   lib,
   pkgs,
   generatedSwayBinds,
+  waybarLaunch,
   ...
 }: {
   config = {
@@ -328,27 +329,6 @@
           sleep = builtins.toString ((wkNumber * 2) + 1);
           wk = builtins.toString wkNumber;
         in ''exec sleep ${sleep} && swaymsg "workspace number ${wk}; exec ${appCommand}"'';
-        waybarpkg = pkgs.writeShellApplication {
-          name = "wb_keep";
-          runtimeInputs = with pkgs; [waybar];
-          text = ''
-            until waybar; do
-              echo "Waybar is dead: exit code ''$?, long live waybar!" >&2
-              sleep .5
-            done
-          '';
-        };
-        waybar-killer = pkgs.writeShellApplication {
-          name = "wb_killer";
-          text = ''
-            {
-              pkill wb_keep
-              sleep .5
-              pkill waybar
-              sleep .5
-            } || true
-          '';
-        };
         fastanime-notifier = pkgs.writeShellScriptBin "fa-notifier" ''
           # Check if the process `fastanime .* notifier` is running
           if ! ps aux | grep -q '[f]astanime .* notifier'; then
@@ -406,7 +386,7 @@
         # exec systemctl --user restart xdg-desktop-portal.service
         # exec_always systemctl --user import-environment DISPLAY WAYLAND_DISPLAY SWAYSOCK XDG_RUNTIME_DIR XDG_DATA_DIRS DBUS_SESSION_BUS_ADDRESS
         # exec_always "${lib.getExe pkgs.waybar} > ~/.cache/waybar-$(date +%F-%T).log 2>&1"
-        exec "${lib.getExe waybar-killer} && ${lib.getExe waybarpkg}"
+        exec "${waybarLaunch}"
 
 
         # QT_QPA_PLATFORMTHEME="gtk2"

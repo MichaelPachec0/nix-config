@@ -6,8 +6,33 @@
 }: let
   cfg = config;
   waybar-yubikey = pkgs.writeShellScriptBin "waybar-yubikey" (builtins.readFile ./waybar-yubikey.sh);
+  # Self-restarting waybar launcher, shared with ./sway.nix and ./hyprland.nix
+  # through the waybarLaunch module arg so both compositors start the bar the
+  # same way.
+  wb_keep = pkgs.writeShellApplication {
+    name = "wb_keep";
+    runtimeInputs = with pkgs; [waybar];
+    text = ''
+      until waybar; do
+        echo "Waybar is dead: exit code ''$?, long live waybar!" >&2
+        sleep .5
+      done
+    '';
+  };
+  wb_killer = pkgs.writeShellApplication {
+    name = "wb_killer";
+    text = ''
+      {
+        pkill wb_keep
+        sleep .5
+        pkill waybar
+        sleep .5
+      } || true
+    '';
+  };
 in {
   config = {
+    _module.args.waybarLaunch = "${lib.getExe wb_killer} && ${lib.getExe wb_keep}";
     programs.waybar = {
       enable = true;
       # package = pkgs.latest.waybar;
@@ -26,8 +51,53 @@ in {
             fi
           '';
         };
+        windowModule = {
+          rewrite = let
+            # TODO: might let nvim handle this porion of the config instead.
+            mkEntry = regex: icon: {"(.*?\\.(${regex})) (\\+?.*?) - NVIM" = " ${icon} $1 $3";};
+          in
+            {
+              "(.*) — Firefox Developer Edition Private Browsing" = " $1";
+              "(.*)Firefox Developer Edition Private Browsing" = "";
+              "(.*) — Firefox Developer Edition" = "🌎 $1";
+              "(.*)Firefox Developer Edition" = "";
+              "(.*) — Visual Studio Code" = "$1 ";
+              "(.*)Spotify(.*)" = "Spotify ";
+              "(.*) — zsh" = "> [$1]";
+              "vim (.*)" = " $1";
+              "vim" = "";
+              # "(.*) - NVIM" = " $1";
+              "michael@nyx:(.*)" = " $1";
+              "(.*) [—-] KeePassXC" = ": $1";
+              "(.*) Discord (.*)" = "󰙯 : $1 $2";
+              "(.*) [—-] Discord" = "󰙯 : $1";
+              "nix-tree --derivation (.*)" = "󱄅-󱘎 $1";
+              "kitty" = "KITTY";
+            }
+            // mkEntry "c|h" ""
+            // mkEntry "rs" ""
+            // mkEntry "nix" "󱄅"
+            // mkEntry "go" ""
+            // mkEntry "css" ""
+            // mkEntry "html" ""
+            // mkEntry "js" ""
+            // mkEntry "pl" ""
+            // mkEntry "rb" ""
+            // mkEntry "exs|ex" ""
+            // mkEntry "lua" "󰢱"
+            // mkEntry "yaml|yml|md" ""
+            // mkEntry "py" ""
+            // mkEntry "sh|zsh" ""
+            // mkEntry "Dockerfile|compose|docker-compose" ""
+            // mkEntry "java" ""
+            // mkEntry "diff|patch|gitrebase" ""
+            // mkEntry "json" ""
+            // mkEntry "xml" "󰗀";
+          separate-outputs = true;
+          max-length = 200;
+        };
       in {
-        sway = {
+        mainBar = {
           position = "top";
           height = 30;
           exclusive = true;
@@ -35,7 +105,9 @@ in {
           layer = "bottom";
           modules-left = [
             "sway/workspaces"
+            "hyprland/workspaces"
             "sway/window"
+            "hyprland/window"
           ];
           modules-right = [
             "mpris"
@@ -58,51 +130,12 @@ in {
             exec = "${lib.getExe waybar-yubikey}";
             return-type = "json";
           };
-          "sway/window" = {
-            rewrite = let
-              # TODO: might let nvim handle this porion of the config instead.
-              mkEntry = regex: icon: {"(.*?\\.(${regex})) (\\+?.*?) - NVIM" = " ${icon} $1 $3";};
-            in
-              {
-                "(.*) — Firefox Developer Edition Private Browsing" = " $1";
-                "(.*)Firefox Developer Edition Private Browsing" = "";
-                "(.*) — Firefox Developer Edition" = "🌎 $1";
-                "(.*)Firefox Developer Edition" = "";
-                "(.*) — Visual Studio Code" = "$1 ";
-                "(.*)Spotify(.*)" = "Spotify ";
-                "(.*) — zsh" = "> [$1]";
-                "vim (.*)" = " $1";
-                "vim" = "";
-                # "(.*) - NVIM" = " $1";
-                "michael@nyx:(.*)" = " $1";
-                "(.*) [—-] KeePassXC" = ": $1";
-                "(.*) Discord (.*)" = "󰙯 : $1 $2";
-                "(.*) [—-] Discord" = "󰙯 : $1";
-                "nix-tree --derivation (.*)" = "󱄅-󱘎 $1";
-                "kitty" = "KITTY";
-              }
-              // mkEntry "c|h" ""
-              // mkEntry "rs" ""
-              // mkEntry "nix" "󱄅"
-              // mkEntry "go" ""
-              // mkEntry "css" ""
-              // mkEntry "html" ""
-              // mkEntry "js" ""
-              // mkEntry "pl" ""
-              // mkEntry "rb" ""
-              // mkEntry "exs|ex" ""
-              // mkEntry "lua" "󰢱"
-              // mkEntry "yaml|yml|md" ""
-              // mkEntry "py" ""
-              // mkEntry "sh|zsh" ""
-              // mkEntry "Dockerfile|compose|docker-compose" ""
-              // mkEntry "java" ""
-              // mkEntry "diff|patch|gitrebase" ""
-              // mkEntry "json" ""
-              // mkEntry "xml" "󰗀";
-            seperate-outputs = true;
-            max-length = 200;
+          "hyprland/workspaces" = {
+            on-click = "activate";
+            format = "{name}";
           };
+          "sway/window" = windowModule;
+          "hyprland/window" = windowModule;
           idle_inhibitor = {
             format = "{icon}";
             format-icons = {
