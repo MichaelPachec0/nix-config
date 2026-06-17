@@ -7,7 +7,11 @@
 # map⋅kitty_mod+g⋅kitty_scrollback_nvim⋅--config⋅ksb_builtin_last_cmd_output↴
 #⋅Show⋅clicked⋅command⋅output⋅in⋅nvim↴
 # mouse_map⋅ctrl+shift+right⋅press⋅ungrabbed⋅combine⋅:⋅mouse_select_command_output⋅:⋅kitty_scrollback_nvim⋅--config⋅ksb_builtin_last_visited_cmd_output↴
-{pkgs, ...}: {
+{
+  pkgs,
+  lib,
+  ...
+}: {
   imports = [];
   options = {};
   config = {
@@ -37,6 +41,14 @@
         };
         shellIntegration.enableZshIntegration = true;
         settings = {
+          # Disable kitty's built-in config hot-reload. Its watcher
+          # (kitten __watch_conf__) follows the nix-store symlink of kitty.conf
+          # and recursively watches /nix/store, accumulating ~64k inotify
+          # watches and exhausting fs.inotify.max_user_watches for the user --
+          # which starves every other inotify consumer (waybar battery,
+          # dbus-broker cgroups, ...). Home Manager reloads kitty on switch
+          # instead (see home.activation.reloadKitty below).
+          auto_reload_config = -0.1;
           # NOTE: want a *huge* buffer, dont really care about the memory usuage,
           #   should have enough.
           scrollback_lines = 100000;
@@ -98,5 +110,14 @@
         '';
       };
     };
+
+    # auto_reload_config is off (see programs.kitty.settings); instead, poke any
+    # running kitty to re-read kitty.conf after HM rewrites it. SIGUSR1 is
+    # kitty's documented reload signal. A reload is cheap and idempotent, so we
+    # fire on every switch rather than only when kitty.conf actually changed.
+    home.activation.reloadKitty =
+      lib.hm.dag.entryAfter ["linkGeneration"] ''
+        run ${pkgs.procps}/bin/pkill -USR1 -x kitty || true
+      '';
   };
 }
