@@ -172,7 +172,11 @@
     };
     lanzaboote = {
       # 2025-11-11: upgraded to allow builing on unstable
-      url = "github:nix-community/lanzaboote/v0.4.3";
+      # url = "github:nix-community/lanzaboote/v0.4.3";
+
+      # 2026-06-18 fixes nobootspec error in unstable
+      # ref: https://github.com/nix-community/lanzaboote/pull/617
+      url = "github:nix-community/lanzaboote/0403b4b7e8b2612657f0053a4c315e6c43eee9e6";
 
       # Optional but recommended to limit the size of your system closure.
       inputs.nixpkgs.follows = "nixpkgs";
