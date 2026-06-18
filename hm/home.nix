@@ -313,6 +313,7 @@ in {
       fastanime
       claude-code
       # fluffychat
+      playground.workstyle
     ];
 
   services.udiskie = {
