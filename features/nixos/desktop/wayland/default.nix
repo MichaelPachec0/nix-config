@@ -125,16 +125,16 @@ in {
     programs.uwsm = {
       enable = true;
       waylandCompositors = {
-      #   hyprland = {
-      #   prettyName = "Hyprland";
-      #   comment = "Hyprland compositor managed by UWSM";
-      #   binPath = "/run/current-system/sw/bin/Hyprland";
-      # };
-      sway = {
-        prettyName = "Sway";
-        comment = "Sway compositor managed by UWSM";
-        binPath = "/run/current-system/sw/bin/sway";
-      };
+        #   hyprland = {
+        #   prettyName = "Hyprland";
+        #   comment = "Hyprland compositor managed by UWSM";
+        #   binPath = "/run/current-system/sw/bin/Hyprland";
+        # };
+        sway = {
+          prettyName = "Sway";
+          comment = "Sway compositor managed by UWSM";
+          binPath = "/run/current-system/sw/bin/sway";
+        };
       };
     };
     programs.hyprland = {
@@ -433,7 +433,7 @@ in {
       go-mtpfs
       swayest-workstyle
       swaysome
-      # unmaintained, need to use crosspipe 
+      # unmaintained, need to use crosspipe
       # helvum
       crosspipe
       coppwr
@@ -444,9 +444,11 @@ in {
       adwaita-qt
       adwaita-qt6
 
-      libsForQt5.qt5.qtbase
+      # 2026-06-18: change was made to remove the top level libsForQt5
+      qt5.qtbase
       qadwaitadecorations
       qadwaitadecorations-qt6
+      # 2026-06-18: change was made to remove the top level libsForQt5
       libsForQt5.qtstyleplugins
       qt6Packages.qt6gtk2
       activate-linux
