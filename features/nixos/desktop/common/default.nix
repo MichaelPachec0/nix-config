@@ -52,10 +52,10 @@ in {
       #   });
       # nativeMessagingHosts = {
       #   ff2mpv = true;
-        # tridactyl = true;
+      # tridactyl = true;
       # };
-    nativeMessagingHosts = {
-        packages = [ pkgs.tridactyl-native ];
+      nativeMessagingHosts = {
+        packages = [pkgs.tridactyl-native];
       };
     };
     nixpkgs.overlays = [];
@@ -91,9 +91,14 @@ in {
         electron-mail-latest
 
         # video players
-        mpv
+        # WARN: mpv: 2026-06-18: getting errors trying to build
+        # mpv
+
         # vlc
-        open-in-mpv
+
+        # WARN: mpv: 2026-06-18: getting errors trying to build
+        # open-in-mpv
+
         # telegram
         ## cli
         tg

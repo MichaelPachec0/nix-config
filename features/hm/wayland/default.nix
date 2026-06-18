@@ -1001,8 +1001,9 @@
         #      };
       };
     };
+    # WARN: mpv: 2026-06-18: getting errors trying to build
     programs.mpv = {
-      enable = true;
+      enable = false;
       # package = pkgs.emptyDirectory;
       scripts = with pkgs; [
         mpvScripts.mpris
