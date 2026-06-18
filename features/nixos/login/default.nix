@@ -36,7 +36,7 @@ in {
       # TODO: (high prio) (short term, ovl) break this out into its own module.
       # NOTE: https://github.com/NixOS/nixpkgs/blob/master/doc/languages-frameworks/rust.section.md
       # TODO: (low prio) (upstream) Check upstream if there is a new release that fixes this bug.
-      package = pkgs.regreet;
+      package = pkgs.master.regreet;
       # package = pkgs.greetd.regreet.overrideAttrs (old: rec {
       #   version = "0.1.0-custom";
       #   src = pkgs.fetchFromGitHub {
@@ -102,7 +102,7 @@ in {
           # NOTE: will test this after. if the former does not works
           # for some reason this works only if not
           WLR_DRM_NO_MODIFIERS = "1";
-          GDK_BACKEND = "wayland";
+          # GDK_BACKEND = "wayland";
         };
         commands = {
           reboot = ["systemctl" "reboot"];
