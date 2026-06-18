@@ -99,21 +99,8 @@ in {
                };
           };
           
-#SHIFT is for more accurate size changing
-#            bind=SUPER,R,submap,resize
-#            submap=resize
-#                unbind = ,down
-#                binde = , right, resizeactive,  100 0
-#                binde = , left,  resizeactive, -100 0
-#                binde = , down,  resizeactive,  0 100
-#                binde = , up,    resizeactive,  0 -100
-#                binde = SHIFT, right, resizeactive,  10 0
-#                binde = SHIFT, left,  resizeactive, -10 0
-#                binde = SHIFT, down,  resizeactive,  0 10
-#                binde = SHIFT, up,    resizeactive,  0 -10
-#                bind = , escape,submap,reset 
-#                bind = , return,submap,reset 
-#            submap=reset
+          # Resize submap lives in extraConfig below: submaps are
+          # order-sensitive and can't be expressed via `settings`.
           render = {
             cm_enabled = true;
             cm_auto_hdr = 1;
@@ -201,6 +188,35 @@ in {
           ];
         };
         systemd.variables = ["--all"];
+
+        # Resize submap -- parity with sway's `resize` mode. common.nix's
+        # toHypr maps Super+r to `submap, resize`; this defines that submap.
+        # vim hjkl resizes, Shift+hjkl nudges (floating only, like sway),
+        # plain `r` equalizes the focused split, and Escape / Return /
+        # Super+r exit. Submaps are order-sensitive, so they live in
+        # extraConfig (appended after the global binds) rather than in
+        # `settings`.
+        extraConfig = ''
+          submap = resize
+          binde = , h, resizeactive, -10 0
+          binde = , l, resizeactive, 10 0
+          binde = , k, resizeactive, 0 -10
+          binde = , j, resizeactive, 0 10
+          binde = SHIFT, h, moveactive, -10 0
+          binde = SHIFT, l, moveactive, 10 0
+          binde = SHIFT, k, moveactive, 0 -10
+          binde = SHIFT, j, moveactive, 0 10
+          # `r` equalizes the focused split back to 50/50. Hyprland 0.55's
+          # `layoutmsg splitratio` only takes a delta (no `exact`), so clamp
+          # to the 0.1 minimum with a big negative delta, then +0.9 lands on
+          # exactly 1.0. Equalizes one split at a time; repeat per split to
+          # rebalance a whole branch.
+          bind = , r, exec, hyprctl --batch "dispatch layoutmsg splitratio -3 ; dispatch layoutmsg splitratio +0.9"
+          bind = , escape, submap, reset
+          bind = , return, submap, reset
+          bind = SUPER, r, submap, reset
+          submap = reset
+        '';
       };
     };
   };
