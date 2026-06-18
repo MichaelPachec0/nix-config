@@ -81,7 +81,33 @@ in {
             # ~200ms delay (mac InitialKeyRepeat 15), rate 45Hz.
             repeat_rate = 45;
             repeat_delay = 200;
+
+            # accel_profile is global in Hyprland (no per-touchpad scope
+            # like sway's type:touchpad). "adaptive" is the libinput
+            # default, so the mouse is unaffected; this just mirrors sway.
+            accel_profile = "adaptive";
+
+            # Touchpad parity with sway's type:touchpad block.
+            touchpad = {
+              natural_scroll = true; # sway natural_scroll enabled
+              disable_while_typing = true; # sway dwt enabled
+              "tap-to-click" = true; # sway tap enabled
+              drag_lock = false; # sway drag_lock disabled
+            };
           };
+
+          # Per-device override -- parity with sway's PS4 controller
+          # touchpad rule (1356:2508 Sony ... Wireless Controller Touchpad).
+          # Hyprland matches by the lowercased, hyphenated libinput name;
+          # verify with `hyprctl devices` when the controller is connected
+          # (a wrong name is a harmless no-op).
+          device = [
+            {
+              name = "sony-interactive-entertainment-wireless-controller-touchpad";
+              disable_while_typing = false; # sway dwt disabled
+              "tap-to-click" = true; # sway tap enabled
+            }
+          ];
           # 3-finger horizontal swipe to switch workspaces (replaces sway's
           # `bindgesture swipe:left/right`). Uses the 0.49+ `gesture` keyword;
           # the old `gestures { workspace_swipe }` category was removed in 0.55.
