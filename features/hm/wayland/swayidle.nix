@@ -70,6 +70,18 @@ in {
         bin = "/run/current-system/sw";
         hyprctl = "${bin}/bin/hyprctl";
         swaymsg = "${bin}/bin/swaymsg";
+        # One shared swayidle drives both compositors. Pick the DPMS backend at
+        # runtime from the compositor env (UWSM imports it into the systemd user
+        # session, so it is present in this service's environment). state is
+        # "off"/"on" for both hyprctl and swaymsg.
+        mkDpms = state:
+          pkgs.writeShellScript "swayidle-dpms-${state}" ''
+            if [ -n "''${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+              ${hyprctl} dispatch dpms ${state}
+            else
+              ${swaymsg} "output * power ${state}"
+            fi
+          '';
       in {
         enable = true;
         # NOTE: move towards letting logind handle most of the locking work
@@ -88,15 +100,14 @@ in {
             # handles display modifiers, and on high res displays. Setting
             # WLR_DRM_NO_MODIFIERS "fixes" this.
             timeout = 800;
-            # TODO: (med prio) write a bash script that checks which enviroment we
-            # are in.
-            # command = "${hyprctl} dispatch dpms off";
-            # resumeCommand = "${hyprctl} dispatch dpms on";
-            command = "${swaymsg} \"output * power off\"";
-            resumeCommand = "${swaymsg} \"output * power on\"";
+            command = "${mkDpms "off"}";
+            resumeCommand = "${mkDpms "on"}";
           }
         ];
-        # systemdTarget = "wayland-wm.target";
+        # Bind to graphical-session.target (UWSM-managed) so swayidle runs and
+        # stops under both sway and hyprland, started after the session env is
+        # finalized (so the DPMS backend detection above sees the right vars).
+        systemdTarget = "graphical-session.target";
       };
     };
   };

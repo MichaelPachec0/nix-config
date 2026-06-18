@@ -4,10 +4,14 @@
 # (the shared sway keybindings translated through toHypr).
 {
   config,
+  lib,
   pkgs,
   generatedHyprBinds,
+  waybarLaunch,
   ...
-}: {
+}: let
+  firefox = "${lib.getExe config.programs.firefox.package}";
+in {
   config = {
     wayland = {
       windowManager.hyprland = {
@@ -78,6 +82,12 @@
             repeat_rate = 45;
             repeat_delay = 200;
           };
+          # 3-finger horizontal swipe to switch workspaces (replaces sway's
+          # `bindgesture swipe:left/right`). Uses the 0.49+ `gesture` keyword;
+          # the old `gestures { workspace_swipe }` category was removed in 0.55.
+          gesture = [
+            "3, horizontal, workspace"
+          ];
           group = {
               #This variable sets the color of the active window`s border in a group
                "col.border_active" = "rgba(5eead4ee)";
@@ -173,8 +183,21 @@
             ];
           };
           exec-once = [
-          # "${lib.getExe pkgs.hyprshade} on ${./shaders/main.glsl}"
-
+            waybarLaunch
+            # sworkstyle auto-detects sway vs hyprland, so the bare PATH call
+            # works the same as the sway session (see ./sway.nix).
+            "sworkstyle >/tmp/sworkstyle.log 2>&1"
+            "${lib.getExe pkgs.activate-linux} -t \"Activate NixOS\" -m \"Edit configuration.nix to activate NixOS.\" -x 360 -c \"1-1-1-0.10\""
+            # Per-workspace app autostarts (sway uses mkWorkspace + swaymsg;
+            # hyprland assigns each window with the [workspace N silent] prefix,
+            # which needs no sleep/stagger).
+            "[workspace 1 silent] kitty"
+            "[workspace 2 silent] ${firefox}"
+            "[workspace 3 silent] ${firefox} --private-window google.com"
+            "[workspace 3 silent] legcord"
+            "[workspace 3 silent] keepassxc"
+            "[workspace 3 silent] telegram"
+            # "${lib.getExe pkgs.hyprshade} on ${./shaders/main.glsl}"
           ];
         };
         systemd.variables = ["--all"];
