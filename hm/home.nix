@@ -242,6 +242,7 @@
       pfp-vim
       cspell-nvim
       render-markdown-nvim
+      direnv-vim
     ])
     ++ (with pkgs.master.vimPlugins; [
       typescript-tools-nvim
@@ -304,25 +305,26 @@ in {
   # programs.nixneovim.nvchad.enable = true;
   home.packages = let
     # fastanime = pkgs.fastanime.overrideAttrs (old: {
-    #   # TODO: add fzf to 
+    #   # TODO: add fzf to
     #   propagatedBuildInputs = (old.propagatedBuildInputs or []) ++ [pkgs.fzf];
     # });
-  in with pkgs; [
-    fastanime
-    claude-code
-    # fluffychat
-  ];
+  in
+    with pkgs; [
+      fastanime
+      claude-code
+      # fluffychat
+    ];
 
   services.udiskie = {
     enable = true;
-    automount = true; 
+    automount = true;
     notify = true;
     tray = "always";
     package = pkgs.udiskie;
   };
   programs.claude-desktop = {
     enable = true;
-    fhs = true;  # FHS wrapper for MCP compatibility
+    fhs = true; # FHS wrapper for MCP compatibility
   };
 
   # NvChad + neovim, from flake-playground's homeManagerModules.nvchad. The
@@ -334,7 +336,7 @@ in {
     enable = true;
     extraLazyPlugins = nvchadExtraPlugins;
     extraConfig = ''
-	dofile(vim.fn.stdpath "config" .. "/nv/init.lua")
+      dofile(vim.fn.stdpath "config" .. "/nv/init.lua")
     '';
   };
   programs.cspell.enable = true;
@@ -351,7 +353,7 @@ in {
   devMachine.enable = true;
   report-changes.enable = true;
   home.sessionPath = [
-  "$HOME/.local/bin"
+    "$HOME/.local/bin"
   ];
 
   xdg = {
@@ -631,4 +633,4 @@ in {
   systemd.user.startServices = "sd-switch";
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
   home.stateVersion = "23.11";
-} 
+}
