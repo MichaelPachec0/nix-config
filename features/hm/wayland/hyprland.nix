@@ -218,6 +218,66 @@ in {
             {_args = ["hyprland.start" autostartHook];}
           ];
 
+          # hl.window_rule({...}) -- parity with sway's floating.criteria, the
+          # Firefox-share nofocus, and the opacity/blur for_window rules (#3).
+          #
+          # CAVEAT: `match.class` is Hyprland's class, which differs from sway's
+          # X11 `class` for Wayland-native apps. These strings are a faithful
+          # port of the sway values; verify each against `hyprctl clients -j`
+          # with the app open and adjust as needed (a wrong match just no-ops).
+          #
+          # NOT ported (no Hyprland equivalent): sway's window_role (pop-up,
+          # bubble, task_dialog, Preferences) and window_type (dialog, menu)
+          # float criteria -- Hyprland has no role/type match.
+          window_rule = [
+            # -- Floating (title) --
+            {name = "float-ff-share"; match = {title = "Firefox.*Sharing Indicator";}; float = true; no_focus = true;}
+            {name = "float-pip"; match = {title = "Picture-in-Picture";}; float = true;}
+            {name = "float-ff-dropdown"; match = {title = "Dropdown";}; float = true;}
+            {name = "float-ff-about"; match = {title = "^About Mozilla Firefox$";}; float = true;}
+            {name = "float-complete-install"; match = {title = "^Complete Installation$";}; float = true;}
+            {name = "float-steam-news"; match = {title = "^Steam - News";}; float = true;}
+            {name = "float-steam-update"; match = {title = "^Steam - Update";}; float = true;}
+            {name = "float-steam-selfupd"; match = {title = "^Steam - Self Updater$";}; float = true;}
+            {name = "float-steam-guard"; match = {title = "^Steam Guard";}; float = true;}
+            {name = "float-zoom"; match = {title = "^zoom$";}; float = true;}
+
+            # -- Floating (class / app_id -> Hyprland class) --
+            {name = "float-keepassxc"; match = {class = "^KeePassXC$";}; float = true;}
+            {name = "float-mpv"; match = {class = "^Mpv$";}; float = true;}
+            {name = "float-pavucontrol"; match = {class = "[Pp]avucontrol";}; float = true;}
+            {name = "float-launcher"; match = {class = "launcher";}; float = true;}
+            {name = "float-nm-editor"; match = {class = "^nm-connection-editor$";}; float = true;}
+            {name = "float-ibus"; match = {class = "Ibus-ui-gtk3";}; float = true;}
+            {name = "float-pinentry"; match = {class = "Pinentry";}; float = true;}
+            {name = "float-force-float"; match = {class = ".*force_float.*";}; float = true;}
+            {name = "float-zenity"; match = {class = "zenity";}; float = true;}
+            {name = "float-floating-update"; match = {class = "floating_update";}; float = true;}
+
+            # -- Floating (Anki child windows: class + title) --
+            {name = "float-anki-profiles"; match = {class = "Anki"; title = "Profiles";}; float = true;}
+            {name = "float-anki-add"; match = {class = "Anki"; title = "Add";}; float = true;}
+            {name = "float-anki-browse"; match = {class = "Anki"; title = "^Browse.*";}; float = true;}
+
+            # -- Opacity (sway "for_window opacity set"). The global 0.9 mirrors
+            # sway's translucency; drop it if you prefer opaque windows on
+            # Hyprland (the decoration block above keeps active/inactive at 1.0).
+            # Per-app 1.0 exceptions must follow the global rule to override it.
+            {name = "opacity-all"; match = {class = ".*";}; opacity = "0.9 0.9";}
+            {name = "opacity-gimp"; match = {class = "[Gg]imp";}; opacity = "1.0 1.0";}
+            {name = "opacity-krita"; match = {class = "[Kk]rita";}; opacity = "1.0 1.0";}
+            {name = "opacity-inkscape"; match = {class = "org.inkscape.Inkscape";}; opacity = "1.0 1.0";}
+            {name = "opacity-virt-manager"; match = {class = "virt-manager";}; opacity = "1.0 1.0";}
+            {name = "opacity-obs"; match = {class = "com.obsproject.Studio";}; opacity = "1.0 1.0";}
+
+            # -- Blur exceptions (sway "for_window blur disable") --
+            {name = "noblur-gimp"; match = {class = "[Gg]imp";}; no_blur = true;}
+            {name = "noblur-krita"; match = {class = "[Kk]rita";}; no_blur = true;}
+            {name = "noblur-inkscape"; match = {class = "org.inkscape.Inkscape";}; no_blur = true;}
+            {name = "noblur-virt-manager"; match = {class = "virt-manager";}; no_blur = true;}
+            {name = "noblur-obs"; match = {class = "com.obsproject.Studio";}; no_blur = true;}
+          ];
+
           # TODO(lua): hy3 plugin config (tabs look + autotile) is NOT set here.
           # hl.config({ plugin = { hy3 = ... } }) fails at parse ("unknown config
           # key plugin.hy3.*") because hy3's keys only register once it loads at
