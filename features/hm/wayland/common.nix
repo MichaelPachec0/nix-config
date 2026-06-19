@@ -162,20 +162,32 @@ toHypr = combo: cmd:
       else if cmd == "reload" then
         "exec, hyprctl reload"
 
+      else if cmd == "focus parent" then
+        # hy3: raise focus to the parent group (e.g. the whole tab stack).
+        "hy3:changefocus, raise"
+
+      else if cmd == "focus child" then
+        # hy3: lower focus back into the focused group's child node.
+        "hy3:changefocus, lower"
+
       else if lib.hasPrefix "focus " cmd then
         let dir = lib.removePrefix "focus " cmd;
-        in "movefocus, ${dirMap.${dir} or dir}"
+        # hy3:movefocus is tree-aware -- it steps in/out of tab groups and
+        # splits correctly, unlike the native movefocus.
+        in "hy3:movefocus, ${dirMap.${dir} or dir}"
 
       else if lib.hasPrefix "workspace number " cmd then
         "workspace, ${lib.removePrefix "workspace number " cmd}"
 
       else if lib.hasPrefix "move container to workspace number " cmd then
-        "movetoworkspace, ${lib.removePrefix "move container to workspace number " cmd}"
+        # hy3:movetoworkspace moves the focused node (a window or a whole
+        # group/tab stack) without following -- matches sway's move container.
+        "hy3:movetoworkspace, ${lib.removePrefix "move container to workspace number " cmd}"
 
-      # move container direction 
-      else if lib.hasPrefix "move " cmd then 
-        let dir = lib.removePrefix "move " cmd; 
-        in "movewindow, ${dirMap.${dir} or dir}"
+      # move container direction
+      else if lib.hasPrefix "move " cmd then
+        let dir = lib.removePrefix "move " cmd;
+        in "hy3:movewindow, ${dirMap.${dir} or dir}"
 
       else if cmd == "floating toggle" then
         "togglefloating"
@@ -190,19 +202,20 @@ toHypr = combo: cmd:
         "movetoworkspace, special:magic"
 
       else if cmd == "splith" then
-        "layoutmsg, orientationleft"
+        "hy3:makegroup, h"
 
       else if cmd == "splitv" then
-        "layoutmsg, orientationtop"
+        "hy3:makegroup, v"
 
       else if cmd == "layout toggle split" then
-        "layoutmsg, togglesplit"
+        "hy3:changegroup, opposite"
 
+      # hy3 has no stacking layout; both "stacking" and "tabbed" map to tabs.
       else if cmd == "layout stacking" then
-        "layoutmsg, cyclenext"
+        "hy3:makegroup, tab"
 
       else if cmd == "layout tabbed" then
-        "layoutmsg, cyclenext"
+        "hy3:makegroup, tab"
 
       else if cmd == "mode 'resize'" then
         "submap, resize"

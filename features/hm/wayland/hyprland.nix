@@ -18,9 +18,13 @@ in {
         enable = true;
         package = pkgs.latest.hyprland;
         # package = pkgs.emptyDirectory;
+
+        # hy3: i3/sway-style manual tiling with tabbed nodes. Built against the
+        # same Hyprland input as pkgs.latest.hyprland (helpers/overlays.nix), so
+        # the plugin ABI always matches the running compositor.
+        plugins = [pkgs.latest.hy3];
         systemd = {
           enable = false;
-
         };
         xwayland = {
           enable = true;
@@ -31,29 +35,33 @@ in {
           # "$terminal" = "kitty";
           "$menu" = "rofi -show combi -combi-modes 'window,drun'";
 
-          "$HYPR_SCRIPTS"     = "~/.config/hypr/scripts";
-          bind = generatedHyprBinds ++ 
-          [
-            "SUPER, g, togglegroup"
-            "SUPER, bracketleft, changegroupactive, b"
-            "SUPER, bracketright, changegroupactive, f"
-            "SUPER Shift, bracketleft, movegroupwindow, b"
-            "SUPER Shift, bracketright, movegroupwindow, f"
+          "$HYPR_SCRIPTS" = "~/.config/hypr/scripts";
+          bind =
+            generatedHyprBinds
+            ++ [
+              # hy3 tabbed/grouped-node binds. These have no sway equivalent, so
+              # they are appended here rather than generated from common.nix.
+              # (Directional focus/move, splits and layout toggles ARE generated
+              # via toHypr -> hy3:* dispatchers; see common.nix.)
 
-            #Moving non-tabbed window inside tabbed group by direction
-            "SUPER Shift Control, h, moveintogroup, l"
-            "SUPER Shift Control, l, moveintogroup, r"
-            "SUPER Shift Control, k, moveintogroup, u"
-            "SUPER Shift Control, j, moveintogroup, d"
+              # Toggle the focused group between a tab stack and a plain split.
+              "SUPER, g, hy3:changegroup, toggletab"
 
-            #Moving tabbed window out from the group
-            "SUPER Shift Alt, h, moveoutofgroup, l"
-            "SUPER Shift Alt, l, moveoutofgroup, r"
-            "SUPER Shift Alt, k, moveoutofgroup, u"
-            "SUPER Shift Alt, j, moveoutofgroup, d"
+              # Cycle tabs within the focused tab group (wraps around).
+              "SUPER, bracketright, hy3:focustab, r, wrap"
+              "SUPER, bracketleft,  hy3:focustab, l, wrap"
 
-          ];
-            
+              # Expand the focused node over its siblings; Shift+e resets it.
+              "SUPER, e, hy3:expand, expand"
+              "SUPER Shift, e, hy3:expand, base"
+
+              # Re-balance every split on the workspace back to equal. The
+              # `workspace` arg is required: hy3 0.55's group-scope equalize
+              # (no arg) only resets the parent node's own ratio, not its
+              # children, so it is a no-op for two side-by-side windows.
+              "SUPER Shift, equal, hy3:equalize, workspace"
+            ];
+
           env = [
             "AQ_NO_MODIFIERS,1"
             "XDG_CURRENT_DESKTOP,Hyprland"
@@ -115,16 +123,32 @@ in {
             "3, horizontal, workspace"
           ];
           group = {
-              #This variable sets the color of the active window`s border in a group
-               "col.border_active" = "rgba(5eead4ee)";
+            #This variable sets the color of the active window`s border in a group
+            "col.border_active" = "rgba(5eead4ee)";
 
             #This subgroup contains variables to set the colors of the "bar"
-               groupbar = {
-                    "col.inactive" = "rgba(595959aa)";
-                    "col.active" = "rgba(595959FF)";
-               };
+            groupbar = {
+              "col.inactive" = "rgba(595959aa)";
+              "col.active" = "rgba(595959FF)";
+            };
           };
-          
+
+          # hy3 plugin config: tab-bar look + autotiling for tabbed nodes.
+          plugin.hy3 = {
+            tabs = {
+              height = 22;
+              padding = 6;
+              render_text = true;
+              text_center = true;
+            };
+            # autotile: new windows split the focused node along its longer
+            # axis automatically (i3-like), so manual splith/splitv is optional.
+            autotile = {
+              enable = true;
+              ephemeral_groups = true;
+            };
+          };
+
           # Resize submap lives in extraConfig below: submaps are
           # order-sensitive and can't be expressed via `settings`.
           render = {
@@ -133,7 +157,7 @@ in {
             cm_sdr_eotf = 0;
           };
           general = {
-            layout = "dwindle";
+            layout = "hy3";
             gaps_in = 3;
             gaps_out = 6;
             border_size = 3;
@@ -157,7 +181,10 @@ in {
               size = 5;
               # Heavy blur (4 passes + xray) only on strong-GPU hosts (thanatos);
               # every other device falls back to a lighter 3-pass, no-xray blur.
-              passes = if config.gpu.strong.enable then 4 else 3;
+              passes =
+                if config.gpu.strong.enable
+                then 4
+                else 3;
               new_optimizations = true;
               xray = config.gpu.strong.enable;
               popups = true;
@@ -171,11 +198,11 @@ in {
             };
           };
           monitor = [
-          "desc:LG Display 0x0676,1920x1080@60.02,6400x0,1.0"
-          "desc:Shenzhen KTC Technology Group H27S17 0x00000001,2560x1440@119.99,3840x0,1.0,bitdepth,10"
-          "desc:ASUSTek COMPUTER INC VG279 K5LMQS018158,1920x1080@119.98,0x0,1.0,bitdepth,10"
-          "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054,1920x1080@119.88,1920x0,1.0,bitdepth,10"
-          " , preferred, auto, 1"
+            "desc:LG Display 0x0676,1920x1080@60.02,6400x0,1.0"
+            "desc:Shenzhen KTC Technology Group H27S17 0x00000001,2560x1440@119.99,3840x0,1.0,bitdepth,10"
+            "desc:ASUSTek COMPUTER INC VG279 K5LMQS018158,1920x1080@119.98,0x0,1.0,bitdepth,10"
+            "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054,1920x1080@119.88,1920x0,1.0,bitdepth,10"
+            " , preferred, auto, 1"
           ];
           animations = {
             enabled = true;
@@ -232,12 +259,13 @@ in {
           binde = SHIFT, l, moveactive, 10 0
           binde = SHIFT, k, moveactive, 0 -10
           binde = SHIFT, j, moveactive, 0 10
-          # `r` equalizes the focused split back to 50/50. Hyprland 0.55's
-          # `layoutmsg splitratio` only takes a delta (no `exact`), so clamp
-          # to the 0.1 minimum with a big negative delta, then +0.9 lands on
-          # exactly 1.0. Equalizes one split at a time; repeat per split to
-          # rebalance a whole branch.
-          bind = , r, exec, hyprctl --batch "dispatch layoutmsg splitratio -3 ; dispatch layoutmsg splitratio +0.9"
+          # `r` equalizes every split on the workspace back to 50/50. Under
+          # the hy3 layout `layoutmsg splitratio` does nothing (it drives
+          # Hyprland's built-in layouts, not hy3's tree), so use hy3's own
+          # equalize. The `workspace` arg is required: hy3 0.55's group-scope
+          # equalize (no arg) only resets the parent node's own ratio, not
+          # its children -- a no-op for two side-by-side windows.
+          bind = , r, hy3:equalize, workspace
           bind = , escape, submap, reset
           bind = , return, submap, reset
           bind = SUPER, r, submap, reset
