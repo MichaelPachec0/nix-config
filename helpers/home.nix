@@ -31,10 +31,12 @@
       # features/nixos/home). The HM config needs no extra overlay modules - the
       # neovim/NvChad config now comes from flake-playground via the entry module.
       else [];
-    desktopModules =
-      if desktop
-      then [inputs.hyprland.homeManagerModules.default]
-      else [];
+    # Previously imported inputs.hyprland.homeManagerModules.default (a small
+    # shim that only set wayland.windowManager.hyprland.package). Dropped with
+    # the Hyprland flake input: the package is now set directly in
+    # features/hm/wayland/hyprland.nix (pkgs.latest.hyprland -> nixpkgs), and
+    # the active HM module is home-manager's built-in one.
+    desktopModules = [];
   in
     overlayModules ++ [entry] ++ desktopModules ++ perHost;
 in {

@@ -413,14 +413,14 @@
   #     });
   # };
   latest = final: prev: let
-    sway = final.nw.sway-beta;
-    hyprland = inputs.hyprland.packages.${prev.stdenv.hostPlatform.system}.default;
-    # waybar = prev.waybar.override {inherit sway hyprland;};
     waybar = prev.waybar;
   in {
     latest.sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
-    latest.hyprland = inputs.hyprland.packages.${prev.stdenv.hostPlatform.system}.default;
-    latest.hy3 = inputs.hy3.packages.${prev.stdenv.hostPlatform.system}.hy3;
+    # Hyprland + hy3 from nixpkgs. hyprlandPlugins.hy3 is built against the same
+    # nixpkgs hyprland (the hyprlandPlugins scope injects it), so the plugin ABI
+    # matches the running compositor without a source build.
+    latest.hyprland = final.hyprland;
+    latest.hy3 = final.hyprlandPlugins.hy3;
     latest.waybar = waybar;
     latest.firefox-devedition-bin = inputs.firefox.packages.${prev.stdenv.hostPlatform.system}.firefox-devedition-bin.override {
       extraPolicies = {

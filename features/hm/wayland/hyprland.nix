@@ -19,9 +19,10 @@ in {
         package = pkgs.latest.hyprland;
         # package = pkgs.emptyDirectory;
 
-        # hy3: i3/sway-style manual tiling with tabbed nodes. Built against the
-        # same Hyprland input as pkgs.latest.hyprland (helpers/overlays.nix), so
-        # the plugin ABI always matches the running compositor.
+        # hy3: i3/sway-style manual tiling with tabbed nodes. Sourced from
+        # nixpkgs' hyprlandPlugins (pkgs.latest.hy3, see helpers/overlays.nix),
+        # which builds it against the same nixpkgs hyprland as
+        # pkgs.latest.hyprland, so the plugin ABI matches the running compositor.
         plugins = [pkgs.latest.hy3];
         systemd = {
           enable = false;
