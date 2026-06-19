@@ -271,7 +271,7 @@
               ./nixos/thanatos/hardware-configuration.nix
               inputs.disko.nixosModules.disko
               ./nixos/thanatos/disk-config.nix
-              ./nixos/thanatos/extras.nix
+              # ./nixos/thanatos/extras.nix
             ];
         };
       aphrodite = let
