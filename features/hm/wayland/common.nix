@@ -244,10 +244,15 @@ toHypr = combo: cmd:
   # entries: { _args = [ "<combo>" <dispatcher> ]; } renders to
   # hl.bind("<combo>", <dispatcher>). `mkLuaInline` marks the dispatcher as
   # raw Lua. Native verbs use hl.dsp.* objects (resolved at parse time); hy3
-  # verbs are wrapped in `function() .. end` because hl.plugin.hy3.* is only
-  # registered after the plugin loads at startup -- a bare reference would be
-  # nil at config-parse time. hy3 lua arg shapes verified against the plugin
-  # source (src/dispatchers.cpp); native hl.dsp.* forms via --verify-config.
+  # verbs are wrapped in `function() ...() end` for TWO reasons:
+  #  1. hl.plugin.hy3.* is only registered after the plugin loads at startup,
+  #     so a bare reference would be nil at config-parse time (the wrapper
+  #     defers the lookup to keypress).
+  #  2. hl.plugin.hy3.<fn>(args) RETURNS a dispatcher closure (like hl.dsp.*),
+  #     it does not act -- the trailing () invokes it. Without the () the bind
+  #     builds a dispatcher and discards it (a silent no-op).
+  # hy3 lua arg shapes verified against the plugin source (src/dispatchers.cpp);
+  # native hl.dsp.* forms via --verify-config.
   mkInline = lib.generators.mkLuaInline;
   luaStr = s: lib.generators.toLua {} s;
 
@@ -270,24 +275,24 @@ toHypr = combo: cmd:
       mkInline ''hl.dsp.exec_cmd("hyprctl reload")''
 
     else if cmd == "focus parent" then
-      mkInline ''function() hl.plugin.hy3.change_focus("raise") end''
+      mkInline ''function() hl.plugin.hy3.change_focus("raise")() end''
 
     else if cmd == "focus child" then
-      mkInline ''function() hl.plugin.hy3.change_focus("lower") end''
+      mkInline ''function() hl.plugin.hy3.change_focus("lower")() end''
 
     else if lib.hasPrefix "focus " cmd then
       let
         dir = lib.removePrefix "focus " cmd;
         d = dirMap.${dir} or dir;
       in
-        mkInline ''function() hl.plugin.hy3.move_focus(${luaStr d}) end''
+        mkInline ''function() hl.plugin.hy3.move_focus(${luaStr d})() end''
 
     else if lib.hasPrefix "workspace number " cmd then
       mkInline "hl.dsp.focus({ workspace = ${lib.removePrefix "workspace number " cmd} })"
 
     else if lib.hasPrefix "move container to workspace number " cmd then
       let ws = lib.removePrefix "move container to workspace number " cmd;
-      in mkInline ''function() hl.plugin.hy3.move_to_workspace(${luaStr ws}) end''
+      in mkInline ''function() hl.plugin.hy3.move_to_workspace(${luaStr ws})() end''
 
     # "move scratchpad" must precede the generic "move " prefix below, else it
     # is mis-parsed as a directional move (move_window("scratchpad")).
@@ -299,7 +304,7 @@ toHypr = combo: cmd:
         dir = lib.removePrefix "move " cmd;
         d = dirMap.${dir} or dir;
       in
-        mkInline ''function() hl.plugin.hy3.move_window(${luaStr d}) end''
+        mkInline ''function() hl.plugin.hy3.move_window(${luaStr d})() end''
 
     else if cmd == "floating toggle" then
       mkInline ''hl.dsp.window.float({ action = "toggle" })''
@@ -311,20 +316,20 @@ toHypr = combo: cmd:
       mkInline ''hl.dsp.workspace.toggle_special("magic")''
 
     else if cmd == "splith" then
-      mkInline ''function() hl.plugin.hy3.make_group("h") end''
+      mkInline ''function() hl.plugin.hy3.make_group("h")() end''
 
     else if cmd == "splitv" then
-      mkInline ''function() hl.plugin.hy3.make_group("v") end''
+      mkInline ''function() hl.plugin.hy3.make_group("v")() end''
 
     else if cmd == "layout toggle split" then
-      mkInline ''function() hl.plugin.hy3.change_group("opposite") end''
+      mkInline ''function() hl.plugin.hy3.change_group("opposite")() end''
 
     # hy3 has no stacking layout; both "stacking" and "tabbed" map to tabs.
     else if cmd == "layout stacking" then
-      mkInline ''function() hl.plugin.hy3.make_group("tab") end''
+      mkInline ''function() hl.plugin.hy3.make_group("tab")() end''
 
     else if cmd == "layout tabbed" then
-      mkInline ''function() hl.plugin.hy3.make_group("tab") end''
+      mkInline ''function() hl.plugin.hy3.make_group("tab")() end''
 
     else if cmd == "mode 'resize'" then
       mkInline ''hl.dsp.submap("resize")''

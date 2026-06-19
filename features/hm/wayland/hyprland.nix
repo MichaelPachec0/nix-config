@@ -20,21 +20,22 @@
   luaStr = s: lib.generators.toLua {} s;
 
   # hy3 dispatcher binds with no sway equivalent (appended to generatedLuaBinds).
-  # hy3 lua functions are wrapped in `function() .. end`: hl.plugin.hy3.* is only
-  # registered after the plugin loads at startup, so a bare reference would be
-  # nil at config-parse time. Arg shapes verified against hy3 src/dispatchers.cpp.
+  # Wrapped in `function() ...() end`: hl.plugin.hy3.* is nil at config-parse
+  # time (registers only after the plugin loads at startup), and hl.plugin.hy3.fn
+  # RETURNS a dispatcher closure that the trailing () must invoke -- without it
+  # the bind is a silent no-op. Arg shapes verified against hy3 src/dispatchers.cpp.
   hy3ExtraBinds = [
     # Toggle the focused group between a tab stack and a plain split.
-    {_args = ["SUPER + g" (mkLuaInline ''function() hl.plugin.hy3.change_group("toggletab") end'')];}
+    {_args = ["SUPER + g" (mkLuaInline ''function() hl.plugin.hy3.change_group("toggletab")() end'')];}
     # Cycle tabs within the focused tab group (wraps around).
-    {_args = ["SUPER + bracketright" (mkLuaInline ''function() hl.plugin.hy3.focus_tab({ direction = "r", wrap = true }) end'')];}
-    {_args = ["SUPER + bracketleft" (mkLuaInline ''function() hl.plugin.hy3.focus_tab({ direction = "l", wrap = true }) end'')];}
+    {_args = ["SUPER + bracketright" (mkLuaInline ''function() hl.plugin.hy3.focus_tab({ direction = "r", wrap = true })() end'')];}
+    {_args = ["SUPER + bracketleft" (mkLuaInline ''function() hl.plugin.hy3.focus_tab({ direction = "l", wrap = true })() end'')];}
     # Expand the focused node over its siblings; Shift+e resets it.
-    {_args = ["SUPER + e" (mkLuaInline ''function() hl.plugin.hy3.expand("expand") end'')];}
-    {_args = ["SUPER + SHIFT + e" (mkLuaInline ''function() hl.plugin.hy3.expand("base") end'')];}
+    {_args = ["SUPER + e" (mkLuaInline ''function() hl.plugin.hy3.expand("expand")() end'')];}
+    {_args = ["SUPER + SHIFT + e" (mkLuaInline ''function() hl.plugin.hy3.expand("base")() end'')];}
     # Re-balance every split on the workspace back to equal (workspace scope is
     # required; group scope is a no-op in hy3 0.55 -- see ./common.nix).
-    {_args = ["SUPER + SHIFT + equal" (mkLuaInline ''function() hl.plugin.hy3.equalize({ scope = "workspace" }) end'')];}
+    {_args = ["SUPER + SHIFT + equal" (mkLuaInline ''function() hl.plugin.hy3.equalize({ scope = "workspace" })() end'')];}
   ];
 
   # hy3 plugin setup at startup. hy3's config keys (plugin:hy3:*) only register
@@ -345,7 +346,7 @@ in {
           (submapBind "SHIFT + k" "hl.dsp.window.move({ x = 0, y = -10, relative = true })" {repeating = true;})
           (submapBind "SHIFT + j" "hl.dsp.window.move({ x = 0, y = 10, relative = true })" {repeating = true;})
           # `r` equalizes the whole workspace back to 50/50 (stays in the submap).
-          (submapBind "r" ''function() hl.plugin.hy3.equalize({ scope = "workspace" }) end'' {})
+          (submapBind "r" ''function() hl.plugin.hy3.equalize({ scope = "workspace" })() end'' {})
           # Exits.
           (submapBind "escape" "hl.dsp.submap(\"reset\")" {})
           (submapBind "return" "hl.dsp.submap(\"reset\")" {})
