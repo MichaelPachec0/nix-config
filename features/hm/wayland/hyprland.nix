@@ -37,9 +37,31 @@
     {_args = ["SUPER + SHIFT + equal" (mkLuaInline ''function() hl.plugin.hy3.equalize({ scope = "workspace" }) end'')];}
   ];
 
-  # exec-once -> a single hl.on("hyprland.start", ...) handler. hy3's plugin
-  # load is emitted separately by home-manager (from `plugins` below) into its
-  # own start hook.
+  # hy3 plugin setup at startup. hy3's config keys (plugin:hy3:*) only register
+  # once the plugin loads, and hl.config can't set them at config-parse time
+  # ("unknown config key"). So load the plugin and apply its config together via
+  # hyprctl in one start hook: `hyprctl plugin load` is synchronous, so the
+  # `;`-chained keyword commands run after it (no race). general:layout is
+  # re-asserted after load so hy3's layout takes effect. This replaces
+  # home-manager's `plugins` auto-load (dropped below). NOTE: the keyword
+  # names/values still want a runtime sanity check.
+  hy3so = "${pkgs.latest.hy3}/lib/libhy3.so";
+  hy3SetupHook = mkLuaInline ''
+    function()
+      hl.exec_cmd(${luaStr (lib.concatStringsSep " ; " [
+    "hyprctl plugin load ${hy3so}"
+    "hyprctl keyword general:layout hy3"
+    "hyprctl keyword plugin:hy3:tabs:height 22"
+    "hyprctl keyword plugin:hy3:tabs:padding 6"
+    "hyprctl keyword plugin:hy3:tabs:render_text true"
+    "hyprctl keyword plugin:hy3:tabs:text_center true"
+    "hyprctl keyword plugin:hy3:autotile:enable true"
+    "hyprctl keyword plugin:hy3:autotile:ephemeral_groups true"
+  ])})
+    end
+  '';
+
+  # exec-once -> a single hl.on("hyprland.start", ...) handler.
   autostartHook = mkLuaInline ''
     function()
       hl.exec_cmd(${luaStr waybarLaunch})
@@ -74,10 +96,12 @@ in {
         package = pkgs.latest.hyprland;
         configType = "lua";
 
-        # hy3: i3/sway-style manual tiling with tabbed nodes, from nixpkgs'
-        # hyprlandPlugins (ABI-matched to pkgs.latest.hyprland). home-manager
-        # emits `hyprctl plugin load <path>` in the generated start hook.
-        plugins = [pkgs.latest.hy3];
+        # hy3 (i3/sway-style manual tiling, from nixpkgs' hyprlandPlugins,
+        # ABI-matched to pkgs.latest.hyprland) is loaded + configured via the
+        # hy3SetupHook start hook below, NOT home-manager's `plugins` -- the
+        # plugin's config keys must be applied in the same ordered command as
+        # the load (see hy3SetupHook). pkgs.latest.hy3 stays in the closure via
+        # the hy3so path reference.
         systemd.enable = false;
         xwayland.enable = true;
 
@@ -155,12 +179,30 @@ in {
               };
             };
 
-            # TODO(lua): custom beziers/animations deferred. hl.config animations
-            # only toggles `enabled`; the curves need hl.curve + hl.animation
-            # calls keyed by lua "leaf" names (NOT the hyprlang animation names),
-            # which must be confirmed at runtime. Defaults are used for now.
+            # hl.config animations only toggles `enabled`; the curves and
+            # per-leaf animations are separate hl.curve / hl.animation calls
+            # (settings.curve / settings.animation below).
             animations.enabled = true;
           };
+
+          # hl.curve(name, {...}) -- bezier curves referenced by the animations.
+          curve = [
+            {_args = ["easeOutQuint" {type = "bezier"; points = [[0.22 1] [0.36 1]];}];}
+            {_args = ["easeInQuart" {type = "bezier"; points = [[0.89 0.03] [0.68 0.19]];}];}
+            {_args = ["softLinear" {type = "bezier"; points = [[0.1 0.1] [1 1]];}];}
+          ];
+
+          # hl.animation({...}) -- per-leaf animations (lua leaf names, verified
+          # via --verify-config; "leaf" replaces the hyprlang animation name,
+          # "speed" the duration, "style" the trailing style).
+          animation = [
+            {leaf = "windows"; enabled = true; speed = 3; bezier = "easeOutQuint"; style = "popin 90%";}
+            {leaf = "windowsIn"; enabled = true; speed = 3; bezier = "easeOutQuint"; style = "popin 90%";}
+            {leaf = "windowsOut"; enabled = true; speed = 2; bezier = "easeInQuart"; style = "popin 95%";}
+            {leaf = "windowsMove"; enabled = true; speed = 3; bezier = "easeOutQuint"; style = "slide";}
+            {leaf = "fade"; enabled = true; speed = 3; bezier = "softLinear";}
+            {leaf = "workspaces"; enabled = true; speed = 4; bezier = "easeOutQuint"; style = "slidefade 20%";}
+          ];
 
           # hl.env("KEY", "VALUE")
           env = map toEnv [
@@ -213,8 +255,10 @@ in {
           # hl.bind(...) -- generated from swayKeybindings (toLua) + hy3 extras.
           bind = generatedLuaBinds ++ hy3ExtraBinds;
 
-          # hl.on("hyprland.start", function() ... end) -- autostart.
+          # hl.on("hyprland.start", function() ... end). hy3 setup runs first
+          # (load + config), then the autostart apps.
           on = [
+            {_args = ["hyprland.start" hy3SetupHook];}
             {_args = ["hyprland.start" autostartHook];}
           ];
 
@@ -278,15 +322,9 @@ in {
             {name = "noblur-obs"; match = {class = "com.obsproject.Studio";}; no_blur = true;}
           ];
 
-          # TODO(lua): hy3 plugin config (tabs look + autotile) is NOT set here.
-          # hl.config({ plugin = { hy3 = ... } }) fails at parse ("unknown config
-          # key plugin.hy3.*") because hy3's keys only register once it loads at
-          # startup. It needs a post-load hook (hyprctl keyword plugin:hy3:...)
-          # ordered AFTER home-manager's plugin-load start hook. Deferred until
-          # the runtime mechanism is confirmed; hy3 uses defaults (no autotile,
-          # default tab bar) until then. Old values were:
-          #   tabs = { height = 22; padding = 6; render_text = true; text_center = true; };
-          #   autotile = { enable = true; ephemeral_groups = true; };
+          # hy3 plugin config (tabs look + autotile) is applied at startup by
+          # hy3SetupHook (see the let block) -- it can't be set via hl.config at
+          # parse time because hy3's keys only register once the plugin loads.
         };
 
         systemd.variables = ["--all"];
