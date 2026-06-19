@@ -18,9 +18,13 @@ in {
         enable = true;
         package = pkgs.latest.hyprland;
         # package = pkgs.emptyDirectory;
+
+        # hy3: i3/sway-style manual tiling with tabbed nodes. Built against the
+        # same Hyprland input as pkgs.latest.hyprland (helpers/overlays.nix), so
+        # the plugin ABI always matches the running compositor.
+        plugins = [pkgs.latest.hy3];
         systemd = {
           enable = false;
-
         };
         xwayland = {
           enable = true;
@@ -31,29 +35,33 @@ in {
           # "$terminal" = "kitty";
           "$menu" = "rofi -show combi -combi-modes 'window,drun'";
 
-          "$HYPR_SCRIPTS"     = "~/.config/hypr/scripts";
-          bind = generatedHyprBinds ++ 
-          [
-            "SUPER, g, togglegroup"
-            "SUPER, bracketleft, changegroupactive, b"
-            "SUPER, bracketright, changegroupactive, f"
-            "SUPER Shift, bracketleft, movegroupwindow, b"
-            "SUPER Shift, bracketright, movegroupwindow, f"
+          "$HYPR_SCRIPTS" = "~/.config/hypr/scripts";
+          bind =
+            generatedHyprBinds
+            ++ [
+              # hy3 tabbed/grouped-node binds. These have no sway equivalent, so
+              # they are appended here rather than generated from common.nix.
+              # (Directional focus/move, splits and layout toggles ARE generated
+              # via toHypr -> hy3:* dispatchers; see common.nix.)
 
-            #Moving non-tabbed window inside tabbed group by direction
-            "SUPER Shift Control, h, moveintogroup, l"
-            "SUPER Shift Control, l, moveintogroup, r"
-            "SUPER Shift Control, k, moveintogroup, u"
-            "SUPER Shift Control, j, moveintogroup, d"
+              # Toggle the focused group between a tab stack and a plain split.
+              "SUPER, g, hy3:changegroup, toggletab"
 
-            #Moving tabbed window out from the group
-            "SUPER Shift Alt, h, moveoutofgroup, l"
-            "SUPER Shift Alt, l, moveoutofgroup, r"
-            "SUPER Shift Alt, k, moveoutofgroup, u"
-            "SUPER Shift Alt, j, moveoutofgroup, d"
+              # Cycle tabs within the focused tab group (wraps around).
+              "SUPER, bracketright, hy3:focustab, r, wrap"
+              "SUPER, bracketleft,  hy3:focustab, l, wrap"
 
-          ];
-            
+              # Expand the focused node over its siblings; Shift+e resets it.
+              "SUPER, e, hy3:expand, expand"
+              "SUPER Shift, e, hy3:expand, base"
+
+              # Re-balance every split on the workspace back to equal. The
+              # `workspace` arg is required: hy3 0.55's group-scope equalize
+              # (no arg) only resets the parent node's own ratio, not its
+              # children, so it is a no-op for two side-by-side windows.
+              "SUPER Shift, equal, hy3:equalize, workspace"
+            ];
+
           env = [
             "AQ_NO_MODIFIERS,1"
             "XDG_CURRENT_DESKTOP,Hyprland"
@@ -81,7 +89,33 @@ in {
             # ~200ms delay (mac InitialKeyRepeat 15), rate 45Hz.
             repeat_rate = 45;
             repeat_delay = 200;
+
+            # accel_profile is global in Hyprland (no per-touchpad scope
+            # like sway's type:touchpad). "adaptive" is the libinput
+            # default, so the mouse is unaffected; this just mirrors sway.
+            accel_profile = "adaptive";
+
+            # Touchpad parity with sway's type:touchpad block.
+            touchpad = {
+              natural_scroll = true; # sway natural_scroll enabled
+              disable_while_typing = true; # sway dwt enabled
+              "tap-to-click" = true; # sway tap enabled
+              drag_lock = false; # sway drag_lock disabled
+            };
           };
+
+          # Per-device override -- parity with sway's PS4 controller
+          # touchpad rule (1356:2508 Sony ... Wireless Controller Touchpad).
+          # Hyprland matches by the lowercased, hyphenated libinput name;
+          # verify with `hyprctl devices` when the controller is connected
+          # (a wrong name is a harmless no-op).
+          device = [
+            {
+              name = "sony-interactive-entertainment-wireless-controller-touchpad";
+              disable_while_typing = false; # sway dwt disabled
+              "tap-to-click" = true; # sway tap enabled
+            }
+          ];
           # 3-finger horizontal swipe to switch workspaces (replaces sway's
           # `bindgesture swipe:left/right`). Uses the 0.49+ `gesture` keyword;
           # the old `gestures { workspace_swipe }` category was removed in 0.55.
@@ -89,38 +123,41 @@ in {
             "3, horizontal, workspace"
           ];
           group = {
-              #This variable sets the color of the active window`s border in a group
-               "col.border_active" = "rgba(5eead4ee)";
+            #This variable sets the color of the active window`s border in a group
+            "col.border_active" = "rgba(5eead4ee)";
 
             #This subgroup contains variables to set the colors of the "bar"
-               groupbar = {
-                    "col.inactive" = "rgba(595959aa)";
-                    "col.active" = "rgba(595959FF)";
-               };
+            groupbar = {
+              "col.inactive" = "rgba(595959aa)";
+              "col.active" = "rgba(595959FF)";
+            };
           };
-          
-#SHIFT is for more accurate size changing
-#            bind=SUPER,R,submap,resize
-#            submap=resize
-#                unbind = ,down
-#                binde = , right, resizeactive,  100 0
-#                binde = , left,  resizeactive, -100 0
-#                binde = , down,  resizeactive,  0 100
-#                binde = , up,    resizeactive,  0 -100
-#                binde = SHIFT, right, resizeactive,  10 0
-#                binde = SHIFT, left,  resizeactive, -10 0
-#                binde = SHIFT, down,  resizeactive,  0 10
-#                binde = SHIFT, up,    resizeactive,  0 -10
-#                bind = , escape,submap,reset 
-#                bind = , return,submap,reset 
-#            submap=reset
+
+          # hy3 plugin config: tab-bar look + autotiling for tabbed nodes.
+          plugin.hy3 = {
+            tabs = {
+              height = 22;
+              padding = 6;
+              render_text = true;
+              text_center = true;
+            };
+            # autotile: new windows split the focused node along its longer
+            # axis automatically (i3-like), so manual splith/splitv is optional.
+            autotile = {
+              enable = true;
+              ephemeral_groups = true;
+            };
+          };
+
+          # Resize submap lives in extraConfig below: submaps are
+          # order-sensitive and can't be expressed via `settings`.
           render = {
             cm_enabled = true;
             cm_auto_hdr = 1;
             cm_sdr_eotf = 0;
           };
           general = {
-            layout = "dwindle";
+            layout = "hy3";
             gaps_in = 3;
             gaps_out = 6;
             border_size = 3;
@@ -144,7 +181,10 @@ in {
               size = 5;
               # Heavy blur (4 passes + xray) only on strong-GPU hosts (thanatos);
               # every other device falls back to a lighter 3-pass, no-xray blur.
-              passes = if config.gpu.strong.enable then 4 else 3;
+              passes =
+                if config.gpu.strong.enable
+                then 4
+                else 3;
               new_optimizations = true;
               xray = config.gpu.strong.enable;
               popups = true;
@@ -158,11 +198,11 @@ in {
             };
           };
           monitor = [
-          "desc:LG Display 0x0676,1920x1080@60.02,6400x0,1.0"
-          "desc:Shenzhen KTC Technology Group H27S17 0x00000001,2560x1440@119.99,3840x0,1.0,bitdepth,10"
-          "desc:ASUSTek COMPUTER INC VG279 K5LMQS018158,1920x1080@119.98,0x0,1.0,bitdepth,10"
-          "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054,1920x1080@119.88,1920x0,1.0,bitdepth,10"
-          " , preferred, auto, 1"
+            "desc:LG Display 0x0676,1920x1080@60.02,6400x0,1.0"
+            "desc:Shenzhen KTC Technology Group H27S17 0x00000001,2560x1440@119.99,3840x0,1.0,bitdepth,10"
+            "desc:ASUSTek COMPUTER INC VG279 K5LMQS018158,1920x1080@119.98,0x0,1.0,bitdepth,10"
+            "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054,1920x1080@119.88,1920x0,1.0,bitdepth,10"
+            " , preferred, auto, 1"
           ];
           animations = {
             enabled = true;
@@ -201,6 +241,36 @@ in {
           ];
         };
         systemd.variables = ["--all"];
+
+        # Resize submap -- parity with sway's `resize` mode. common.nix's
+        # toHypr maps Super+r to `submap, resize`; this defines that submap.
+        # vim hjkl resizes, Shift+hjkl nudges (floating only, like sway),
+        # plain `r` equalizes the focused split, and Escape / Return /
+        # Super+r exit. Submaps are order-sensitive, so they live in
+        # extraConfig (appended after the global binds) rather than in
+        # `settings`.
+        extraConfig = ''
+          submap = resize
+          binde = , h, resizeactive, -10 0
+          binde = , l, resizeactive, 10 0
+          binde = , k, resizeactive, 0 -10
+          binde = , j, resizeactive, 0 10
+          binde = SHIFT, h, moveactive, -10 0
+          binde = SHIFT, l, moveactive, 10 0
+          binde = SHIFT, k, moveactive, 0 -10
+          binde = SHIFT, j, moveactive, 0 10
+          # `r` equalizes every split on the workspace back to 50/50. Under
+          # the hy3 layout `layoutmsg splitratio` does nothing (it drives
+          # Hyprland's built-in layouts, not hy3's tree), so use hy3's own
+          # equalize. The `workspace` arg is required: hy3 0.55's group-scope
+          # equalize (no arg) only resets the parent node's own ratio, not
+          # its children -- a no-op for two side-by-side windows.
+          bind = , r, hy3:equalize, workspace
+          bind = , escape, submap, reset
+          bind = , return, submap, reset
+          bind = SUPER, r, submap, reset
+          submap = reset
+        '';
       };
     };
   };

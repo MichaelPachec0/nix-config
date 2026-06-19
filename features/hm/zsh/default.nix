@@ -162,7 +162,18 @@
           '';
           lag = "lazygit";
         };
-        initExtraFirst = "";
+        initExtraFirst = ''
+          # The oh-my-zsh docker plugin re-copies its completion from the
+          # (read-only) nix store into $ZSH_CACHE_DIR on every startup. podman's
+          # docker-compat reports version <23, so it always takes the legacy
+          # `cp` branch, which fails with EACCES once the cached file inherits
+          # the store's read-only mode. Make it writable before omz loads so the
+          # copy can overwrite it. Runs before plugins; self-heals a cache wipe.
+          () {
+            local f="''${ZSH_CACHE_DIR:-$HOME/.cache/oh-my-zsh}/completions/_docker"
+            [[ -f "$f" ]] && chmod u+w "$f"
+          }
+        '';
       };
     };
   };

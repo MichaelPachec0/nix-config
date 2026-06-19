@@ -27,11 +27,22 @@
     hardware.url = "github:MichaelPachec0/nixos-hardware";
 
     hyprland = {
-      url = "github:hyprwm/Hyprland?submodules=1";
+      # Pinned to the v0.55.0 release tag (was master/rolling): the hy3 plugin
+      # only builds against tagged Hyprland releases, and its latest release
+      # (hl0.55.0) targets 0.55.0. Tracking master broke the hy3 build.
+      url = "github:hyprwm/Hyprland/v0.55.0?submodules=1";
+      # url = "github:hyprwm/Hyprland?submodules=1"; # master (rolling); drop hy3 to use
       # url = "git+https://github.com/hyprwm/Hyprland?submodules=1";
       # url = "github:hyprwm/Hyprland/9f933da1c502989cadf7696971aa376d65847b95?submodules=1";
       # NOTE: this is following nixos unstable matching the upstream flake.
       inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # hy3: manual i3/sway-style tiling + tabbed nodes for Hyprland. Pinned to the
+    # hl0.55.0 release to match the pinned Hyprland v0.55.0 above (plugins only
+    # build against tagged Hyprland releases); follows keeps the ABI matched.
+    hy3 = {
+      url = "github:outfoxxed/hy3/hl0.55.0";
+      inputs.hyprland.follows = "hyprland";
     };
     swayfx = {
       url = "github:WillPower3309/swayfx?submodules=1";

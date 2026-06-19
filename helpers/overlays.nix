@@ -420,6 +420,7 @@
   in {
     latest.sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
     latest.hyprland = inputs.hyprland.packages.${prev.stdenv.hostPlatform.system}.default;
+    latest.hy3 = inputs.hy3.packages.${prev.stdenv.hostPlatform.system}.hy3;
     latest.waybar = waybar;
     latest.firefox-devedition-bin = inputs.firefox.packages.${prev.stdenv.hostPlatform.system}.firefox-devedition-bin.override {
       extraPolicies = {
