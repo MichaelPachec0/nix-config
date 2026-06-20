@@ -1,0 +1,34 @@
+From a544ee87914dcd5899d0d049ba4a0a8753389ed9 Mon Sep 17 00:00:00 2001
+From: Michael Pacheco <git@michaelpacheco.org>
+Date: Fri, 19 Jun 2026 13:08:24 -0700
+Subject: [PATCH] fix: make root node layout truly immutable in setLayout
+
+Signed-off-by: Michael Pacheco <git@michaelpacheco.org>
+---
+ src/Hy3Node.cpp | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/src/Hy3Node.cpp b/src/Hy3Node.cpp
+index 7b2c144..7705ba7 100644
+--- a/src/Hy3Node.cpp
++++ b/src/Hy3Node.cpp
+@@ -160,7 +160,15 @@ void Hy3GroupNode::collapseExpansions() {
+ }
+ 
+ void Hy3GroupNode::setLayout(Hy3GroupLayout layout) {
+-	if (layout == Hy3GroupLayout::Root) return; // root layout is immutable
++	// The root node's layout is immutable: it is the invariant that terminates every
++	// ancestors() walk (is_root() <=> layout == Root). Changing it away from Root makes
++	// ancestors() run off the top of the tree into the root's null parent, where as_group()
++	// throws an uncaught exception across the Lua dispatcher boundary and aborts the
++	// compositor. This is reachable from user dispatchers: `changefocus raise` moves focus
++	// onto the root's child group, after which `changegroup`/`toggletab` resolves the
++	// containing group to the root node and tries to relayout it.
++	if (this->layout == Hy3GroupLayout::Root) return;
++	if (layout == Hy3GroupLayout::Root) return; // no other node may take the root layout
+ 	this->layout = layout;
+ 
+ 	if (!isTab()) {
+-- 
+2.54.0
+
