@@ -109,6 +109,7 @@ button:hover {
 #custom-media,
 #tray,
 #mode,
+#submap,
 #idle_inhibitor,
 #scratchpad,
 #mpd,
@@ -120,6 +121,15 @@ button:hover {
   background-color: @base;
   /* border-radius: 100px; */
   border-radius: 50px;
+}
+
+/* Active-mode indicator (sway resize mode / Hyprland submaps e.g. group_with):
+   accent it so it's an obvious "you're in a mode" cue, like sway's. */
+#mode,
+#submap {
+  background-color: @orange;
+  color: @base;
+  font-weight: bold;
 }
 #window,
 #workspaces {

@@ -63,6 +63,12 @@
     {_args = ["SUPER + SHIFT + CONTROL + l" (mkLuaInline ''function() hl.plugin.hy3.move_window("r", { once = true })() end'')];}
     {_args = ["SUPER + SHIFT + CONTROL + k" (mkLuaInline ''function() hl.plugin.hy3.move_window("u", { once = true })() end'')];}
     {_args = ["SUPER + SHIFT + CONTROL + j" (mkLuaInline ''function() hl.plugin.hy3.move_window("d", { once = true })() end'')];}
+
+    # Enter the group_with submap (defined under submaps.groupwith below): wrap
+    # the focused node TOGETHER with a neighbour into a NEW group. Leader sits
+    # next to Super+g (toggletab) -- both are "g for group". `hl.dsp.submap` is a
+    # native dispatcher (resolved at parse time), so no function() wrapper.
+    {_args = ["SUPER + SHIFT + g" (mkLuaInline ''hl.dsp.submap("groupwith")'')];}
   ];
 
   # hy3 plugin setup at startup. Two constraints:
@@ -380,6 +386,45 @@ in {
           (submapBind "escape" "hl.dsp.submap(\"reset\")" {})
           (submapBind "return" "hl.dsp.submap(\"reset\")" {})
           (submapBind "SUPER + r" "hl.dsp.submap(\"reset\")" {})
+        ];
+
+        # group_with submap (hy3 0002 patch) -- entered via Super+Shift+g. Wraps
+        # the focused node TOGETHER with its neighbour in <dir> into a NEW group,
+        # adding one nesting level. This is the retrofit make_group (wraps one
+        # node) and movewindow (flattens into an existing group) can't do.
+        # Direction = vim hjkl; the new group's layout is chosen by modifier:
+        #   bare h/j/k/l    -> vertical  (stack the pair)
+        #   SHIFT  h/j/k/l  -> tabbed    (tab the pair together)
+        #   CONTROL h/j/k/l -> horizontal (side-by-side, nested as a unit)
+        # Each bind performs the group then exits the submap; Escape/Return and
+        # the Super+Shift+g leader also exit. Waybar's hyprland/submap module
+        # surfaces "groupwith mode" while active (parity with sway's resize mode).
+        # The trailing () on group_with invokes the returned dispatcher; the
+        # second statement leaves the submap. Arg shapes (dir, layout) verified
+        # live against the patched plugin (see hy3-groupwith memory note).
+        submaps.groupwith.settings.bind = let
+          gw = dir: layout:
+            ''function() hl.plugin.hy3.group_with("${dir}", "${layout}")(); hl.dsp.submap("reset")() end'';
+        in [
+          # Vertical (bare).
+          (submapBind "h" (gw "l" "v") {})
+          (submapBind "j" (gw "d" "v") {})
+          (submapBind "k" (gw "u" "v") {})
+          (submapBind "l" (gw "r" "v") {})
+          # Tabbed (Shift).
+          (submapBind "SHIFT + h" (gw "l" "tab") {})
+          (submapBind "SHIFT + j" (gw "d" "tab") {})
+          (submapBind "SHIFT + k" (gw "u" "tab") {})
+          (submapBind "SHIFT + l" (gw "r" "tab") {})
+          # Horizontal (Control).
+          (submapBind "CONTROL + h" (gw "l" "h") {})
+          (submapBind "CONTROL + j" (gw "d" "h") {})
+          (submapBind "CONTROL + k" (gw "u" "h") {})
+          (submapBind "CONTROL + l" (gw "r" "h") {})
+          # Exits.
+          (submapBind "escape" "hl.dsp.submap(\"reset\")" {})
+          (submapBind "return" "hl.dsp.submap(\"reset\")" {})
+          (submapBind "SUPER + SHIFT + g" "hl.dsp.submap(\"reset\")" {})
         ];
       };
     };
