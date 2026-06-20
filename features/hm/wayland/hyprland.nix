@@ -27,6 +27,23 @@
   hy3ExtraBinds = [
     # Toggle the focused group between a tab stack and a plain split.
     {_args = ["SUPER + g" (mkLuaInline ''function() hl.plugin.hy3.change_group("toggletab")() end'')];}
+    # Toggle variants of the (non-toggle) Super+b/v/x/z make_group binds: create
+    # the group, or dissolve it when the focused node is the sole child of a
+    # group of that layout (with 2+ windows it nests instead).
+    {_args = ["SUPER + SHIFT + b" (mkLuaInline ''function() hl.plugin.hy3.make_group("h", { toggle = true })() end'')];}
+    {_args = ["SUPER + SHIFT + v" (mkLuaInline ''function() hl.plugin.hy3.make_group("v", { toggle = true })() end'')];}
+    {_args = ["SUPER + SHIFT + x" (mkLuaInline ''function() hl.plugin.hy3.make_group("tab", { toggle = true })() end'')];}
+    {_args = ["SUPER + SHIFT + z" (mkLuaInline ''function() hl.plugin.hy3.make_group("tab", { toggle = true })() end'')];}
+
+    # Explicit (non-toggle) force the focused window's group to tabbed / untabbed.
+    {_args = ["SUPER + SHIFT + t" (mkLuaInline ''function() hl.plugin.hy3.change_group("tab")() end'')];}
+    {_args = ["SUPER + SHIFT + u" (mkLuaInline ''function() hl.plugin.hy3.change_group("untab")() end'')];}
+    # Toggle focus between the tiled and floating layers (default warps cursor).
+    {_args = ["SUPER + CONTROL + f" (mkLuaInline ''function() hl.plugin.hy3.toggle_focus_layer()() end'')];}
+    # Select all the way up (outermost group) / drop all the way back to the
+    # leaf window. Shift variants of Super+a/Super+d (raise/lower one level).
+    {_args = ["SUPER + SHIFT + a" (mkLuaInline ''function() hl.plugin.hy3.change_focus("top")() end'')];}
+    {_args = ["SUPER + SHIFT + d" (mkLuaInline ''function() hl.plugin.hy3.change_focus("bottom")() end'')];}
     # Cycle tabs within the focused tab group (wraps around).
     {_args = ["SUPER + bracketright" (mkLuaInline ''function() hl.plugin.hy3.focus_tab({ direction = "r", wrap = true })() end'')];}
     {_args = ["SUPER + bracketleft" (mkLuaInline ''function() hl.plugin.hy3.focus_tab({ direction = "l", wrap = true })() end'')];}
@@ -36,6 +53,16 @@
     # Re-balance every split on the workspace back to equal (workspace scope is
     # required; group scope is a no-op in hy3 0.55 -- see ./common.nix).
     {_args = ["SUPER + SHIFT + equal" (mkLuaInline ''function() hl.plugin.hy3.equalize({ scope = "workspace" })() end'')];}
+
+    # Move a window to the NEIGHBOUR group only, without descending into its
+    # subgroups (hy3 movewindow `once`). Plain Super+Shift+hjkl (generated)
+    # moves into/out of groups directionally, diving into nested groups; this
+    # "once" variant keeps the move at the top level -- useful for shuffling a
+    # window past a group instead of getting pulled inside it.
+    {_args = ["SUPER + SHIFT + CONTROL + h" (mkLuaInline ''function() hl.plugin.hy3.move_window("l", { once = true })() end'')];}
+    {_args = ["SUPER + SHIFT + CONTROL + l" (mkLuaInline ''function() hl.plugin.hy3.move_window("r", { once = true })() end'')];}
+    {_args = ["SUPER + SHIFT + CONTROL + k" (mkLuaInline ''function() hl.plugin.hy3.move_window("u", { once = true })() end'')];}
+    {_args = ["SUPER + SHIFT + CONTROL + j" (mkLuaInline ''function() hl.plugin.hy3.move_window("d", { once = true })() end'')];}
   ];
 
   # hy3 plugin setup at startup. hy3's config keys (plugin:hy3:*) only register

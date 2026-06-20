@@ -269,7 +269,10 @@ toHypr = combo: cmd:
       mkInline "hl.dsp.exec_cmd(${luaStr (lib.removePrefix "exec " cmd)})"
 
     else if cmd == "kill" then
-      mkInline "hl.dsp.window.close()"
+      # hy3 kill_active closes the whole focused node (every window in the
+      # focused group/tab), not just one window like native window.close.
+      # Wrapped + invoked like the other hy3 verbs.
+      mkInline ''function() hl.plugin.hy3.kill_active()() end''
 
     else if cmd == "reload" then
       mkInline ''hl.dsp.exec_cmd("hyprctl reload")''
