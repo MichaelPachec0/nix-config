@@ -495,12 +495,15 @@ in {
         # Each bind performs the group then exits the submap; Escape/Return and
         # the Super+Shift+g leader also exit. Waybar's hyprland/submap module
         # surfaces "groupwith mode" while active (parity with sway's resize mode).
-        # The trailing () on group_with invokes the returned dispatcher; the
-        # second statement leaves the submap. Arg shapes (dir, layout) verified
+        # Invocation: hy3 fns return a Lua CLOSURE, so group_with(...) is called
+        # with a trailing (). The submap reset is an hl.dsp dispatcher OBJECT,
+        # which CANNOT be called directly ("dispatcher objects cannot be called
+        # directly; use hl.dispatch(dispatcher)") -- so it goes through
+        # hl.dispatch(), NOT a trailing (). Arg shapes (dir, layout) verified
         # live against the patched plugin (see hy3-groupwith memory note).
         submaps.groupwith.settings.bind = let
           gw = dir: layout:
-            ''function() hl.plugin.hy3.group_with("${dir}", "${layout}")(); hl.dsp.submap("reset")() end'';
+            ''function() hl.plugin.hy3.group_with("${dir}", "${layout}")(); hl.dispatch(hl.dsp.submap("reset")) end'';
         in [
           # Vertical (bare).
           (submapBind "h" (gw "l" "v") {})
