@@ -65,27 +65,29 @@
     {_args = ["SUPER + SHIFT + CONTROL + j" (mkLuaInline ''function() hl.plugin.hy3.move_window("d", { once = true })() end'')];}
   ];
 
-  # hy3 plugin setup at startup. hy3's config keys (plugin:hy3:*) only register
-  # once the plugin loads, and hl.config can't set them at config-parse time
-  # ("unknown config key"). So load the plugin and apply its config together via
-  # hyprctl in one start hook: `hyprctl plugin load` is synchronous, so the
-  # `;`-chained keyword commands run after it (no race). general:layout is
-  # re-asserted after load so hy3's layout takes effect. This replaces
-  # home-manager's `plugins` auto-load (dropped below). NOTE: the keyword
-  # names/values still want a runtime sanity check.
+  # hy3 plugin setup at startup. Two constraints:
+  #  - hy3's config keys (plugin:hy3:*) only register once the plugin loads, so
+  #    they can't be set at config-parse time ("unknown config key").
+  #  - `hyprctl keyword` is REJECTED under the Lua manager ("use eval"), so the
+  #    config must be applied with hl.config, not hyprctl keyword.
+  # hl.config DOES work at runtime once the keys are registered. So: load hy3
+  # (async, via hyprctl plugin load) and defer hl.config to a one-shot timer
+  # that fires after the load completes. general.layout = "hy3" is set in
+  # settings.config below, so no re-assert is needed here.
   hy3so = "${pkgs.latest.hy3}/lib/libhy3.so";
   hy3SetupHook = mkLuaInline ''
     function()
-      hl.exec_cmd(${luaStr (lib.concatStringsSep " ; " [
-    "hyprctl plugin load ${hy3so}"
-    "hyprctl keyword general:layout hy3"
-    "hyprctl keyword plugin:hy3:tabs:height 22"
-    "hyprctl keyword plugin:hy3:tabs:padding 6"
-    "hyprctl keyword plugin:hy3:tabs:render_text true"
-    "hyprctl keyword plugin:hy3:tabs:text_center true"
-    "hyprctl keyword plugin:hy3:autotile:enable true"
-    "hyprctl keyword plugin:hy3:autotile:ephemeral_groups true"
-  ])})
+      hl.exec_cmd("hyprctl plugin load ${hy3so}")
+      hl.timer(function()
+        hl.config({
+          plugin = {
+            hy3 = {
+              tabs = { height = 22, padding = 6, render_text = true, text_center = true },
+              autotile = { enable = true, ephemeral_groups = true },
+            },
+          },
+        })
+      end, { type = "oneshot", timeout = 1000 })
     end
   '';
 
