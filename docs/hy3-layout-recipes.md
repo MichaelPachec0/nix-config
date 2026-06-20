@@ -11,8 +11,13 @@ the same way -- **row -> fold -> tab-wrap** -- using `group_with` (the custom
 - `T[...]` tab group (children are tabs; one visible at a time)
 - bare letters (`a`, `b`, ...) are windows (kitty terminals here)
 
-In the tree diagrams: **boxes** = groups (labelled `H` / `V` / `T`), **circles**
-= windows, top = root, children read left-to-right in split order.
+In the **tree diagrams**: boxes = groups (`H` / `V` / `T`), circles = windows,
+top = root, children read left-to-right in split order.
+
+In the **ASCII screenshots**: plain boxes are windows; a tab group is drawn with
+a `( x | y )` strip on its top edge listing its tabs, and only the **active**
+(first-listed) tab's content is shown below it. Cycle tabs with `Super+[` /
+`Super+]`. Proportions are approximate.
 
 ## Keybinds (the alphabet)
 
@@ -76,6 +81,17 @@ graph TD
   end
 ```
 
+ASCII -- the same two units, both styles:
+
+```
+   columns  H[ T[u1], T[u2] ]          one-at-a-time  T[ u1, u2 ]
++( u1 )---------+( u2 )---------+    +( u1 | u2 )------------------+
+|               |               |    |                            |
+|     <u1>      |     <u2>      |    |            <u1>            |   Super+] -> <u2>
+|               |               |    |                            |
++---------------+---------------+    +----------------------------+
+```
+
 ---
 
 ## Basic nesting (single unit)
@@ -83,7 +99,7 @@ graph TD
 ### B-1 &nbsp; `H[a, V[V[b,c], d]]`
 
 a fills the left half; the right half is vertical with the `b`-over-`c` pair on
-top and `d` on the bottom. (This is the original `(a | ((b|c) - d))` retrofit.)
+top and `d` on the bottom. (The original `(a | ((b|c) - d))` retrofit.)
 
 ```mermaid
 graph TD
@@ -93,6 +109,18 @@ graph TD
   V1 --> d((d))
   V2 --> b((b))
   V2 --> c((c))
+```
+
+```
++---------------+---------------+
+|               |       b       |
+|               +---------------+
+|               |       c       |
+|       a       +---------------+
+|               |               |
+|               |       d       |
+|               |               |
++---------------+---------------+
 ```
 
 ```
@@ -117,6 +145,16 @@ graph TD
 ```
 
 ```
++---------------+---------------+
+|               |   b   |   c   |
+|               +-------+-------+
+|       a       |               |
+|               |       d       |
+|               |               |
++---------------+---------------+
+```
+
+```
 row: a b c d
 focus b; Super+Shift+g, Ctrl+l   -> H[b,c]
 Super+a; Super+Shift+g, l        -> V[H[b,c], d]
@@ -127,8 +165,8 @@ focus a; Super+Shift+g, Ctrl+l   -> H[a, V[H[b,c], d]]
 
 ## Tabbed compositions -- H-based
 
-Two units. Shown in **columns** form; the **one-at-a-time** form is noted under
-each (swap the top `H` for `T` and drop the per-unit `T` wrappers).
+Two units. Tree shown in **columns** form; the **one-at-a-time** form swaps the
+top `H` for `T` and drops the per-unit `T` wrappers.
 
 ### H-1 &nbsp; columns `H[ T[H[a,b]], T[H[c,d]] ]` &nbsp; / &nbsp; one-tab `T[ H[a,b], H[c,d] ]`
 
@@ -144,16 +182,12 @@ graph TD
   HC --> d((d))
 ```
 
-one-at-a-time form:
-
-```mermaid
-graph TD
-  R[T] --> HA[H]
-  R --> HC[H]
-  HA --> a((a))
-  HA --> b((b))
-  HC --> c((c))
-  HC --> d((d))
+```
+columns:                             one-at-a-time:
++( a )---------+( c )---------+      +( a | c )-------------------+
+|   a   |   b  |   c   |   d  |      |   a        |       b       |
+|       |      |       |      |      |            |               |   Super+] -> c|d
++-------+------+-------+------+      +----------------------------+
 ```
 
 ```
@@ -182,6 +216,14 @@ graph TD
   T2 --> H3[H]
   H3 --> e((e))
   H3 --> f((f))
+```
+
+```
++( a )--------------+( e )---------+
+|      |  b  |  c   |   e   |   f  |
+|  a   +-----+------+       |      |
+|      |     d      |       |      |
++------+------------+-------+------+
 ```
 
 ```
@@ -216,6 +258,15 @@ graph TD
   V1 --> h((h))
   H3 --> f((f))
   H3 --> g((g))
+```
+
+```
++( a )-----------------+( e )---------+
+|( a|b )  |( c|d )      |     |  f | g |
+|   a     |   c         |  e  +----+---+
+|         |             |     |    h   |
++---------+-------------+-----+--------+
+   left half: two tab-pairs (a,b) and (c,d) side by side
 ```
 
 ```
@@ -255,6 +306,14 @@ graph TD
 ```
 
 ```
++( a )---------+( c )---------+
+|      a       |      c       |
++--------------+--------------+
+|      b       |      d       |
++--------------+--------------+
+```
+
+```
 row: a b c d
 focus a; Super+Shift+g, l   -> V[a,b]   (u1)
 focus c; Super+Shift+g, l   -> V[c,d]   (u2)
@@ -278,6 +337,16 @@ graph TD
   T2 --> V3[V]
   V3 --> e((e))
   V3 --> f((f))
+```
+
+```
++( a )--------------+( e )---------+
+|        a          |      e       |
++------+------------+--------------+
+|  b   |            |      f       |
++------+     d      |              |
+|  c   |            |              |
++------+------------+--------------+
 ```
 
 ```
@@ -312,6 +381,17 @@ graph TD
   H1 --> h((h))
   V3 --> f((f))
   V3 --> g((g))
+```
+
+```
++( a )----------+( e )-------------+
+|( a | b )       |        e        |
+|     a          +------+----------+
++----------------+  f   |          |
+|( c | d )       +------+    h     |
+|     c          |  g   |          |
++----------------+------+----------+
+   left half: two tab-pairs (a,b) over (c,d)
 ```
 
 ```
