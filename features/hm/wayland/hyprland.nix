@@ -12,6 +12,7 @@
   lib,
   pkgs,
   generatedLuaBinds,
+  generatedSwayBinds,
   waybarLaunch,
   ...
 }: let
@@ -124,8 +125,102 @@
   submapBind = key: dispatcher: opts: {
     _args = ["${key}" (mkLuaInline dispatcher)] ++ lib.optional (opts != {}) opts;
   };
+
+  # ---- Keybind cheatsheet (Super+/) -------------------------------------
+  # Rendered with rofi (-dmenu, so it inherits the launcher theme; Esc closes,
+  # type to filter). The "Core" rows are DERIVED from generatedSwayBinds -- the
+  # same single source the binds themselves come from (common.nix) -- so the
+  # sheet can't drift; the hyprland-only hy3 binds and the submaps are curated
+  # below. Pure reference: selecting a row does nothing. chDescribe mirrors
+  # common.nix's toLuaAction classification, humanised for display.
+  chPrettyMods = {
+    Mod4 = "Super";
+    shift = "Shift"; Shift = "Shift"; SHIFT = "Shift";
+    alt = "Alt"; Alt = "Alt"; ALT = "Alt";
+    control = "Ctrl"; Control = "Ctrl"; CONTROL = "Ctrl"; ctrl = "Ctrl"; Ctrl = "Ctrl";
+  };
+  chPrettyKeys = {minus = "-"; equal = "="; bracketleft = "["; bracketright = "]"; slash = "/";};
+  chCombo = combo: let
+    parts = lib.splitString "+" combo;
+    key = lib.last parts;
+    mods = lib.init parts;
+  in
+    lib.concatStringsSep "+" ((map (m: chPrettyMods.${m} or m) mods) ++ [(chPrettyKeys.${key} or key)]);
+  chPad = n: s: let len = lib.stringLength s; in s + lib.concatStrings (lib.genList (_: " ") (if n > len then n - len else 0));
+  chRow = key: desc: "${chPad 24 key}${desc}";
+  chDescribe = cmd:
+    if lib.hasInfix "grim" cmd then "Screenshot region"
+    else if lib.hasInfix "swaynag" cmd then "Exit session (prompt)"
+    else if lib.hasPrefix "exec " cmd
+    then (let toks = lib.splitString " " (lib.removePrefix "exec " cmd);
+          in builtins.baseNameOf (builtins.head toks)
+             + lib.optionalString (builtins.length toks > 1) " ${lib.concatStringsSep " " (builtins.tail toks)}")
+    else if cmd == "kill" then "Close focused (group-aware)"
+    else if cmd == "reload" then "Reload config"
+    else if cmd == "focus parent" then "Focus parent group"
+    else if cmd == "focus child" then "Focus child node"
+    else if lib.hasPrefix "focus " cmd then "Focus ${lib.removePrefix "focus " cmd}"
+    else if lib.hasPrefix "workspace number " cmd then "Workspace ${lib.removePrefix "workspace number " cmd}"
+    else if lib.hasPrefix "move container to workspace number " cmd then "Move to workspace ${lib.removePrefix "move container to workspace number " cmd}"
+    else if cmd == "move scratchpad" then "Move to scratchpad"
+    else if lib.hasPrefix "move " cmd then "Move ${lib.removePrefix "move " cmd}"
+    else if cmd == "floating toggle" then "Toggle floating"
+    else if cmd == "fullscreen toggle" then "Toggle fullscreen"
+    else if cmd == "scratchpad show" then "Show scratchpad"
+    else if cmd == "splith" then "Split: new horizontal group"
+    else if cmd == "splitv" then "Split: new vertical group"
+    else if cmd == "layout toggle split" then "Toggle split orientation"
+    else if cmd == "layout stacking" then "Tabbed group"
+    else if cmd == "layout tabbed" then "Tabbed group"
+    else if cmd == "mode 'resize'" then "Resize mode"
+    else cmd;
+  chCoreRows = lib.mapAttrsToList (k: v: chRow (chCombo k) (chDescribe v)) generatedSwayBinds;
+  cheatText = lib.concatStringsSep "\n" (
+    ["KEYBINDS   --   type to filter, Esc to close" "" "-- Core (window manager) --"]
+    ++ chCoreRows
+    ++ [
+      ""
+      "-- hy3 groups / focus --"
+      (chRow "Super+g" "Toggle tab <-> split")
+      (chRow "Super+Shift+b / +v" "Make h / v group (toggle)")
+      (chRow "Super+Shift+x / +z" "Make tab group (toggle)")
+      (chRow "Super+Shift+t / +u" "Force tab / untab")
+      (chRow "Super+a / Super+d" "Focus raise / lower a level")
+      (chRow "Super+Shift+a / +d" "Focus outermost / leaf")
+      (chRow "Super+e / Shift+e" "Expand focused / reset")
+      (chRow "Super+[ / Super+]" "Cycle tab left / right")
+      (chRow "Super+Ctrl+f" "Toggle tiled/floating focus")
+      (chRow "Super+Shift+=" "Equalize workspace splits")
+      (chRow "Super+Shift+Ctrl+hjkl" "Move past neighbour (once)")
+      ""
+      "-- group_with submap (Super+Shift+g) --"
+      (chRow "  hjkl" "Group w/ neighbour -> vertical")
+      (chRow "  Shift+hjkl" "Group w/ neighbour -> tabbed")
+      (chRow "  Ctrl+hjkl" "Group w/ neighbour -> horizontal")
+      (chRow "  Esc / Return" "Cancel")
+      ""
+      "-- resize submap (Super+r) --"
+      (chRow "  hjkl" "Resize")
+      (chRow "  Shift+hjkl" "Nudge / move")
+      (chRow "  r" "Equalize workspace")
+      (chRow "  Esc / Return" "Exit")
+      ""
+      "-- help --"
+      (chRow "Super+/" "This cheatsheet")
+    ]
+  );
+  cheatFile = pkgs.writeText "keybinds-cheatsheet.txt" cheatText;
+  # Bare `rofi` (not pkgs.rofi) so it uses the same themed rofi as `menu`.
+  cheatsheetScript = pkgs.writeShellScriptBin "keybind-cheatsheet" ''
+    exec rofi -dmenu -i -no-custom -p "keybinds" -mesg "Esc to close" < ${cheatFile}
+  '';
+  cheatBind = {_args = ["SUPER + slash" (mkLuaInline ''hl.dsp.exec_cmd("${cheatsheetScript}/bin/keybind-cheatsheet")'')];};
 in {
   config = {
+    # `keybind-cheatsheet` on PATH so it's runnable from a terminal too (the
+    # Super+/ bind invokes it by store path regardless).
+    home.packages = [cheatsheetScript];
+
     wayland = {
       windowManager.hyprland = {
         enable = true;
@@ -288,8 +383,9 @@ in {
             }
           ];
 
-          # hl.bind(...) -- generated from swayKeybindings (toLua) + hy3 extras.
-          bind = generatedLuaBinds ++ hy3ExtraBinds;
+          # hl.bind(...) -- generated from swayKeybindings (toLua) + hy3 extras
+          # + the Super+/ cheatsheet bind.
+          bind = generatedLuaBinds ++ hy3ExtraBinds ++ [cheatBind];
 
           # hl.on("hyprland.start", function() ... end). hy3 setup runs first
           # (load + config), then the autostart apps.
