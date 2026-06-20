@@ -420,7 +420,14 @@
 
       sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
       hy3 = final.hyprlandPlugins.hy3.overrideAttrs (old: {
-        patches = (old.patches or []) ++ [../overlays/0001-fix-make-root-node-layout-truly-immutable-in-setLayo.patch];
+        patches =
+          (old.patches or [])
+          ++ [
+            ../overlays/0001-fix-make-root-node-layout-truly-immutable-in-setLayo.patch
+            # hy3:groupwith / hl.plugin.hy3.group_with -- nest the focused node
+            # with its neighbour into a new group of a chosen orientation.
+            ../overlays/0002-feat-hy3-groupwith-dispatcher.patch
+          ];
       });
       firefox-devedition-bin = inputs.firefox.packages.${prev.stdenv.hostPlatform.system}.firefox-devedition-bin.override {
         extraPolicies = {

@@ -1,0 +1,146 @@
+diff --git a/src/Hy3Layout.cpp b/src/Hy3Layout.cpp
+index 9dbbadc..f32fbf6 100644
+--- a/src/Hy3Layout.cpp
++++ b/src/Hy3Layout.cpp
+@@ -700,6 +700,51 @@ void Hy3Layout::makeGroupOn(
+ 	this->recalcGeometry();
+ }
+ 
++void Hy3Layout::groupWithOnWorkspace(
++    const CWorkspace* workspace,
++    ShiftDirection direction,
++    Hy3GroupLayout layout
++) {
++	auto* node = this->getWorkspaceFocusedNode(workspace);
++	if (node == nullptr) return;
++	this->groupWith(node->getPlacementActor(), direction, layout);
++}
++
++// Group the focused node together with its immediate sibling in `direction`
++// into a NEW group of `layout`, adding one level of nesting. Unlike makeGroup
++// (which wraps a single node) or movewindow (which moves a node into an
++// existing group, flattening when orientations match), this creates a fresh
++// parent containing exactly the two nodes -- e.g. with (a | (b|c)) focused on a
++// neighbour `d`, `groupwith l v` yields (a | ((b|c) - d)).
++void Hy3Layout::groupWith(Hy3Node& node, ShiftDirection direction, Hy3GroupLayout layout) {
++	node.assertNotRoot();
++
++	// The sibling we merge with must be adjacent at the same tree level.
++	auto* sibling = node.getImmediateSibling(direction);
++	if (sibling == nullptr) return;
++
++	// Wrap the sibling in a fresh group of the requested layout; the new group
++	// takes the sibling's slot in the (shared) parent. node stays put for now.
++	sibling->wrap(layout, GroupEphemeralityOption::Standard);
++	auto* group = sibling->parent.get();
++	if (group == nullptr || !group->is_group()) return;
++
++	// Detach the focused node from the shared parent and insert it into the new
++	// group on the correct side of the sibling.
++	auto node_up = node.parent->as_group().extractChild(node);
++	if (!node_up) return;
++
++	auto& dst = group->as_group();
++	bool forward = direction == ShiftDirection::Right || direction == ShiftDirection::Down;
++	if (forward) dst.insertChild(dst.children.begin(), std::move(node_up));
++	else dst.insertChild(std::move(node_up));
++
++	group->collapseParents(CollapsePolicy::InvalidOnly);
++	this->recalcGeometry();
++	node.focus(false, Desktop::FOCUS_REASON_KEYBIND);
++	this->recalcGeometry();
++}
++
+ void Hy3Layout::makeOppositeGroupOn(Hy3Node& node, GroupEphemeralityOption ephemeral) {
+ 	node.assertNotRoot();
+ 
+diff --git a/src/Hy3Layout.hpp b/src/Hy3Layout.hpp
+index 8506995..bbe5f38 100644
+--- a/src/Hy3Layout.hpp
++++ b/src/Hy3Layout.hpp
+@@ -132,6 +132,7 @@ public:
+ 	void toggleTabGroupOnWorkspace(const CWorkspace* workspace);
+ 	void changeGroupToOppositeOnWorkspace(const CWorkspace* workspace);
+ 	void changeGroupEphemeralityOnWorkspace(const CWorkspace* workspace, bool ephemeral);
++	void groupWithOnWorkspace(const CWorkspace* workspace, ShiftDirection, Hy3GroupLayout);
+ 	void makeGroupOn(Hy3Node&, Hy3GroupLayout, GroupEphemeralityOption);
+ 	void makeOppositeGroupOn(Hy3Node&, GroupEphemeralityOption);
+ 	void changeGroupOn(Hy3Node&, Hy3GroupLayout);
+@@ -139,6 +140,7 @@ public:
+ 	void toggleTabGroupOn(Hy3Node&);
+ 	void changeGroupToOppositeOn(Hy3Node&);
+ 	void changeGroupEphemeralityOn(Hy3Node&, bool ephemeral);
++	void groupWith(Hy3Node&, ShiftDirection, Hy3GroupLayout);
+ 	void shiftNode(Hy3Node&, ShiftDirection, bool once, bool visible);
+ 	void shiftWindow(const CWorkspace* workspace, ShiftDirection, bool once, bool visible);
+ 	void shiftFocus(const CWorkspace* workspace, ShiftDirection, bool visible, bool warp);
+diff --git a/src/dispatchers.cpp b/src/dispatchers.cpp
+index 1bf65e9..8238068 100644
+--- a/src/dispatchers.cpp
++++ b/src/dispatchers.cpp
+@@ -489,6 +489,49 @@ static SDispatchResult dispatch_movewindow(std::string value) {
+ 	return moveWindow(*shift, once, visible);
+ }
+ 
++static SDispatchResult groupWith(ShiftDirection direction, Hy3GroupLayout layout) {
++	auto* hy3 = hy3InstanceForAction();
++	if (!hy3) return SDispatchResult {};
++
++	hy3->groupWithOnWorkspace(hy3->workspace().get(), direction, layout);
++	return SDispatchResult {};
++}
++
++static int luaGroupWith(lua_State* L) {
++	static constexpr const char* FN = "hl.plugin.hy3.group_with";
++	luaCheckArgCount(L, FN, 2, 2);
++
++	auto direction = luaShiftArg(L, 1, FN);
++	auto value = luaStringArg(L, 2, FN, "layout");
++	auto action = parseMakeGroupArg(value);
++	if (!action || action->opposite)
++		return luaL_error(L, "%s: invalid layout '%s' (expected h/v/tab)", FN, value.c_str());
++
++	auto dspGroupWith = [](lua_State* L) -> int {
++		auto direction = static_cast<ShiftDirection>(lua_tointeger(L, lua_upvalueindex(1)));
++		auto layout = static_cast<Hy3GroupLayout>(lua_tointeger(L, lua_upvalueindex(2)));
++		groupWith(direction, layout);
++		return 0;
++	};
++
++	lua_pushinteger(L, static_cast<lua_Integer>(direction));
++	lua_pushinteger(L, static_cast<lua_Integer>(action->layout));
++	lua_pushcclosure(L, dspGroupWith, 2);
++	return 1;
++}
++
++static SDispatchResult dispatch_groupwith(std::string value) {
++	auto args = CVarList(value);
++
++	auto direction = parseShiftArg(args[0]);
++	if (!direction) return SDispatchResult {};
++
++	auto action = parseMakeGroupArg(args[1]);
++	if (!action || action->opposite) return SDispatchResult {};
++
++	return groupWith(*direction, action->layout);
++}
++
+ static SDispatchResult moveToWorkspace(std::string workspace, bool follow, std::optional<bool> warp_override) {
+ 	auto* hy3 = hy3InstanceForAction(true);
+ 	if (!hy3) return SDispatchResult {};
+@@ -949,6 +992,7 @@ static SDispatchResult dispatch_debug(std::string arg) {
+ 
+ static void registerLuaDispatchers() {
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "make_group", luaMakeGroup);
++	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "group_with", luaGroupWith);
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "change_group", luaChangeGroup);
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "set_ephemeral", luaSetEphemeral);
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "move_focus", luaMoveFocus);
+@@ -968,6 +1012,7 @@ static void registerLuaDispatchers() {
+ 
+ void registerDispatchers() {
+ 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:makegroup", dispatch_makegroup);
++	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:groupwith", dispatch_groupwith);
+ 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:changegroup", dispatch_changegroup);
+ 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:setephemeral", dispatch_setephemeral);
+ 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:movefocus", dispatch_movefocus);
