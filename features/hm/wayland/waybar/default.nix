@@ -109,6 +109,13 @@ in {
             "sway/window"
             "hyprland/window"
           ];
+          # Active-mode indicator (sway's resize mode / Hyprland submaps like the
+          # group_with submap). Only one renders per compositor; both are hidden
+          # when no mode/submap is active.
+          modules-center = [
+            "sway/mode"
+            "hyprland/submap"
+          ];
           modules-right = [
             "mpris"
             "custom/yubikey"
@@ -136,6 +143,15 @@ in {
           };
           "sway/window" = windowModule;
           "hyprland/window" = windowModule;
+          # "{}" is the mode/submap name -> e.g. "resize mode", "groupwith mode".
+          "sway/mode" = {
+            format = "{} mode";
+            tooltip = false;
+          };
+          "hyprland/submap" = {
+            format = "{} mode";
+            tooltip = false;
+          };
           idle_inhibitor = {
             format = "{icon}";
             format-icons = {

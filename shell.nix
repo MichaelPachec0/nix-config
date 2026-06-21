@@ -21,7 +21,7 @@ in
     ...
   }: let
     sopsLock = file.nodes."sops-nix".locked;
-    sops-nix = builtins.fetchTarball {
+    sops-nix = fetchTarball {
       url = "https://github.com/Mic92/sops-nix/archive/${sopsLock.rev}.tar.gz";
       sha256 = sopsLock.narHash;
     };
@@ -40,6 +40,7 @@ in
           age
           (pkgs.callPackage sops-nix {}).sops-import-keys-hook
           nixos-anywhere
+          python3
         ]
         ++ (with pkgs; [statix nil nixpkgs-fmt vulnix haskellPackages.dhall-nix niv lorri]);
       # imports all files ending in .asc/.gpg

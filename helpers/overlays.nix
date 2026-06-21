@@ -413,18 +413,26 @@
   #     });
   # };
   latest = final: prev: let
-    sway = final.nw.sway-beta;
-    hyprland = inputs.hyprland.packages.${prev.stdenv.hostPlatform.system}.default;
-    # waybar = prev.waybar.override {inherit sway hyprland;};
-    waybar = prev.waybar;
   in {
-    latest.sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
-    latest.hyprland = inputs.hyprland.packages.${prev.stdenv.hostPlatform.system}.default;
-    latest.hy3 = inputs.hy3.packages.${prev.stdenv.hostPlatform.system}.hy3;
-    latest.waybar = waybar;
-    latest.firefox-devedition-bin = inputs.firefox.packages.${prev.stdenv.hostPlatform.system}.firefox-devedition-bin.override {
-      extraPolicies = {
-        DisableTelemetry = true;
+    latest = {
+      inherit (final) hyprland;
+      inherit (prev) waybar;
+
+      sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
+      hy3 = final.hyprlandPlugins.hy3.overrideAttrs (old: {
+        patches =
+          (old.patches or [])
+          ++ [
+            ../overlays/0001-fix-make-root-node-layout-truly-immutable-in-setLayo.patch
+            # hy3:groupwith / hl.plugin.hy3.group_with -- nest the focused node
+            # with its neighbour into a new group of a chosen orientation.
+            ../overlays/0002-feat-hy3-groupwith-dispatcher.patch
+          ];
+      });
+      firefox-devedition-bin = inputs.firefox.packages.${prev.stdenv.hostPlatform.system}.firefox-devedition-bin.override {
+        extraPolicies = {
+          DisableTelemetry = true;
+        };
       };
     };
   };
@@ -506,26 +514,25 @@ in {
     ];
     homeManager = hm;
     homeManagerMinmal = mkOverlayModules base;
-    homeManagerDesktop =
-      [
-        (mkOverlayModules
-          (
-            base
-            ++ baseDesktop
-            ++ vimPluginsOverlayList
-            ++ [
-              powertop-unstable
-              # TODO: neovim nightly has changed how neotest works.
-              # ...ry.nvim-scm-1-unstable-scm-1/lua/luassert/assertions.lua:115: the 'equals' function requires a minimum of 2 arguments, got: 1.3
-              # switching over to stable neovim
-              #
-              # inputs.neovim.overlays.default
-              powertop-unstable
-              inputs.nix-vscode-extensions.overlays.default
-            ]
-            ++ lspServers
-          ))
-      ];
+    homeManagerDesktop = [
+      (mkOverlayModules
+        (
+          base
+          ++ baseDesktop
+          ++ vimPluginsOverlayList
+          ++ [
+            powertop-unstable
+            # TODO: neovim nightly has changed how neotest works.
+            # ...ry.nvim-scm-1-unstable-scm-1/lua/luassert/assertions.lua:115: the 'equals' function requires a minimum of 2 arguments, got: 1.3
+            # switching over to stable neovim
+            #
+            # inputs.neovim.overlays.default
+            powertop-unstable
+            inputs.nix-vscode-extensions.overlays.default
+          ]
+          ++ lspServers
+        ))
+    ];
   };
   unstable = let
     hm = inputs.home-manager.nixosModules.home-manager {
@@ -566,23 +573,22 @@ in {
       ];
     homeManagerModule = hm;
     homeManagerMinmal = mkOverlayModules base;
-    homeManagerDesktop =
-      [
-        (mkOverlayModules
-          (
-            base
-            ++ baseDesktop
-            ++ vimPluginsOverlayList
-            ++ [
-              powertop-unstable
-              latest
-              # inputs.neovim.overlays.default
-              powertop-unstable
-              inputs.nix-vscode-extensions.overlays.default
-            ]
-            ++ lspServers
-          ))
-      ];
+    homeManagerDesktop = [
+      (mkOverlayModules
+        (
+          base
+          ++ baseDesktop
+          ++ vimPluginsOverlayList
+          ++ [
+            powertop-unstable
+            latest
+            # inputs.neovim.overlays.default
+            powertop-unstable
+            inputs.nix-vscode-extensions.overlays.default
+          ]
+          ++ lspServers
+        ))
+    ];
     # nixosDesktop =
   };
   # nixosMinimal = nixos;
