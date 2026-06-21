@@ -60,12 +60,18 @@ or as **one tab group** (one unit full-screen at a time, switch with
 so "one tab" is achieved by wrapping the units in a tab group that becomes the
 root's child -- same visual effect.
 
-Given two finished units `u1`, `u2` sitting as root siblings:
+Given two finished units `u1`, `u2` sitting as root siblings, apply **exactly
+ONE** of these finishes -- they are alternatives, NOT sequential steps. (Doing
+columns *then* one-tab is the classic trap: the one-tab fold then either does
+**nothing** -- the columns-wrapped unit `T[H[a,b]]` has no sibling for
+`group_with` to grab, so it silently bails -- or, if you raise an extra level,
+builds **nested double tab-bars** `T[ T[H[a,b]], T[H[c,d]] ]`. If a finish seems
+to do nothing or looks wrong, doing both is almost always the cause.)
 
-- **Columns** -> wrap each: `focus u1; Super+a; Super+x`, then same for `u2`.
-  Result `H[ T[u1], T[u2] ]`.
-- **One at a time** -> tab them together: `focus u1; Super+a (until the WHOLE
-  unit is selected); Super+Shift+g, Shift+l`. Result `T[ u1, u2 ]`.
+- **Columns (option A)** -> wrap each: `focus u1; Super+a; Super+x`, then same
+  for `u2`. Result `H[ T[u1], T[u2] ]`.
+- **One at a time (option B)** -> tab them together: `focus u1; Super+a (until
+  the WHOLE unit is selected); Super+Shift+g, Shift+l`. Result `T[ u1, u2 ]`.
 
 ```mermaid
 graph TD
@@ -202,8 +208,8 @@ columns:                             one-at-a-time:
 row: a b c d
 focus a; Super+Shift+g, Ctrl+l   -> H[a,b]   (u1)
 focus c; Super+Shift+g, Ctrl+l   -> H[c,d]   (u2)
-finish columns : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus c; Super+a; Super+x
-finish one-tab : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
+finish as COLUMNS (option A) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus c; Super+a; Super+x
+finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ### H-2 &nbsp; columns `H[ T[H[a, V[H[b,c], d]]], T[H[e,f]] ]` &nbsp; / &nbsp; one-tab `T[ H[a, V[H[b,c], d]], H[e,f] ]`
@@ -240,8 +246,8 @@ focus b; Super+Shift+g, Ctrl+l   -> H[b,c]
 Super+a; Super+Shift+g, l        -> V[H[b,c], d]
 focus a; Super+Shift+g, Ctrl+l   -> H[a, V[H[b,c], d]]   (u1)
 focus e; Super+Shift+g, Ctrl+l   -> H[e,f]               (u2)
-finish columns : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
-finish one-tab : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
+finish as COLUMNS (option A) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
+finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ### H-3 &nbsp; columns `H[ T[H[T[a,b], T[c,d]]], T[H[e, V[H[f,g], h]]] ]`
@@ -285,8 +291,8 @@ focus a; Super+a; Super+Shift+g, Ctrl+l-> H[T[a,b], T[c,d]]   (u1)
 focus f; Super+Shift+g, Ctrl+l         -> H[f,g]
 Super+a; Super+Shift+g, l              -> V[H[f,g], h]
 focus e; Super+Shift+g, Ctrl+l         -> H[e, V[H[f,g], h]]  (u2)
-finish columns : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
-finish one-tab : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+Shift+g, Shift+l
+finish as COLUMNS (option A) : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
+finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 (u1 is two levels deep, so it takes **two** `Super+a` to select the whole unit.)
@@ -325,8 +331,8 @@ graph TD
 row: a b c d
 focus a; Super+Shift+g, l   -> V[a,b]   (u1)
 focus c; Super+Shift+g, l   -> V[c,d]   (u2)
-finish columns : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus c; Super+a; Super+x
-finish one-tab : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
+finish as COLUMNS (option A) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus c; Super+a; Super+x
+finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ### V-2 &nbsp; columns `H[ T[V[a, H[V[b,c], d]]], T[V[e,f]] ]` &nbsp; / &nbsp; one-tab `T[ V[a, H[V[b,c], d]], V[e,f] ]`
@@ -363,8 +369,8 @@ focus b; Super+Shift+g, l        -> V[b,c]
 Super+a; Super+Shift+g, Ctrl+l   -> H[V[b,c], d]
 focus a; Super+Shift+g, l        -> V[a, H[V[b,c], d]]   (u1)
 focus e; Super+Shift+g, l        -> V[e,f]               (u2)
-finish columns : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
-finish one-tab : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
+finish as COLUMNS (option A) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
+finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ### V-3 &nbsp; columns `H[ T[V[T[a,b], T[c,d]]], T[V[e, H[V[f,g], h]]] ]`
@@ -410,8 +416,8 @@ focus a; Super+a; Super+Shift+g, l     -> V[T[a,b], T[c,d]]   (u1)
 focus f; Super+Shift+g, l              -> V[f,g]
 Super+a; Super+Shift+g, Ctrl+l         -> H[V[f,g], h]
 focus e; Super+Shift+g, l              -> V[e, H[V[f,g], h]]  (u2)
-finish columns : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
-finish one-tab : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+Shift+g, Shift+l
+finish as COLUMNS (option A) : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
+finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ---

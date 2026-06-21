@@ -215,11 +215,33 @@
     exec rofi -dmenu -i -no-custom -p "keybinds" -mesg "Esc to close" < ${cheatFile}
   '';
   cheatBind = {_args = ["SUPER + slash" (mkLuaInline ''hl.dsp.exec_cmd("${cheatsheetScript}/bin/keybind-cheatsheet")'')];};
+
+  # ---- hy3-project: open a project layout on the active workspace ----------
+  # Builds T[H[a,{T[b],T[c]}]] -- two kitty shells (cwd=PATH) + a browser; a
+  # re-run appends another unit as a sibling root tab (generalises to N).
+  # writeShellApplication enforces runtimeInputs on PATH, sets -euo pipefail,
+  # and runs shellcheck at build. The standalone hy3-project.sh is read in
+  # verbatim (shebang stripped; its bash ${...} are data, not Nix interpolation)
+  # and the default browser is injected as an absolute path. runtimeInputs pin
+  # only what the script itself runs; kitty/rofi/the browser are launched by the
+  # compositor/session (rofi stays the themed one resolved from PATH, and
+  # --browser overrides the injected default). See
+  # docs/superpowers/plans/2026-06-21-hy3-project-dispatcher-notes.md.
+  hy3ProjectScript = pkgs.writeShellApplication {
+    name = "hy3-project";
+    runtimeInputs = [pkgs.jq pkgs.coreutils pkgs.findutils pkgs.latest.hyprland];
+    text = ''
+      HY3_PROJECT_DEFAULT_BROWSER=${lib.escapeShellArg firefox}
+      export HY3_PROJECT_DEFAULT_BROWSER
+      ${lib.concatStringsSep "\n" (lib.tail (lib.splitString "\n" (builtins.readFile ./hy3-project.sh)))}
+    '';
+  };
+  hy3ProjectBind = {_args = ["SUPER + SHIFT + P" (mkLuaInline ''hl.dsp.exec_cmd("${hy3ProjectScript}/bin/hy3-project --pick")'')];};
 in {
   config = {
     # `keybind-cheatsheet` on PATH so it's runnable from a terminal too (the
     # Super+/ bind invokes it by store path regardless).
-    home.packages = [cheatsheetScript];
+    home.packages = [cheatsheetScript hy3ProjectScript];
 
     wayland = {
       windowManager.hyprland = {
@@ -385,7 +407,7 @@ in {
 
           # hl.bind(...) -- generated from swayKeybindings (toLua) + hy3 extras
           # + the Super+/ cheatsheet bind.
-          bind = generatedLuaBinds ++ hy3ExtraBinds ++ [cheatBind];
+          bind = generatedLuaBinds ++ hy3ExtraBinds ++ [cheatBind hy3ProjectBind];
 
           # hl.on("hyprland.start", function() ... end). hy3 setup runs first
           # (load + config), then the autostart apps.
