@@ -141,6 +141,31 @@ left_visible() {
      | min_by(.at[0]) | (.address // "")'
 }
 
+# Exact state from the hy3 tree (needs the dump_tree dispatcher, overlays/0003).
+# The root tab container is a child of root with layout "tabs"; anything else at
+# root (a window, or a splith/splitv group) is a loose, untabbed node.
+HY3_STATE_FILE="${XDG_RUNTIME_DIR:-/tmp}/hy3-project-state.json"
+read_tree() {  # returns 0 and populates HY3_STATE_FILE iff dump_tree is available
+  rm -f "$HY3_STATE_FILE" 2>/dev/null || true
+  hyprctl eval "hl.plugin.hy3.dump_tree(\"$HY3_STATE_FILE\")()" >/dev/null 2>&1 || true
+  [ -s "$HY3_STATE_FILE" ] && jq -e . "$HY3_STATE_FILE" >/dev/null 2>&1
+}
+# echo one of: empty | loose | clean | mixed | unknown (unknown -> caller falls
+# back to the count heuristic, so the script still works without the patch).
+ws_state() {
+  read_tree || { echo unknown; return; }
+  jq -r '
+    if .root == null then "empty"
+    else
+      ([.root.children[] | select(.node=="group" and .layout=="tabs")] | length) as $t
+      | ([.root.children[] | select((.node=="window") or (.node=="group" and .layout!="tabs"))] | length) as $l
+      | if   ($t>0 and $l>0) then "mixed"
+        elif ($t>0)          then "clean"
+        elif ($l>0)          then "loose"
+        else "empty" end
+    end' "$HY3_STATE_FILE" 2>/dev/null || echo unknown
+}
+
 # ---- build / append -------------------------------------------------------
 
 # build_unit <dir> <browser-cmd> : T[ H[a,{b,c}] ] on an EMPTY active ws
@@ -219,33 +244,45 @@ main() {
     PATH_ARG="$picked"
   fi
 
-  local dir browser tiled units
+  local dir browser state tiled units
   dir="$(resolve_path)"
   browser="$(resolve_browser)"
   WS="$(active_ws)"
+  state="$(ws_state)"
   tiled="$(count_tiled)"; units="$(count_units)"
-  log "=== run: dir=$dir browser='$browser' ws=$WS tiled=$tiled units=$units pick=$DO_PICK"
+  log "=== run: dir=$dir browser='$browser' ws=$WS state=$state tiled=$tiled units=$units pick=$DO_PICK"
   log_tree before
 
-  if [ "$tiled" -eq 0 ]; then
-    log "branch: build (empty workspace)"
-    build_unit "$dir" "$browser"
-  else
-    # Loose windows (nothing of ours yet) -> wrap them into their own root tab,
-    # then append the new unit as a separate root tab.
-    #
-    # KNOWN GAP (mixed state): a workspace holding BOTH our units AND loose
-    # windows at root is not normalised (units>0 skips it). The planned robust
-    # fix reads the exact root structure via the hy3 dump_tree dispatcher
-    # (overlays/0003) and builds the unit on a scratch workspace, then moves it
-    # in as a root tab -- see the design doc and the dispatcher notes.
-    if [ "$units" -eq 0 ]; then
-      log "branch: normalize loose windows -> root tab"
+  # Branch on the exact tree state. Manipulation (build/normalize/append) is the
+  # verified path; the tree only decides which to run. `unknown` (dump_tree
+  # missing) falls back to the count heuristic so the script still works.
+  case "$state" in
+    empty)
+      log "branch: build (empty)"
+      build_unit "$dir" "$browser" ;;
+    loose)
+      log "branch: normalize loose windows -> root tab, then append"
       normalize_root_tab
-    fi
-    log "branch: append unit"
-    append_unit "$dir" "$browser"
-  fi
+      append_unit "$dir" "$browser" ;;
+    clean)
+      log "branch: append (existing root tab)"
+      append_unit "$dir" "$browser" ;;
+    mixed)
+      # Rare: loose window(s) sit at root beside the tab container (only via
+      # contrived spawns; normal windows auto-tile into the structure). hy3's
+      # autotile reflow makes in-place gathering unreliable, so append the unit
+      # to the tab container and leave the loose window(s) where they are.
+      log "branch: MIXED -- append unit; loose root windows left in place (see notes)"
+      append_unit "$dir" "$browser" ;;
+    *)
+      log "branch: fallback count-heuristic (no dump_tree) tiled=$tiled units=$units"
+      if [ "$tiled" -eq 0 ]; then
+        build_unit "$dir" "$browser"
+      else
+        if [ "$units" -eq 0 ]; then normalize_root_tab; fi
+        append_unit "$dir" "$browser"
+      fi ;;
+  esac
   log_tree after
   log "done"
 }
