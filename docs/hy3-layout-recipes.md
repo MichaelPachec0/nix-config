@@ -92,6 +92,14 @@ ASCII -- the same two units, both styles:
 +---------------+---------------+    +----------------------------+
 ```
 
+> **The `Super+a` (raise) before either finish is mandatory** -- it is the step
+> people skip. It selects the whole unit/group so the fold applies to the
+> *group*, not the focused window. Skip it and `Super+x` / `group_with` act on
+> the single focused window: you get one pair tabbed (`H[ T[a,b], H[c,d] ]`)
+> instead of the two units (`T[ H[a,b], H[c,d] ]`). For a unit nested N levels
+> deep, raise N times -- watch the selection highlight grow to cover the whole
+> unit before you fold.
+
 ---
 
 ## Basic nesting (single unit)
@@ -194,8 +202,8 @@ columns:                             one-at-a-time:
 row: a b c d
 focus a; Super+Shift+g, Ctrl+l   -> H[a,b]   (u1)
 focus c; Super+Shift+g, Ctrl+l   -> H[c,d]   (u2)
-finish columns : focus a; Super+a; Super+x   then   focus c; Super+a; Super+x
-finish one-tab : focus a; Super+a; Super+Shift+g, Shift+l
+finish columns : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus c; Super+a; Super+x
+finish one-tab : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ### H-2 &nbsp; columns `H[ T[H[a, V[H[b,c], d]]], T[H[e,f]] ]` &nbsp; / &nbsp; one-tab `T[ H[a, V[H[b,c], d]], H[e,f] ]`
@@ -232,8 +240,8 @@ focus b; Super+Shift+g, Ctrl+l   -> H[b,c]
 Super+a; Super+Shift+g, l        -> V[H[b,c], d]
 focus a; Super+Shift+g, Ctrl+l   -> H[a, V[H[b,c], d]]   (u1)
 focus e; Super+Shift+g, Ctrl+l   -> H[e,f]               (u2)
-finish columns : focus a; Super+a; Super+x   then   focus e; Super+a; Super+x
-finish one-tab : focus a; Super+a; Super+Shift+g, Shift+l
+finish columns : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
+finish one-tab : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ### H-3 &nbsp; columns `H[ T[H[T[a,b], T[c,d]]], T[H[e, V[H[f,g], h]]] ]`
@@ -277,8 +285,8 @@ focus a; Super+a; Super+Shift+g, Ctrl+l-> H[T[a,b], T[c,d]]   (u1)
 focus f; Super+Shift+g, Ctrl+l         -> H[f,g]
 Super+a; Super+Shift+g, l              -> V[H[f,g], h]
 focus e; Super+Shift+g, Ctrl+l         -> H[e, V[H[f,g], h]]  (u2)
-finish columns : focus a; Super+a Super+a; Super+x   then   focus e; Super+a; Super+x
-finish one-tab : focus a; Super+a Super+a; Super+Shift+g, Shift+l
+finish columns : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
+finish one-tab : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 (u1 is two levels deep, so it takes **two** `Super+a` to select the whole unit.)
@@ -317,8 +325,8 @@ graph TD
 row: a b c d
 focus a; Super+Shift+g, l   -> V[a,b]   (u1)
 focus c; Super+Shift+g, l   -> V[c,d]   (u2)
-finish columns : focus a; Super+a; Super+x   then   focus c; Super+a; Super+x
-finish one-tab : focus a; Super+a; Super+Shift+g, Shift+l
+finish columns : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus c; Super+a; Super+x
+finish one-tab : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ### V-2 &nbsp; columns `H[ T[V[a, H[V[b,c], d]]], T[V[e,f]] ]` &nbsp; / &nbsp; one-tab `T[ V[a, H[V[b,c], d]], V[e,f] ]`
@@ -355,8 +363,8 @@ focus b; Super+Shift+g, l        -> V[b,c]
 Super+a; Super+Shift+g, Ctrl+l   -> H[V[b,c], d]
 focus a; Super+Shift+g, l        -> V[a, H[V[b,c], d]]   (u1)
 focus e; Super+Shift+g, l        -> V[e,f]               (u2)
-finish columns : focus a; Super+a; Super+x   then   focus e; Super+a; Super+x
-finish one-tab : focus a; Super+a; Super+Shift+g, Shift+l
+finish columns : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
+finish one-tab : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ### V-3 &nbsp; columns `H[ T[V[T[a,b], T[c,d]]], T[V[e, H[V[f,g], h]]] ]`
@@ -402,8 +410,8 @@ focus a; Super+a; Super+Shift+g, l     -> V[T[a,b], T[c,d]]   (u1)
 focus f; Super+Shift+g, l              -> V[f,g]
 Super+a; Super+Shift+g, Ctrl+l         -> H[V[f,g], h]
 focus e; Super+Shift+g, l              -> V[e, H[V[f,g], h]]  (u2)
-finish columns : focus a; Super+a Super+a; Super+x   then   focus e; Super+a; Super+x
-finish one-tab : focus a; Super+a Super+a; Super+Shift+g, Shift+l
+finish columns : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
+finish one-tab : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ---
@@ -413,9 +421,12 @@ finish one-tab : focus a; Super+a Super+a; Super+Shift+g, Shift+l
 - With `autotile` on, the initial row rarely comes out perfectly flat -- spawn
   one at a time and nudge with `Super+Shift+Ctrl+l` until you have a clean
   left-to-right row before folding.
-- The `Super+a` "select the group" step is the easy one to get wrong (too few /
-  too many raises) -- watch the highlight border before `Super+x` /
-  `group_with` / the final tab-fold, or you will fold only part of a unit.
+- The `Super+a` "select the group" raise is the #1 thing people skip or miscount
+  (see the mandatory-raise callout in "Root style"). **Too few** raises and the
+  fold hits the focused *window* -- you get one pair tabbed
+  (`H[ T[a,b], H[c,d] ]`) instead of the two units (`T[ H[a,b], H[c,d] ]`);
+  **too many** and it grabs an enclosing group. Watch the selection highlight
+  cover exactly the unit before `Super+x` / the tab-fold.
 - Same-orientation nesting (e.g. an `H` group directly inside the root `H`) is
   where hy3 sometimes collapses; if a fold does not stick, that is the spot to
   check.
