@@ -15,6 +15,23 @@ PROG=hy3-project
 KCLASS=hy3proj                       # private class on the two kitty panes
 WS=""                                # target workspace id (the active one), set in main
 
+# ---- logging --------------------------------------------------------------
+# Always-on, appended to a tmpfs file so a bad run can be debugged after the
+# fact (by hand or by handing the log to another agent). Override with
+# HY3_PROJECT_LOG. Logging never aborts the script (set -e safe).
+HY3_PROJECT_LOG="${HY3_PROJECT_LOG:-${XDG_RUNTIME_DIR:-/tmp}/hy3-project.log}"
+log() {
+  printf '%s [%d] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$$" "$*" >>"$HY3_PROJECT_LOG" 2>/dev/null || true
+}
+# Dump the active workspace's hy3 tree into the log. No-op until the dump_tree
+# hy3 patch (overlays/0003) is built; the file simply is not written before then.
+log_tree() {
+  local f="${XDG_RUNTIME_DIR:-/tmp}/hy3-project-tree.json"
+  rm -f "$f" 2>/dev/null || true
+  hyprctl eval "hl.plugin.hy3.dump_tree(\"$f\")()" >/dev/null 2>&1 || true
+  [ -f "$f" ] && log "tree[$1]: $(cat "$f" 2>/dev/null)" || true
+}
+
 usage() {
   cat <<EOF
 Usage: $PROG [PATH] [--browser[=CMD]] [--pick]
@@ -76,17 +93,19 @@ kitty_cmd() { printf "sh -c 'cd \"%s\" && exec kitty --class %s'" "$1" "$KCLASS"
 spawn_and_wait() {
   local label="$1"; shift
   local launch="$*" before after newaddr attempt
+  log "spawn[$label]: $launch"
   before="$(hyprctl clients -j | jq -r '.[].address' | sort)"
   hyprctl eval "hl.exec_cmd([=[[workspace $WS silent] $launch]=])" >/dev/null
   for attempt in 1 2; do
     for _ in $(seq 1 50); do                       # 50 * 0.1s = ~5s per attempt
       after="$(hyprctl clients -j | jq -r '.[].address' | sort)"
       newaddr="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | head -n1)"
-      [ -n "$newaddr" ] && { printf '%s\n' "$newaddr"; return 0; }
+      [ -n "$newaddr" ] && { log "spawn[$label] -> $newaddr"; printf '%s\n' "$newaddr"; return 0; }
       sleep 0.1
     done
     [ "$attempt" = 1 ] && printf '%s: still waiting for window "%s"...\n' "$PROG" "$label" >&2
   done
+  log "spawn[$label] TIMEOUT (~10s)"
   printf '%s: window "%s" never appeared (timeout)\n' "$PROG" "$label" >&2
   return 1
 }
@@ -200,18 +219,35 @@ main() {
     PATH_ARG="$picked"
   fi
 
-  local dir browser
+  local dir browser tiled units
   dir="$(resolve_path)"
   browser="$(resolve_browser)"
   WS="$(active_ws)"
+  tiled="$(count_tiled)"; units="$(count_units)"
+  log "=== run: dir=$dir browser='$browser' ws=$WS tiled=$tiled units=$units pick=$DO_PICK"
+  log_tree before
 
-  if [ "$(count_tiled)" -eq 0 ]; then
+  if [ "$tiled" -eq 0 ]; then
+    log "branch: build (empty workspace)"
     build_unit "$dir" "$browser"
   else
-    # loose windows (nothing of ours yet) -> wrap them into their own root tab
-    if [ "$(count_units)" -eq 0 ]; then normalize_root_tab; fi
+    # Loose windows (nothing of ours yet) -> wrap them into their own root tab,
+    # then append the new unit as a separate root tab.
+    #
+    # KNOWN GAP (mixed state): a workspace holding BOTH our units AND loose
+    # windows at root is not normalised (units>0 skips it). The planned robust
+    # fix reads the exact root structure via the hy3 dump_tree dispatcher
+    # (overlays/0003) and builds the unit on a scratch workspace, then moves it
+    # in as a root tab -- see the design doc and the dispatcher notes.
+    if [ "$units" -eq 0 ]; then
+      log "branch: normalize loose windows -> root tab"
+      normalize_root_tab
+    fi
+    log "branch: append unit"
     append_unit "$dir" "$browser"
   fi
+  log_tree after
+  log "done"
 }
 
 main "$@"
