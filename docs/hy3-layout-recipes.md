@@ -422,6 +422,51 @@ finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a Super+a [RA
 
 ---
 
+## Un-nesting a stray wrapper (user error fix)
+
+A unit can end up with a redundant **single-child tab wrapper** around it --
+`T[ u1, T[ H[a,{b,c}] ] ]` instead of `T[ u1, H[a,{b,c}] ]`. This is **user
+error, not a tool bug**: pressing `Super+x` (tab-wrap) on a unit that is already
+a root tab, or doing the "columns *then* one-tab" double-finish (see Root style),
+wraps the unit's split in an extra `T[ ]`. It shows as a **tab bar inside a tab
+bar** -- the root tab label reads `[T][H] ...` instead of `[H] ...`.
+
+```
+before (nested):                 after (flat):
+root[tabs]                       root[tabs]
+|- u1  [splith]                  |- u1  [splith]
+`- u2  [tabs]      <- stray      `- u2  [splith]
+       `- [splith]                      `- a, {b,c}
+             `- a, {b,c}
+```
+
+Fix (verified live):
+
+1. Click a window in the nested unit (or `Super+h/l` into it).
+2. `Super+a` -- repeat until the selection highlight covers the **whole unit**
+   (left pane + the tab pair together). The depth varies (an extra `V`/`H` around
+   a pane adds a level), so **watch the highlight, do not count blindly**.
+3. `Super+g` -- toggles the wrapper above your selection from **tab -> split**.
+   The nested tab bar disappears and the unit renders flat.
+4. Click a window in the unit again, then `Super+Shift+Ctrl+l` then
+   `Super+Shift+Ctrl+h` -- nudge a pane out one level and back. This collapses the
+   leftover single-child split so the label reads a clean `[H]`.
+
+Why two steps (toggle, then nudge):
+
+- `Super+g` toggles the **parent** of the selected node -- so you select the
+  unit's split and it untabs the wrapper above it.
+- A single-child **tab** group never auto-collapses (hy3 keeps it for the tab
+  bar); a single-child **split** does, but only on the next structural move. So
+  convert the wrapper to a split (`Super+g`), then trigger the collapse with a
+  no-op `{once}` slide.
+- Use the **Ctrl** slide (`Super+Shift+Ctrl+l/h`, = "pop out one level"). Plain
+  `Super+Shift+l/h` *descends* and yanks the pane into the neighbour unit instead.
+
+Same idea for a stray single-child `V`/`H` around one pane (e.g. `[splitv]` with
+one child): it is invisible but adds a raise level; the `{once}` nudge in step 4
+collapses it too.
+
 ## Caveats
 
 - With `autotile` on, the initial row rarely comes out perfectly flat -- spawn
