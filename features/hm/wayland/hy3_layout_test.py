@@ -324,5 +324,63 @@ class CliLiveShowTest(unittest.TestCase):
             h.dump_active_tree, h.active_addr_info = orig_dump, orig_info
 
 
+class BuildOpsTest(unittest.TestCase):
+    def test_reset_preamble_by_default(self):
+        ops = h.build_ops(h.parse("H[a, {b,c}]"))
+        self.assertEqual(ops[0], h.Reset())
+        self.assertFalse(any(isinstance(o, h.SelectRoot) for o in ops))
+
+    def test_no_reset(self):
+        ops = h.build_ops(h.parse("H[a, {b,c}]"), reset=False)
+        self.assertFalse(any(isinstance(o, h.Reset) for o in ops))
+
+    def test_append_selects_root_and_folds_top(self):
+        # append: SelectRoot preamble, and the top H IS folded (the unit becomes
+        # a new root tab), matching hy3-project's verified append sequence
+        # (focus b; group tab; focus a; group h).
+        ops = h.build_ops(h.parse("H[a, {b,c}]"), append=True)
+        self.assertEqual(ops[0], h.Reset())
+        self.assertEqual(ops[1], h.SelectRoot())
+        folds = [o for o in ops if isinstance(o, h.Fold)]
+        self.assertEqual(folds, [h.Fold("b", 0, "T"), h.Fold("a", 0, "H")])
+
+    def test_fresh_no_reset_equals_corpus_plan(self):
+        # build_ops without append/reset == the corpus plan() exactly.
+        self.assertEqual(
+            h.build_ops(h.parse("H[a, V[V[b,c], d]]"), reset=False),
+            h.plan(h.parse("H[a, V[V[b,c], d]]")),
+        )
+
+    def test_render_includes_preamble(self):
+        recipe = h.render_keybinds(h.build_ops(h.parse("H[a, {b,c}]"), append=True))
+        lines = recipe.split("\n")
+        self.assertTrue(lines[0].startswith("reset:"))
+        self.assertIn("select existing root tab", lines[1])
+        self.assertIn("row: a b c", recipe)
+
+
+class CliBuildModesTest(unittest.TestCase):
+    def test_build_plan_has_reset_line(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = h.main(["build", "H[a, {b,c}]", "--plan"])
+        self.assertEqual(rc, 0)
+        self.assertIn("reset:", buf.getvalue())
+
+    def test_build_plan_no_reset(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = h.main(["build", "H[a, {b,c}]", "--plan", "--no-reset"])
+        self.assertEqual(rc, 0)
+        self.assertNotIn("reset:", buf.getvalue())
+
+    def test_build_plan_append(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = h.main(["build", "H[a, {b,c}]", "--plan", "--append"])
+        self.assertEqual(rc, 0)
+        self.assertIn("select existing root tab", buf.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

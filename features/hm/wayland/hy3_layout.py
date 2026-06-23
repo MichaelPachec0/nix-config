@@ -205,12 +205,41 @@ class Fold:
     wrap: bool = False     # True = wrap a single child as a tab (no neighbour)
 
 
-def plan(root):
+@dataclass
+class Reset:
+    # Clear any active submap and reset the selection before building, so the
+    # fold raise-counts are deterministic regardless of prior workspace state.
+    pass
+
+
+@dataclass
+class SelectRoot:
+    # Select the existing root tab container (change_focus top, then lower) so
+    # the next spawned windows form a new sibling root tab (append mode).
+    pass
+
+
+def plan(root, append=False):
     ops = []
     for w in leaves(root):
         ops.append(Spawn(w.label, w.command, w.cwd))
     state = {"focus": None}
-    _fold(root, ops, state, is_top=True)
+    _fold(root, ops, state, is_top=not append)
+    return ops
+
+
+def build_ops(root, append=False, reset=True):
+    # Compose a full executable op list: an optional determinism Reset, an
+    # optional SelectRoot (append mode), then the spawn/fold plan. In append
+    # mode the layout is folded as a unit (top group included) so it lands as a
+    # new root tab beside existing content; a fresh build leaves a top-level H
+    # to hy3's H-oriented root.
+    ops = []
+    if reset:
+        ops.append(Reset())
+    if append:
+        ops.append(SelectRoot())
+    ops.extend(plan(root, append=append))
     return ops
 
 
@@ -348,6 +377,14 @@ _ORIENT_KEYS = {
 
 def render_keybinds(ops):
     lines = []
+    for op in ops:
+        if isinstance(op, Reset):
+            lines.append("reset: clear any submap and selection (Escape)")
+        elif isinstance(op, SelectRoot):
+            lines.append(
+                "select existing root tab so new windows form a sibling tab"
+                " (change_focus top, then lower)"
+            )
     row = [op.label for op in ops if isinstance(op, Spawn)]
     lines.append("row: " + " ".join(row))
     for op in ops:
@@ -457,6 +494,10 @@ def main(argv=None):
     b = sub.add_parser("build", help="compile notation into a layout")
     b.add_argument("notation")
     b.add_argument("--plan", action="store_true", help="print the plan; do not execute")
+    b.add_argument("--append", action="store_true",
+                   help="append the layout as a new root tab to existing workspace content")
+    b.add_argument("--no-reset", dest="reset", action="store_false",
+                   help="omit the determinism reset preamble")
     b.add_argument("--ws", type=int, default=None)
     b.add_argument("--verify", action="store_true")
     b.add_argument("--browser", default=None)
@@ -475,7 +516,7 @@ def main(argv=None):
 
     if args.cmd == "build":
         node = parse(args.notation)
-        ops = plan(node)
+        ops = build_ops(node, append=args.append, reset=args.reset)
         if args.plan:
             print(to_notation(node))
             print(render_keybinds(ops))
