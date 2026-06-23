@@ -3,7 +3,7 @@ import json
 import os
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 
 import hy3_layout as h
 
@@ -256,6 +256,72 @@ class CliTest(unittest.TestCase):
     def test_show_wk_is_deferred(self):
         rc = h.main(["show", "--wk", "all"])
         self.assertEqual(rc, 2)
+
+
+class CliLiveShowTest(unittest.TestCase):
+    # The live dump seams (dump_active_tree / active_addr_info) are stubbed so
+    # these stay offline; the real hyprctl path is exercised by a manual smoke
+    # test on a running session.
+    def test_show_active_dumps_tree(self):
+        tree = {"workspace": 1, "root": _grp(
+            "root", _grp("splith", _win("0x1"), _win("0x2")))}
+        orig = h.dump_active_tree
+        h.dump_active_tree = lambda: tree
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = h.main(["show"])
+            self.assertEqual(rc, 0)
+            self.assertEqual(buf.getvalue().strip(), "H[a, b]")
+        finally:
+            h.dump_active_tree = orig
+
+    def test_show_active_annotate(self):
+        tree = {"workspace": 1, "root": _grp(
+            "root", _grp("splith", _win("0x1"), _win("0x2")))}
+        orig_dump, orig_info = h.dump_active_tree, h.active_addr_info
+        h.dump_active_tree = lambda: tree
+        h.active_addr_info = lambda: {"0x1": ("kitty", None), "0x2": ("firefox", None)}
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = h.main(["show", "--annotate"])
+            self.assertEqual(rc, 0)
+            self.assertEqual(buf.getvalue().strip(), "H[a=kitty, b=firefox]")
+        finally:
+            h.dump_active_tree, h.active_addr_info = orig_dump, orig_info
+
+    def test_show_active_failure_returns_2(self):
+        def boom():
+            raise RuntimeError("no hyprctl")
+        orig = h.dump_active_tree
+        h.dump_active_tree = boom
+        try:
+            err = io.StringIO()
+            with redirect_stderr(err):
+                rc = h.main(["show"])
+            self.assertEqual(rc, 2)
+            self.assertIn("could not dump active workspace", err.getvalue())
+        finally:
+            h.dump_active_tree = orig
+
+    def test_show_annotate_failure_returns_2(self):
+        tree = {"workspace": 1, "root": _grp(
+            "root", _grp("splith", _win("0x1"), _win("0x2")))}
+        orig_dump, orig_info = h.dump_active_tree, h.active_addr_info
+        h.dump_active_tree = lambda: tree
+
+        def boom():
+            raise RuntimeError("no clients")
+        h.active_addr_info = boom
+        try:
+            err = io.StringIO()
+            with redirect_stderr(err):
+                rc = h.main(["show", "--annotate"])
+            self.assertEqual(rc, 2)
+            self.assertIn("could not read clients", err.getvalue())
+        finally:
+            h.dump_active_tree, h.active_addr_info = orig_dump, orig_info
 
 
 if __name__ == "__main__":

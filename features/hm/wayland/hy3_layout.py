@@ -2,8 +2,9 @@
 """hy3-layout: compile the hy3 layout notation to and from a live layout.
 
 Phase 1 (this module) is the offline compiler core: parser, AST, planner, IR,
-renderers, and the dump_tree -> notation printer back-end. The live executor
-(driving hyprctl) and Nix packaging are added in Phase 2.
+renderers, and the dump_tree -> notation printer back-end. `show` (active
+workspace) drives one live dump_tree call; the live build executor and Nix
+packaging are added in Phase 2.
 
 Run the tests with:
     python3 features/hm/wayland/hy3_layout_test.py -v
@@ -402,6 +403,49 @@ def _label_for(i):
     return "w%d" % i
 
 
+def _hyprctl(args):
+    # Run a hyprctl command and return its stdout. The only live (Hyprland) seam
+    # in this module; tests stub dump_active_tree / active_addr_info instead.
+    import subprocess
+    result = subprocess.run(
+        ["hyprctl", *args], capture_output=True, text=True, check=True
+    )
+    return result.stdout
+
+
+def dump_active_tree():
+    # Dump the ACTIVE workspace hy3 tree via the 0003 dump_tree dispatcher and
+    # return the parsed JSON. Needs a running Hyprland with hy3 + the patch.
+    import json
+    import os
+    import tempfile
+    fd, path = tempfile.mkstemp(prefix="hy3-layout-", suffix=".json")
+    os.close(fd)
+    try:
+        lua_path = path.replace("\\", "\\\\").replace('"', '\\"')
+        _hyprctl(["eval", 'hl.plugin.hy3.dump_tree("%s")()' % lua_path])
+        with open(path) as fh:
+            return json.load(fh)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def active_addr_info():
+    # Map window address -> (command, cwd) for --annotate, from hyprctl clients.
+    # command is the window class; cwd is deferred (None) until Phase 2. Addresses
+    # are session-unique, so no workspace filter is needed.
+    import json
+    info = {}
+    for client in json.loads(_hyprctl(["clients", "-j"])):
+        addr = client.get("address")
+        if addr:
+            info[addr] = (client.get("class") or None, None)
+    return info
+
+
 def main(argv=None):
     import argparse
     import json
@@ -445,14 +489,23 @@ def main(argv=None):
                 "show --wk is deferred: needs the dump_tree workspace-scope patch (0004)\n"
             )
             return 2
-        if args.from_file is None:
-            sys.stderr.write(
-                "live show is not implemented in this pass; pass --from-file <dump_tree.json>\n"
-            )
-            return 2
-        with open(args.from_file) as fh:
-            tree = json.load(fh)
-        print(notation_from_tree(tree))
+        if args.from_file is not None:
+            with open(args.from_file) as fh:
+                tree = json.load(fh)
+        else:
+            try:
+                tree = dump_active_tree()
+            except Exception as e:  # CLI boundary: surface, do not traceback
+                sys.stderr.write("error: could not dump active workspace: %s\n" % e)
+                return 2
+        info = None
+        if args.annotate:
+            try:
+                info = active_addr_info()
+            except Exception as e:  # CLI boundary: surface, do not traceback
+                sys.stderr.write("error: could not read clients for --annotate: %s\n" % e)
+                return 2
+        print(notation_from_tree(tree, info))
         return 0
 
     return 2
