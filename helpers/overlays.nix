@@ -431,6 +431,10 @@
             # node tree to <path> as JSON (structure-aware detection for
             # hy3-project; consumed instead of guessing layout from geometry).
             ../overlays/0003-feat-hy3-dump-tree-dispatcher.patch
+            # dump_tree(path, ws) optional workspace id + dump_all(path) for all
+            # workspaces -- lets hy3-layout `show --wk N/--wk all` read a
+            # non-active workspace's tree without switching to it.
+            ../overlays/0004-feat-hy3-dump-tree-workspace-scope.patch
           ];
       });
       firefox-devedition-bin = inputs.firefox.packages.${prev.stdenv.hostPlatform.system}.firefox-devedition-bin.override {
