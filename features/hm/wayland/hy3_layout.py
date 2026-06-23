@@ -450,9 +450,10 @@ def _hyprctl(args):
     return result.stdout
 
 
-def dump_active_tree():
-    # Dump the ACTIVE workspace hy3 tree via the 0003 dump_tree dispatcher and
-    # return the parsed JSON. Needs a running Hyprland with hy3 + the patch.
+def _dump_json(lua_fmt):
+    # Run a hy3 dump dispatcher that writes JSON to a tempfile and return the
+    # parsed result. lua_fmt is a format string with one %s for the (escaped)
+    # tempfile path. The live (Hyprland) seam; tests stub the callers below.
     import json
     import os
     import tempfile
@@ -460,7 +461,7 @@ def dump_active_tree():
     os.close(fd)
     try:
         lua_path = path.replace("\\", "\\\\").replace('"', '\\"')
-        _hyprctl(["eval", 'hl.plugin.hy3.dump_tree("%s")()' % lua_path])
+        _hyprctl(["eval", lua_fmt % lua_path])
         with open(path) as fh:
             return json.load(fh)
     finally:
@@ -468,6 +469,21 @@ def dump_active_tree():
             os.unlink(path)
         except OSError:
             pass
+
+
+def dump_active_tree():
+    # Active workspace tree (0003 dump_tree, no workspace arg).
+    return _dump_json('hl.plugin.hy3.dump_tree("%s")()')
+
+
+def dump_workspace_tree(ws):
+    # A specific workspace's tree (0004 dump_tree with a workspace id).
+    return _dump_json('hl.plugin.hy3.dump_tree("%%s", %d)()' % int(ws))
+
+
+def dump_all_trees():
+    # Every live workspace's tree as a list (0004 dump_all).
+    return _dump_json('hl.plugin.hy3.dump_all("%s")()')
 
 
 def active_addr_info():
@@ -525,11 +541,41 @@ def main(argv=None):
         return 2
 
     if args.cmd == "show":
+        # --annotate info (window class per address) is the same live source for
+        # any non-file dump; fetch it once up front.
+        info = None
+        if args.annotate:
+            try:
+                info = active_addr_info()
+            except Exception as e:  # CLI boundary: surface, do not traceback
+                sys.stderr.write("error: could not read clients for --annotate: %s\n" % e)
+                return 2
+
+        if args.wk == "all":
+            try:
+                trees = dump_all_trees()
+            except Exception as e:  # CLI boundary: surface, do not traceback
+                sys.stderr.write("error: could not dump workspaces: %s\n" % e)
+                return 2
+            for entry in trees:
+                notation = notation_from_tree(entry, info)
+                print("ws%s: %s" % (entry.get("workspace"), notation or "(empty)"))
+            return 0
+
         if args.wk is not None:
-            sys.stderr.write(
-                "show --wk is deferred: needs the dump_tree workspace-scope patch (0004)\n"
-            )
-            return 2
+            try:
+                ws_id = int(args.wk)
+            except ValueError:
+                sys.stderr.write("error: --wk must be a workspace number or 'all'\n")
+                return 2
+            try:
+                tree = dump_workspace_tree(ws_id)
+            except Exception as e:  # CLI boundary: surface, do not traceback
+                sys.stderr.write("error: could not dump workspace %d: %s\n" % (ws_id, e))
+                return 2
+            print(notation_from_tree(tree, info))
+            return 0
+
         if args.from_file is not None:
             with open(args.from_file) as fh:
                 tree = json.load(fh)
@@ -538,13 +584,6 @@ def main(argv=None):
                 tree = dump_active_tree()
             except Exception as e:  # CLI boundary: surface, do not traceback
                 sys.stderr.write("error: could not dump active workspace: %s\n" % e)
-                return 2
-        info = None
-        if args.annotate:
-            try:
-                info = active_addr_info()
-            except Exception as e:  # CLI boundary: surface, do not traceback
-                sys.stderr.write("error: could not read clients for --annotate: %s\n" % e)
                 return 2
         print(notation_from_tree(tree, info))
         return 0

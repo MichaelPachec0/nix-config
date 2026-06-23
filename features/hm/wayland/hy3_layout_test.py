@@ -253,10 +253,6 @@ class CliTest(unittest.TestCase):
         finally:
             os.unlink(path)
 
-    def test_show_wk_is_deferred(self):
-        rc = h.main(["show", "--wk", "all"])
-        self.assertEqual(rc, 2)
-
 
 class CliLiveShowTest(unittest.TestCase):
     # The live dump seams (dump_active_tree / active_addr_info) are stubbed so
@@ -380,6 +376,83 @@ class CliBuildModesTest(unittest.TestCase):
             rc = h.main(["build", "H[a, {b,c}]", "--plan", "--append"])
         self.assertEqual(rc, 0)
         self.assertIn("select existing root tab", buf.getvalue())
+
+
+class CliWkShowTest(unittest.TestCase):
+    # --wk N / --wk all consume the 0004 dump_tree(ws) / dump_all dispatchers;
+    # the live seams are stubbed so these stay offline.
+    def test_show_wk_number(self):
+        tree = {"workspace": 3, "root": _grp(
+            "root", _grp("splith", _win("0x1"), _win("0x2")))}
+        captured = {}
+
+        def fake(ws):
+            captured["ws"] = ws
+            return tree
+        orig = h.dump_workspace_tree
+        h.dump_workspace_tree = fake
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = h.main(["show", "--wk", "3"])
+            self.assertEqual(rc, 0)
+            self.assertEqual(captured["ws"], 3)
+            self.assertEqual(buf.getvalue().strip(), "H[a, b]")
+        finally:
+            h.dump_workspace_tree = orig
+
+    def test_show_wk_all(self):
+        trees = [
+            {"workspace": 1, "root": _grp("root", _grp("splith", _win("0x1"), _win("0x2")))},
+            {"workspace": 2, "root": _grp("root", _grp("splitv", _win("0x3"), _win("0x4")))},
+        ]
+        orig = h.dump_all_trees
+        h.dump_all_trees = lambda: trees
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = h.main(["show", "--wk", "all"])
+            self.assertEqual(rc, 0)
+            # labels restart per workspace -- each line is a self-contained layout
+            self.assertEqual(
+                buf.getvalue().strip().split("\n"),
+                ["ws1: H[a, b]", "ws2: V[a, b]"],
+            )
+        finally:
+            h.dump_all_trees = orig
+
+    def test_show_wk_all_empty_entry(self):
+        orig = h.dump_all_trees
+        h.dump_all_trees = lambda: [{"workspace": 5, "root": None}]
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = h.main(["show", "--wk", "all"])
+            self.assertEqual(rc, 0)
+            self.assertEqual(buf.getvalue().strip(), "ws5: (empty)")
+        finally:
+            h.dump_all_trees = orig
+
+    def test_show_wk_invalid_returns_2(self):
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = h.main(["show", "--wk", "bogus"])
+        self.assertEqual(rc, 2)
+        self.assertIn("workspace number or 'all'", err.getvalue())
+
+    def test_show_wk_number_failure_returns_2(self):
+        def boom(ws):
+            raise RuntimeError("no hyprctl")
+        orig = h.dump_workspace_tree
+        h.dump_workspace_tree = boom
+        try:
+            err = io.StringIO()
+            with redirect_stderr(err):
+                rc = h.main(["show", "--wk", "7"])
+            self.assertEqual(rc, 2)
+            self.assertIn("could not dump workspace 7", err.getvalue())
+        finally:
+            h.dump_workspace_tree = orig
 
 
 if __name__ == "__main__":
