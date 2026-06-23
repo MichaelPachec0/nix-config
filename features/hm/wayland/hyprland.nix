@@ -237,11 +237,30 @@
     '';
   };
   hy3ProjectBind = {_args = ["SUPER + SHIFT + P" (mkLuaInline ''hl.dsp.exec_cmd("${hy3ProjectScript}/bin/hy3-project --pick")'')];};
+
+  # ---- hy3-layout: compile the hy3 notation to/from a live layout -----------
+  # `hy3-layout build '<notation>'` constructs the layout live; `show` prints the
+  # active (or --wk N / --wk all) workspace as notation; --visualize prints an
+  # ASCII tree. stdlib-only Python -- only hyprctl is shelled out to (kitty/the
+  # browser are launched by the compositor via hl.exec_cmd). Wrapped via
+  # writeShellApplication (python3 on the .py) rather than writePython3Bin to
+  # skip the build-time flake8 gate. See
+  # docs/superpowers/specs/2026-06-22-hy3-layout-design.md.
+  hy3LayoutScript = pkgs.writeShellApplication {
+    name = "hy3-layout";
+    runtimeInputs = [pkgs.python3 pkgs.latest.hyprland];
+    text = ''exec python3 ${./hy3_layout.py} "$@"'';
+  };
+  # NOTE: no keybind yet (deferred). hy3-layout is on PATH via home.packages. To
+  # add one later, mirror hy3ProjectBind and append it to the `bind = ...` list
+  # -- e.g. a non-destructive "show current layout" notification:
+  #   hl.dsp.exec_cmd("sh -c 'notify-send hy3-layout \"$(hy3-layout show --visualize)\"'")
+  # or a rofi notation picker that pipes the choice into `hy3-layout build`.
 in {
   config = {
     # `keybind-cheatsheet` on PATH so it's runnable from a terminal too (the
     # Super+/ bind invokes it by store path regardless).
-    home.packages = [cheatsheetScript hy3ProjectScript];
+    home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript];
 
     wayland = {
       windowManager.hyprland = {

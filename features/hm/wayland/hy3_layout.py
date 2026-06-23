@@ -234,6 +234,18 @@ def build_ops(root, append=False, reset=True):
     # mode the layout is folded as a unit (top group included) so it lands as a
     # new root tab beside existing content; a fresh build leaves a top-level H
     # to hy3's H-oriented root.
+    #
+    # Flat root tabs: building a top-level T by group_with leaves the units under
+    # an implicit splith wrapper (root -> splith -> tabs) and NESTS a 3rd+ tab
+    # (both verified live). So build a top-level T of >=2 units incrementally:
+    # unit-0 wrapped as the first root tab, then an --append pass per remaining
+    # unit (each lands as a clean, flat sibling tab).
+    if (not append and isinstance(root, Group) and root.kind == "T"
+            and len(root.children) >= 2):
+        ops = build_ops(Group("T", [root.children[0]]), reset=reset)
+        for child in root.children[1:]:
+            ops += build_ops(child, append=True, reset=False)
+        return ops
     ops = []
     if reset:
         ops.append(Reset())
@@ -376,8 +388,22 @@ _ORIENT_KEYS = {
 
 
 def render_keybinds(ops):
+    # Render ops in order; consecutive Spawns coalesce into one "row:" line. This
+    # keeps the recipe correct for append-chained plans (spawns/folds interleave
+    # with SelectRoot across units), not just the single-pass case.
     lines = []
+    row = []
+
+    def flush_row():
+        if row:
+            lines.append("row: " + " ".join(row))
+            row.clear()
+
     for op in ops:
+        if isinstance(op, Spawn):
+            row.append(op.label)
+            continue
+        flush_row()
         if isinstance(op, Reset):
             lines.append("reset: clear any submap and selection (Escape)")
         elif isinstance(op, SelectRoot):
@@ -385,30 +411,27 @@ def render_keybinds(ops):
                 "select existing root tab so new windows form a sibling tab"
                 " (change_focus top, then lower)"
             )
-    row = [op.label for op in ops if isinstance(op, Spawn)]
-    lines.append("row: " + " ".join(row))
-    for op in ops:
-        if not isinstance(op, Fold):
-            continue
-        parts = []
-        if op.focus is not None:
-            parts.append("focus " + op.focus)
-        parts.extend(["Super+a"] * op.raises)
-        if op.wrap:
-            parts.append("Super+x")
-        else:
-            parts.append(_ORIENT_KEYS[op.orient])
-        lines.append("; ".join(parts))
+        elif isinstance(op, Fold):
+            parts = []
+            if op.focus is not None:
+                parts.append("focus " + op.focus)
+            parts.extend(["Super+a"] * op.raises)
+            parts.append("Super+x" if op.wrap else _ORIENT_KEYS[op.orient])
+            lines.append("; ".join(parts))
+    flush_row()
     return "\n".join(lines)
 
 
 _LAYOUT_KIND = {"splith": "H", "splitv": "V", "tabs": "T"}
 
 
-def notation_from_tree(tree, addr_info=None):
+def ast_from_tree(tree, addr_info=None):
+    # Convert a dump_tree JSON dict to an AST (Window/Group), or None if empty.
     root = tree.get("root")
     if root is None:
-        return ""
+        return None
+    if root.get("layout") == "root" and not root.get("children"):
+        return None
     counter = [0]
 
     def conv(node):
@@ -431,13 +454,44 @@ def notation_from_tree(tree, addr_info=None):
             raise ValueError("unknown layout %r" % layout)
         return Group(kind, kids)
 
-    return to_notation(conv(root))
+    return conv(root)
+
+
+def notation_from_tree(tree, addr_info=None):
+    ast = ast_from_tree(tree, addr_info)
+    return "" if ast is None else to_notation(ast)
 
 
 def _label_for(i):
     if i < 26:
         return chr(ord("a") + i)
     return "w%d" % i
+
+
+def render_tree(node):
+    # ASCII tree of a layout AST (groups as H/V/T, windows as their label):
+    #   H
+    #   |- a
+    #   `- T
+    #      |- b
+    #      `- c
+    lines = [_node_label(node)]
+    _tree_children(node, "", lines)
+    return "\n".join(lines)
+
+
+def _node_label(node):
+    return to_notation(node) if isinstance(node, Window) else node.kind
+
+
+def _tree_children(node, prefix, lines):
+    if not isinstance(node, Group):
+        return
+    kids = node.children
+    for i, child in enumerate(kids):
+        last = i == len(kids) - 1
+        lines.append(prefix + ("`- " if last else "|- ") + _node_label(child))
+        _tree_children(child, prefix + ("   " if last else "|  "), lines)
 
 
 def _hyprctl(args):
@@ -486,17 +540,238 @@ def dump_all_trees():
     return _dump_json('hl.plugin.hy3.dump_all("%s")()')
 
 
+def _proc_children():
+    # Map ppid -> [child pids] by scanning /proc once (stdlib, no pgrep).
+    import os
+    children = {}
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        return children
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        try:
+            with open("/proc/" + entry + "/stat") as fh:
+                data = fh.read()
+            # stat is "pid (comm) state ppid ..."; comm may contain spaces, so
+            # split after the last ')'. ppid is the 2nd field after that.
+            ppid = int(data[data.rindex(")") + 1:].split()[1])
+        except (OSError, ValueError, IndexError):
+            continue
+        children.setdefault(ppid, []).append(int(entry))
+    return children
+
+
+def _window_cwd(pid, children):
+    # cwd of a window's first child (the shell, for a terminal). kitty keeps its
+    # launch cwd, so the child's cwd is the real one. None if unreadable, or just
+    # $HOME (uninteresting -> omit so @cwd only shows when it matters).
+    import os
+    home = os.path.expanduser("~")
+    for child in children.get(pid, []):
+        try:
+            cwd = os.readlink("/proc/%d/cwd" % child)
+        except OSError:
+            continue
+        return None if cwd == home else cwd
+    return None
+
+
 def active_addr_info():
-    # Map window address -> (command, cwd) for --annotate, from hyprctl clients.
-    # command is the window class; cwd is deferred (None) until Phase 2. Addresses
-    # are session-unique, so no workspace filter is needed.
+    # Map window address -> (command, cwd) for --annotate / save, from hyprctl
+    # clients. command is the window class; cwd is the shell child's working
+    # directory (omitted when it is just $HOME). Addresses are session-unique.
     import json
+    children = _proc_children()
     info = {}
     for client in json.loads(_hyprctl(["clients", "-j"])):
         addr = client.get("address")
-        if addr:
-            info[addr] = (client.get("class") or None, None)
+        if not addr:
+            continue
+        cmd = client.get("class") or None
+        pid = client.get("pid")
+        cwd = _window_cwd(pid, children) if isinstance(pid, int) and pid > 0 else None
+        info[addr] = (cmd, cwd)
     return info
+
+
+# --- live build executor -------------------------------------------------
+# Drives the build_ops IR against Hyprland via the hy3 dispatchers. The small
+# helpers below are the live seams; tests stub them to assert the call sequence.
+
+_ORIENT_LETTER = {"H": "h", "V": "v", "T": "tab"}
+
+
+def _hy3_call(fn, arg):
+    # hl.plugin.hy3.<fn>("<arg>")()
+    _hyprctl(["eval", 'hl.plugin.hy3.%s("%s")()' % (fn, arg)])
+
+
+def _group_with(direction, orient):
+    # hl.plugin.hy3.group_with("<dir>", "<h|v|tab>")()
+    _hyprctl(["eval", 'hl.plugin.hy3.group_with("%s", "%s")()' % (direction, _ORIENT_LETTER[orient])])
+
+
+def _focus_window(address):
+    _hyprctl(["eval", 'hl.dispatch(hl.dsp.focus({ window = "address:%s" }))' % address])
+
+
+def _active_ws_id():
+    import json
+    return json.loads(_hyprctl(["activeworkspace", "-j"]))["id"]
+
+
+def _ws_client_addrs(ws):
+    import json
+    out = set()
+    for client in json.loads(_hyprctl(["clients", "-j"])):
+        info = client.get("workspace") or {}
+        if info.get("id") == ws and client.get("address"):
+            out.add(client["address"])
+    return out
+
+
+def _launch_string(spawn, browser):
+    import os
+    cmd = spawn.command or "kitty"
+    if cmd == "browser":
+        cmd = browser or "firefox"
+    if spawn.cwd:
+        # kitty --directory is dropped through Hyprland's exec, so cd in a shell.
+        return "sh -c 'cd \"%s\" && exec %s'" % (os.path.expanduser(spawn.cwd), cmd)
+    return cmd
+
+
+def _spawn_window(ws, launch, timeout=10.0):
+    # Spawn onto ws (silent, no view switch) and return the new window address by
+    # set-diffing the client list (serialized spawns -> exactly one new address).
+    import time
+    before = _ws_client_addrs(ws)
+    _hyprctl(["eval", "hl.exec_cmd([=[[workspace %d silent] %s]=])" % (ws, launch)])
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        new = _ws_client_addrs(ws) - before
+        if new:
+            return sorted(new)[0]
+        time.sleep(0.1)
+    raise RuntimeError("window did not appear within %gs: %s" % (timeout, launch))
+
+
+def run_build(node, ws=None, append=False, reset=True, browser=None):
+    # Execute the build_ops IR live: spawn the row (focusing the previous window
+    # so they tile left-to-right), then apply the folds. Returns (ws, labels).
+    if ws is None:
+        ws = _active_ws_id()
+    labels = {}
+    last = None
+    for op in build_ops(node, append=append, reset=reset):
+        if isinstance(op, Reset):
+            continue  # scripted execution never enters a submap
+        if isinstance(op, SelectRoot):
+            _hy3_call("change_focus", "top")
+            _hy3_call("change_focus", "lower")
+            last = None  # next spawn forms a new root tab, not relative to the prior unit
+        elif isinstance(op, Spawn):
+            if last is not None:
+                _focus_window(labels[last])
+            labels[op.label] = _spawn_window(ws, _launch_string(op, browser))
+            last = op.label
+        elif isinstance(op, Fold):
+            if op.focus is not None:
+                _focus_window(labels[op.focus])
+            for _ in range(op.raises):
+                _hy3_call("change_focus", "raise")
+            if op.wrap:
+                _hy3_call("make_group", "tab")
+            else:
+                _group_with("r", op.orient)
+    return ws, labels
+
+
+def _same_structure(x, y):
+    # Structural AST isomorphism, ignoring window labels/commands.
+    if isinstance(x, Window) and isinstance(y, Window):
+        return True
+    if isinstance(x, Group) and isinstance(y, Group):
+        return (x.kind == y.kind and len(x.children) == len(y.children)
+                and all(_same_structure(a, b) for a, b in zip(x.children, y.children)))
+    return False
+
+
+# --- save / restore ------------------------------------------------------
+
+def _parse_wk(arg):
+    # "all" -> "all"; "1" / "1,2,3" -> [ints]; invalid -> None.
+    if arg == "all":
+        return "all"
+    try:
+        return [int(x) for x in arg.split(",") if x.strip() != ""]
+    except ValueError:
+        return None
+
+
+def _save_path(file_arg):
+    import os
+    if file_arg:
+        return os.path.expanduser(file_arg)
+    base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    return os.path.join(base, "hy3-layout", "layouts.json")
+
+
+def _focus_workspace(ws):
+    _hyprctl(["eval", "hl.dispatch(hl.dsp.focus({ workspace = %d }))" % ws])
+
+
+def _ws_nonempty(ws):
+    return ast_from_tree(dump_workspace_tree(ws)) is not None
+
+
+def save_layouts(wk, path):
+    # Capture selected workspaces as annotated notation; write {ws: notation} as
+    # JSON. Returns the {ws: notation} map written.
+    import json
+    import os
+    info = active_addr_info()
+    selected = None if wk == "all" else set(wk)
+    out = {}
+    for entry in dump_all_trees():
+        ws = entry.get("workspace")
+        if selected is not None and ws not in selected:
+            continue
+        ast = ast_from_tree(entry, info)
+        if ast is not None:
+            out[str(ws)] = to_notation(ast)
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(path, "w") as fh:
+        json.dump({"version": 1, "workspaces": out}, fh, indent=2)
+        fh.write("\n")
+    return out
+
+
+def restore_layouts(wk, path, force=False):
+    # Rebuild saved workspaces with the live executor, skipping non-empty ones
+    # unless force. Restores the prior active workspace at the end. Returns
+    # [(ws, message)].
+    import json
+    with open(path) as fh:
+        saved = json.load(fh).get("workspaces", {})
+    targets = sorted(int(k) for k in saved) if wk == "all" else wk
+    original = _active_ws_id()
+    results = []
+    for ws in targets:
+        notation = saved.get(str(ws))
+        if notation is None:
+            results.append((ws, "skipped: not in save file"))
+        elif not force and _ws_nonempty(ws):
+            results.append((ws, "skipped: workspace not empty (use --force)"))
+        else:
+            run_build(parse(notation), ws=ws)
+            results.append((ws, "restored: " + notation))
+    _focus_workspace(original)
+    return results
 
 
 def main(argv=None):
@@ -517,13 +792,28 @@ def main(argv=None):
     b.add_argument("--ws", type=int, default=None)
     b.add_argument("--verify", action="store_true")
     b.add_argument("--browser", default=None)
+    b.add_argument("--visualize", action="store_true", help="print an ASCII tree of the layout")
 
     s = sub.add_parser("show", help="print a workspace layout as notation")
     s.add_argument("--annotate", action="store_true")
     s.add_argument("--from-file", default=None, help="read a dump_tree JSON file")
     s.add_argument("--wk", default=None)
+    s.add_argument("--visualize", action="store_true",
+                   help="print an ASCII tree instead of one-line notation")
 
     sub.add_parser("selftest", help="check the planner against the recipes corpus")
+
+    sv = sub.add_parser("save", help="save workspace layouts (annotated) to a file")
+    sv.add_argument("--wk", default="all", help="all | N | comma-separated list")
+    sv.add_argument("file", nargs="?", default=None,
+                    help="output path (default: $XDG_STATE_HOME/hy3-layout/layouts.json)")
+
+    rs = sub.add_parser("restore", help="rebuild saved workspace layouts from a file")
+    rs.add_argument("--wk", default="all", help="all | N | comma-separated list")
+    rs.add_argument("--force", action="store_true",
+                    help="restore even onto a non-empty workspace")
+    rs.add_argument("file", nargs="?", default=None,
+                    help="input path (default: $XDG_STATE_HOME/hy3-layout/layouts.json)")
 
     args = ap.parse_args(argv)
 
@@ -532,13 +822,35 @@ def main(argv=None):
 
     if args.cmd == "build":
         node = parse(args.notation)
-        ops = build_ops(node, append=args.append, reset=args.reset)
+        if args.visualize:
+            print(render_tree(node))
         if args.plan:
+            ops = build_ops(node, append=args.append, reset=args.reset)
             print(to_notation(node))
             print(render_keybinds(ops))
             return 0
-        sys.stderr.write("live build is not implemented in this pass (offline core only)\n")
-        return 2
+        try:
+            run_build(node, ws=args.ws, append=args.append, reset=args.reset,
+                      browser=args.browser)
+        except Exception as e:  # CLI boundary: surface, do not traceback
+            sys.stderr.write("error: build failed: %s\n" % e)
+            return 2
+        if args.verify:
+            try:
+                tree = dump_active_tree()
+            except Exception as e:  # CLI boundary: surface, do not traceback
+                sys.stderr.write("error: verify dump failed: %s\n" % e)
+                return 2
+            got = ast_from_tree(tree)
+            if got is not None and _same_structure(got, node):
+                print("verify: ok")
+                return 0
+            sys.stderr.write(
+                "verify: structure mismatch (built %s)\n"
+                % (to_notation(got) if got is not None else "(empty)")
+            )
+            return 1
+        return 0
 
     if args.cmd == "show":
         # --annotate info (window class per address) is the same live source for
@@ -558,10 +870,16 @@ def main(argv=None):
                 sys.stderr.write("error: could not dump workspaces: %s\n" % e)
                 return 2
             for entry in trees:
-                notation = notation_from_tree(entry, info)
-                print("ws%s: %s" % (entry.get("workspace"), notation or "(empty)"))
+                ast = ast_from_tree(entry, info)
+                if args.visualize:
+                    print("ws%s:" % entry.get("workspace"))
+                    print(render_tree(ast) if ast is not None else "(empty)")
+                else:
+                    print("ws%s: %s" % (entry.get("workspace"),
+                                        to_notation(ast) if ast is not None else "(empty)"))
             return 0
 
+        # single source -> one `tree`
         if args.wk is not None:
             try:
                 ws_id = int(args.wk)
@@ -573,10 +891,7 @@ def main(argv=None):
             except Exception as e:  # CLI boundary: surface, do not traceback
                 sys.stderr.write("error: could not dump workspace %d: %s\n" % (ws_id, e))
                 return 2
-            print(notation_from_tree(tree, info))
-            return 0
-
-        if args.from_file is not None:
+        elif args.from_file is not None:
             with open(args.from_file) as fh:
                 tree = json.load(fh)
         else:
@@ -585,7 +900,43 @@ def main(argv=None):
             except Exception as e:  # CLI boundary: surface, do not traceback
                 sys.stderr.write("error: could not dump active workspace: %s\n" % e)
                 return 2
-        print(notation_from_tree(tree, info))
+
+        ast = ast_from_tree(tree, info)
+        if args.visualize:
+            print(render_tree(ast) if ast is not None else "(empty)")
+        else:
+            print(to_notation(ast) if ast is not None else "")
+        return 0
+
+    if args.cmd == "save":
+        wk = _parse_wk(args.wk)
+        if wk is None:
+            sys.stderr.write("error: --wk must be a workspace number, list, or 'all'\n")
+            return 2
+        path = _save_path(args.file)
+        try:
+            out = save_layouts(wk, path)
+        except Exception as e:  # CLI boundary: surface, do not traceback
+            sys.stderr.write("error: save failed: %s\n" % e)
+            return 2
+        print("saved %d workspace(s) to %s" % (len(out), path))
+        for ws in sorted(out, key=int):
+            print("  ws%s: %s" % (ws, out[ws]))
+        return 0
+
+    if args.cmd == "restore":
+        wk = _parse_wk(args.wk)
+        if wk is None:
+            sys.stderr.write("error: --wk must be a workspace number, list, or 'all'\n")
+            return 2
+        path = _save_path(args.file)
+        try:
+            results = restore_layouts(wk, path, force=args.force)
+        except Exception as e:  # CLI boundary: surface, do not traceback
+            sys.stderr.write("error: restore failed: %s\n" % e)
+            return 2
+        for ws, msg in results:
+            print("ws%s: %s" % (ws, msg))
         return 0
 
     return 2
