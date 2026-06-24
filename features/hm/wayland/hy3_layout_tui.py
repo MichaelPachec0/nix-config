@@ -17,7 +17,7 @@ import hy3_layout_apps as apps
 from textual.app import App, ComposeResult
 from textual.screen import ModalScreen
 from textual.widgets import Tree, Static, Input, Checkbox, Button, ListView, ListItem, Label
-from textual.containers import Vertical, Horizontal
+from textual.containers import Vertical, Horizontal, VerticalScroll
 from rich.text import Text
 
 
@@ -105,10 +105,27 @@ def _default_save_path():
 
 
 class AppPicker(ModalScreen):
+    # Size the dialog to the screen and scroll its contents; otherwise the list
+    # is 1 row tall and the buttons land off-screen. Enter in any command field
+    # also accepts, so the OK button is not required.
+    CSS = """
+    AppPicker { align: center middle; }
+    #picker { width: 70%; max-height: 90%; border: round $primary;
+              background: $surface; padding: 0 1; }
+    #picker #apps { height: 6; border: round $panel; }
+    #picker #buttons { height: auto; align-horizontal: center; }
+    """
+
     BINDINGS = [("escape", "cancel", "cancel")]
 
     def action_cancel(self):
         self.dismiss(None)
+
+    def on_input_submitted(self, event):
+        # Enter in a command field accepts; Enter in the search box just keeps
+        # the filtered list.
+        if event.input.id != "search":
+            self._accept()
 
     def __init__(self, terminal, discovered=None):
         super().__init__()
@@ -122,7 +139,7 @@ class AppPicker(ModalScreen):
         for a in self._apps:
             item = ListItem(Label(a.name, markup=False), name=a.exec_cmd)
             self._items.append((a.name.lower(), item))
-        yield Vertical(
+        yield VerticalScroll(
             Label("Type to search apps, or type a command below:"),
             # The search box is the first focusable widget, so it has focus on
             # open -- start typing to filter the list immediately.
@@ -133,8 +150,9 @@ class AppPicker(ModalScreen):
             Checkbox("Run in terminal", id="term"),
             Input(placeholder="cwd (optional)", id="cwd"),
             Input(id="preview"),
-            Button("OK", id="ok"),
-            Button("Cancel", id="cancel"),
+            Horizontal(Button("OK", id="ok"), Button("Cancel", id="cancel"),
+                       id="buttons"),
+            id="picker",
         )
 
     def _apply_filter(self, query):

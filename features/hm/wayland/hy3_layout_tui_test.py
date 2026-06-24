@@ -138,6 +138,21 @@ class AppPickerTest(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertEqual(app.model.notation(), "a=kitty")
 
+    async def test_enter_in_command_field_accepts(self):
+        import types
+        app = LayoutEditorApp()
+        async with app.run_test() as pilot:
+            await pilot.press("a")                  # open picker
+            picker = app.screen
+            picker.query_one("#cmd", Input).value = "kitty"
+            picker.query_one("#preview", Input).value = "kitty"
+            # Enter in a command field (not the search box) accepts, so the
+            # off-screen OK button is not needed.
+            picker.on_input_submitted(
+                types.SimpleNamespace(input=picker.query_one("#cmd", Input)))
+            await pilot.pause()
+            self.assertEqual(app.model.notation(), "a=kitty")
+
     async def test_search_filters_app_list(self):
         import hy3_layout_apps as apps_mod
         from hy3_layout_apps import DesktopApp
