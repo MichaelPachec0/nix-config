@@ -1,45 +1,32 @@
 import Quickshell
 import QtQuick
-import Qt5Compat.GraphicalEffects
 import "lib" as Lib
+import "desktop" as Desktop
 
 ShellRoot {
-    Lib.ThemeEngine {
-        id: theme
-    }
+    Variants {
+        model: Quickshell.screens
+        Scope {
+            id: v
+            property var modelData
 
-    PanelWindow {
-        anchors {
-            bottom: true
-            left: true
-            right: true
-        }
-        implicitHeight: 44
-        color: theme.bgMain
-
-        Rectangle {
-            id: pill
-            anchors.centerIn: parent
-            width: 240
-            height: 26
-            radius: 13
-            color: theme.accent
-            Text {
-                anchors.centerIn: parent
-                text: "seam: " + theme.accent + " / " + theme.textFont
-                color: theme.textOnAccent
-                font.family: theme.textFont
+            Lib.ThemeEngine {
+                id: screenTheme
             }
-        }
 
-        DropShadow {
-            anchors.fill: pill
-            source: pill
-            horizontalOffset: 0
-            verticalOffset: 2
-            radius: 10
-            samples: 21
-            color: "#80000000"
+            // NOTE (shelved 2026-06-24): the rounded ScreenBorder is set aside.
+            // Its wlr-layer-shell space-reservation + top/side cropping needs
+            // rework before re-enabling (an all-anchored Top-layer surface can't
+            // reserve, and the opaque frame paints over windows). The component
+            // is kept in desktop/ScreenBorder.qml; to restore, instantiate it
+            // here with `theme: screenTheme; showTopAndSides: !taskbar.hasWindows`.
+            // See spec section 12.4 (Shelved).
+
+            Desktop.Taskbar {
+                id: taskbar
+                screen: v.modelData
+                theme: screenTheme
+            }
         }
     }
 }
