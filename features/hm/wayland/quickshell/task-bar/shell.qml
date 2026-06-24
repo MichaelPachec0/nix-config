@@ -1,8 +1,13 @@
 import Quickshell
 import QtQuick
 import Qt5Compat.GraphicalEffects
+import "lib" as Lib
 
 ShellRoot {
+    Lib.ThemeEngine {
+        id: theme
+    }
+
     PanelWindow {
         anchors {
             bottom: true
@@ -10,19 +15,20 @@ ShellRoot {
             right: true
         }
         implicitHeight: 44
-        color: "#cc1d2021"
+        color: theme.bgMain
 
         Rectangle {
             id: pill
             anchors.centerIn: parent
-            width: 200
+            width: 240
             height: 26
             radius: 13
-            color: "#87b158"
+            color: theme.accent
             Text {
                 anchors.centerIn: parent
-                text: "quickshell alive"
-                color: "#1d2021"
+                text: "seam: " + theme.accent + " / " + theme.textFont
+                color: theme.textOnAccent
+                font.family: theme.textFont
             }
         }
 
