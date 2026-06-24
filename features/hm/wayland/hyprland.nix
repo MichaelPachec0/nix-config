@@ -403,21 +403,21 @@ in {
 
           # hl.curve(name, {...}) -- bezier curves referenced by the animations.
           curve = [
-            {_args = ["easeOutQuint" {type = "bezier"; points = [[0.22 1] [0.36 1]];}];}
-            {_args = ["easeInQuart" {type = "bezier"; points = [[0.89 0.03] [0.68 0.19]];}];}
-            {_args = ["softLinear" {type = "bezier"; points = [[0.1 0.1] [1 1]];}];}
+            {_args = ["md3_standard" {type = "bezier"; points = [[0.2 0.0] [0.0 1.0]];}];}
+            {_args = ["md3_decel" {type = "bezier"; points = [[0.05 0.7] [0.1 1.0]];}];}
+            {_args = ["md3_accel" {type = "bezier"; points = [[0.3 0.0] [0.8 0.15]];}];}
           ];
 
           # hl.animation({...}) -- per-leaf animations (lua leaf names, verified
           # via --verify-config; "leaf" replaces the hyprlang animation name,
           # "speed" the duration, "style" the trailing style).
           animation = [
-            {leaf = "windows"; enabled = true; speed = 3; bezier = "easeOutQuint"; style = "popin 90%";}
-            {leaf = "windowsIn"; enabled = true; speed = 3; bezier = "easeOutQuint"; style = "popin 90%";}
-            {leaf = "windowsOut"; enabled = true; speed = 2; bezier = "easeInQuart"; style = "popin 95%";}
-            {leaf = "windowsMove"; enabled = true; speed = 3; bezier = "easeOutQuint"; style = "slide";}
-            {leaf = "fade"; enabled = true; speed = 3; bezier = "softLinear";}
-            {leaf = "workspaces"; enabled = true; speed = 4; bezier = "easeOutQuint"; style = "slidefade 20%";}
+            {leaf = "windows"; enabled = true; speed = 3; bezier = "md3_standard"; style = "popin 85%";}
+            {leaf = "windowsIn"; enabled = true; speed = 3; bezier = "md3_decel"; style = "popin 85%";}
+            {leaf = "windowsOut"; enabled = true; speed = 3; bezier = "md3_accel"; style = "popin 85%";}
+            {leaf = "windowsMove"; enabled = true; speed = 3; bezier = "md3_standard"; style = "slide";}
+            {leaf = "fade"; enabled = true; speed = 2; bezier = "md3_standard";}
+            {leaf = "workspaces"; enabled = true; speed = 3; bezier = "md3_decel"; style = "slidefade 15%";}
           ];
 
           # hl.env("KEY", "VALUE")
