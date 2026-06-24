@@ -63,10 +63,19 @@ PanelWindow {
     // --- Clock helpers (12/24h toggle + UTC/NYC) ---
     property bool h12: false
     property bool tick: false // toggled every second; bindings read it to re-eval
+    property int dateFmt: 0 // 0=Wed, Jun 24 2026  1=06-24-2026  2=2026-06-24
 
     function localTime() {
         var d = new Date();
         return dock.h12 ? Qt.formatDateTime(d, "h:mm AP") : Qt.formatDateTime(d, "HH:mm");
+    }
+    function dateStr() {
+        var d = new Date();
+        if (dock.dateFmt === 1)
+            return Qt.formatDateTime(d, "MM-dd-yyyy");
+        if (dock.dateFmt === 2)
+            return Qt.formatDateTime(d, "yyyy-MM-dd");
+        return Qt.formatDateTime(d, "ddd, MMM d yyyy");
     }
     function fmtHM(h, m) {
         var mm = (m < 10 ? "0" : "") + m;
@@ -205,12 +214,19 @@ PanelWindow {
         spacing: 14
 
         Text {
+            id: dateText
             color: dock.theme.textSecondary
             font.family: dock.theme.textFont
             font.pixelSize: 13
             text: {
                 dock.tick; // ride the clock's tick (updates at midnight)
-                return Qt.formatDateTime(new Date(), "ddd, MMM d yyyy");
+                return dock.dateStr();
+            }
+            MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: dock.dateFmt = (dock.dateFmt + 1) % 3
             }
         }
         Text {
