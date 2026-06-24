@@ -90,7 +90,19 @@
         hl.config({
           plugin = {
             hy3 = {
-              tabs = { height = 22, padding = 6, render_text = true, text_center = true },
+              tabs = {
+                height = 22,
+                padding = 6,
+                render_text = true,
+                text_center = true,
+                text_font = "${theme.fonts.ui}",
+                ["col.active"] = "rgba(${theme.palette.accent}ff)",
+                ["col.inactive"] = "rgba(${theme.palette.bgItem}ff)",
+                ["col.urgent"] = "rgba(${theme.palette.accentRed}ff)",
+                ["col.text.active"] = "rgba(${theme.palette.textOnAccent}ff)",
+                ["col.text.inactive"] = "rgba(${theme.palette.textPrimary}ff)",
+                ["col.text.urgent"] = "rgba(${theme.palette.textOnAccent}ff)",
+              },
               autotile = { enable = true, ephemeral_groups = true },
             },
           },
@@ -312,11 +324,11 @@ in {
             };
 
             decoration = {
-              rounding = 10;
+              rounding = 8;
               active_opacity = 1.0;
-              inactive_opacity = 1.0;
-              dim_inactive = false;
-              dim_strength = 0.19;
+              inactive_opacity = 0.9;
+              dim_inactive = true;
+              dim_strength = 0.18;
               dim_around = 0.6;
 
               blur = {
@@ -334,10 +346,11 @@ in {
               };
 
               shadow = {
-                enabled = false;
+                enabled = true;
                 range = 4;
-                render_power = 3;
-                color = "rgba(00220044)";
+                render_power = 17;
+                color = "rgba(${theme.palette.bgMain}66)"; # active: stronger
+                color_inactive = "rgba(${theme.palette.bgMain}22)"; # inactive: recede
               };
             };
 
@@ -348,10 +361,14 @@ in {
             };
 
             group = {
-              "col.border_active" = "rgba(5eead4ee)";
+              # Teal dropped (spec 12.2): group node border now uses the Gruvbox
+              # accent. hy3 draws its own tab bar (colored in hy3SetupHook), so the
+              # native groupbar greys below are inert under hy3 but kept
+              # seam-derived for consistency if the layout ever changes.
+              "col.border_active" = "rgba(${theme.palette.accent}ee)";
               groupbar = {
-                "col.inactive" = "rgba(595959aa)";
-                "col.active" = "rgba(595959FF)";
+                "col.inactive" = "rgba(${theme.palette.bgItem}ff)";
+                "col.active" = "rgba(${theme.palette.accent}ff)";
               };
             };
 
