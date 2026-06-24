@@ -8,6 +8,7 @@
   ...
 }: {
   imports = [
+    ./theme.nix
     ./swayidle.nix
     ./waybar
     ./rofi.nix

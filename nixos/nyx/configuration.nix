@@ -1215,6 +1215,32 @@ in {
           powerline-symbols
           font-awesome
           corefonts
+          # Manrope: UI font for the surface-dots chrome adaptation (theme seam
+          # fonts.ui). nixpkgs removed pkgs.manrope (source pulled), so vendor the
+          # variable TTF from google/fonts. FUTURE: fold into a shared google-fonts
+          # set, probably in flake-playground (see memory: google-fonts-pkg-module).
+          (stdenvNoCC.mkDerivation {
+            pname = "manrope";
+            version = "2025-04-14";
+            src = fetchurl {
+              url = "https://github.com/google/fonts/raw/fb629caaa15ad25c051089c98f09cf6c8e30a86b/ofl/manrope/Manrope%5Bwght%5D.ttf";
+              name = "Manrope-variable.ttf";
+              hash = "sha256-0GOb5F0K8255gXJBnXvRc8S9Tynit2y7adsdEb+LCkA=";
+            };
+            dontUnpack = true;
+            installPhase = ''
+              runHook preInstall
+              dest=$out/share/fonts/truetype
+              mkdir -p $dest
+              cp $src $dest/Manrope-variable.ttf
+              runHook postInstall
+            '';
+            meta = {
+              description = "Manrope font from Google Fonts";
+              license = lib.licenses.ofl;
+              platforms = lib.platforms.all;
+            };
+          })
           # pkgs.nerd-fonts._0xproto
           # pkgs.nerd-fonts.droid-sans-mono
         ]
