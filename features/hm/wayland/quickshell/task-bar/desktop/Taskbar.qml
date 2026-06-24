@@ -60,8 +60,11 @@ PanelWindow {
         return Quickshell.iconPath(name, "application-x-executable");
     }
 
+    // Left: workspaces + window icons
     RowLayout {
-        anchors.centerIn: parent
+        anchors.left: parent.left
+        anchors.leftMargin: 10
+        anchors.verticalCenter: parent.verticalCenter
         spacing: 8
 
         Repeater {
@@ -143,6 +146,28 @@ PanelWindow {
                         color: dock.theme.accent
                     }
                 }
+            }
+        }
+    }
+
+    // Right: status widgets (clock now; battery/tray/network added next).
+    RowLayout {
+        anchors.right: parent.right
+        anchors.rightMargin: 12
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 14
+
+        Text {
+            id: clockText
+            color: dock.theme.textPrimary
+            font.family: dock.theme.textFont
+            font.pixelSize: 13
+            text: Qt.formatDateTime(new Date(), "ddd HH:mm")
+            Timer {
+                interval: 1000
+                running: true
+                repeat: true
+                onTriggered: clockText.text = Qt.formatDateTime(new Date(), "ddd HH:mm")
             }
         }
     }
