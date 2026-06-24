@@ -60,6 +60,45 @@ PanelWindow {
         return Quickshell.iconPath(name, "application-x-executable");
     }
 
+    // --- Clock helpers (12/24h toggle + UTC/NYC) ---
+    property bool h12: false
+
+    function localTime() {
+        var d = new Date();
+        return dock.h12 ? Qt.formatDateTime(d, "ddd h:mm AP") : Qt.formatDateTime(d, "ddd HH:mm");
+    }
+    function fmtHM(h, m) {
+        var mm = (m < 10 ? "0" : "") + m;
+        if (dock.h12) {
+            var ap = h >= 12 ? "PM" : "AM";
+            var hh = h % 12;
+            if (hh === 0)
+                hh = 12;
+            return hh + ":" + mm + " " + ap;
+        }
+        return (h < 10 ? "0" : "") + h + ":" + mm;
+    }
+    // US DST: 2nd Sun Mar .. 1st Sun Nov (boundary approximated at 07:00 UTC).
+    function nycIsDst(d) {
+        var y = d.getUTCFullYear();
+        function nthSun(month, n) {
+            var first = new Date(Date.UTC(y, month, 1, 7, 0, 0));
+            var firstSun = 1 + ((7 - first.getUTCDay()) % 7);
+            return Date.UTC(y, month, firstSun + (n - 1) * 7, 7, 0, 0);
+        }
+        var t = d.getTime();
+        return t >= nthSun(2, 2) && t < nthSun(10, 1);
+    }
+    function tzTime(tz) {
+        var d = new Date();
+        if (tz === "UTC")
+            return dock.fmtHM(d.getUTCHours(), d.getUTCMinutes());
+        // NYC (America/New_York): EDT (UTC-4) in summer, EST (UTC-5) otherwise.
+        var off = dock.nycIsDst(d) ? -4 : -5;
+        var h = ((d.getUTCHours() + off) % 24 + 24) % 24;
+        return dock.fmtHM(h, d.getUTCMinutes());
+    }
+
     // Left: workspaces + window icons
     RowLayout {
         anchors.left: parent.left
@@ -162,12 +201,25 @@ PanelWindow {
             color: dock.theme.textPrimary
             font.family: dock.theme.textFont
             font.pixelSize: 13
-            text: Qt.formatDateTime(new Date(), "ddd HH:mm")
+            property bool tick: false
+            text: {
+                clockText.tick; // dependency: re-evaluate every second
+                if (clockMouse.containsMouse)
+                    return "UTC " + dock.tzTime("UTC") + "   NYC " + dock.tzTime("NYC");
+                return dock.localTime();
+            }
             Timer {
                 interval: 1000
                 running: true
                 repeat: true
-                onTriggered: clockText.text = Qt.formatDateTime(new Date(), "ddd HH:mm")
+                onTriggered: clockText.tick = !clockText.tick
+            }
+            MouseArea {
+                id: clockMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: dock.h12 = !dock.h12
             }
         }
     }
