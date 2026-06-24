@@ -14,7 +14,6 @@
   theme,
   generatedLuaBinds,
   generatedSwayBinds,
-  waybarLaunch,
   ...
 }: let
   firefox = "${lib.getExe config.programs.firefox.package}";
@@ -114,7 +113,7 @@
   # exec-once -> a single hl.on("hyprland.start", ...) handler.
   autostartHook = mkLuaInline ''
     function()
-      hl.exec_cmd(${luaStr waybarLaunch})
+      hl.exec_cmd("qs -c task-bar")
       hl.exec_cmd("sworkstyle >/tmp/sworkstyle.log 2>&1")
       hl.exec_cmd(${luaStr "${lib.getExe pkgs.activate-linux} -t \"Activate NixOS\" -m \"Edit configuration.nix to activate NixOS.\" -x 360 -c \"1-1-1-0.10\""})
       hl.exec_cmd("[workspace 1 silent] kitty")
