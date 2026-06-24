@@ -43,6 +43,18 @@ class EditorSkeletonTest(unittest.IsolatedAsyncioTestCase):
             # markup (regression: Static.update raised MarkupError).
             self.assertEqual(app.model.notation(), "H[a=kitty, b]")
 
+    async def test_status_and_shortcut_bars_do_not_overlap(self):
+        app = LayoutEditorApp()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            notation = app.query_one("#notation", Static).region
+            shortcuts = app.query_one("#shortcuts", Static).region
+            body = app.query_one("#body").region
+            # distinct rows (regression: two dock:bottom bars overlapped, hiding
+            # the status bar), and the body ends at/above the status row.
+            self.assertEqual(shortcuts.y, notation.y + 1)
+            self.assertLessEqual(body.y + body.height, notation.y)
+
     async def test_info_shows_selected_window_details(self):
         from hy3_layout import Window
         from hy3_layout_tui_model import TuiModel

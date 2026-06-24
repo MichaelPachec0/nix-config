@@ -315,10 +315,12 @@ def render_layout_ascii(node, width, height, selected=None):
 
 class LayoutEditorApp(App):
     CSS = """
+    #body { height: 1fr; }
     #layout { width: 50%; height: 100%; }
     #preview { width: 50%; height: 100%; overflow: hidden; }
-    #notation { dock: bottom; height: 1; background: $panel; }
-    #shortcuts { dock: bottom; height: 1; background: $boost; }
+    #statusbars { dock: bottom; height: 2; }
+    #notation { height: 1; background: $panel; }
+    #shortcuts { height: 1; background: $boost; }
     """
 
     def __init__(self, layout_model=None, keymap="standard"):
@@ -340,12 +342,17 @@ class LayoutEditorApp(App):
         yield Horizontal(
             Tree("layout", id="layout"),
             Static("", id="preview", markup=False),
+            id="body",
         )
-        yield Static("", id="notation", markup=False)
-        # The custom shortcut bar (docked at the very bottom) renders the ACTIVE
-        # keymap's keys + labels, plus the mode indicator in vim. It always shows
-        # every command and updates when the keymap or mode changes.
-        yield Static("", id="shortcuts", markup=False)
+        # The two bottom bars MUST share one docked container -- two separate
+        # `dock: bottom` widgets overlap on the same row (the status bar would be
+        # hidden under the shortcut bar). The Vertical (height 2) stacks them:
+        # the notation/status line on top, the shortcut bar below.
+        yield Vertical(
+            Static("", id="notation", markup=False),
+            Static("", id="shortcuts", markup=False),
+            id="statusbars",
+        )
 
     def on_mount(self) -> None:
         _log.debug("mount keymap=%s notation=%s", self.keymap, self.model.notation())
@@ -396,6 +403,7 @@ class LayoutEditorApp(App):
         table = {k: a for (k, a, _label) in _KEYMAPS[self.keymap]}
         action = table.get(char) or table.get(key)
         if action is not None:
+            _log.debug("dispatch action=%s (key=%r keymap=%s)", action, char, self.keymap)
             getattr(self, "action_" + action)()
             event.stop()
 
