@@ -9,6 +9,7 @@
 }: {
   imports = [
     ./theme.nix
+    ./quickshell.nix
     ./swayidle.nix
     ./waybar
     ./rofi.nix
