@@ -62,10 +62,11 @@ PanelWindow {
 
     // --- Clock helpers (12/24h toggle + UTC/NYC) ---
     property bool h12: false
+    property bool tick: false // toggled every second; bindings read it to re-eval
 
     function localTime() {
         var d = new Date();
-        return dock.h12 ? Qt.formatDateTime(d, "ddd h:mm AP") : Qt.formatDateTime(d, "ddd HH:mm");
+        return dock.h12 ? Qt.formatDateTime(d, "h:mm AP") : Qt.formatDateTime(d, "HH:mm");
     }
     function fmtHM(h, m) {
         var mm = (m < 10 ? "0" : "") + m;
@@ -97,6 +98,13 @@ PanelWindow {
         var off = dock.nycIsDst(d) ? -4 : -5;
         var h = ((d.getUTCHours() + off) % 24 + 24) % 24;
         return dock.fmtHM(h, d.getUTCMinutes());
+    }
+
+    Timer {
+        interval: 1000
+        running: true
+        repeat: true
+        onTriggered: dock.tick = !dock.tick
     }
 
     // Left: workspaces + window icons
@@ -197,22 +205,24 @@ PanelWindow {
         spacing: 14
 
         Text {
+            color: dock.theme.textSecondary
+            font.family: dock.theme.textFont
+            font.pixelSize: 13
+            text: {
+                dock.tick; // ride the clock's tick (updates at midnight)
+                return Qt.formatDateTime(new Date(), "ddd, MMM d yyyy");
+            }
+        }
+        Text {
             id: clockText
             color: dock.theme.textPrimary
             font.family: dock.theme.textFont
             font.pixelSize: 13
-            property bool tick: false
             text: {
-                clockText.tick; // dependency: re-evaluate every second
+                dock.tick; // re-evaluate every second
                 if (clockMouse.containsMouse)
                     return "UTC " + dock.tzTime("UTC") + "   NYC " + dock.tzTime("NYC");
                 return dock.localTime();
-            }
-            Timer {
-                interval: 1000
-                running: true
-                repeat: true
-                onTriggered: clockText.tick = !clockText.tick
             }
             MouseArea {
                 id: clockMouse
