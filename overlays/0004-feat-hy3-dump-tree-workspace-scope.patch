@@ -1,0 +1,160 @@
+feat(hy3): dump_tree workspace arg + dump_all dispatcher
+
+Extends hl.plugin.hy3.dump_tree("<path>"[, ws])() with an optional
+workspace id: no ws (or ws <= 0) dumps the active workspace as before; a
+positive ws dumps that workspace's tree (getWorkspaceByID +
+hy3InstanceForWorkspace), so a consumer can read a non-active workspace
+without switching to it.
+
+Also adds hl.plugin.hy3.dump_all("<path>")() -- writes every live hy3
+workspace's tree as a JSON array sorted by workspace id (iterating the
+g_hy3Instances registry). Unblocks `hy3-layout show --wk N` and `--wk
+all` with no workspace switch / flicker. The per-workspace object schema
+is unchanged ({"workspace":N,"root":<node>}); dump_all wraps them in an
+array.
+---
+ src/dispatchers.cpp | 95 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--------------
+ 1 file changed, 81 insertions(+), 14 deletions(-)
+
+diff --git a/src/dispatchers.cpp b/src/dispatchers.cpp
+--- a/src/dispatchers.cpp
++++ b/src/dispatchers.cpp
+@@ -3,6 +3,7 @@
+ #include <string_view>
+ #include <fstream>
+ #include <sstream>
++#include <map>
+ 
+ #include <hyprland/src/Compositor.hpp>
+ #include <hyprland/src/desktop/DesktopTypes.hpp>
+@@ -1028,43 +1029,108 @@
+ 	}
+ }
+ 
+-// JSON for the active workspace's hy3 tree: {"workspace":N,"root":<node>}
+-static std::string dumpTreeJson() {
+-	auto* hy3 = hy3InstanceForAction(true);
+-
+-	std::stringstream buf;
++// Write {"workspace":N,"root":<node>} for one hy3 instance to buf. `fallback_id`
++// is used for the workspace field when the instance/root is absent (e.g. an
++// empty workspace that has no hy3 layout yet).
++static void dumpInstanceJson(std::stringstream& buf, Hy3Layout* hy3, int64_t fallback_id) {
+ 	if (hy3 == nullptr || !hy3->root) {
+-		buf << "{\"workspace\":-1,\"root\":null}";
+-		return buf.str();
++		buf << "{\"workspace\":" << fallback_id << ",\"root\":null}";
++		return;
+ 	}
+ 
+ 	auto ws = hy3->workspace();
+-	buf << "{\"workspace\":" << (ws ? ws->m_id : -1) << ",\"root\":";
++	buf << "{\"workspace\":" << (ws ? ws->m_id : fallback_id) << ",\"root\":";
+ 	dumpNodeJson(buf, hy3->root.get());
+ 	buf << "}";
++}
++
++// JSON for the active workspace's hy3 tree: {"workspace":N,"root":<node>}
++static std::string dumpTreeJson() {
++	std::stringstream buf;
++	dumpInstanceJson(buf, hy3InstanceForAction(true), -1);
+ 	return buf.str();
+ }
+ 
+-// hl.plugin.hy3.dump_tree("/path")() -- write the active workspace tree as JSON
+-// to the given path. (hyprctl eval only returns "ok", so the tree is delivered
+-// via a file the caller reads back.)
++// JSON for a specific workspace id's hy3 tree.
++static std::string dumpTreeJsonForWorkspace(int64_t id) {
++	auto ws = g_pCompositor->getWorkspaceByID(id);
++	std::stringstream buf;
++	dumpInstanceJson(buf, valid(ws) ? hy3InstanceForWorkspace(ws) : nullptr, id);
++	return buf.str();
++}
++
++// JSON for every live hy3 workspace, sorted by id:
++// [ {"workspace":N,"root":<node>}, ... ]
++static std::string dumpAllJson() {
++	std::map<int64_t, Hy3Layout*> instances;
++	for (auto* hy3: g_hy3Instances) {
++		auto ws = hy3 ? hy3->workspace() : nullptr;
++		instances[ws ? ws->m_id : -1] = hy3;
++	}
++
++	std::stringstream buf;
++	buf << "[";
++	bool first = true;
++	for (auto& [id, hy3]: instances) {
++		if (!first) buf << ",";
++		first = false;
++		dumpInstanceJson(buf, hy3, id);
++	}
++	buf << "]";
++	return buf.str();
++}
++
++// hl.plugin.hy3.dump_tree("/path"[, ws])() -- write a workspace's hy3 tree as
++// JSON to the given path. With no `ws` (or ws <= 0) the active workspace is
++// dumped; otherwise workspace id `ws` is dumped. (hyprctl eval only returns
++// "ok", so the tree is delivered via a file the caller reads back.)
+ static int luaDumpTree(lua_State* L) {
+ 	static constexpr const char* FN = "hl.plugin.hy3.dump_tree";
+-	luaCheckArgCount(L, FN, 1, 1);
++	luaCheckArgCount(L, FN, 1, 2);
+ 
+ 	auto path = luaStringArg(L, 1, FN, "path");
+ 	if (path == "") return luaL_error(L, "%s: path must not be empty", FN);
+ 
++	int64_t ws = 0;
++	if (!lua_isnoneornil(L, 2)) {
++		if (!lua_isnumber(L, 2)) return luaL_error(L, "%s: argument 'ws' must be a number", FN);
++		ws = (int64_t) lua_tointeger(L, 2);
++	}
++
+ 	lua_pushstring(L, path.c_str());
++	lua_pushinteger(L, (lua_Integer) ws);
+ 	auto dspDumpTree = [](lua_State* L) -> int {
+ 		std::string path = lua_tostring(L, lua_upvalueindex(1));
+-		auto json = dumpTreeJson();
++		int64_t ws = (int64_t) lua_tointeger(L, lua_upvalueindex(2));
++		auto json = ws > 0 ? dumpTreeJsonForWorkspace(ws) : dumpTreeJson();
++		std::ofstream out(path, std::ios::out | std::ios::trunc);
++		if (out) out << json;
++		return 0;
++	};
++
++	lua_pushcclosure(L, dspDumpTree, 2);
++	return 1;
++}
++
++// hl.plugin.hy3.dump_all("/path")() -- write every live hy3 workspace's tree as
++// a JSON array (sorted by workspace id) to the given path.
++static int luaDumpAll(lua_State* L) {
++	static constexpr const char* FN = "hl.plugin.hy3.dump_all";
++	luaCheckArgCount(L, FN, 1, 1);
++
++	auto path = luaStringArg(L, 1, FN, "path");
++	if (path == "") return luaL_error(L, "%s: path must not be empty", FN);
++
++	lua_pushstring(L, path.c_str());
++	auto dspDumpAll = [](lua_State* L) -> int {
++		std::string path = lua_tostring(L, lua_upvalueindex(1));
++		auto json = dumpAllJson();
+ 		std::ofstream out(path, std::ios::out | std::ios::trunc);
+ 		if (out) out << json;
+ 		return 0;
+ 	};
+ 
+-	lua_pushcclosure(L, dspDumpTree, 1);
++	lua_pushcclosure(L, dspDumpAll, 1);
+ 	return 1;
+ }
+ 
+@@ -1091,6 +1157,7 @@
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "equalize", luaEqualize);
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "debug_nodes", luaDebugNodes);
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "dump_tree", luaDumpTree);
++	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "dump_all", luaDumpAll);
+ }
+ 
+ void registerDispatchers() {

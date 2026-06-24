@@ -60,12 +60,18 @@ or as **one tab group** (one unit full-screen at a time, switch with
 so "one tab" is achieved by wrapping the units in a tab group that becomes the
 root's child -- same visual effect.
 
-Given two finished units `u1`, `u2` sitting as root siblings:
+Given two finished units `u1`, `u2` sitting as root siblings, apply **exactly
+ONE** of these finishes -- they are alternatives, NOT sequential steps. (Doing
+columns *then* one-tab is the classic trap: the one-tab fold then either does
+**nothing** -- the columns-wrapped unit `T[H[a,b]]` has no sibling for
+`group_with` to grab, so it silently bails -- or, if you raise an extra level,
+builds **nested double tab-bars** `T[ T[H[a,b]], T[H[c,d]] ]`. If a finish seems
+to do nothing or looks wrong, doing both is almost always the cause.)
 
-- **Columns** -> wrap each: `focus u1; Super+a; Super+x`, then same for `u2`.
-  Result `H[ T[u1], T[u2] ]`.
-- **One at a time** -> tab them together: `focus u1; Super+a (until the WHOLE
-  unit is selected); Super+Shift+g, Shift+l`. Result `T[ u1, u2 ]`.
+- **Columns (option A)** -> wrap each: `focus u1; Super+a; Super+x`, then same
+  for `u2`. Result `H[ T[u1], T[u2] ]`.
+- **One at a time (option B)** -> tab them together: `focus u1; Super+a (until
+  the WHOLE unit is selected); Super+Shift+g, Shift+l`. Result `T[ u1, u2 ]`.
 
 ```mermaid
 graph TD
@@ -202,8 +208,8 @@ columns:                             one-at-a-time:
 row: a b c d
 focus a; Super+Shift+g, Ctrl+l   -> H[a,b]   (u1)
 focus c; Super+Shift+g, Ctrl+l   -> H[c,d]   (u2)
-finish columns : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus c; Super+a; Super+x
-finish one-tab : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
+finish as COLUMNS (option A) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus c; Super+a; Super+x
+finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ### H-2 &nbsp; columns `H[ T[H[a, V[H[b,c], d]]], T[H[e,f]] ]` &nbsp; / &nbsp; one-tab `T[ H[a, V[H[b,c], d]], H[e,f] ]`
@@ -240,8 +246,8 @@ focus b; Super+Shift+g, Ctrl+l   -> H[b,c]
 Super+a; Super+Shift+g, l        -> V[H[b,c], d]
 focus a; Super+Shift+g, Ctrl+l   -> H[a, V[H[b,c], d]]   (u1)
 focus e; Super+Shift+g, Ctrl+l   -> H[e,f]               (u2)
-finish columns : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
-finish one-tab : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
+finish as COLUMNS (option A) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
+finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ### H-3 &nbsp; columns `H[ T[H[T[a,b], T[c,d]]], T[H[e, V[H[f,g], h]]] ]`
@@ -285,8 +291,8 @@ focus a; Super+a; Super+Shift+g, Ctrl+l-> H[T[a,b], T[c,d]]   (u1)
 focus f; Super+Shift+g, Ctrl+l         -> H[f,g]
 Super+a; Super+Shift+g, l              -> V[H[f,g], h]
 focus e; Super+Shift+g, Ctrl+l         -> H[e, V[H[f,g], h]]  (u2)
-finish columns : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
-finish one-tab : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+Shift+g, Shift+l
+finish as COLUMNS (option A) : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
+finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 (u1 is two levels deep, so it takes **two** `Super+a` to select the whole unit.)
@@ -325,8 +331,8 @@ graph TD
 row: a b c d
 focus a; Super+Shift+g, l   -> V[a,b]   (u1)
 focus c; Super+Shift+g, l   -> V[c,d]   (u2)
-finish columns : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus c; Super+a; Super+x
-finish one-tab : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
+finish as COLUMNS (option A) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus c; Super+a; Super+x
+finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ### V-2 &nbsp; columns `H[ T[V[a, H[V[b,c], d]]], T[V[e,f]] ]` &nbsp; / &nbsp; one-tab `T[ V[a, H[V[b,c], d]], V[e,f] ]`
@@ -363,8 +369,8 @@ focus b; Super+Shift+g, l        -> V[b,c]
 Super+a; Super+Shift+g, Ctrl+l   -> H[V[b,c], d]
 focus a; Super+Shift+g, l        -> V[a, H[V[b,c], d]]   (u1)
 focus e; Super+Shift+g, l        -> V[e,f]               (u2)
-finish columns : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
-finish one-tab : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
+finish as COLUMNS (option A) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
+finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a [RAISE -- selects the pair, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ### V-3 &nbsp; columns `H[ T[V[T[a,b], T[c,d]]], T[V[e, H[V[f,g], h]]] ]`
@@ -410,11 +416,56 @@ focus a; Super+a; Super+Shift+g, l     -> V[T[a,b], T[c,d]]   (u1)
 focus f; Super+Shift+g, l              -> V[f,g]
 Super+a; Super+Shift+g, Ctrl+l         -> H[V[f,g], h]
 focus e; Super+Shift+g, l              -> V[e, H[V[f,g], h]]  (u2)
-finish columns : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
-finish one-tab : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+Shift+g, Shift+l
+finish as COLUMNS (option A) : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+x   then   focus e; Super+a; Super+x
+finish as ONE-TAB (option B; do A OR B, NOT both) : focus a; Super+a Super+a [RAISE x2 -- selects the whole unit, MANDATORY]; Super+Shift+g, Shift+l
 ```
 
 ---
+
+## Un-nesting a stray wrapper (user error fix)
+
+A unit can end up with a redundant **single-child tab wrapper** around it --
+`T[ u1, T[ H[a,{b,c}] ] ]` instead of `T[ u1, H[a,{b,c}] ]`. This is **user
+error, not a tool bug**: pressing `Super+x` (tab-wrap) on a unit that is already
+a root tab, or doing the "columns *then* one-tab" double-finish (see Root style),
+wraps the unit's split in an extra `T[ ]`. It shows as a **tab bar inside a tab
+bar** -- the root tab label reads `[T][H] ...` instead of `[H] ...`.
+
+```
+before (nested):                 after (flat):
+root[tabs]                       root[tabs]
+|- u1  [splith]                  |- u1  [splith]
+`- u2  [tabs]      <- stray      `- u2  [splith]
+       `- [splith]                      `- a, {b,c}
+             `- a, {b,c}
+```
+
+Fix (verified live):
+
+1. Click a window in the nested unit (or `Super+h/l` into it).
+2. `Super+a` -- repeat until the selection highlight covers the **whole unit**
+   (left pane + the tab pair together). The depth varies (an extra `V`/`H` around
+   a pane adds a level), so **watch the highlight, do not count blindly**.
+3. `Super+g` -- toggles the wrapper above your selection from **tab -> split**.
+   The nested tab bar disappears and the unit renders flat.
+4. Click a window in the unit again, then `Super+Shift+Ctrl+l` then
+   `Super+Shift+Ctrl+h` -- nudge a pane out one level and back. This collapses the
+   leftover single-child split so the label reads a clean `[H]`.
+
+Why two steps (toggle, then nudge):
+
+- `Super+g` toggles the **parent** of the selected node -- so you select the
+  unit's split and it untabs the wrapper above it.
+- A single-child **tab** group never auto-collapses (hy3 keeps it for the tab
+  bar); a single-child **split** does, but only on the next structural move. So
+  convert the wrapper to a split (`Super+g`), then trigger the collapse with a
+  no-op `{once}` slide.
+- Use the **Ctrl** slide (`Super+Shift+Ctrl+l/h`, = "pop out one level"). Plain
+  `Super+Shift+l/h` *descends* and yanks the pane into the neighbour unit instead.
+
+Same idea for a stray single-child `V`/`H` around one pane (e.g. `[splitv]` with
+one child): it is invisible but adds a raise level; the `{once}` nudge in step 4
+collapses it too.
 
 ## Caveats
 

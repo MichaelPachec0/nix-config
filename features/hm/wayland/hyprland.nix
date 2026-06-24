@@ -215,11 +215,71 @@
     exec rofi -dmenu -i -no-custom -p "keybinds" -mesg "Esc to close" < ${cheatFile}
   '';
   cheatBind = {_args = ["SUPER + slash" (mkLuaInline ''hl.dsp.exec_cmd("${cheatsheetScript}/bin/keybind-cheatsheet")'')];};
+
+  # ---- hy3-project: open a project layout on the active workspace ----------
+  # Builds T[H[a,{T[b],T[c]}]] -- two kitty shells (cwd=PATH) + a browser; a
+  # re-run appends another unit as a sibling root tab (generalises to N).
+  # writeShellApplication enforces runtimeInputs on PATH, sets -euo pipefail,
+  # and runs shellcheck at build. The standalone hy3-project.sh is read in
+  # verbatim (shebang stripped; its bash ${...} are data, not Nix interpolation)
+  # and the default browser is injected as an absolute path. runtimeInputs pin
+  # only what the script itself runs; kitty/rofi/the browser are launched by the
+  # compositor/session (rofi stays the themed one resolved from PATH, and
+  # --browser overrides the injected default). See
+  # docs/superpowers/plans/2026-06-21-hy3-project-dispatcher-notes.md.
+  hy3ProjectScript = pkgs.writeShellApplication {
+    name = "hy3-project";
+    runtimeInputs = [pkgs.jq pkgs.coreutils pkgs.findutils pkgs.latest.hyprland];
+    text = ''
+      HY3_PROJECT_DEFAULT_BROWSER=${lib.escapeShellArg firefox}
+      export HY3_PROJECT_DEFAULT_BROWSER
+      ${lib.concatStringsSep "\n" (lib.tail (lib.splitString "\n" (builtins.readFile ./hy3-project.sh)))}
+    '';
+  };
+  hy3ProjectBind = {_args = ["SUPER + SHIFT + P" (mkLuaInline ''hl.dsp.exec_cmd("${hy3ProjectScript}/bin/hy3-project --pick")'')];};
+
+  # ---- hy3-layout: compile the hy3 notation to/from a live layout -----------
+  # `hy3-layout build '<notation>'` constructs the layout live; `show` prints the
+  # active (or --wk N / --wk all) workspace as notation; --visualize prints an
+  # ASCII tree. stdlib-only Python -- only hyprctl is shelled out to (kitty/the
+  # browser are launched by the compositor via hl.exec_cmd). Wrapped via
+  # writeShellApplication (python3 on the .py) rather than writePython3Bin to
+  # skip the build-time flake8 gate. See
+  # docs/superpowers/specs/2026-06-22-hy3-layout-design.md.
+  hy3LayoutScript = pkgs.writeShellApplication {
+    name = "hy3-layout";
+    runtimeInputs = [pkgs.python3 pkgs.latest.hyprland];
+    text = ''exec python3 ${./hy3_layout.py} "$@"'';
+  };
+  # NOTE: no keybind yet (deferred). hy3-layout is on PATH via home.packages. To
+  # add one later, mirror hy3ProjectBind and append it to the `bind = ...` list
+  # -- e.g. a non-destructive "show current layout" notification:
+  #   hl.dsp.exec_cmd("sh -c 'notify-send hy3-layout \"$(hy3-layout show --visualize)\"'")
+  # or a rofi notation picker that pipes the choice into `hy3-layout build`.
+
+  # hy3-layout-tui: Textual TUI over the engine. Needs the third-party `textual`
+  # dep (so python3.withPackages, not the stdlib wrapper) and all four modules
+  # importable together -- assemble them into one store dir and run the entry
+  # from there so `import hy3_layout*` resolves via sys.path[0]. See
+  # docs/superpowers/specs/2026-06-22-hy3-layout-tui-design.md.
+  hy3LayoutTuiSrc = pkgs.runCommand "hy3-layout-tui-src" {} ''
+    mkdir -p "$out"
+    cp ${./hy3_layout.py}           "$out/hy3_layout.py"
+    cp ${./hy3_layout_apps.py}      "$out/hy3_layout_apps.py"
+    cp ${./hy3_layout_tui_model.py} "$out/hy3_layout_tui_model.py"
+    cp ${./hy3_layout_tui.py}       "$out/hy3_layout_tui.py"
+  '';
+  hy3LayoutTuiPython = pkgs.python3.withPackages (ps: [ps.textual]);
+  hy3LayoutTuiScript = pkgs.writeShellApplication {
+    name = "hy3-layout-tui";
+    runtimeInputs = [hy3LayoutTuiPython pkgs.latest.hyprland];
+    text = ''exec python3 ${hy3LayoutTuiSrc}/hy3_layout_tui.py "$@"'';
+  };
 in {
   config = {
     # `keybind-cheatsheet` on PATH so it's runnable from a terminal too (the
     # Super+/ bind invokes it by store path regardless).
-    home.packages = [cheatsheetScript];
+    home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript];
 
     wayland = {
       windowManager.hyprland = {
@@ -385,7 +445,7 @@ in {
 
           # hl.bind(...) -- generated from swayKeybindings (toLua) + hy3 extras
           # + the Super+/ cheatsheet bind.
-          bind = generatedLuaBinds ++ hy3ExtraBinds ++ [cheatBind];
+          bind = generatedLuaBinds ++ hy3ExtraBinds ++ [cheatBind hy3ProjectBind];
 
           # hl.on("hyprland.start", function() ... end). hy3 setup runs first
           # (load + config), then the autostart apps.

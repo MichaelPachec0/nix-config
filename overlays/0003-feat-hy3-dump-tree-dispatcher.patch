@@ -1,0 +1,119 @@
+feat(hy3): dump_tree dispatcher -- active workspace tree as JSON
+
+Adds hl.plugin.hy3.dump_tree("<path>")() which writes the active
+workspace's hy3 node tree to <path> as JSON. Window nodes carry the
+Hyprland address (matches hyprctl clients .address); group nodes carry
+their layout (root/splith/splitv/tabs) + children. Lets a consumer tell
+loose windows at root from a root tab group without guessing geometry.
+Delivered via a file because hyprctl eval only returns "ok".
+---
+ src/dispatchers.cpp | 84 +++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 84 insertions(+)
+
+diff --git a/src/dispatchers.cpp b/src/dispatchers.cpp
+--- a/src/dispatchers.cpp
++++ b/src/dispatchers.cpp
+@@ -1,6 +1,8 @@
+ #include <optional>
+ #include <string>
+ #include <string_view>
++#include <fstream>
++#include <sstream>
+ 
+ #include <hyprland/src/Compositor.hpp>
+ #include <hyprland/src/desktop/DesktopTypes.hpp>
+@@ -986,6 +988,86 @@
+ 	return 1;
+ }
+ 
++// Serialize one node (and its subtree) to JSON. Window nodes carry the Hyprland
++// address (matches `hyprctl clients` .address); group nodes carry their layout
++// (root/splith/splitv/tabs) and children, so a consumer can tell loose windows
++// at root from a root tab group without guessing from geometry.
++static void dumpNodeJson(std::stringstream& buf, Hy3Node* node) {
++	if (node == nullptr) {
++		buf << "null";
++		return;
++	}
++
++	if (node->is_group()) {
++		auto& group = node->as_group();
++		const char* layout;
++		switch (group.layout) {
++		case Hy3GroupLayout::Root: layout = "root"; break;
++		case Hy3GroupLayout::SplitH: layout = "splith"; break;
++		case Hy3GroupLayout::SplitV: layout = "splitv"; break;
++		case Hy3GroupLayout::Tabbed: layout = "tabs"; break;
++		default: layout = "unknown"; break;
++		}
++
++		buf << "{\"node\":\"group\",\"layout\":\"" << layout
++		    << "\",\"hidden\":" << (node->hidden ? "true" : "false") << ",\"children\":[";
++
++		bool first = true;
++		for (auto& child: group.children) {
++			if (!first) buf << ",";
++			first = false;
++			dumpNodeJson(buf, child.get());
++		}
++
++		buf << "]}";
++	} else {
++		auto window = node->as_window();
++		buf << "{\"node\":\"window\",\"address\":\"0x" << std::hex
++		    << (uintptr_t) (window ? window.get() : nullptr) << std::dec
++		    << "\",\"hidden\":" << (node->hidden ? "true" : "false") << "}";
++	}
++}
++
++// JSON for the active workspace's hy3 tree: {"workspace":N,"root":<node>}
++static std::string dumpTreeJson() {
++	auto* hy3 = hy3InstanceForAction(true);
++
++	std::stringstream buf;
++	if (hy3 == nullptr || !hy3->root) {
++		buf << "{\"workspace\":-1,\"root\":null}";
++		return buf.str();
++	}
++
++	auto ws = hy3->workspace();
++	buf << "{\"workspace\":" << (ws ? ws->m_id : -1) << ",\"root\":";
++	dumpNodeJson(buf, hy3->root.get());
++	buf << "}";
++	return buf.str();
++}
++
++// hl.plugin.hy3.dump_tree("/path")() -- write the active workspace tree as JSON
++// to the given path. (hyprctl eval only returns "ok", so the tree is delivered
++// via a file the caller reads back.)
++static int luaDumpTree(lua_State* L) {
++	static constexpr const char* FN = "hl.plugin.hy3.dump_tree";
++	luaCheckArgCount(L, FN, 1, 1);
++
++	auto path = luaStringArg(L, 1, FN, "path");
++	if (path == "") return luaL_error(L, "%s: path must not be empty", FN);
++
++	lua_pushstring(L, path.c_str());
++	auto dspDumpTree = [](lua_State* L) -> int {
++		std::string path = lua_tostring(L, lua_upvalueindex(1));
++		auto json = dumpTreeJson();
++		std::ofstream out(path, std::ios::out | std::ios::trunc);
++		if (out) out << json;
++		return 0;
++	};
++
++	lua_pushcclosure(L, dspDumpTree, 1);
++	return 1;
++}
++
+ static SDispatchResult dispatch_debug(std::string arg) {
+ 	return debugNodes();
+ }
+@@ -1008,6 +1090,7 @@
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "lock_tab", luaLockTab);
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "equalize", luaEqualize);
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "debug_nodes", luaDebugNodes);
++	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "dump_tree", luaDumpTree);
+ }
+ 
+ void registerDispatchers() {
