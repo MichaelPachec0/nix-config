@@ -1181,6 +1181,9 @@ in {
         libva-utils
         mesa-demos
         mindustry
+
+        lutris
+        heroic
       ]
       ++ (with config.boot.kernelPackages; [
         #
@@ -1234,7 +1237,6 @@ in {
       enable = true;
       # WARN: this needs to be changed per wifi interface
       interface = "wlxc03c597743d1";
-
     };
 
     virt.alt.enable = true;
@@ -1295,20 +1297,18 @@ in {
       enable = true;
     };
 
-    programs = {
-      gamescope = {
-        enable = true;
-        capSysNice = true;
-      };
-      gamemode = {
-        enable = true;
-        enableRenice = true;
-      };
-      steam = {
-        enable = true;
-        gamescopeSession.enable = true;
-        protontricks.enable = true;
-      };
+    programs.gamescope = {
+      enable = true;
+      capSysNice = true;
+    };
+    programs.gamemode = {
+      enable = true;
+      enableRenice = true;
+    };
+    programs.steam = {
+      enable = true;
+      gamescopeSession.enable = true;
+      protontricks.enable = true;
     };
 
     # services.logind.extraConfig = ''
