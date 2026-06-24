@@ -354,6 +354,13 @@ in {
               };
             };
 
+            misc = {
+              disable_hyprland_logo = true;
+              animate_manual_resizes = true;
+              enable_swallow = true;
+              swallow_regex = "^(kitty)$";
+            };
+
             render = {
               cm_enabled = true;
               cm_auto_hdr = 1;
