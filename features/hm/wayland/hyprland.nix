@@ -256,11 +256,30 @@
   # -- e.g. a non-destructive "show current layout" notification:
   #   hl.dsp.exec_cmd("sh -c 'notify-send hy3-layout \"$(hy3-layout show --visualize)\"'")
   # or a rofi notation picker that pipes the choice into `hy3-layout build`.
+
+  # hy3-layout-tui: Textual TUI over the engine. Needs the third-party `textual`
+  # dep (so python3.withPackages, not the stdlib wrapper) and all four modules
+  # importable together -- assemble them into one store dir and run the entry
+  # from there so `import hy3_layout*` resolves via sys.path[0]. See
+  # docs/superpowers/specs/2026-06-22-hy3-layout-tui-design.md.
+  hy3LayoutTuiSrc = pkgs.runCommand "hy3-layout-tui-src" {} ''
+    mkdir -p "$out"
+    cp ${./hy3_layout.py}           "$out/hy3_layout.py"
+    cp ${./hy3_layout_apps.py}      "$out/hy3_layout_apps.py"
+    cp ${./hy3_layout_tui_model.py} "$out/hy3_layout_tui_model.py"
+    cp ${./hy3_layout_tui.py}       "$out/hy3_layout_tui.py"
+  '';
+  hy3LayoutTuiPython = pkgs.python3.withPackages (ps: [ps.textual]);
+  hy3LayoutTuiScript = pkgs.writeShellApplication {
+    name = "hy3-layout-tui";
+    runtimeInputs = [hy3LayoutTuiPython pkgs.latest.hyprland];
+    text = ''exec python3 ${hy3LayoutTuiSrc}/hy3_layout_tui.py "$@"'';
+  };
 in {
   config = {
     # `keybind-cheatsheet` on PATH so it's runnable from a terminal too (the
     # Super+/ bind invokes it by store path regardless).
-    home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript];
+    home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript];
 
     wayland = {
       windowManager.hyprland = {
