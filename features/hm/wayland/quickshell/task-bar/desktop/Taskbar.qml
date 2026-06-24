@@ -4,16 +4,16 @@ import Quickshell.Wayland
 import QtQuick
 import QtQuick.Layouts
 
-// Bottom dock. Bottom-anchored so it RESERVES its height (keeps windows above
-// it). Draws the bottom bar background and the workspace chips. Window icons are
-// added in the next task. `hasWindows` drives the screen-border auto-hide.
+// Top bar (waybar-style). Top-anchored so it RESERVES its height (windows sit
+// below it). Draws the bar background + workspace chips + per-window app icons.
+// `hasWindows` is kept for the shelved screen-border's auto-hide.
 PanelWindow {
     id: dock
 
     required property QtObject theme
 
     anchors {
-        bottom: true
+        top: true
         left: true
         right: true
     }
