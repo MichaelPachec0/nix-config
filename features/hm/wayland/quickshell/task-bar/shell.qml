@@ -1,3 +1,8 @@
+//@ pragma UseQApplication
+// QApplication mode is required for native platform menus (SystemTrayItem.display),
+// which we use for tray items whose menus don't play well with our themed popup --
+// nm-applet (rebuilds on every Wi-Fi scan) and Electron/Chromium apps (menu only
+// populates for a native client). See desktop/Taskbar.qml tray dispatch.
 import Quickshell
 import QtQuick
 import "lib" as Lib

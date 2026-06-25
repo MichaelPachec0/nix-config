@@ -134,6 +134,12 @@ PanelWindow {
         onTriggered: dock.tick = !dock.tick
     }
 
+    // Shared themed context menu for tray items (opened on right-click).
+    TrayMenu {
+        id: trayMenu
+        theme: dock.theme
+    }
+
     // Left: workspaces + window icons
     RowLayout {
         anchors.left: parent.left
@@ -232,7 +238,8 @@ PanelWindow {
         spacing: 14
 
         // System tray (StatusNotifier items): left-click activate, middle-click
-        // secondary. Right-click context menu is a follow-up.
+        // secondary, right-click opens the item's DBus context menu. Items that
+        // are menu-only (no activate action) open their menu on left-click too.
         RowLayout {
             spacing: 8
             visible: SystemTray.items.values.length > 0
@@ -245,12 +252,38 @@ PanelWindow {
                     Layout.alignment: Qt.AlignVCenter
                     implicitWidth: 20
                     implicitHeight: 20
-                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                     onClicked: function (mouse) {
-                        if (mouse.button === Qt.MiddleButton)
-                            trayItem.modelData.secondaryActivate();
-                        else
-                            trayItem.modelData.activate();
+                        var item = trayItem.modelData;
+                        var wantMenu = mouse.button === Qt.RightButton || (mouse.button === Qt.LeftButton && item.onlyMenu);
+                        if (wantMenu) {
+                            if (item.hasMenu) {
+                                // nm-applet rebuilds its menu on every Wi-Fi scan,
+                                // which thrashes the QML drill-down, so it uses the
+                                // native menu. Everything else uses the themed popup.
+                                // We deliberately do NOT route Chromium/Electron apps
+                                // to native: Quickshell segfaults in PlatformMenuEntry
+                                // teardown when a canonical-dbusmenu item whose native
+                                // menu was opened later unregisters (reproduced on
+                                // several Electron apps' exit). nm-applet uses the
+                                // ayatana menu backend and a persistent process, so it
+                                // doesn't hit that path.
+                                var id = (item.id || "").toLowerCase();
+                                var native = id.indexOf("nm-applet") >= 0;
+                                if (native) {
+                                    var pl = trayItem.mapToItem(null, 0, trayItem.height + 4);
+                                    item.display(dock, pl.x, pl.y);
+                                } else {
+                                    // Themed menu, right-aligned under the icon.
+                                    var p = trayItem.mapToItem(null, trayItem.width, trayItem.height + 4);
+                                    trayMenu.openAt(dock, p.x, p.y, item.menu);
+                                }
+                            }
+                        } else if (mouse.button === Qt.MiddleButton) {
+                            item.secondaryActivate();
+                        } else {
+                            item.activate();
+                        }
                     }
                     Image {
                         anchors.fill: parent
