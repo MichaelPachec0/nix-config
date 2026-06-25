@@ -104,6 +104,13 @@
         package = pkgs.adwaita-icon-theme;
         size = 24;
       };
+      # A real icon theme so themed names (drive-removable-media, nm/bluetooth,
+      # app icons, mimetypes) resolve -- without this Qt/Quickshell only sees the
+      # sparse hicolor fallback, leaving tray/window icons blank.
+      iconTheme = {
+        name = "Papirus-Dark";
+        package = pkgs.papirus-icon-theme;
+      };
       font = {
         package = pkgs.dejavu_fonts;
         name = "DejaVu Sans";

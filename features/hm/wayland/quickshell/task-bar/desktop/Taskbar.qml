@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Wayland
 import Quickshell.Services.UPower
+import Quickshell.Services.SystemTray
 import QtQuick
 import QtQuick.Layouts
 
@@ -38,6 +39,10 @@ PanelWindow {
     // override those, else use the desktop-entry heuristic, else the raw class.
     function iconFor(cls) {
         var raw = cls || "";
+        // No class yet (a toplevel paints one frame before its lastIpcObject
+        // arrives) -> render nothing rather than flashing the generic cog.
+        if (raw.length === 0)
+            return "";
         var c = raw.toLowerCase();
         var name = "";
         // Explicit class->icon overrides for classes that don't equal their icon
@@ -225,6 +230,38 @@ PanelWindow {
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
         spacing: 14
+
+        // System tray (StatusNotifier items): left-click activate, middle-click
+        // secondary. Right-click context menu is a follow-up.
+        RowLayout {
+            spacing: 8
+            visible: SystemTray.items.values.length > 0
+
+            Repeater {
+                model: SystemTray.items
+                MouseArea {
+                    id: trayItem
+                    required property var modelData
+                    Layout.alignment: Qt.AlignVCenter
+                    implicitWidth: 20
+                    implicitHeight: 20
+                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+                    onClicked: function (mouse) {
+                        if (mouse.button === Qt.MiddleButton)
+                            trayItem.modelData.secondaryActivate();
+                        else
+                            trayItem.modelData.activate();
+                    }
+                    Image {
+                        anchors.fill: parent
+                        sourceSize.width: 40
+                        sourceSize.height: 40
+                        fillMode: Image.PreserveAspectFit
+                        source: trayItem.modelData.icon
+                    }
+                }
+            }
+        }
 
         // Battery (laptop only): drawn icon + percentage.
         RowLayout {
