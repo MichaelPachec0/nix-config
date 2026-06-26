@@ -2,33 +2,21 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 
-// Per-AP detail tooltip, shown beside the network menu when a row is hovered.
-// Mirrors the connected-AP popup but for any scanned AP: signal, channel,
-// encryption, BSSID, advertised rate, PHY. All data comes from the scan row
-// (nmcli); PHY is derived from the advertised max rate (no per-scanned-AP PHY
-// on D-Bus), so it is approximate. grabFocus is off -- it is just a tooltip.
-PopupWindow {
-    id: pop
+// Per-AP detail panel, shown inside the WiFi menu window (to the right of the
+// list) so it lives within the menu's focus grab -- a separate popup window
+// never receives hover/clicks while the menu holds the grab. Mirrors the
+// connected-AP popup; saved networks get a "Forget network" button below.
+Item {
+    id: root
 
     required property QtObject theme
-    required property var menuWindow // the WifiPopup, anchored flush to its right
     property var ap: null
+    property bool saved: false
+
+    signal forget
 
     implicitWidth: 250
-    implicitHeight: card.implicitHeight
-    color: "transparent"
-    visible: false
-    grabFocus: false
-
-    // Anchor to the menu window's right edge (no coord math). rect width +4
-    // adds a 4px x gap; Right|Bottom gravity top-aligns it with the menu.
-    anchor.window: pop.menuWindow
-    anchor.rect.x: 0
-    anchor.rect.y: 0
-    anchor.rect.width: pop.menuWindow ? pop.menuWindow.width + 4 : 0
-    anchor.rect.height: 0
-    anchor.edges: Edges.Right
-    anchor.gravity: Edges.Right | Edges.Bottom
+    implicitHeight: content.implicitHeight
 
     function band(f) {
         f = f || 0;
@@ -46,14 +34,12 @@ PopupWindow {
             return "802.11ac";
         return "802.11ax";
     }
-    // "36 (5G: 5180MHz, 80MHz)" -- channel + band + freq + width (nmcli BANDWIDTH).
     function channelStr(a) {
         if (!a.chan)
             return "N/A";
         var w = a.bandwidth ? ", " + String(a.bandwidth).replace(/\s/g, "") : "";
-        return a.chan + " (" + pop.band(a.freq) + ": " + (a.freq || "?") + "MHz" + w + ")";
+        return a.chan + " (" + root.band(a.freq) + ": " + (a.freq || "?") + "MHz" + w + ")";
     }
-    // nmcli RSN-FLAGS, e.g. "pair_ccmp group_ccmp psk sae" -> "WPA2/WPA3 (CCMP)".
     function decodeSec(a) {
         var f = String(a.rsn || "").toLowerCase();
         if (!a.secured || f === "" || f === "(none)")
@@ -73,16 +59,8 @@ PopupWindow {
         return mgmt.join("/") + (c ? " (" + c + ")" : "");
     }
 
-    function showFor(ap) {
-        pop.ap = ap;
-        pop.visible = true;
-    }
-    function hide() {
-        pop.visible = false;
-    }
-
     readonly property var rows: {
-        var a = pop.ap || {};
+        var a = root.ap || {};
         return [
             {
                 k: "Signal",
@@ -90,11 +68,11 @@ PopupWindow {
             },
             {
                 k: "Channel",
-                v: pop.channelStr(a)
+                v: root.channelStr(a)
             },
             {
                 k: "Security",
-                v: pop.decodeSec(a)
+                v: root.decodeSec(a)
             },
             {
                 k: "BSSID",
@@ -106,7 +84,7 @@ PopupWindow {
             },
             {
                 k: "PHY",
-                v: pop.phyFromRate(a.rate)
+                v: root.phyFromRate(a.rate)
             },
             {
                 k: "Mode",
@@ -119,57 +97,91 @@ PopupWindow {
         ];
     }
 
-    Rectangle {
-        id: card
-        implicitWidth: pop.width
-        implicitHeight: col.implicitHeight + 16
-        radius: 11
-        color: pop.theme.bgCard
-        border.width: 1
-        border.color: pop.theme.border
+    Column {
+        id: content
+        width: parent.width
+        spacing: 4
 
-        ColumnLayout {
-            id: col
-            anchors {
-                left: parent.left
-                right: parent.right
-                top: parent.top
-                margins: 10
-            }
-            spacing: 5
+        Rectangle {
+            width: parent.width
+            implicitHeight: col.implicitHeight + 16
+            radius: 11
+            color: root.theme.bgCard
+            border.width: 1
+            border.color: root.theme.border
 
-            Text {
-                Layout.fillWidth: true
-                text: (pop.ap && pop.ap.ssid) ? pop.ap.ssid : "Wi-Fi"
-                color: pop.theme.textPrimary
-                font.family: pop.theme.textFont
-                font.pixelSize: 12
-                font.weight: Font.Bold
-                elide: Text.ElideRight
-            }
+            ColumnLayout {
+                id: col
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    top: parent.top
+                    margins: 10
+                }
+                spacing: 5
 
-            Repeater {
-                model: pop.rows
-                RowLayout {
-                    required property var modelData
+                Text {
                     Layout.fillWidth: true
-                    spacing: 10
-                    Text {
-                        text: modelData.k
-                        color: pop.theme.textSecondary
-                        font.family: pop.theme.textFont
-                        font.pixelSize: 11
-                    }
-                    Text {
+                    text: (root.ap && root.ap.ssid) ? root.ap.ssid : "Wi-Fi"
+                    color: root.theme.textPrimary
+                    font.family: root.theme.textFont
+                    font.pixelSize: 12
+                    font.weight: Font.Bold
+                    elide: Text.ElideRight
+                }
+                Repeater {
+                    model: root.rows
+                    RowLayout {
+                        required property var modelData
                         Layout.fillWidth: true
-                        horizontalAlignment: Text.AlignRight
-                        text: modelData.v
-                        color: pop.theme.textPrimary
-                        font.family: pop.theme.textFont
-                        font.pixelSize: 11
-                        elide: Text.ElideLeft
+                        spacing: 10
+                        Text {
+                            text: modelData.k
+                            color: root.theme.textSecondary
+                            font.family: root.theme.textFont
+                            font.pixelSize: 11
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignRight
+                            text: modelData.v
+                            color: root.theme.textPrimary
+                            font.family: root.theme.textFont
+                            font.pixelSize: 11
+                            elide: Text.ElideLeft
+                        }
                     }
                 }
+            }
+        }
+
+        // Forget button (saved networks only), 4px below the card.
+        Rectangle {
+            visible: root.saved
+            width: parent.width
+            implicitHeight: 30
+            radius: 11
+            color: forgetHover.hovered ? root.theme.accentRed : root.theme.bgCard
+            border.width: 1
+            border.color: forgetHover.hovered ? root.theme.accentRed : root.theme.border
+            Behavior on color {
+                ColorAnimation {
+                    duration: 120
+                }
+            }
+            Text {
+                anchors.centerIn: parent
+                text: "Forget network"
+                color: forgetHover.hovered ? root.theme.textOnAccent : root.theme.accentRed
+                font.family: root.theme.textFont
+                font.pixelSize: 12
+            }
+            HoverHandler {
+                id: forgetHover
+                cursorShape: Qt.PointingHandCursor
+            }
+            TapHandler {
+                onTapped: root.forget()
             }
         }
     }
