@@ -49,12 +49,25 @@ Item {
                     radius: 1
                     color: root.low ? root.theme.accentRed : (root.onAC ? root.theme.accentSlider : root.theme.accent)
                 }
-                // Bolt while on AC -- orange so it reads over both the fill and bar.
+                // Bolt while on AC. White with a soft offset shadow (a second
+                // Text behind it, since GraphicalEffects is avoided here) so it
+                // stays legible over both the green fill and the dark empty area
+                // without the harsh orange-on-green vibration.
+                Text {
+                    anchors.centerIn: parent
+                    anchors.horizontalCenterOffset: 0.5
+                    anchors.verticalCenterOffset: 0.75
+                    visible: root.onAC
+                    text: String.fromCodePoint(0xF0E7) // bolt (white halo/shadow)
+                    color: Qt.rgba(1, 1, 1, 0.85)
+                    font.family: root.theme.iconFont
+                    font.pixelSize: 10
+                }
                 Text {
                     anchors.centerIn: parent
                     visible: root.onAC
                     text: String.fromCodePoint(0xF0E7) // bolt
-                    color: root.theme.accentSlider2
+                    color: "#2e3436"
                     font.family: root.theme.iconFont
                     font.pixelSize: 9
                 }
