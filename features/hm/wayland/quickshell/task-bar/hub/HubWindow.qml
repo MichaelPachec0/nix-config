@@ -122,6 +122,12 @@ PanelWindow {
                     onCloseRequested: win.close()
                 }
 
+                CalendarWeatherCard {
+                    Layout.fillWidth: true
+                    theme: win.theme
+                    active: win.visible
+                }
+
                 MediaCard {
                     Layout.fillWidth: true
                     theme: win.theme
