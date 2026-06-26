@@ -4,21 +4,27 @@ import Quickshell
 import Quickshell.Services.Pipewire
 import "../lib" as Lib
 
-// Quick-settings card (Phase 2d, step 3). 3a: the two vertical sliders --
-// brightness (brightnessctl) and volume (native PipeWire sink). The toggle
-// column (WiFi / Bluetooth / DND) lands in 3b where the placeholder is.
+// Quick-settings card (Phase 2d, step 3): a left column of toggles (WiFi /
+// Bluetooth / DND) and two vertical sliders (brightness via brightnessctl,
+// volume via the native PipeWire sink). State polls run only while the hub is
+// open (active). DND uses swaync-client for now; it gets rewired to the
+// Quickshell-native notification service in step 2f/8.
 Lib.Card {
     id: root
+
+    property bool active: true
+    signal closeRequested
 
     // Keep the default sink tracked so its audio.volume/muted stay live.
     PwObjectTracker {
         objects: [Pipewire.defaultAudioSink]
     }
 
-    // Brightness has no native Quickshell service -> poll brightnessctl.
+    // --- State polls -------------------------------------------------------
     Lib.CommandPoll {
         id: briPoll
         interval: 1500
+        running: root.active
         command: ["bash", "-lc", "brightnessctl -m 2>/dev/null | cut -d, -f4 | tr -d '% ' || true"]
         parse: function (o) {
             var n = Number(String(o).trim());
@@ -27,25 +33,94 @@ Lib.Card {
         onUpdated: if (!briS.pressed)
             briS.value = value
     }
+    Lib.CommandPoll {
+        id: wifiOn
+        interval: 2500
+        running: root.active
+        command: ["bash", "-lc", "nmcli -t -f WIFI g 2>/dev/null | head -n1 || true"]
+        parse: function (o) {
+            return String(o).trim() === "enabled";
+        }
+    }
+    Lib.CommandPoll {
+        id: wifiSSID
+        interval: 5000
+        running: root.active
+        command: ["bash", "-lc", "nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null | awk -F: '$1==\"yes\"{print $2; exit}' || true"]
+        parse: function (o) {
+            var s = String(o).trim() || "WiFi";
+            return s.length > 10 ? s.slice(0, 10) : s;
+        }
+    }
+    Lib.CommandPoll {
+        id: btOn
+        interval: 3000
+        running: root.active
+        command: ["bash", "-lc", "bluetoothctl show 2>/dev/null | grep -q 'Powered: yes' && echo on || echo off"]
+        parse: function (o) {
+            return String(o).trim() === "on";
+        }
+    }
+    Lib.CommandPoll {
+        id: dndPoll
+        interval: 3000
+        running: root.active
+        command: ["bash", "-lc", "swaync-client -D 2>/dev/null || echo false"]
+        parse: function (o) {
+            return String(o).trim() === "true";
+        }
+    }
+
+    function det(cmd) {
+        Quickshell.execDetached(["bash", "-lc", cmd]);
+    }
 
     RowLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: 150
         spacing: 12
 
-        // LEFT: toggle column lands here in 3b.
-        Rectangle {
+        // LEFT: toggle column
+        ColumnLayout {
             Layout.fillHeight: true
             Layout.fillWidth: true
             Layout.preferredWidth: 1
-            radius: root.theme.radiusInner
-            color: root.theme.bgItem
-            Text {
-                anchors.centerIn: parent
-                text: "toggles (3b)"
-                color: root.theme.textSecondary
-                font.family: root.theme.textFont
-                font.pixelSize: 12
+            spacing: 8
+
+            Lib.ExpressiveButton {
+                Layout.fillHeight: true
+                theme: root.theme
+                icon: wifiOn.value ? String.fromCodePoint(0xF05A9) // wifi
+                 : String.fromCodePoint(0xF05AA) // wifi-off
+                label: String(wifiSSID.value || "WiFi")
+                active: Boolean(wifiOn.value)
+                onClicked: root.det("nmcli radio wifi " + (wifiOn.value ? "off" : "on"))
+                onRightClicked: {
+                    root.closeRequested();
+                    root.det("nm-connection-editor >/dev/null 2>&1 &");
+                }
+            }
+            Lib.ExpressiveButton {
+                Layout.fillHeight: true
+                theme: root.theme
+                icon: btOn.value ? String.fromCodePoint(0xF00AF) // bluetooth
+                 : String.fromCodePoint(0xF00B2) // bluetooth-off
+                label: btOn.value ? "On" : "Off"
+                active: Boolean(btOn.value)
+                onClicked: root.det("bluetoothctl power " + (btOn.value ? "off" : "on"))
+                onRightClicked: {
+                    root.closeRequested();
+                    root.det("blueman-manager >/dev/null 2>&1 &");
+                }
+            }
+            Lib.ExpressiveButton {
+                Layout.fillHeight: true
+                theme: root.theme
+                icon: dndPoll.value ? String.fromCodePoint(0xF09A6) // bell-sleep
+                 : String.fromCodePoint(0xF009A) // bell
+                label: dndPoll.value ? "Silent" : "Notify"
+                active: Boolean(dndPoll.value)
+                onClicked: root.det("swaync-client -d >/dev/null 2>&1")
             }
         }
 
@@ -67,7 +142,7 @@ Lib.Card {
                 from: 0
                 to: 100
                 value: 50
-                onUserChanged: v => Quickshell.execDetached(["bash", "-lc", "brightnessctl set " + Math.round(v) + "%"])
+                onUserChanged: v => root.det("brightnessctl set " + Math.round(v) + "%")
             }
 
             // Volume (native PipeWire default sink)
@@ -79,7 +154,6 @@ Lib.Card {
                 orientation: Qt.Vertical
                 readonly property var sink: Pipewire.defaultAudioSink
                 readonly property real sinkVol: (sink && sink.audio) ? sink.audio.volume * 100 : 0
-                // Sync from the sink only when the user isn't dragging.
                 onSinkVolChanged: if (!pressed)
                     value = Math.round(sinkVol)
                 Component.onCompleted: value = Math.round(sinkVol)

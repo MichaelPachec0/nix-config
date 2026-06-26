@@ -122,6 +122,8 @@ PanelWindow {
                 ButtonsSlidersCard {
                     Layout.fillWidth: true
                     theme: win.theme
+                    active: win.visible
+                    onCloseRequested: win.close()
                 }
             }
 
