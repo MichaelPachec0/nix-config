@@ -2,12 +2,12 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 
-// Hub Header card (Phase 2d, step 2): an initials profile chip + name, a
+// Hub Header card (Phase 2d): an initials profile chip + name, CPU/RAM chips, a
 // screenshot button (region grab via grim + slurp, matching the repo helper),
-// and a power button that expands an inline power menu. The PowerMenuGrid lands
-// in step 4 -- for now the expansion shows a themed placeholder so the slide is
-// wired. The surface-dots theme-toggle button is dropped for v1 (Gruvbox-dark
-// only; the light/Everforest switcher is post-v1).
+// and a power button that expands an inline PowerMenuGrid (step 4) whose actions
+// are mapped to shell commands by runPowerAction. The surface-dots theme-toggle
+// button is dropped for v1 (Gruvbox-dark only; the light/Everforest switcher is
+// post-v1).
 Item {
     id: root
 
@@ -23,7 +23,8 @@ Item {
     signal closeRequested
 
     implicitHeight: 52 + root.powerContainerHeight
-    property real powerContainerHeight: 0
+    // Animated height of the inline power menu: 0 collapsed, grid height expanded.
+    property real powerContainerHeight: root.expanded ? (powerGrid.implicitHeight + 8) : 0
     Behavior on powerContainerHeight {
         NumberAnimation {
             duration: 240
@@ -33,7 +34,35 @@ Item {
 
     function togglePower() {
         root.expanded = !root.expanded;
-        root.powerContainerHeight = root.expanded ? 64 : 0; // step 4: size to grid
+    }
+
+    // Map a power action to a shell command and fire it, then close the hub.
+    function runPowerAction(action) {
+        var cmd = "";
+        switch (action) {
+        case "lock":
+            cmd = "loginctl lock-session";
+            break;
+        case "suspend":
+            cmd = "systemctl suspend";
+            break;
+        case "logout":
+            // UWSM-managed: graceful `uwsm stop`, else exit Hyprland directly.
+            cmd = "if command -v uwsm >/dev/null 2>&1; then uwsm stop || hyprctl dispatch exit; else hyprctl dispatch exit; fi";
+            break;
+        case "hibernate":
+            cmd = "systemctl hibernate";
+            break;
+        case "reboot":
+            cmd = "systemctl reboot";
+            break;
+        case "shutdown":
+            cmd = "systemctl poweroff";
+            break;
+        }
+        if (cmd !== "")
+            Quickshell.execDetached(["bash", "-lc", cmd]);
+        root.closeRequested();
     }
 
     // Region screenshot, matching common.nix's grim+slurp helper. Fired after a
@@ -214,29 +243,20 @@ Item {
             }
         }
 
-        // Inline power-menu container. Step 4 replaces the placeholder with
-        // PowerMenuGrid and sizes powerContainerHeight to it.
+        // Inline power-menu container -- clips the grid as it slides open/closed.
         Item {
             Layout.fillWidth: true
             Layout.preferredHeight: root.powerContainerHeight
             clip: true
-            Rectangle {
+            PowerMenuGrid {
+                id: powerGrid
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.topMargin: 8
-                height: 56
-                radius: 10
-                color: root.theme.bgCard
-                border.width: 1
-                border.color: root.theme.border
-                Text {
-                    anchors.centerIn: parent
-                    text: "power menu (step 4)"
-                    color: root.theme.textSecondary
-                    font.family: root.theme.textFont
-                    font.pixelSize: 12
-                }
+                theme: root.theme
+                active: root.expanded
+                onActionRequested: action => root.runPowerAction(action)
             }
         }
     }
