@@ -478,5 +478,32 @@ in {
     services.flatpak.enable = true;
     # so sway gets covers in mpris
     services.gvfs.enable = true;
+
+    # 2026-06-25: This allows the user (and consequently quickshell) to have access to wifi-supplicant data.
+    # I explictly did not add the user to the wpa-supplicant group since i don't want write support here
+    # only read support is needed.
+    services.dbus.packages = [
+      (pkgs.writeTextDir "share/dbus-1/system.d/wpa_supplicant-quickshell-ro.conf" ''
+        <!DOCTYPE busconfig PUBLIC
+         "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+         "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+        <busconfig>
+          <!-- Read-only wpa_supplicant access for the quickshell wifi widget. -->
+          <policy user="michael">
+            <allow send_destination="fi.w1.wpa_supplicant1"
+                   send_interface="fi.w1.wpa_supplicant1" send_member="GetInterface"/>
+            <allow send_destination="fi.w1.wpa_supplicant1"
+                   send_interface="fi.w1.wpa_supplicant1.Interface" send_member="SignalPoll"/>
+            <allow send_destination="fi.w1.wpa_supplicant1"
+                   send_interface="org.freedesktop.DBus.Properties" send_member="Get"/>
+            <allow send_destination="fi.w1.wpa_supplicant1"
+                   send_interface="org.freedesktop.DBus.Properties" send_member="GetAll"/>
+            <allow send_destination="fi.w1.wpa_supplicant1"
+                   send_interface="org.freedesktop.DBus.Introspectable"/>
+            <allow receive_sender="fi.w1.wpa_supplicant1" receive_type="signal"/>
+          </policy>
+        </busconfig>
+      '')
+    ];
   };
 }

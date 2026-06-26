@@ -238,6 +238,13 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 14
 
+        // WiFi (native nm-applet replacement): signal glyph + SSID, click for menu.
+        WifiWidget {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            barWindow: dock
+        }
+
         // CPU / RAM (shared SysStats): microchip + memory glyph, then percent.
         RowLayout {
             spacing: 10
