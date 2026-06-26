@@ -13,6 +13,7 @@ PanelWindow {
     id: dock
 
     required property QtObject theme
+    property QtObject stats: null
 
     anchors {
         top: true
@@ -230,12 +231,49 @@ PanelWindow {
         }
     }
 
-    // Right: status widgets (battery, date, clock; tray/network next).
+    // Right: status widgets (CPU/RAM, tray, battery, date, clock).
     RowLayout {
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
         spacing: 14
+
+        // CPU / RAM (shared SysStats): microchip + memory glyph, then percent.
+        RowLayout {
+            spacing: 10
+            visible: dock.stats !== null
+
+            RowLayout {
+                spacing: 4
+                Text {
+                    text: String.fromCharCode(0xF2DB) // microchip
+                    color: dock.theme.textSecondary
+                    font.family: dock.theme.faFont
+                    font.pixelSize: 10
+                }
+                Text {
+                    text: Math.round(dock.stats ? dock.stats.cpuPct : 0) + "%"
+                    color: dock.theme.textSecondary
+                    font.family: dock.theme.textFont
+                    font.pixelSize: 11
+                }
+            }
+            RowLayout {
+                spacing: 4
+                Text {
+                    text: String.fromCharCode(0xF538) // memory
+                    color: dock.theme.textSecondary
+                    font.family: dock.theme.faFont
+                    font.pixelSize: 10
+                }
+                Text {
+                    text: Math.round(dock.stats ? dock.stats.ramPct : 0) + "%"
+                    color: dock.theme.textSecondary
+                    font.family: dock.theme.textFont
+                    font.pixelSize: 11
+                }
+            }
+        }
 
         // System tray (StatusNotifier items): left-click activate, middle-click
         // secondary, right-click opens the item's DBus context menu. Items that
