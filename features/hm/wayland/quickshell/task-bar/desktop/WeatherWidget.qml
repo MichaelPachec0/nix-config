@@ -20,6 +20,28 @@ Item {
     // {temp, icon, desc, source, feels, humidity, wind, windDir, place, forecast[]}
     readonly property var wx: poll.value
 
+    // --- alert state: pulse the widget when today's weather is notable --------
+    // Heat is read off the current temperature (>=85 orange, >=90 red); rain off
+    // today's forecast (or a current rainy condition) -> blue. Heat wins.
+    function isRainy(k) {
+        return k === "rain" || k === "showers" || k === "drizzle" || k === "thunder";
+    }
+    readonly property int curTemp: (root.wx && root.wx.temp) ? (parseInt(root.wx.temp) || 0) : 0
+    readonly property var today: (root.wx && root.wx.forecast && root.wx.forecast.length > 0) ? root.wx.forecast[0] : null
+    readonly property bool rainToday: (root.today && root.isRainy(root.today.icon)) || (root.wx ? root.isRainy(root.wx.icon) : false)
+    readonly property string alert: {
+        if (root.curTemp >= 90)
+            return "red";
+        if (root.curTemp >= 85)
+            return "orange";
+        if (root.rainToday)
+            return "blue";
+        return "";
+    }
+    // Alert hues: red/orange from the theme; a clear blue for rain (the theme's
+    // accentBlue reads too teal against the green widgets to signal "rain").
+    readonly property color alertColor: root.alert === "red" ? root.theme.accentRed : root.alert === "orange" ? root.theme.accentSlider2 : root.alert === "blue" ? "#4d8fd6" : "transparent"
+
     visible: root.wx !== null
     implicitWidth: row.implicitWidth
     implicitHeight: 24
@@ -51,6 +73,42 @@ Item {
                 return null;
             }
         }
+    }
+
+    // Pulsing alert glow behind the content (every 5s while an alert is active).
+    Rectangle {
+        id: flashBg
+        anchors.fill: parent
+        anchors.margins: -3
+        radius: 6
+        z: -1
+        color: root.alertColor
+        opacity: 0
+    }
+    SequentialAnimation {
+        id: flashAnim
+        NumberAnimation {
+            target: flashBg
+            property: "opacity"
+            from: 0
+            to: 0.55
+            duration: 220
+            easing.type: Easing.OutQuad
+        }
+        NumberAnimation {
+            target: flashBg
+            property: "opacity"
+            to: 0
+            duration: 480
+            easing.type: Easing.InQuad
+        }
+    }
+    Timer {
+        interval: 5000
+        running: root.alert !== "" && root.visible
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: flashAnim.start()
     }
 
     RowLayout {
