@@ -134,6 +134,11 @@ PanelWindow {
                     active: win.visible
                     onCloseRequested: win.close()
                 }
+
+                BatteryCard {
+                    Layout.fillWidth: true
+                    theme: win.theme
+                }
             }
 
             ParallelAnimation {

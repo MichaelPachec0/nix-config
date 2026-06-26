@@ -1,7 +1,6 @@
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Wayland
-import Quickshell.Services.UPower
 import Quickshell.Services.SystemTray
 import QtQuick
 import QtQuick.Layouts
@@ -114,18 +113,6 @@ PanelWindow {
         var off = dock.nycIsDst(d) ? -4 : -5;
         var h = ((d.getUTCHours() + off) % 24 + 24) % 24;
         return dock.fmtHM(h, d.getUTCMinutes());
-    }
-
-    function batEstimate() {
-        if (!bat.dev)
-            return "";
-        var secs = bat.charging ? bat.dev.timeToFull : bat.dev.timeToEmpty;
-        if (!secs || secs <= 0)
-            return bat.charging ? "charging" : "estimating...";
-        var h = Math.floor(secs / 3600);
-        var m = Math.floor((secs % 3600) / 60);
-        var t = (h > 0 ? h + "h " : "") + m + "m";
-        return bat.charging ? (t + " to full") : (t + " left");
     }
 
     Timer {
@@ -349,62 +336,11 @@ PanelWindow {
             }
         }
 
-        // Battery (laptop only): drawn icon + percentage.
-        RowLayout {
-            id: bat
-            readonly property var dev: UPower.displayDevice
-            readonly property real pct: bat.dev ? bat.dev.percentage * 100 : 0
-            readonly property bool charging: bat.dev && (bat.dev.state === UPowerDeviceState.Charging || bat.dev.state === UPowerDeviceState.FullyCharged)
-            readonly property bool low: !bat.charging && bat.pct <= 20
-            visible: bat.dev && bat.dev.isLaptopBattery
-            spacing: 5
-
-            HoverHandler {
-                id: batHover
-            }
-
-            Item {
-                Layout.alignment: Qt.AlignVCenter
-                implicitWidth: 25
-                implicitHeight: 13
-                Rectangle {
-                    id: batBody
-                    width: 22
-                    height: 13
-                    radius: 3
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: "transparent"
-                    border.width: 1.5
-                    border.color: bat.low ? dock.theme.accentRed : dock.theme.textSecondary
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 2
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: Math.max(1, (batBody.width - 4) * Math.min(100, bat.pct) / 100)
-                        height: batBody.height - 4
-                        radius: 1
-                        color: bat.low ? dock.theme.accentRed : (bat.charging ? dock.theme.accentSlider : dock.theme.accent)
-                    }
-                }
-                Rectangle {
-                    anchors.left: batBody.right
-                    anchors.verticalCenter: batBody.verticalCenter
-                    width: 2
-                    height: 5
-                    radius: 1
-                    color: bat.low ? dock.theme.accentRed : dock.theme.textSecondary
-                }
-            }
-            Text {
-                Layout.alignment: Qt.AlignVCenter
-                text: {
-                    dock.tick;
-                    return batHover.hovered ? dock.batEstimate() : (Math.round(bat.pct) + "%");
-                }
-                color: bat.low ? dock.theme.accentRed : (bat.charging ? dock.theme.accentSlider : dock.theme.textPrimary)
-                font.family: dock.theme.textFont
-                font.pixelSize: 13
-            }
+        // Battery (laptop only): drawn battery + charging bolt; hover for details.
+        BatteryWidget {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            barWindow: dock
         }
 
         Text {
