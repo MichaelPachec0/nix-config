@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import "../lib" as Lib
+import "../lib/weathericons.js" as WeatherIcons
 
 // Hub Calendar/Weather card (Phase 2d, step 7). Left: a large date block
 // (weekday / day-number / month-year). Right: current weather (glyph + temp +
@@ -14,27 +15,6 @@ Rectangle {
     required property QtObject theme
     property bool active: true
     property date now: new Date()
-
-    // condition key (from weather.sh) -> MDI weather glyph in the Nerd Font.
-    readonly property var weatherGlyphs: ({
-            "clear-day": 0xF0599,           // weather-sunny
-            "clear-night": 0xF0594,         // weather-night
-            "partly-cloudy-day": 0xF0595,   // weather-partly-cloudy
-            "partly-cloudy-night": 0xF0F31, // weather-night-partly-cloudy
-            "cloudy": 0xF0590,              // weather-cloudy
-            "fog": 0xF0591,                 // weather-fog
-            "drizzle": 0xF0F33,             // weather-partly-rainy
-            "rain": 0xF0597,                // weather-rainy
-            "showers": 0xF0596,             // weather-pouring
-            "sleet": 0xF067F,               // weather-snowy-rainy
-            "snow": 0xF0598,                // weather-snowy
-            "thunder": 0xF067E,             // weather-lightning-rainy
-            "tornado": 0xF0F3A              // weather-tornado
-        })
-    function weatherGlyph(key) {
-        var cp = root.weatherGlyphs[key];
-        return String.fromCodePoint(cp ? cp : 0xF0590);
-    }
 
     implicitHeight: col.implicitHeight + 24
     radius: root.theme.radiusOuter
@@ -130,7 +110,7 @@ Rectangle {
 
                 Text {
                     Layout.alignment: Qt.AlignRight
-                    text: root.weatherGlyph(weather.value ? weather.value.icon : "cloudy")
+                    text: WeatherIcons.glyph(weather.value ? weather.value.icon : "cloudy")
                     font.family: root.theme.iconFont
                     font.pixelSize: 34
                     color: root.theme.weatherIcon

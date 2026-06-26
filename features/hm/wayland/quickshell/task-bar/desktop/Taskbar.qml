@@ -218,7 +218,7 @@ PanelWindow {
         }
     }
 
-    // Right: status widgets (media, CPU/RAM, tray, battery, date, clock).
+    // Right: status widgets (media, CPU/RAM, tray, battery, weather, date, clock).
     RowLayout {
         anchors.right: parent.right
         anchors.rightMargin: 12
@@ -338,6 +338,13 @@ PanelWindow {
 
         // Battery (laptop only): drawn battery + charging bolt; hover for details.
         BatteryWidget {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            barWindow: dock
+        }
+
+        // Weather: current condition glyph + temperature; hover for details.
+        WeatherWidget {
             Layout.alignment: Qt.AlignVCenter
             theme: dock.theme
             barWindow: dock
