@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import "../lib" as Lib
 import "../lib/weathericons.js" as WeatherIcons
+import "../lib/locations.js" as Locations
 
 // Hub Calendar/Weather card (Phase 2d, step 7). Left: a large date block
 // (weekday / day-number / month-year). Right: current weather (glyph + temp +
@@ -14,7 +15,11 @@ Rectangle {
 
     required property QtObject theme
     property bool active: true
+    property var weatherState: null
     property date now: new Date()
+
+    readonly property var loc: root.weatherState ? Locations.byId(root.weatherState.selectedId) : null
+    onLocChanged: Qt.callLater(weather.poll)
 
     implicitHeight: col.implicitHeight + 24
     radius: root.theme.radiusOuter
@@ -35,20 +40,22 @@ Rectangle {
         id: weather
         running: root.active && root.visible
         interval: 1800000 // 30 min; weather.sh caches for the same window
-        command: ["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/weather.sh"]
+        command: ["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/weather.sh " + Locations.argsFor(root.loc)]
         parse: function (out) {
             try {
                 var d = JSON.parse(String(out));
                 return {
                     temp: d.temp ?? "--",
                     icon: d.icon ?? "cloudy",
-                    desc: d.desc ?? "Unknown"
+                    desc: d.desc ?? "Unknown",
+                    place: d.place ?? ""
                 };
             } catch (e) {
                 return {
                     temp: "--",
                     icon: "cloudy",
-                    desc: "Error"
+                    desc: "Error",
+                    place: ""
                 };
             }
         }
@@ -133,6 +140,18 @@ Rectangle {
                     font.pixelSize: 10
                     color: root.theme.textSecondary
                 }
+                Text {
+                    Layout.alignment: Qt.AlignRight
+                    Layout.maximumWidth: 120
+                    text: (weather.value && weather.value.place) ? weather.value.place : ""
+                    visible: text !== ""
+                    horizontalAlignment: Text.AlignRight
+                    elide: Text.ElideRight
+                    font.family: root.theme.textFont
+                    font.pixelSize: 9
+                    color: root.theme.textSecondary
+                    opacity: 0.75
+                }
             }
         }
 
@@ -148,6 +167,15 @@ Rectangle {
                 theme: root.theme
                 when: root.now
             }
+        }
+
+        // Location chips (shared selection with the bar weather widget).
+        Lib.LocationChips {
+            Layout.topMargin: 2
+            Layout.alignment: Qt.AlignLeft
+            visible: root.weatherState !== null
+            theme: root.theme
+            weatherState: root.weatherState
         }
     }
 }

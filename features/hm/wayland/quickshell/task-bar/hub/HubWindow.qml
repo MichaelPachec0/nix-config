@@ -13,6 +13,7 @@ PanelWindow {
 
     required property QtObject theme
     property QtObject stats: null
+    property QtObject weatherState: null
 
     anchors {
         top: true
@@ -126,6 +127,7 @@ PanelWindow {
                     Layout.fillWidth: true
                     theme: win.theme
                     active: win.visible
+                    weatherState: win.weatherState
                 }
 
                 MediaCard {

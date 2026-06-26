@@ -25,6 +25,38 @@ function glyph(key) {
     return String.fromCodePoint(cp ? cp : 0xF0590);
 }
 
+// Readable condition word from a canonical key (used by forecast rows).
+function descFromKey(key) {
+    switch (key) {
+    case "clear-day":
+    case "clear-night":
+        return "Clear";
+    case "partly-cloudy-day":
+    case "partly-cloudy-night":
+        return "Partly cloudy";
+    case "cloudy":
+        return "Cloudy";
+    case "fog":
+        return "Fog";
+    case "drizzle":
+        return "Drizzle";
+    case "rain":
+        return "Rain";
+    case "showers":
+        return "Showers";
+    case "sleet":
+        return "Sleet";
+    case "snow":
+        return "Snow";
+    case "thunder":
+        return "Thunderstorm";
+    case "tornado":
+        return "Tornado";
+    default:
+        return "";
+    }
+}
+
 // Human-readable provider name for the "via ..." provenance line.
 function sourceLabel(s) {
     switch (s) {

@@ -26,6 +26,12 @@ ShellRoot {
                 id: sysStats
             }
 
+            // Shared weather location selection (bar widget <-> hub card chips).
+            QtObject {
+                id: weatherState
+                property string selectedId: "geo"
+            }
+
             // NOTE (shelved 2026-06-24): the rounded ScreenBorder is set aside.
             // Its wlr-layer-shell space-reservation + top/side cropping needs
             // rework before re-enabling (an all-anchored Top-layer surface can't
@@ -39,6 +45,7 @@ ShellRoot {
                 screen: v.modelData
                 theme: screenTheme
                 stats: sysStats
+                weatherState: weatherState
             }
 
             // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a
@@ -49,6 +56,7 @@ ShellRoot {
                 screen: v.modelData
                 theme: screenTheme
                 stats: sysStats
+                weatherState: weatherState
             }
 
             GlobalShortcut {

@@ -13,6 +13,7 @@ PanelWindow {
 
     required property QtObject theme
     property QtObject stats: null
+    property QtObject weatherState: null
 
     anchors {
         top: true
@@ -348,6 +349,7 @@ PanelWindow {
             Layout.alignment: Qt.AlignVCenter
             theme: dock.theme
             barWindow: dock
+            weatherState: dock.weatherState
         }
 
         Text {
