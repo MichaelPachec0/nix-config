@@ -231,12 +231,20 @@ PanelWindow {
         }
     }
 
-    // Right: status widgets (CPU/RAM, tray, battery, date, clock).
+    // Right: status widgets (media, CPU/RAM, tray, battery, date, clock).
     RowLayout {
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
         spacing: 14
+
+        // MPRIS now-playing: play/pause + marquee title (only while a player runs).
+        // Hover reveals a full-player popup with seek.
+        MediaWidget {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            barWindow: dock
+        }
 
         // WiFi (native nm-applet replacement): signal glyph + SSID, click for menu.
         WifiWidget {
