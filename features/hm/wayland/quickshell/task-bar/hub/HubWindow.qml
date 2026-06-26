@@ -122,6 +122,12 @@ PanelWindow {
                     onCloseRequested: win.close()
                 }
 
+                MediaCard {
+                    Layout.fillWidth: true
+                    theme: win.theme
+                    onCloseRequested: win.close()
+                }
+
                 ButtonsSlidersCard {
                     Layout.fillWidth: true
                     theme: win.theme
