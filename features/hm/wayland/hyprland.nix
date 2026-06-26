@@ -250,6 +250,14 @@
   };
   hy3ProjectBind = {_args = ["SUPER + SHIFT + P" (mkLuaInline ''hl.dsp.exec_cmd("${hy3ProjectScript}/bin/hy3-project --pick")'')];};
 
+  # Quickshell Hub toggle. The `global` dispatch fires the GlobalShortcut the
+  # shell registers as "quickshell:hubToggle" (quickshell/task-bar/shell.qml).
+  # SUPER + Right Alt (Alt_R). NOTE: binding a modifier keysym while another mod
+  # is held can be flaky in Hyprland, and Alt_R is ISO_Level3_Shift (AltGr) on
+  # some layouts -- if it doesn't fire, rebind to a normal key or use Alt_R's
+  # actual keysym for this layout.
+  hubBind = {_args = ["SUPER + Alt_R" (mkLuaInline ''hl.dsp.global("quickshell:hubToggle")'')];};
+
   # ---- hy3-layout: compile the hy3 notation to/from a live layout -----------
   # `hy3-layout build '<notation>'` constructs the layout live; `show` prints the
   # active (or --wk N / --wk all) workspace as notation; --visualize prints an
@@ -469,7 +477,7 @@ in {
 
           # hl.bind(...) -- generated from swayKeybindings (toLua) + hy3 extras
           # + the Super+/ cheatsheet bind.
-          bind = generatedLuaBinds ++ hy3ExtraBinds ++ [cheatBind hy3ProjectBind];
+          bind = generatedLuaBinds ++ hy3ExtraBinds ++ [cheatBind hy3ProjectBind hubBind];
 
           # hl.on("hyprland.start", function() ... end). hy3 setup runs first
           # (load + config), then the autostart apps.

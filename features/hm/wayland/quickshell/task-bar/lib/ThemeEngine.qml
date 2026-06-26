@@ -57,4 +57,7 @@ Scope {
     // Fonts (rename from JSON keys)
     readonly property string textFont: root.data.fonts?.ui ?? "Manrope"
     readonly property string iconFont: root.data.fonts?.icon ?? "JetBrainsMono Nerd Font"
+    // Font Awesome (Solid) for glyphs the Nerd Font patch lacks, e.g. fa-memory
+    // (U+F538). Add `fonts.awesome` to the Nix theme seam to override.
+    readonly property string faFont: root.data.fonts?.awesome ?? "Font Awesome 7 Free Solid"
 }

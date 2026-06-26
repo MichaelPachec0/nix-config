@@ -4,9 +4,11 @@
 // nm-applet (rebuilds on every Wi-Fi scan) and Electron/Chromium apps (menu only
 // populates for a native client). See desktop/Taskbar.qml tray dispatch.
 import Quickshell
+import Quickshell.Hyprland
 import QtQuick
 import "lib" as Lib
 import "desktop" as Desktop
+import "hub" as Hub
 
 ShellRoot {
     Variants {
@@ -17,6 +19,11 @@ ShellRoot {
 
             Lib.ThemeEngine {
                 id: screenTheme
+            }
+
+            // Shared CPU/RAM poller, read by the bar and the hub header.
+            Lib.SysStats {
+                id: sysStats
             }
 
             // NOTE (shelved 2026-06-24): the rounded ScreenBorder is set aside.
@@ -31,6 +38,23 @@ ShellRoot {
                 id: taskbar
                 screen: v.modelData
                 theme: screenTheme
+                stats: sysStats
+            }
+
+            // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a
+            // `global, quickshell:hubToggle` dispatch (see hyprland.nix hubBind),
+            // which fires this GlobalShortcut.
+            Hub.HubWindow {
+                id: hub
+                screen: v.modelData
+                theme: screenTheme
+                stats: sysStats
+            }
+
+            GlobalShortcut {
+                name: "hubToggle"
+                description: "Toggle the Quickshell hub"
+                onPressed: hub.toggle()
             }
         }
     }
