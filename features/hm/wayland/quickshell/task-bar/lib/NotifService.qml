@@ -5,8 +5,8 @@ import Quickshell.Services.Notifications
 // org.freedesktop.Notifications, replacing swaync) and maintains two reactive
 // lists -- `items` (persistent, for the hub card) and `toasts` (transient, for
 // the popup overlay). Both hold the same Notification objects with different
-// lifetimes. DND suppresses new toasts; notifications still land in `items`.
-// Instantiated once at the ShellRoot level.
+// lifetimes. DND (and an active screencast) suppress new toasts; notifications
+// still land in `items`. Instantiated once at the ShellRoot level.
 //
 // We keep our own arrays rather than binding to server.trackedNotifications
 // because that model's value-changes don't drive QML bindings reactively; here
@@ -16,6 +16,10 @@ QtObject {
     id: svc
 
     property bool dnd: false
+    // Suppresses new toasts without touching the user's manual `dnd`. Driven by
+    // shell.qml off Hyprland's `screencast` IPC event -- the QS-native stand-in
+    // for swaync's screencast inhibitor (notifications still land in `items`).
+    property bool screencasting: false
     property var items: []  // persistent (newest first)
     property var toasts: [] // transient popups (newest first)
 
@@ -130,7 +134,7 @@ QtObject {
         onNotification: function (notification) {
             notification.tracked = true; // keep the object alive past this handler
             svc.addItem(notification);
-            if (!svc.dnd)
+            if (!svc.dnd && !svc.screencasting)
                 svc.pushToast(notification);
             notification.closed.connect(function () {
                 svc.removeItem(notification);

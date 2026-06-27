@@ -16,6 +16,20 @@ ShellRoot {
         id: notifSvc
     }
 
+    // Mirror Hyprland's screencast state into the notification service so toasts
+    // are suppressed while screen sharing -- the QS-native replacement for the
+    // swaync screencast inhibitor (see quickshell-notifications-cutover). The
+    // `screencast` IPC event carries `state,owner`; state 1 = sharing, 0 = off.
+    // If qs restarts mid-cast it misses the opening event, but the next state
+    // change re-syncs (rare, and only costs a few un-suppressed toasts).
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            if (event.name === "screencast")
+                notifSvc.screencasting = event.parse(2)[0] === "1";
+        }
+    }
+
     Variants {
         model: Quickshell.screens
         Scope {
