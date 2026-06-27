@@ -337,6 +337,13 @@ PanelWindow {
             }
         }
 
+        // Keep-awake: toggle a Wayland idle inhibitor (blocks idle lock / DPMS).
+        InhibitWidget {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            barWindow: dock
+        }
+
         // Battery (laptop only): drawn battery + charging bolt; hover for details.
         BatteryWidget {
             Layout.alignment: Qt.AlignVCenter
