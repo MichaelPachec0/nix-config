@@ -3,7 +3,7 @@ import QtQuick.Layouts
 
 // Bar Bluetooth widget: a state glyph + the connected device name. Mirrors
 // WifiWidget. Backed by the shared BluetoothService (native Quickshell.Bluetooth)
-// -- reactive, no poll. The click menu and hover tooltip are wired in later.
+// -- reactive, no poll. Click opens the device menu; hover tooltip wired later.
 Item {
     id: root
 
@@ -63,6 +63,30 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        // menu.toggle() wired in Task 2; info tooltip wired in Task 5.
+        onClicked: {
+            info.hide();
+            menu.toggle();
+        }
+        onContainsMouseChanged: {
+            if (containsMouse && !menu.visible)
+                info.show();
+            else
+                info.hide();
+        }
+    }
+
+    BluetoothPopup {
+        id: menu
+        theme: root.theme
+        anchorItem: root
+        barWindow: root.barWindow
+        bt: root.bt
+    }
+    BtInfoPopup {
+        id: info
+        theme: root.theme
+        anchorItem: root
+        barWindow: root.barWindow
+        bt: root.bt
     }
 }

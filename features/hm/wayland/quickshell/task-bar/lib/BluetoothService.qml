@@ -79,8 +79,6 @@ QtObject {
             return String.fromCodePoint(0xF011C); // cellphone
         if (s.indexOf("computer") !== -1 || s.indexOf("laptop") !== -1)
             return String.fromCodePoint(0xF0322); // laptop
-        if (s.indexOf("watch") !== -1)
-            return String.fromCodePoint(0xF00D5); // watch
         if (s.indexOf("printer") !== -1)
             return String.fromCodePoint(0xF042A); // printer
         return String.fromCodePoint(0xF00AF); // generic bluetooth
