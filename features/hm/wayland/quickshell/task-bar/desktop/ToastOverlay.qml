@@ -2,11 +2,13 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
+import "../hub" as Hub
 
 // Toast popup overlay: a layer-shell surface pinned top-right, just below the
-// bar, that stacks transient notification toasts (NotifService.toasts). Sized to
-// its content and hidden when empty, so it never blocks clicks elsewhere. Does
-// not take keyboard focus.
+// bar, that stacks transient notification toasts grouped by app (NotifGroup in
+// toastMode). Sized to its content and hidden when empty, so it never blocks
+// clicks elsewhere. Hovering pauses the auto-dismiss sweep; leaving restarts the
+// countdowns. Does not take keyboard focus.
 PanelWindow {
     id: overlay
 
@@ -32,7 +34,6 @@ PanelWindow {
     WlrLayershell.namespace: "qs-toasts"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-    // Hidden (no surface) when there are no toasts -> never intercepts clicks.
     visible: overlay.notif && overlay.notif.toasts.length > 0
 
     ColumnLayout {
@@ -44,14 +45,25 @@ PanelWindow {
         }
         spacing: 8
 
+        // Pause auto-dismiss while the cursor is over the toasts.
+        HoverHandler {
+            id: overlayHover
+            onHoveredChanged: {
+                overlay.notif.toastPaused = overlayHover.hovered;
+                if (!overlayHover.hovered)
+                    overlay.notif.refreshToastTimers();
+            }
+        }
+
         Repeater {
-            model: overlay.notif ? overlay.notif.toasts : []
-            ToastItem {
+            model: overlay.notif ? overlay.notif.toastGroups : []
+            Hub.NotifGroup {
                 required property var modelData
                 Layout.fillWidth: true
                 theme: overlay.theme
                 notif: overlay.notif
-                notification: modelData
+                entry: modelData
+                toastMode: true
             }
         }
     }

@@ -103,27 +103,23 @@ Rectangle {
             bottomPadding: 4
         }
 
-        // List of notifications.
-        ListView {
-            id: list
+        // Notifications grouped by app. A plain Column (not a ListView) so the
+        // hub overlay's outer Flickable owns all scrolling -- no nested scroller.
+        ColumnLayout {
+            id: groupList
             visible: root.count > 0
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(contentHeight, 240)
-            clip: true
             spacing: 8
-            model: root.items
-            boundsBehavior: Flickable.StopAtBounds
 
-            delegate: NotifItem {
-                required property var modelData
-                width: list.width
-                height: implicitHeight
-                theme: root.theme
-                app: modelData.appName
-                summary: modelData.summary
-                body: modelData.body
-                critical: modelData.urgency === NotificationUrgency.Critical
-                onDismissRequested: modelData.dismiss()
+            Repeater {
+                model: root.notif ? root.notif.groups : []
+                NotifGroup {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    theme: root.theme
+                    notif: root.notif
+                    entry: modelData
+                }
             }
         }
     }

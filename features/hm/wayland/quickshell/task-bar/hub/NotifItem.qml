@@ -12,10 +12,15 @@ Rectangle {
     required property string summary
     required property string body
     property bool critical: false
+    // compact: single-line height with the body hidden (used in a collapsed
+    // stack). interactive: when false the card ignores clicks (peeking cards in a
+    // stack -- the click falls through to the stack's expand catcher).
+    property bool compact: false
+    property bool interactive: true
 
     signal dismissRequested
 
-    implicitHeight: contentRow.implicitHeight + 22
+    implicitHeight: root.compact ? 50 : (contentRow.implicitHeight + 22)
     radius: 12
     color: hover.hovered ? root.theme.bgItemHover : root.theme.bgItem
     Behavior on color {
@@ -26,9 +31,11 @@ Rectangle {
 
     HoverHandler {
         id: hover
+        enabled: root.interactive
     }
     MouseArea {
         anchors.fill: parent
+        enabled: root.interactive
         cursorShape: Qt.PointingHandCursor
         onClicked: root.dismissRequested()
     }
@@ -83,7 +90,7 @@ Rectangle {
             }
             Text {
                 Layout.fillWidth: true
-                visible: root.body !== ""
+                visible: !root.compact && root.body !== ""
                 text: root.body.replace(/\n/g, ' ')
                 font.family: root.theme.textFont
                 font.pixelSize: 11
