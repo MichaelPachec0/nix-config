@@ -7,12 +7,13 @@ import "../lib" as Lib
 // Quick-settings card (Phase 2d, step 3): a left column of toggles (WiFi /
 // Bluetooth / DND) and two vertical sliders (brightness via brightnessctl,
 // volume via the native PipeWire sink). State polls run only while the hub is
-// open (active). DND uses swaync-client for now; it gets rewired to the
-// Quickshell-native notification service in step 2f/8.
+// open (active). DND drives the Quickshell-native notification service
+// (NotifService.dnd), which suppresses toast popups.
 Lib.Card {
     id: root
 
     property bool active: true
+    property var notif: null // Lib.NotifService (for the DND toggle)
     signal closeRequested
 
     // Keep the default sink tracked so its audio.volume/muted stay live.
@@ -61,16 +62,6 @@ Lib.Card {
             return String(o).trim() === "on";
         }
     }
-    Lib.CommandPoll {
-        id: dndPoll
-        interval: 3000
-        running: root.active
-        command: ["bash", "-lc", "swaync-client -D 2>/dev/null || echo false"]
-        parse: function (o) {
-            return String(o).trim() === "true";
-        }
-    }
-
     function det(cmd) {
         Quickshell.execDetached(["bash", "-lc", cmd]);
     }
@@ -116,11 +107,12 @@ Lib.Card {
             Lib.ExpressiveButton {
                 Layout.fillHeight: true
                 theme: root.theme
-                icon: dndPoll.value ? String.fromCodePoint(0xF09A6) // bell-sleep
+                icon: (root.notif && root.notif.dnd) ? String.fromCodePoint(0xF09A6) // bell-sleep
                  : String.fromCodePoint(0xF009A) // bell
-                label: dndPoll.value ? "Silent" : "Notify"
-                active: Boolean(dndPoll.value)
-                onClicked: root.det("swaync-client -d >/dev/null 2>&1")
+                label: (root.notif && root.notif.dnd) ? "Silent" : "Notify"
+                active: Boolean(root.notif && root.notif.dnd)
+                onClicked: if (root.notif)
+                    root.notif.dnd = !root.notif.dnd
             }
         }
 

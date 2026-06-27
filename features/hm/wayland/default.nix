@@ -411,7 +411,11 @@
       };
     };
     services.swaync = {
-      enable = true;
+      # Retired in favour of the Quickshell-native notification server (hub
+      # NotificationsCard + toast overlay, Phase 2f/step 8). Only one process can
+      # own org.freedesktop.Notifications; with this false, Quickshell owns it.
+      # The settings/widgets below are kept dormant for now; clean up later.
+      enable = false;
       settings = let
         control-center-width = 400;
         notification-window-width = 300;

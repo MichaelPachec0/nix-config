@@ -111,8 +111,9 @@
     "XF86MonBrightnessUp" = "exec brightnessctl -e s 2%+";
     "XF86MonBrightnessDown" = "exec brightnessctl -e s 2%-";
 
-    "${mod}+n" =
-      "exec ${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw";
+    # Notifications: toggle the Quickshell hub (its NotificationsCard replaces
+    # swaync's panel). Same dispatch as the SUPER+Alt_R hubBind.
+    "${mod}+n" = "global quickshell:hubToggle";
   };
 
   # Translation Layer -> Hyprland
@@ -229,6 +230,10 @@ toHypr = combo: cmd:
       else if cmd == "mode 'resize'" then
         "submap, resize"
 
+      else if lib.hasPrefix "global " cmd then
+        # Quickshell GlobalShortcut dispatch (e.g. the hub toggle).
+        "global, ${lib.removePrefix "global " cmd}"
+
       else
         "exec, ${cmd}";
 
@@ -267,6 +272,11 @@ toHypr = combo: cmd:
   toLuaAction = cmd:
     if lib.hasPrefix "exec " cmd then
       mkInline "hl.dsp.exec_cmd(${luaStr (lib.removePrefix "exec " cmd)})"
+
+    else if lib.hasPrefix "global " cmd then
+      # Quickshell GlobalShortcut dispatch (mirrors hubBind's
+      # hl.dsp.global("quickshell:hubToggle") in hyprland.nix).
+      mkInline "hl.dsp.global(${luaStr (lib.removePrefix "global " cmd)})"
 
     else if cmd == "kill" then
       # hy3 kill_active closes the whole focused node (every window in the

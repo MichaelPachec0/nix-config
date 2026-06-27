@@ -14,6 +14,7 @@ PanelWindow {
     required property QtObject theme
     property QtObject stats: null
     property QtObject weatherState: null
+    property QtObject notif: null
 
     anchors {
         top: true
@@ -140,12 +141,19 @@ PanelWindow {
                     Layout.fillWidth: true
                     theme: win.theme
                     active: win.visible
+                    notif: win.notif
                     onCloseRequested: win.close()
                 }
 
                 BatteryCard {
                     Layout.fillWidth: true
                     theme: win.theme
+                }
+
+                NotificationsCard {
+                    Layout.fillWidth: true
+                    theme: win.theme
+                    notif: win.notif
                 }
             }
 

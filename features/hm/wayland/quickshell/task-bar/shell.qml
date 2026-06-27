@@ -11,6 +11,11 @@ import "desktop" as Desktop
 import "hub" as Hub
 
 ShellRoot {
+    // Global notification service (one server for all screens).
+    Lib.NotifService {
+        id: notifSvc
+    }
+
     Variants {
         model: Quickshell.screens
         Scope {
@@ -57,6 +62,14 @@ ShellRoot {
                 theme: screenTheme
                 stats: sysStats
                 weatherState: weatherState
+                notif: notifSvc
+            }
+
+            // Toast popups (top-right, below the bar).
+            Desktop.ToastOverlay {
+                screen: v.modelData
+                theme: screenTheme
+                notif: notifSvc
             }
 
             GlobalShortcut {
