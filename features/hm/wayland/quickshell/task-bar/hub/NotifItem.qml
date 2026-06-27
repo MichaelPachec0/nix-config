@@ -58,6 +58,19 @@ Rectangle {
         return out;
     }
     readonly property bool hasImage: root.imageUrl !== "" || root.appIconUrl !== ""
+    // Inline reply: the app sent an "inline-reply" action. The placeholder is
+    // that action's label. sendInlineReply() also closes the notification unless
+    // the app marked it resident, so no separate dismiss is needed.
+    readonly property bool hasReply: root.source ? root.source.hasInlineReply === true : false
+    readonly property string replyPlaceholder: (root.source && String(root.source.inlineReplyPlaceholder).length > 0) ? String(root.source.inlineReplyPlaceholder) : "Reply..."
+
+    function sendReply() {
+        var t = String(replyField.text).trim();
+        if (t.length === 0 || !root.source)
+            return;
+        root.source.sendInlineReply(t);
+        replyField.text = "";
+    }
 
     implicitHeight: root.compact ? 50 : (contentRow.implicitHeight + 22)
     radius: 12
@@ -210,6 +223,87 @@ Rectangle {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
                             onClicked: actBtn.modelData.invoke()
+                        }
+                    }
+                }
+            }
+
+            // Inline reply field (full cards only). Typeable wherever the surface
+            // holds keyboard focus -- the hub always; toasts when clicked (their
+            // layer takes focus on demand). Enter or the send button replies.
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                visible: !root.compact && root.hasReply
+                implicitHeight: 32
+                radius: 8
+                color: root.theme.bgItem
+                border.width: 1
+                border.color: replyField.activeFocus ? root.theme.accent : root.theme.border
+                Behavior on border.color {
+                    ColorAnimation {
+                        duration: 140
+                    }
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 4
+                    spacing: 4
+
+                    TextInput {
+                        id: replyField
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        verticalAlignment: TextInput.AlignVCenter
+                        color: root.theme.textPrimary
+                        font.family: root.theme.textFont
+                        font.pixelSize: 11
+                        clip: true
+                        selectByMouse: true
+                        selectionColor: root.theme.accent
+                        onAccepted: root.sendReply()
+
+                        Text {
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: replyField.width
+                            visible: replyField.text.length === 0
+                            text: root.replyPlaceholder
+                            color: root.theme.textSecondary
+                            font: replyField.font
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    // Send (paper-plane); dim until there's text to send.
+                    Rectangle {
+                        Layout.alignment: Qt.AlignVCenter
+                        implicitWidth: 26
+                        implicitHeight: 26
+                        radius: 7
+                        color: (sendHover.hovered && replyField.text.length > 0) ? root.theme.bgItemHover : "transparent"
+                        Behavior on color {
+                            ColorAnimation {
+                                duration: 140
+                            }
+                        }
+                        Text {
+                            anchors.centerIn: parent
+                            text: String.fromCodePoint(0xF048A) // mdi send
+                            font.family: root.theme.iconFont
+                            font.pixelSize: 14
+                            color: replyField.text.length > 0 ? root.theme.accent : root.theme.textSecondary
+                        }
+                        HoverHandler {
+                            id: sendHover
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: replyField.text.length > 0
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.sendReply()
                         }
                     }
                 }

@@ -8,7 +8,8 @@ import "../hub" as Hub
 // bar, that stacks transient notification toasts grouped by app (NotifGroup in
 // toastMode). Sized to its content and hidden when empty, so it never blocks
 // clicks elsewhere. Hovering pauses the auto-dismiss sweep; leaving restarts the
-// countdowns. Does not take keyboard focus.
+// countdowns. Takes keyboard focus only on demand, so an inline-reply field in a
+// toast is typeable when clicked without otherwise stealing focus.
 PanelWindow {
     id: overlay
 
@@ -32,7 +33,7 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "qs-toasts"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
     visible: overlay.notif && overlay.notif.toasts.length > 0
 

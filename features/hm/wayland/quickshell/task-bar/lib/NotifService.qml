@@ -131,6 +131,7 @@ QtObject {
         bodySupported: true
         bodyMarkupSupported: true
         imageSupported: true
+        inlineReplySupported: true
         onNotification: function (notification) {
             notification.tracked = true; // keep the object alive past this handler
             svc.addItem(notification);
