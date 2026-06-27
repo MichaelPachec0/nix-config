@@ -23,6 +23,9 @@ Rectangle {
     readonly property var list: group.entry.list
     readonly property int count: group.list.length
     readonly property bool expanded: group.notif.isExpanded(group.entry.app)
+    // Stacked deck only makes sense for 2+; a lone notification renders full so
+    // its body and action buttons are reachable.
+    readonly property bool useDeck: group.count > 1 && !group.expanded
     readonly property bool hasCritical: {
         for (var i = 0; i < group.list.length; i++)
             if (group.list[i].urgency === NotificationUrgency.Critical)
@@ -98,7 +101,7 @@ Rectangle {
         // Body: stacked deck (collapsed) or full list (expanded).
         Item {
             Layout.fillWidth: true
-            implicitHeight: group.expanded ? expandedCol.implicitHeight : stackBody.implicitHeight
+            implicitHeight: group.useDeck ? stackBody.implicitHeight : expandedCol.implicitHeight
             Behavior on implicitHeight {
                 NumberAnimation {
                     duration: 180
@@ -109,7 +112,7 @@ Rectangle {
             // Collapsed: z-stacked deck. Newest (index 0) on top.
             Item {
                 id: stackBody
-                visible: !group.expanded
+                visible: group.useDeck
                 anchors.left: parent.left
                 anchors.right: parent.right
                 implicitHeight: group.count > 0 ? (group.cardH + (group.count - 1) * group.peekOffset) : 0
@@ -135,6 +138,7 @@ Rectangle {
                         compact: true
                         interactive: stackCard.index === 0 // only the top card
                         theme: group.theme
+                        source: stackCard.modelData
                         app: group.notif.keyOf(stackCard.modelData)
                         summary: stackCard.modelData.summary
                         body: stackCard.modelData.body
@@ -147,7 +151,7 @@ Rectangle {
             // Expanded: full vertical list.
             ColumnLayout {
                 id: expandedCol
-                visible: group.expanded
+                visible: !group.useDeck
                 anchors.left: parent.left
                 anchors.right: parent.right
                 spacing: 6
@@ -160,6 +164,7 @@ Rectangle {
                         compact: false
                         interactive: true
                         theme: group.theme
+                        source: listCard.modelData
                         app: group.notif.keyOf(listCard.modelData)
                         summary: listCard.modelData.summary
                         body: listCard.modelData.body
