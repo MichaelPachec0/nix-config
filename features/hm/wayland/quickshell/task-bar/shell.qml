@@ -16,6 +16,11 @@ ShellRoot {
         id: notifSvc
     }
 
+    // Global Bluetooth state (one default adapter, shared by all screens).
+    Lib.BluetoothService {
+        id: btSvc
+    }
+
     // Mirror Hyprland's screencast state into the notification service so toasts
     // are suppressed while screen sharing -- the QS-native replacement for the
     // swaync screencast inhibitor (see quickshell-notifications-cutover). The
@@ -65,6 +70,7 @@ ShellRoot {
                 theme: screenTheme
                 stats: sysStats
                 weatherState: weatherState
+                bt: btSvc
             }
 
             // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a

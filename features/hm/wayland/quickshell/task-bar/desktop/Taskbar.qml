@@ -14,6 +14,7 @@ PanelWindow {
     required property QtObject theme
     property QtObject stats: null
     property QtObject weatherState: null
+    property QtObject bt: null
 
     anchors {
         top: true
@@ -239,6 +240,14 @@ PanelWindow {
             Layout.alignment: Qt.AlignVCenter
             theme: dock.theme
             barWindow: dock
+        }
+
+        // Bluetooth: state glyph + connected device, click for the device menu.
+        BluetoothWidget {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            barWindow: dock
+            bt: dock.bt
         }
 
         // CPU / RAM (shared SysStats): microchip + memory glyph, then percent.
