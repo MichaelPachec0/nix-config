@@ -74,9 +74,16 @@ ShellRoot {
 
             GlobalShortcut {
                 name: "hubToggle"
-                description: "Toggle the Quickshell hub"
-                onPressed: hub.toggle()
+                description: "Toggle the hub (settings + notifications)"
+                onPressed: hub.hubToggle()
             }
+
+            GlobalShortcut {
+                name: "notifToggle"
+                description: "Toggle the notifications panel only"
+                onPressed: hub.notifToggle()
+            }
+
         }
     }
 }

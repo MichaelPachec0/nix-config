@@ -111,9 +111,9 @@
     "XF86MonBrightnessUp" = "exec brightnessctl -e s 2%+";
     "XF86MonBrightnessDown" = "exec brightnessctl -e s 2%-";
 
-    # Notifications: toggle the Quickshell hub (its NotificationsCard replaces
-    # swaync's panel). Same dispatch as the SUPER+Alt_R hubBind.
-    "${mod}+n" = "global quickshell:hubToggle";
+    # Notifications: toggle the Quickshell notifications panel only (SUPER+Alt_R
+    # opens the full hub, which includes notifications below it).
+    "${mod}+n" = "global quickshell:notifToggle";
   };
 
   # Translation Layer -> Hyprland
