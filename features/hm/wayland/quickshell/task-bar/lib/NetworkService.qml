@@ -153,7 +153,7 @@ if [ -n "$WUUID" ]; then
   [ "$WSTATE" = "activated" ] && echo "STATE:activated" || echo "STATE:activating"
   echo "SSID:$(nmcli -g 802-11-wireless.ssid connection show uuid "$WUUID" 2>/dev/null | head -n1)"
   echo "SIGNAL:$(nmcli -g IN-USE,SIGNAL dev wifi list 2>/dev/null | awk -F: '$1=="*"{print $2; exit}')"
-  echo "BSSID:$(nmcli -g IN-USE,BSSID dev wifi list 2>/dev/null | sed -n 's/^\*://p' | head -n1 | tr -d '\\')"
+  echo "BSSID:$(nmcli -g IN-USE,BSSID dev wifi list 2>/dev/null | sed -n 's/^\\*://p' | head -n1 | tr -d '\\\\')"
 elif [ "$PTYPE" = "ethernet" ]; then
   echo "STATE:activated"
 else

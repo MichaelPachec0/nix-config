@@ -168,7 +168,7 @@ PopupWindow {
     Lib.CommandPoll {
         id: poll
         interval: 3000
-        running: pop.visible
+        running: pop.visible && pop.net.primaryType !== "ethernet"
         command: ["bash", "-c", `
 IFACE=$(nmcli -t -f DEVICE,TYPE dev 2>/dev/null | awk -F: '$2=="wifi"{print $1; exit}')
 [ -z "$IFACE" ] && exit 0
