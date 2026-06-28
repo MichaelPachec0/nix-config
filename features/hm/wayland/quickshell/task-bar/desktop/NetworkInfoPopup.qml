@@ -15,7 +15,8 @@ PopupWindow {
     required property QtObject theme
     required property var anchorItem
     required property var barWindow
-    property string ssid: ""
+    required property var net // Lib.NetworkService
+    property string title: ""
 
     property var info: ({})
 
@@ -98,18 +99,36 @@ PopupWindow {
         return pop.chFromFreq(i.freq) + " (" + pop.band(i.freq) + ": " + i.freq + "MHz" + w + ")";
     }
 
-    // label/value rows, recomputed when info changes. IP + router first.
+    // label/value rows, recomputed when info changes. Always-present rows first,
+    // then RF rows only when not on Ethernet.
     readonly property var rows: {
         var i = pop.info;
-        return [
+        var base = [
             {
                 k: "IP",
-                v: (i.ip || "N/A")
+                v: (pop.net.ip || i.ip || "N/A")
             },
             {
                 k: "Router",
-                v: (i.gw || "N/A")
+                v: (pop.net.gateway || i.gw || "N/A")
             },
+            {
+                k: "Internet",
+                v: pop.net.connectivity,
+                color: (pop.net.connectivity === "full" ? pop.theme.accentGreen : pop.net.connectivity === "limited" ? pop.theme.accentOrange : pop.net.connectivity === "portal" ? pop.theme.accentYellow : pop.net.connectivity === "none" ? pop.theme.accentRed : pop.theme.textPrimary)
+            },
+            {
+                k: "VPN",
+                v: (pop.net.vpnActive ? pop.net.vpns.filter(function (x) {
+                        return x.active;
+                    }).map(function (x) {
+                        return x.name;
+                    }).join(", ") : "Off")
+            }
+        ];
+        if (pop.net.primaryType === "ethernet")
+            return base;
+        return base.concat([
             {
                 k: "Signal",
                 v: (i.signal !== undefined ? (i.signal + "%" + (i.rssi !== undefined ? " (" + i.rssi + " dBm)" : "")) : (i.rssi !== undefined ? i.rssi + " dBm" : "N/A"))
@@ -128,7 +147,7 @@ PopupWindow {
             },
             {
                 k: "BSSID",
-                v: (i.bssid || "N/A")
+                v: (pop.net.bssid || i.bssid || "N/A")
             },
             {
                 k: "Channel",
@@ -143,7 +162,7 @@ PopupWindow {
                 k: "PHY",
                 v: (i.phy || "N/A")
             }
-        ];
+        ]);
     }
 
     Lib.CommandPoll {
@@ -244,7 +263,7 @@ fi
 
             Text {
                 Layout.fillWidth: true
-                text: pop.ssid || "Wi-Fi"
+                text: pop.title || "Wi-Fi"
                 color: pop.theme.textPrimary
                 font.family: pop.theme.textFont
                 font.pixelSize: 13
@@ -268,7 +287,7 @@ fi
                         Layout.fillWidth: true
                         horizontalAlignment: Text.AlignRight
                         text: modelData.v
-                        color: pop.theme.textPrimary
+                        color: modelData.color || pop.theme.textPrimary
                         font.family: pop.theme.textFont
                         font.pixelSize: 11
                         elide: Text.ElideLeft

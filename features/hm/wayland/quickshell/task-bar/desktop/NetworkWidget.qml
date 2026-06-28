@@ -150,7 +150,6 @@ Item {
         }
     }
 
-    // Task 7 will add ssid wiring to NetworkInfoPopup.
     NetworkPopup {
         id: popup
         theme: root.theme
@@ -164,6 +163,7 @@ Item {
         theme: root.theme
         anchorItem: root
         barWindow: root.barWindow
-        ssid: root.label()
+        net: net
+        title: root.label()
     }
 }
