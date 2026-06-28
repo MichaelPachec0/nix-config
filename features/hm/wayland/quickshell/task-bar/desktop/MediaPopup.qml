@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Services.Mpris
+import "../lib" as Lib
 
 // Full player popup shown on hover over the bar MediaWidget: album art, title,
 // artist, a seekable progress bar (click/drag, when the player supports it), and
@@ -60,6 +61,19 @@ PopupWindow {
     // open while moving between the bar and the popup.
     property bool contentHovered: false
 
+    // Tabs: 0 = Now Playing, 1 = Queue, 2 = Playlists. effTab falls back to Now
+    // Playing if the active tab's interface is unsupported for the current player.
+    property int activeTab: 0
+    readonly property int effTab: (pop.activeTab === 1 && !ex.supportsQueue) || (pop.activeTab === 2 && !ex.supportsPlaylists) ? 0 : pop.activeTab
+
+    Lib.MprisExtras {
+        id: ex
+        bus: pop.player ? (pop.player.dbusName || "") : ""
+        popupOpen: pop.visible
+        queueWants: pop.visible && pop.effTab === 1
+        playlistsWants: pop.visible && pop.effTab === 2
+    }
+
     implicitWidth: 280
     implicitHeight: card.implicitHeight
     color: "transparent"
@@ -95,7 +109,10 @@ PopupWindow {
     property real dragFrac: -1 // >= 0 while scrubbing
     readonly property real displayFrac: pop.dragFrac >= 0 ? pop.dragFrac : (pop.lenSec > 0 ? Math.max(0, Math.min(1, pop.posSec / pop.lenSec)) : 0)
 
-    onPlayerChanged: pop.posSec = pop.player ? pop.player.position : 0
+    onPlayerChanged: {
+        pop.posSec = pop.player ? pop.player.position : 0;
+        pop.activeTab = 0;
+    }
     Timer {
         interval: 400
         repeat: true
@@ -155,6 +172,39 @@ PopupWindow {
             id: ctlTap
             enabled: ctl.enabledAction
             onTapped: ctl.activated()
+        }
+    }
+
+    // Tab-strip chip (Now Playing / Queue / Playlists).
+    component Tab: Rectangle {
+        id: tabRect
+        property string label: ""
+        property int tabIndex: 0
+        property bool shown: true
+        visible: shown
+        implicitHeight: 22
+        implicitWidth: tabText.implicitWidth + 18
+        radius: 8
+        color: pop.effTab === tabRect.tabIndex ? pop.theme.accent : pop.theme.bgItem
+        Behavior on color {
+            ColorAnimation {
+                duration: 120
+            }
+        }
+        Text {
+            id: tabText
+            anchors.centerIn: parent
+            text: tabRect.label
+            color: pop.effTab === tabRect.tabIndex ? pop.theme.textOnAccent : pop.theme.textSecondary
+            font.family: pop.theme.textFont
+            font.pixelSize: 10
+            font.weight: pop.effTab === tabRect.tabIndex ? Font.DemiBold : Font.Normal
+        }
+        HoverHandler {
+            cursorShape: Qt.PointingHandCursor
+        }
+        TapHandler {
+            onTapped: pop.activeTab = tabRect.tabIndex
         }
     }
 
@@ -228,8 +278,129 @@ PopupWindow {
                 }
             }
 
+            // Tab strip (Now Playing + tabs the player supports).
+            RowLayout {
+                Layout.fillWidth: true
+                visible: ex.supportsQueue || ex.supportsPlaylists
+                spacing: 6
+
+                Tab {
+                    label: "Now Playing"
+                    tabIndex: 0
+                }
+                Tab {
+                    label: "Queue"
+                    tabIndex: 1
+                    shown: ex.supportsQueue
+                }
+                Item {
+                    Layout.fillWidth: true
+                }
+            }
+
+            // Queue tab.
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: pop.effTab === 1
+                spacing: 4
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: ex.queue.length === 0
+                    text: "Queue empty"
+                    color: pop.theme.textSecondary
+                    font.family: pop.theme.textFont
+                    font.pixelSize: 12
+                    topPadding: 6
+                    bottomPadding: 6
+                }
+                ListView {
+                    id: queueList
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(contentHeight, 260)
+                    visible: ex.queue.length > 0
+                    clip: true
+                    spacing: 2
+                    model: ex.queue
+                    delegate: Rectangle {
+                        id: qrow
+                        required property var modelData
+                        width: queueList.width
+                        height: 40
+                        radius: 6
+                        color: qHover.hovered ? pop.theme.bgItemHover : (qrow.modelData.current ? Qt.rgba(pop.theme.accent.r, pop.theme.accent.g, pop.theme.accent.b, 0.16) : "transparent")
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 5
+                            anchors.rightMargin: 6
+                            spacing: 8
+                            Rectangle {
+                                Layout.alignment: Qt.AlignVCenter
+                                width: 30
+                                height: 30
+                                radius: 5
+                                color: pop.theme.bgItem
+                                clip: true
+                                Image {
+                                    anchors.fill: parent
+                                    source: qrow.modelData.art || ""
+                                    fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                    cache: true
+                                    sourceSize.width: 60
+                                    sourceSize.height: 60
+                                }
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 0
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: qrow.modelData.title || "Unknown"
+                                    color: qrow.modelData.current ? pop.theme.accent : pop.theme.textPrimary
+                                    font.family: pop.theme.textFont
+                                    font.pixelSize: 12
+                                    font.weight: qrow.modelData.current ? Font.DemiBold : Font.Normal
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: qrow.modelData.artist || ""
+                                    color: pop.theme.textSecondary
+                                    font.family: pop.theme.textFont
+                                    font.pixelSize: 10
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            Text {
+                                // Remove (x) -- visible on row hover.
+                                visible: qHover.hovered
+                                text: String.fromCodePoint(0xF0156) // close
+                                color: pop.theme.textSecondary
+                                font.family: pop.theme.iconFont
+                                font.pixelSize: 13
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: ex.remove(qrow.modelData.trackid)
+                                }
+                            }
+                        }
+                        HoverHandler {
+                            id: qHover
+                            cursorShape: Qt.PointingHandCursor
+                        }
+                        TapHandler {
+                            onTapped: ex.goTo(qrow.modelData.trackid)
+                        }
+                    }
+                }
+            }
+
             // Art + title/artist
             RowLayout {
+                visible: pop.effTab === 0
                 Layout.fillWidth: true
                 spacing: 10
 
@@ -294,6 +465,7 @@ PopupWindow {
 
             // Seek bar (click/drag to scrub when the player can seek).
             Item {
+                visible: pop.effTab === 0
                 Layout.fillWidth: true
                 implicitHeight: 16
 
@@ -351,6 +523,7 @@ PopupWindow {
 
             // Elapsed | transport controls | total -- one row, full width.
             RowLayout {
+                visible: pop.effTab === 0
                 Layout.fillWidth: true
                 spacing: 0
                 Text {
