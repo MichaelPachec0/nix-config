@@ -15,6 +15,7 @@ PanelWindow {
     property QtObject stats: null
     property QtObject weatherState: null
     property QtObject bt: null
+    property QtObject audio: null
 
     anchors {
         top: true
@@ -233,6 +234,14 @@ PanelWindow {
             Layout.alignment: Qt.AlignVCenter
             theme: dock.theme
             barWindow: dock
+        }
+
+        // Audio (native PipeWire): volume glyph + %, click for the mixer.
+        AudioWidget {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            barWindow: dock
+            audio: dock.audio
         }
 
         // WiFi (native nm-applet replacement): signal glyph + SSID, click for menu.

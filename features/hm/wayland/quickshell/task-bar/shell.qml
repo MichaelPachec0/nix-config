@@ -21,6 +21,11 @@ ShellRoot {
         id: btSvc
     }
 
+    // Global audio state (native PipeWire), shared by the bar widget surfaces.
+    Lib.AudioService {
+        id: audioSvc
+    }
+
     // Mirror Hyprland's screencast state into the notification service so toasts
     // are suppressed while screen sharing -- the QS-native replacement for the
     // swaync screencast inhibitor (see quickshell-notifications-cutover). The
@@ -71,6 +76,7 @@ ShellRoot {
                 stats: sysStats
                 weatherState: weatherState
                 bt: btSvc
+                audio: audioSvc
             }
 
             // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a
