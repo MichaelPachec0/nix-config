@@ -293,6 +293,11 @@ PopupWindow {
                     tabIndex: 1
                     shown: ex.supportsQueue
                 }
+                Tab {
+                    label: "Playlists"
+                    tabIndex: 2
+                    shown: ex.supportsPlaylists
+                }
                 Item {
                     Layout.fillWidth: true
                 }
@@ -393,6 +398,70 @@ PopupWindow {
                         }
                         TapHandler {
                             onTapped: ex.goTo(qrow.modelData.trackid)
+                        }
+                    }
+                }
+            }
+
+            // Playlists tab.
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: pop.effTab === 2
+                spacing: 4
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: ex.playlists.length === 0
+                    text: "No playlists"
+                    color: pop.theme.textSecondary
+                    font.family: pop.theme.textFont
+                    font.pixelSize: 12
+                    topPadding: 6
+                    bottomPadding: 6
+                }
+                ListView {
+                    id: plList
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(contentHeight, 260)
+                    visible: ex.playlists.length > 0
+                    clip: true
+                    spacing: 2
+                    model: ex.playlists
+                    delegate: Rectangle {
+                        id: prow
+                        required property var modelData
+                        width: plList.width
+                        height: 32
+                        radius: 6
+                        color: pHover.hovered ? pop.theme.bgItemHover : (prow.modelData.active ? Qt.rgba(pop.theme.accent.r, pop.theme.accent.g, pop.theme.accent.b, 0.16) : "transparent")
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            spacing: 8
+                            Text {
+                                text: String.fromCodePoint(0xF0279) // format-list-bulleted (playlist)
+                                color: prow.modelData.active ? pop.theme.accent : pop.theme.textSecondary
+                                font.family: pop.theme.iconFont
+                                font.pixelSize: 14
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: prow.modelData.name || "Playlist"
+                                color: prow.modelData.active ? pop.theme.accent : pop.theme.textPrimary
+                                font.family: pop.theme.textFont
+                                font.pixelSize: 12
+                                font.weight: prow.modelData.active ? Font.DemiBold : Font.Normal
+                                elide: Text.ElideRight
+                            }
+                        }
+                        HoverHandler {
+                            id: pHover
+                            cursorShape: Qt.PointingHandCursor
+                        }
+                        TapHandler {
+                            onTapped: ex.activate(prow.modelData.path)
                         }
                     }
                 }
