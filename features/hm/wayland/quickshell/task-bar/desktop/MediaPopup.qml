@@ -328,12 +328,16 @@ PopupWindow {
                     spacing: 2
                     model: ex.queue
 
-                    // Played tracks sit above the current one, so bring current
-                    // near the top (a couple played rows peeking above) when the
-                    // tab opens or the song changes -- but never on routine polls,
-                    // so scrolling back through history isn't yanked away.
+                    // Center the view on the current track whenever the queue view
+                    // is entered (tab switch or popup reopen -- queueWants goes true)
+                    // or the song changes, including a click, which makes the clicked
+                    // track current. Routine polls don't re-center, so scrolling back
+                    // through history isn't yanked away. centerArmed guarantees one
+                    // forced center per entry even if the first poll hasn't returned
+                    // the queue yet.
                     property string anchoredId: ""
-                    function syncToCurrent(force) {
+                    property bool centerArmed: false
+                    function syncToCurrent() {
                         var idx = -1;
                         var cid = "";
                         for (var i = 0; i < ex.queue.length; ++i)
@@ -344,21 +348,25 @@ PopupWindow {
                             }
                         if (idx < 0)
                             return;
-                        if (force || cid !== queueList.anchoredId) {
+                        if (queueList.centerArmed || cid !== queueList.anchoredId) {
                             queueList.anchoredId = cid;
-                            queueList.positionViewAtIndex(Math.max(0, idx - 2), ListView.Beginning);
+                            queueList.centerArmed = false;
+                            queueList.positionViewAtIndex(idx, ListView.Center);
                         }
                     }
-                    onVisibleChanged: if (visible)
-                        Qt.callLater(function () {
-                            queueList.syncToCurrent(true);
-                        })
                     Connections {
                         target: ex
+                        // Entering the queue view: arm a one-shot forced center, try
+                        // now (data may already be present) and again on the next
+                        // queue update (in case the poll hadn't returned yet).
+                        function onQueueWantsChanged() {
+                            if (ex.queueWants) {
+                                queueList.centerArmed = true;
+                                Qt.callLater(queueList.syncToCurrent);
+                            }
+                        }
                         function onQueueChanged() {
-                            Qt.callLater(function () {
-                                queueList.syncToCurrent(false);
-                            });
+                            Qt.callLater(queueList.syncToCurrent);
                         }
                     }
 
