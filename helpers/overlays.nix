@@ -413,13 +413,32 @@
   #     });
   # };
   latest = final: prev: let
+    # Downstream fix for a Hyprland SIGSEGV (seen with the Quickshell popup
+    # work): CPopup::coordsRelativeToParent() dereferences the weak pointer
+    # m_resource->m_surface after only checking m_resource. A popup that
+    # outlives its XDG surface during client teardown -- still "visible" while
+    # m_fadingOut, hit-tested when a layer surface unmap re-runs
+    # simulateMouseMovement -- has an expired m_surface, so reading
+    # m_current.geometry.pos() segfaults in CBox::pos(). Every other access
+    # site in Popup.cpp guards both; this one doesn't. Present in v0.55.4 and
+    # upstream main. See overlays/0005-*.patch.
+    hyprland-patched = final.hyprland.overrideAttrs (old: {
+      patches =
+        (old.patches or [])
+        ++ [
+          ../overlays/0005-fix-hyprland-popup-coords-null-surface-deref.patch
+        ];
+    });
   in {
     latest = {
-      inherit (final) hyprland;
+      hyprland = hyprland-patched;
       inherit (prev) waybar;
 
       sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
-      hy3 = final.hyprlandPlugins.hy3.overrideAttrs (old: {
+      # Build hy3 against the patched hyprland so the plugin's embedded
+      # version/commit hash matches the running compositor (ABI is otherwise
+      # unchanged -- the patch only touches a .cpp, no headers).
+      hy3 = (final.hyprlandPlugins.hy3.override {hyprland = hyprland-patched;}).overrideAttrs (old: {
         patches =
           (old.patches or [])
           ++ [
