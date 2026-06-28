@@ -5,11 +5,37 @@
 # task (spec 2g).
 {
   config,
+  lib,
   pkgs,
   ...
 }: let
+  # The in-repo helper scripts (task-bar/lib/*.sh) shell out to these at runtime.
+  # They're all present in an interactive session, but pin them onto quickshell's
+  # PATH so the shell works regardless of how it's launched (mirrors the rofi-bt
+  # wrapper in rofi.nix). Used by btinfo.sh and audioctl.sh:
+  #   bluetoothctl (bluez), pbpctrl, pw-dump / pw-metadata (pipewire),
+  #   wpctl (wireplumber), pactl (pulseaudio), python3, plus coreutils/grep/sed/awk.
+  runtimeDeps = [
+    pkgs.bash
+    pkgs.coreutils
+    pkgs.gnugrep
+    pkgs.gnused
+    pkgs.gawk
+    pkgs.bluez # bluetoothctl
+    pkgs.pipewire # pw-dump
+    pkgs.wireplumber # wpctl
+    pkgs.pulseaudio # pactl
+    pkgs.python3
+    pkgs.pbpctrl # Pixel Buds control (btinfo.sh pbp/set)
+  ];
+
   quickshell' = pkgs.quickshell.overrideAttrs (o: {
     buildInputs = (o.buildInputs or []) ++ [pkgs.qt6.qt5compat];
+    # wrapQtAppsHook applies these when wrapping bin/qs and bin/quickshell, so the
+    # shell's child processes (bash -lc lib/*.sh) inherit the deps on PATH.
+    qtWrapperArgs =
+      (o.qtWrapperArgs or [])
+      ++ ["--prefix PATH : ${lib.makeBinPath runtimeDeps}"];
   });
 in {
   home.packages = [quickshell'];
