@@ -64,14 +64,17 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: {
+            info.iconHovered = false;
             info.hide();
             menu.toggle();
         }
         onContainsMouseChanged: {
-            if (containsMouse && !menu.visible)
+            if (containsMouse && !menu.visible) {
+                info.iconHovered = true;
                 info.show();
-            else
-                info.hide();
+            } else {
+                info.iconHovered = false;
+            }
         }
     }
 

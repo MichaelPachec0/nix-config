@@ -1,5 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQml
+import Quickshell
+import Quickshell.Io
 import Quickshell.Bluetooth
 
 // Shared, reactive Bluetooth state for the bar widget, dropdown and tooltip.
@@ -44,6 +46,104 @@ QtObject {
     readonly property var discoveredUnnamed: svc.discoveredDevices.filter(function (d) {
         return String(d.deviceName || "").length === 0;
     })
+
+    // --- Connected-device audio + earbud data (shared by the menu detail panel
+    // and the bar hover panel). PipeWire codec/profile/volume for any audio
+    // device; pbpctrl settings for Pixel Buds. Centralized here so pbpctrl is
+    // driven by ONE serial owner -- it cannot run concurrently and a call killed
+    // mid-RFCOMM wedges the channel, so we never overlap and never kill.
+    readonly property var primaryAudio: svc.connectedDevices.length > 0 ? svc.connectedDevices[0] : null
+    readonly property string audioMac: svc.primaryAudio ? String(svc.primaryAudio.address) : ""
+    readonly property bool audioIsBuds: svc.primaryAudio ? /pixel buds/i.test(String(svc.primaryAudio.deviceName || svc.primaryAudio.name || "")) : false
+    // Panels set these while visible; we only poll while something wants the data.
+    property bool hoverWants: false
+    property bool menuWants: false
+    readonly property bool audioWanted: svc.hoverWants || svc.menuWants
+
+    property var pw: ({})  // { codec, profile, volume }
+    property var pbp: ({}) // { left,right,case,anc,multipoint,ohd,volumeeq,mono,speech,balance,eq,firmware }
+
+    function parseKV(out) {
+        var m = {};
+        var lines = String(out || "").trim().split("\n");
+        for (var i = 0; i < lines.length; i++) {
+            var idx = lines[i].indexOf("=");
+            if (idx > 0)
+                m[lines[i].slice(0, idx)] = lines[i].slice(idx + 1).trim();
+        }
+        return m;
+    }
+
+    // PipeWire poll (safe to run freely; independent of pbpctrl).
+    property CommandPoll pwPoll: CommandPoll {
+        interval: 4000
+        running: svc.audioWanted && svc.audioMac !== ""
+        command: ["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/btinfo.sh pw " + svc.audioMac]
+        parse: function (out) {
+            return svc.parseKV(out);
+        }
+        onUpdated: svc.pw = this.value
+    }
+
+    // pbpctrl serial executor: one Process drains a queue of read/write jobs so
+    // calls never overlap. A 30s timer enqueues a read; pbpSet() enqueues a
+    // write followed by a confirming read.
+    property var pbpJobs: []
+    property bool pbpBusy: false
+    property bool pbpCurRead: false
+    function pbpEnqueue(argstr, isRead) {
+        svc.pbpJobs = svc.pbpJobs.concat([{
+            "a": argstr,
+            "r": isRead
+        }]);
+        svc.pbpKick();
+    }
+    function pbpKick() {
+        if (svc.pbpBusy || svc.pbpJobs.length === 0)
+            return;
+        svc.pbpBusy = true;
+        var j = svc.pbpJobs[0];
+        svc.pbpJobs = svc.pbpJobs.slice(1);
+        svc.pbpCurRead = j.r;
+        svc.pbpProc.exec(["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/btinfo.sh " + j.a]);
+    }
+    // Switch the A2DP codec (PipeWire card profile -- fast, no pbpctrl/RFCOMM).
+    function codecSet(prof) {
+        if (svc.audioMac === "" || !prof)
+            return;
+        Quickshell.execDetached(["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/btinfo.sh codec " + svc.audioMac + " " + prof]);
+    }
+
+    // setting: e.g. "anc"; vals: space-joined values e.g. "active" or "1 0 -1 2 0".
+    function pbpSet(setting, vals) {
+        if (svc.audioMac === "")
+            return;
+        svc.pbpEnqueue("set " + svc.audioMac + " " + setting + " " + vals, false);
+        svc.pbpEnqueue("pbp " + svc.audioMac, true);
+    }
+    property Process pbpProc: Process {
+        stdout: StdioCollector {
+            onStreamFinished: if (svc.pbpCurRead)
+                svc.pbp = svc.parseKV(this.text)
+        }
+        onExited: {
+            svc.pbpBusy = false;
+            svc.pbpKick();
+        }
+    }
+    property Timer pbpTimer: Timer {
+        interval: 30000
+        repeat: true
+        triggeredOnStart: true
+        running: svc.audioWanted && svc.audioMac !== "" && svc.audioIsBuds
+        onTriggered: {
+            var hasRead = svc.pbpJobs.some(function (j) {
+                return j.r;
+            });
+            if (!hasRead)
+                svc.pbpEnqueue("pbp " + svc.audioMac, true);
+        }
+    }
 
     // Address of a just-paired device to auto-connect once pairing completes.
     property string pendingConnectAddr: ""

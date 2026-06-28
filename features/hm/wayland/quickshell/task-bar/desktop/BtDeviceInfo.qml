@@ -2,17 +2,39 @@ import QtQuick
 import QtQuick.Layouts
 
 // Inline detail panel for the hovered device, rendered beside the list inside
-// BluetoothPopup. A plain Item (not a window) faded via opacity by the parent
-// (never toggled visible under the focus grab -- mirrors ApInfoPopup).
+// BluetoothPopup (faded via opacity by the parent -- mirrors ApInfoPopup). For
+// the connected audio device it also shows read-only PipeWire codec/profile/
+// volume and (Pixel Buds) pbpctrl per-bud battery/ANC/etc -- read from the
+// shared BluetoothService (single pbpctrl owner). All read-only here; the bar
+// hover panel carries the controls.
 Item {
     id: info
 
     required property QtObject theme
     required property var bt
     property var dev: null
+    property bool active: false // true while this panel is shown
 
     implicitWidth: 250
     implicitHeight: body.implicitHeight + 24
+
+    // True when the hovered device is the connected audio device the service
+    // polls (so its pw/pbp data applies here).
+    readonly property bool isAudioDev: info.dev && info.dev.connected && info.dev.address === info.bt.audioMac
+    readonly property bool isBuds: info.isAudioDev && info.bt.audioIsBuds
+    readonly property bool hasPbpBattery: info.isBuds && (String(info.bt.pbp.left || "") !== "" || String(info.bt.pbp.right || "") !== "")
+
+    // Ask the service to poll while we're showing the connected audio device.
+    Binding {
+        target: info.bt
+        property: "menuWants"
+        value: info.active && info.isAudioDev
+    }
+
+    function cap(s) {
+        s = String(s || "");
+        return s.length ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -70,16 +92,93 @@ Item {
                     text: !info.dev ? "" : (info.dev.connected ? "Connected" : (info.dev.paired ? "Paired" : "Available"))
                 }
             }
+
+            // Battery -- per-bud for Pixel Buds, else the BlueZ aggregate.
             Row {
                 Layout.fillWidth: true
-                visible: info.dev && info.dev.batteryAvailable
+                visible: info.hasPbpBattery || (info.dev && info.dev.batteryAvailable)
                 InfoLabel {
                     text: "Battery"
                 }
                 InfoValue {
-                    text: info.dev ? Math.round(info.dev.battery * 100) + "%" : ""
+                    text: info.hasPbpBattery ? ("L " + (info.bt.pbp.left || "?") + "%  R " + (info.bt.pbp.right || "?") + "%") : (info.dev ? Math.round(info.dev.battery * 100) + "%" : "")
                 }
             }
+            Row {
+                Layout.fillWidth: true
+                visible: info.isBuds && String(info.bt.pbp["case"] || "") !== ""
+                InfoLabel {
+                    text: "Case"
+                }
+                InfoValue {
+                    text: (info.bt.pbp["case"] || "") + "%"
+                }
+            }
+
+            // Audio stream (PipeWire) -- read-only.
+            Row {
+                Layout.fillWidth: true
+                visible: info.isAudioDev && String(info.bt.pw.codec || "") !== ""
+                InfoLabel {
+                    text: "Codec"
+                }
+                InfoValue {
+                    text: info.bt.pw.codec || ""
+                }
+            }
+            Row {
+                Layout.fillWidth: true
+                visible: info.isAudioDev && String(info.bt.pw.profile || "") !== ""
+                InfoLabel {
+                    text: "Profile"
+                }
+                InfoValue {
+                    text: info.bt.pw.profile || ""
+                }
+            }
+            Row {
+                Layout.fillWidth: true
+                visible: info.isAudioDev && String(info.bt.pw.volume || "") !== ""
+                InfoLabel {
+                    text: "Volume"
+                }
+                InfoValue {
+                    text: (info.bt.pw.volume || "") + "%"
+                }
+            }
+
+            // Pixel Buds status (pbpctrl) -- read-only here.
+            Row {
+                Layout.fillWidth: true
+                visible: info.isBuds && String(info.bt.pbp.anc || "") !== ""
+                InfoLabel {
+                    text: "ANC"
+                }
+                InfoValue {
+                    text: info.cap(info.bt.pbp.anc)
+                }
+            }
+            Row {
+                Layout.fillWidth: true
+                visible: info.isBuds && String(info.bt.pbp.multipoint || "") !== ""
+                InfoLabel {
+                    text: "Multipoint"
+                }
+                InfoValue {
+                    text: info.bt.pbp.multipoint === "true" ? "On" : "Off"
+                }
+            }
+            Row {
+                Layout.fillWidth: true
+                visible: info.isBuds && String(info.bt.pbp.firmware || "") !== ""
+                InfoLabel {
+                    text: "Firmware"
+                }
+                InfoValue {
+                    text: info.bt.pbp.firmware || ""
+                }
+            }
+
             Row {
                 Layout.fillWidth: true
                 InfoLabel {
@@ -172,6 +271,6 @@ Item {
         color: info.theme.textPrimary
         font.family: info.theme.textFont
         font.pixelSize: 11
-        elide: Text.ElideLeft // keep the meaningful tail (MAC) visible
+        elide: Text.ElideLeft
     }
 }

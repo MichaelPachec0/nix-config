@@ -196,6 +196,7 @@ in {
         obsidian
         obsidian-export
         udftools
+        pbpctrl
       ]
       ++ lib.optionals config.networking.wireless.iwd.enable [iwgtk]
       ++ lib.optionals config.devMachine.enable [

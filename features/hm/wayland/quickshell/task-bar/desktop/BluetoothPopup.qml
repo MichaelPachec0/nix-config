@@ -43,7 +43,10 @@ PopupWindow {
     readonly property int infoW: 250
 
     implicitWidth: pop.listW + 4 + pop.infoW
-    implicitHeight: Math.max(card.implicitHeight, 260)
+    // Track both columns: the detail panel can be tall (Pixel Buds extras) and
+    // must not clip. Bottom edge grows away from the (list-side) cursor, so this
+    // doesn't trigger the hover-leave race the fixed WIDTH guards against.
+    implicitHeight: Math.max(card.implicitHeight, detail.implicitHeight, 200)
     color: "transparent"
     visible: false
     grabFocus: true
@@ -278,11 +281,13 @@ PopupWindow {
     }
 
     BtDeviceInfo {
+        id: detail
         x: pop.listW + 4
         width: pop.infoW
         theme: pop.theme
         bt: pop.bt
         dev: pop.hoverDev
+        active: pop.showInfo
         opacity: pop.showInfo ? 1 : 0
         visible: true // never toggle visible under the grab; fade only
         Behavior on opacity {
