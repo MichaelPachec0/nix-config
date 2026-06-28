@@ -64,6 +64,7 @@ Item {
                     source: d.source ?? "",
                     feels: d.feels ?? "",
                     humidity: d.humidity ?? "",
+                    precip: d.precip ?? "",
                     wind: d.wind ?? "",
                     windDir: d.windDir ?? "",
                     place: d.place ?? "",

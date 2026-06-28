@@ -16,7 +16,7 @@ PopupWindow {
     required property var barWindow
     required property var anchorItem
     required property var weatherState
-    property var wx: null // {temp, icon, desc, source, feels, humidity, wind, windDir, place, forecast[]}
+    property var wx: null // {temp, icon, desc, source, feels, humidity, precip, wind, windDir, place, forecast[]}
 
     // Tracks hover over the popup card so the widget can keep it open (chips
     // inside need to stay clickable when the cursor leaves the bar widget).
@@ -25,6 +25,7 @@ PopupWindow {
     readonly property string deg: String.fromCodePoint(0x00B0)
     readonly property string feels: (pop.wx && pop.wx.feels) ? pop.wx.feels : ""
     readonly property string humidity: (pop.wx && pop.wx.humidity) ? pop.wx.humidity : ""
+    readonly property string precip: (pop.wx && pop.wx.precip) ? pop.wx.precip : ""
     readonly property string wind: (pop.wx && pop.wx.wind) ? pop.wx.wind : ""
     readonly property string windDir: (pop.wx && pop.wx.windDir) ? pop.wx.windDir : ""
     readonly property string place: (pop.wx && pop.wx.place) ? pop.wx.place : ""
@@ -139,6 +140,10 @@ PopupWindow {
             DetailRow {
                 label: "Humidity"
                 value: pop.humidity !== "" ? pop.humidity + "%" : ""
+            }
+            DetailRow {
+                label: "Chance of rain"
+                value: pop.precip !== "" ? pop.precip + "%" : ""
             }
             DetailRow {
                 label: "Wind"

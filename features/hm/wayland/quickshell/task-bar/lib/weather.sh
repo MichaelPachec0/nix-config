@@ -15,13 +15,14 @@
 # Each provider normalizes its own vocabulary/units onto one JSON shape
 # (Fahrenheit, mph, fixed to Los Angeles):
 #
-#   {"temp":"73","icon":"clear-day","desc":"Clear","source":"metno",
-#    "feels":"71","humidity":"45","wind":"6","windDir":"NW",
+#   {"temp":"73","icon":"clear-day","desc":"Clear","source":"openmeteo",
+#    "feels":"71","humidity":"45","precip":"20","wind":"6","windDir":"NW",
 #    "forecast":[{"day":"Fri","icon":"clear-day","hi":"78","lo":"60"}, ...]}
 #
-# Empty current fields (e.g. met.no has no feels-like) are "" and the QML hides
-# that row. Results are cached 30 min; a stale cache is served if every provider
-# fails. ASCII-only (the glyph table lives in the QML, next to the font).
+# "precip" is the chance of rain (precipitation probability, percent). Empty
+# current fields (e.g. met.no has no feels-like and no precip) are "" and the
+# QML hides that row. Results are cached 30 min; a stale cache is served if every
+# provider fails. ASCII-only (the glyph table lives in the QML, next to the font).
 
 set -u
 
@@ -33,7 +34,10 @@ LON="$DEFAULT_LON"
 PLACE="" # resolved place name (reverse-geocoded for the geo entry)
 
 # Provider priority; first success wins. Keyed providers self-skip when unkeyed.
-read -ra PROVIDERS <<<"${WEATHER_PROVIDERS:-owm pirate metno openmeteo wttr}"
+# Open-Meteo is preferred over met.no among the keyless providers: it supplies
+# chance-of-rain (precip) and feels-like globally, which met.no's compact API
+# does not (its probability_of_precipitation is null outside the Nordics).
+read -ra PROVIDERS <<<"${WEATHER_PROVIDERS:-owm pirate openmeteo metno wttr}"
 
 readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/qs-weather"
 readonly CACHE_TTL=1800
@@ -108,9 +112,9 @@ fc_build() {
 
 # Emit the unified record from R_* globals; arg1 = source.
 emit_rich() {
-  printf '{"temp":"%s","icon":"%s","desc":"%s","source":"%s","feels":"%s","humidity":"%s","wind":"%s","windDir":"%s","place":"%s","forecast":%s}\n' \
+  printf '{"temp":"%s","icon":"%s","desc":"%s","source":"%s","feels":"%s","humidity":"%s","precip":"%s","wind":"%s","windDir":"%s","place":"%s","forecast":%s}\n' \
     "$(json_escape "${R_temp}")" "${R_icon}" "$(json_escape "${R_desc}")" "$1" \
-    "$(json_escape "${R_feels}")" "$(json_escape "${R_humidity}")" \
+    "$(json_escape "${R_feels}")" "$(json_escape "${R_humidity}")" "$(json_escape "${R_precip}")" \
     "$(json_escape "${R_wind}")" "$(json_escape "${R_windDir}")" \
     "$(json_escape "${PLACE}")" "${R_fc:-[]}"
 }
@@ -307,6 +311,10 @@ fetch_owm() {
   fc_reset
   fc_src=$(curl -sf --max-time 6 \
     "https://api.openweathermap.org/data/2.5/forecast?lat=${LAT}&lon=${LON}&units=imperial&appid=${key}")
+  # Chance of rain: PoP of the nearest 3-hour window (the current endpoint has
+  # none). OWM reports pop as 0-1 -> percent.
+  R_precip=""
+  [ -n "$fc_src" ] && R_precip=$(printf '%s' "$fc_src" | jq -r 'if (.list[0].pop|type)=="number" then (.list[0].pop*100|round) else empty end')
   if [ -n "$fc_src" ]; then
     days=$(printf '%s' "$fc_src" | jq -c '
       [ .list[] | {d:(.dt_txt[0:10]), t:.main.temp, id:.weather[0].id, h:(.dt_txt[11:13])} ]
@@ -341,6 +349,7 @@ fetch_pirate() {
   R_desc=$(printf '%s' "$resp" | jq -r '.currently.summary // "Unknown"')
   R_feels=$(printf '%s' "$resp" | jq -r '.currently.apparentTemperature // empty' | round)
   R_humidity=$(printf '%s' "$resp" | jq -r 'if .currently.humidity then (.currently.humidity*100|round) else empty end')
+  R_precip=$(printf '%s' "$resp" | jq -r 'if (.currently.precipProbability|type)=="number" then (.currently.precipProbability*100|round) else empty end')
   R_wind=$(printf '%s' "$resp" | jq -r '.currently.windSpeed // empty' | round)
   R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.currently.windBearing // empty')")
 
@@ -372,6 +381,7 @@ fetch_metno() {
   R_icon=$(metno_icon "$sym")
   R_desc=$(desc_from_key "$R_icon")
   R_feels="" # met.no compact has no apparent temperature
+  R_precip="" # met.no probability_of_precipitation is null outside the Nordics
   R_humidity=$(printf '%s' "$resp" | jq -r '.properties.timeseries[0].data.instant.details.relative_humidity // empty' | round)
   R_wind=$(ms_to_mph "$(printf '%s' "$resp" | jq -r '.properties.timeseries[0].data.instant.details.wind_speed // empty')")
   R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.properties.timeseries[0].data.instant.details.wind_from_direction // empty')")
@@ -403,7 +413,7 @@ fetch_metno() {
 fetch_openmeteo() {
   local resp code isday night days i d hi lo fcode
   resp=$(curl -sf --max-time 6 \
-    "https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=7") || return 1
+    "https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,weather_code,is_day,wind_speed_10m,wind_direction_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=7") || return 1
   code=$(printf '%s' "$resp" | jq -r '.current.weather_code // empty')
   [ -n "$code" ] || return 1
   isday=$(printf '%s' "$resp" | jq -r '.current.is_day // 1')
@@ -414,6 +424,7 @@ fetch_openmeteo() {
   R_desc=$(desc_from_key "$R_icon")
   R_feels=$(printf '%s' "$resp" | jq -r '.current.apparent_temperature // empty' | round)
   R_humidity=$(printf '%s' "$resp" | jq -r '.current.relative_humidity_2m // empty' | round)
+  R_precip=$(printf '%s' "$resp" | jq -r '.current.precipitation_probability // empty') # already percent
   R_wind=$(printf '%s' "$resp" | jq -r '.current.wind_speed_10m // empty' | round)
   R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.current.wind_direction_10m // empty')")
 
@@ -445,6 +456,8 @@ fetch_wttr() {
   R_desc=$(printf '%s' "$resp" | jq -r '.current_condition[0].weatherDesc[0].value // "Unknown"')
   R_feels=$(printf '%s' "$resp" | jq -r '.current_condition[0].FeelsLikeF // empty')
   R_humidity=$(printf '%s' "$resp" | jq -r '.current_condition[0].humidity // empty')
+  # Chance of rain: nearest 3-hourly slot (wttr has none on current_condition).
+  R_precip=$(printf '%s' "$resp" | jq -r --argjson s "$((10#$(date +%H) / 3))" '.weather[0].hourly[$s].chanceofrain // empty')
   R_wind=$(printf '%s' "$resp" | jq -r '.current_condition[0].windspeedMiles // empty')
   R_windDir=$(printf '%s' "$resp" | jq -r '.current_condition[0].winddir16Point // empty')
 
@@ -510,5 +523,5 @@ if [ -n "$out" ]; then
 elif [ -f "$CACHE_FILE" ]; then
   cat "$CACHE_FILE" # stale, but better than nothing
 else
-  printf '{"temp":"--","icon":"cloudy","desc":"Offline","source":"none","feels":"","humidity":"","wind":"","windDir":"","place":"","forecast":[]}\n'
+  printf '{"temp":"--","icon":"cloudy","desc":"Offline","source":"none","feels":"","humidity":"","precip":"","wind":"","windDir":"","place":"","forecast":[]}\n'
 fi
