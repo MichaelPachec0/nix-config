@@ -8,8 +8,11 @@ import "../hub" as Hub
 // bar, that stacks transient notification toasts grouped by app (NotifGroup in
 // toastMode). Sized to its content and hidden when empty, so it never blocks
 // clicks elsewhere. Hovering pauses the auto-dismiss sweep; leaving restarts the
-// countdowns. Takes keyboard focus only on demand, so an inline-reply field in a
-// toast is typeable when clicked without otherwise stealing focus.
+// countdowns. Keyboard focus is gated on hover: the surface stays unfocusable
+// (WlrKeyboardFocus.None) so an arriving toast never steals focus from the
+// active window, and only becomes focusable (OnDemand) while the cursor is over
+// it -- enough to click into and type the inline-reply field. (Pointer events
+// don't need keyboard focus, so dismiss/expand clicks work in either state.)
 PanelWindow {
     id: overlay
 
@@ -33,7 +36,10 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "qs-toasts"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+    // None on arrival -> can't steal focus; OnDemand only while hovered so the
+    // inline-reply field is clickable/typeable. (overlayHover is declared below;
+    // QML resolves the id after the component is built.)
+    WlrLayershell.keyboardFocus: overlayHover.hovered ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
     visible: overlay.notif && overlay.notif.toasts.length > 0
 
