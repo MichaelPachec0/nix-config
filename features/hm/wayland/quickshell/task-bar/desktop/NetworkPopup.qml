@@ -75,6 +75,7 @@ PopupWindow {
         pop.anchor.rect.y = pop.barWindow.height + 4;
         pop.anchor.rect.width = 0;
         pop.anchor.rect.height = 0;
+        pop.selectedTab = pop.net.defaultTab();
         pop.visible = true;
     }
 
@@ -93,6 +94,12 @@ PopupWindow {
             return String.fromCodePoint(0xF0925);
         return String.fromCodePoint(0xF0928);
     }
+
+    // Active tab: "wifi" | "ethernet" | "vpn".
+    property string selectedTab: "wifi"
+    // Tab visibility helpers.
+    readonly property bool showEthTab: pop.net.ethernetConns.length > 0
+    readonly property bool showVpnTab: pop.net.vpns.length > 0
 
     // Saved wifi connection names (~= SSIDs) so secured-but-saved networks
     // connect directly instead of prompting for a password.
@@ -190,7 +197,7 @@ PopupWindow {
     Lib.CommandPoll {
         id: scan
         interval: 6000
-        running: pop.visible && pop.net.wifiRadio
+        running: pop.visible && pop.net.wifiRadio && pop.selectedTab === "wifi"
         command: ["bash", "-lc", `
 nmcli -t -f IN-USE,SIGNAL,SECURITY,CHAN,FREQ,RATE,BANDWIDTH,MODE,RSN-FLAGS,BSSID,SSID dev wifi list 2>/dev/null
 IFACE=$(nmcli -t -f DEVICE,TYPE dev 2>/dev/null | awk -F: '$2=="wifi"{print $1; exit}')
@@ -286,7 +293,7 @@ fi
     // Saved wifi connection names (~= SSID) -> savedSet.
     Lib.CommandPoll {
         interval: 10000
-        running: pop.visible && pop.net.wifiRadio
+        running: pop.visible && pop.net.wifiRadio && pop.selectedTab === "wifi"
         command: ["bash", "-lc", "nmcli -t -f NAME,TYPE connection show 2>/dev/null | awk -F: '$2==\"802-11-wireless\"{print $1}'"]
         parse: function (o) {
             var set = {};
@@ -334,33 +341,42 @@ fi
             }
             spacing: 8
 
-            // VPN chips: accent-filled when active, outline when not. Tap toggles.
-            Flow {
+            // Tab bar: one header per category that has profiles. Left-click selects;
+            // the active-category header carries a dot. Wi-Fi is always present when a
+            // Wi-Fi device exists.
+            RowLayout {
                 Layout.fillWidth: true
-                visible: pop.net.vpns.length > 0
-                spacing: 6
+                spacing: 14
                 Repeater {
-                    model: pop.net.vpns
-                    Rectangle {
+                    model: [
+                        {key: "wifi", label: "Wi-Fi", show: pop.net.hasWifi, active: pop.net.primaryType === "wifi" && pop.net.connState === "activated"},
+                        {key: "ethernet", label: "Ethernet", show: pop.showEthTab, active: pop.net.primaryType === "ethernet" && pop.net.connState === "activated"},
+                        {key: "vpn", label: "VPN", show: pop.showVpnTab, active: pop.net.vpnActive}
+                    ]
+                    RowLayout {
                         required property var modelData
-                        radius: 999
-                        implicitHeight: 24
-                        implicitWidth: vpnLabel.implicitWidth + 22
-                        color: modelData.active ? pop.theme.accent : "transparent"
-                        border.width: 1
-                        border.color: modelData.active ? pop.theme.accent : pop.theme.border
+                        visible: modelData.show
+                        spacing: 4
                         Text {
-                            id: vpnLabel
-                            anchors.centerIn: parent
-                            text: modelData.name
-                            color: modelData.active ? pop.theme.textOnAccent : pop.theme.textSecondary
+                            text: modelData.label
+                            color: pop.selectedTab === modelData.key ? pop.theme.accent : pop.theme.textSecondary
                             font.family: pop.theme.textFont
-                            font.pixelSize: 11
+                            font.pixelSize: 12
+                            font.weight: pop.selectedTab === modelData.key ? Font.Bold : Font.Normal
+                            HoverHandler {
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                            TapHandler {
+                                onTapped: pop.selectedTab = modelData.key
+                            }
                         }
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: pop.net.toggleVpn(modelData.uuid, !modelData.active)
+                        Rectangle {
+                            visible: modelData.active
+                            implicitWidth: 5
+                            implicitHeight: 5
+                            radius: 999
+                            color: pop.theme.accentGreen
+                            Layout.alignment: Qt.AlignVCenter
                         }
                     }
                 }
@@ -369,6 +385,7 @@ fi
             // Header: title + rescan + on/off toggle
             RowLayout {
                 Layout.fillWidth: true
+                visible: pop.selectedTab === "wifi"
                 spacing: 8
                 Text {
                     Layout.fillWidth: true
@@ -429,7 +446,7 @@ fi
             // Disconnect button: visible only when a Wi-Fi connection is active.
             Rectangle {
                 Layout.fillWidth: true
-                visible: pop.net.wifiUuid !== ""
+                visible: pop.selectedTab === "wifi" && pop.net.wifiUuid !== ""
                 implicitHeight: 30
                 radius: 8
                 color: dcHover.hovered ? Qt.rgba(pop.theme.accentRed.r, pop.theme.accentRed.g, pop.theme.accentRed.b, 0.18) : Qt.rgba(pop.theme.accentRed.r, pop.theme.accentRed.g, pop.theme.accentRed.b, 0.10)
@@ -453,7 +470,7 @@ fi
 
             // Off message
             Text {
-                visible: !pop.net.wifiRadio
+                visible: pop.selectedTab === "wifi" && !pop.net.wifiRadio
                 Layout.fillWidth: true
                 text: "Wi-Fi is off"
                 color: pop.theme.textSecondary
@@ -463,7 +480,7 @@ fi
 
             // Saved networks -- all in view (no scroll).
             Text {
-                visible: pop.net.wifiRadio && pop.pwSsid === "" && pop.savedNets.length > 0
+                visible: pop.selectedTab === "wifi" && pop.net.wifiRadio && pop.pwSsid === "" && pop.savedNets.length > 0
                 Layout.fillWidth: true
                 text: "Saved"
                 color: pop.theme.textSecondary
@@ -472,7 +489,7 @@ fi
                 font.weight: Font.Bold
             }
             ListView {
-                visible: pop.net.wifiRadio && pop.pwSsid === "" && pop.savedNets.length > 0
+                visible: pop.selectedTab === "wifi" && pop.net.wifiRadio && pop.pwSsid === "" && pop.savedNets.length > 0
                 Layout.fillWidth: true
                 Layout.preferredHeight: contentHeight
                 interactive: false
@@ -483,7 +500,7 @@ fi
 
             // Available (unsaved) networks -- scrollable.
             Text {
-                visible: pop.net.wifiRadio && pop.pwSsid === "" && pop.otherNets.length > 0
+                visible: pop.selectedTab === "wifi" && pop.net.wifiRadio && pop.pwSsid === "" && pop.otherNets.length > 0
                 Layout.fillWidth: true
                 text: "Available"
                 color: pop.theme.textSecondary
@@ -493,7 +510,7 @@ fi
             }
             ListView {
                 id: otherList
-                visible: pop.net.wifiRadio && pop.pwSsid === "" && pop.otherNets.length > 0
+                visible: pop.selectedTab === "wifi" && pop.net.wifiRadio && pop.pwSsid === "" && pop.otherNets.length > 0
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.min(contentHeight, 240)
                 clip: true
@@ -521,7 +538,7 @@ fi
 
             // Password prompt for a new secured network.
             ColumnLayout {
-                visible: pop.pwSsid !== ""
+                visible: pop.selectedTab === "wifi" && pop.pwSsid !== ""
                 Layout.fillWidth: true
                 spacing: 8
                 onVisibleChanged: if (visible) {
@@ -600,6 +617,26 @@ fi
                         }
                     }
                 }
+            }
+
+            // Ethernet tab body.
+            NetworkProfileList {
+                Layout.fillWidth: true
+                visible: pop.selectedTab === "ethernet"
+                theme: pop.theme
+                net: pop.net
+                conns: pop.net.ethernetConns
+                emptyText: "No wired connections"
+            }
+
+            // VPN tab body.
+            NetworkProfileList {
+                Layout.fillWidth: true
+                visible: pop.selectedTab === "vpn"
+                theme: pop.theme
+                net: pop.net
+                conns: pop.net.vpns
+                emptyText: "No VPN connections"
             }
         }
     }
