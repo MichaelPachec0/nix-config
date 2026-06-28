@@ -26,6 +26,7 @@
     pkgs.wireplumber # wpctl
     pkgs.pulseaudio # pactl
     pkgs.python3
+    pkgs.systemd # busctl (mpris-extra.sh)
     pkgs.pbpctrl # Pixel Buds control (btinfo.sh pbp/set)
   ];
 
