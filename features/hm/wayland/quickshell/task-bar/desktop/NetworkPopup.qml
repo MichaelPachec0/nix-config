@@ -17,7 +17,7 @@ PopupWindow {
     required property QtObject theme
     required property var anchorItem
     required property var barWindow
-    property bool wifiEnabled: false
+    required property var net // Lib.NetworkService
     property var networks: []
 
     readonly property int listW: 280
@@ -190,7 +190,7 @@ PopupWindow {
     Lib.CommandPoll {
         id: scan
         interval: 6000
-        running: pop.visible && pop.wifiEnabled
+        running: pop.visible && pop.net.wifiRadio
         command: ["bash", "-lc", `
 nmcli -t -f IN-USE,SIGNAL,SECURITY,CHAN,FREQ,RATE,BANDWIDTH,MODE,RSN-FLAGS,BSSID,SSID dev wifi list 2>/dev/null
 IFACE=$(nmcli -t -f DEVICE,TYPE dev 2>/dev/null | awk -F: '$2=="wifi"{print $1; exit}')
@@ -286,7 +286,7 @@ fi
     // Saved wifi connection names (~= SSID) -> savedSet.
     Lib.CommandPoll {
         interval: 10000
-        running: pop.visible && pop.wifiEnabled
+        running: pop.visible && pop.net.wifiRadio
         command: ["bash", "-lc", "nmcli -t -f NAME,TYPE connection show 2>/dev/null | awk -F: '$2==\"802-11-wireless\"{print $1}'"]
         parse: function (o) {
             var set = {};
@@ -334,6 +334,38 @@ fi
             }
             spacing: 8
 
+            // VPN chips: accent-filled when active, outline when not. Tap toggles.
+            Flow {
+                Layout.fillWidth: true
+                visible: pop.net.vpns.length > 0
+                spacing: 6
+                Repeater {
+                    model: pop.net.vpns
+                    Rectangle {
+                        required property var modelData
+                        radius: 999
+                        implicitHeight: 24
+                        implicitWidth: vpnLabel.implicitWidth + 22
+                        color: modelData.active ? pop.theme.accent : "transparent"
+                        border.width: 1
+                        border.color: modelData.active ? pop.theme.accent : pop.theme.border
+                        Text {
+                            id: vpnLabel
+                            anchors.centerIn: parent
+                            text: modelData.name
+                            color: modelData.active ? pop.theme.textOnAccent : pop.theme.textSecondary
+                            font.family: pop.theme.textFont
+                            font.pixelSize: 11
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: pop.net.toggleVpn(modelData.uuid, !modelData.active)
+                        }
+                    }
+                }
+            }
+
             // Header: title + rescan + on/off toggle
             RowLayout {
                 Layout.fillWidth: true
@@ -348,7 +380,7 @@ fi
                 }
                 // Rescan
                 Text {
-                    visible: pop.wifiEnabled
+                    visible: pop.net.wifiRadio
                     text: String.fromCodePoint(0xF0450)
                     color: rescanHover.hovered ? pop.theme.accent : pop.theme.textSecondary
                     font.family: pop.theme.iconFont
@@ -366,7 +398,7 @@ fi
                     width: 34
                     height: 18
                     radius: 9
-                    color: pop.wifiEnabled ? pop.theme.accent : pop.theme.bgItem
+                    color: pop.net.wifiRadio ? pop.theme.accent : pop.theme.bgItem
                     Behavior on color {
                         ColorAnimation {
                             duration: 150
@@ -377,7 +409,7 @@ fi
                         height: 14
                         radius: 7
                         anchors.verticalCenter: parent.verticalCenter
-                        x: pop.wifiEnabled ? parent.width - width - 2 : 2
+                        x: pop.net.wifiRadio ? parent.width - width - 2 : 2
                         color: "white"
                         Behavior on x {
                             NumberAnimation {
@@ -389,14 +421,39 @@ fi
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: pop.det("nmcli radio wifi " + (pop.wifiEnabled ? "off" : "on"))
+                        onClicked: pop.det("nmcli radio wifi " + (pop.net.wifiRadio ? "off" : "on"))
                     }
+                }
+            }
+
+            // Disconnect button: visible only when a Wi-Fi connection is active.
+            Rectangle {
+                Layout.fillWidth: true
+                visible: pop.net.wifiUuid !== ""
+                implicitHeight: 30
+                radius: 8
+                color: dcHover.hovered ? Qt.rgba(pop.theme.accentRed.r, pop.theme.accentRed.g, pop.theme.accentRed.b, 0.18) : Qt.rgba(pop.theme.accentRed.r, pop.theme.accentRed.g, pop.theme.accentRed.b, 0.10)
+                Text {
+                    anchors.centerIn: parent
+                    text: "Disconnect"
+                    color: pop.theme.accentRed
+                    font.family: pop.theme.textFont
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                }
+                HoverHandler {
+                    id: dcHover
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: pop.net.disconnect()
                 }
             }
 
             // Off message
             Text {
-                visible: !pop.wifiEnabled
+                visible: !pop.net.wifiRadio
                 Layout.fillWidth: true
                 text: "Wi-Fi is off"
                 color: pop.theme.textSecondary
@@ -406,7 +463,7 @@ fi
 
             // Saved networks -- all in view (no scroll).
             Text {
-                visible: pop.wifiEnabled && pop.pwSsid === "" && pop.savedNets.length > 0
+                visible: pop.net.wifiRadio && pop.pwSsid === "" && pop.savedNets.length > 0
                 Layout.fillWidth: true
                 text: "Saved"
                 color: pop.theme.textSecondary
@@ -415,7 +472,7 @@ fi
                 font.weight: Font.Bold
             }
             ListView {
-                visible: pop.wifiEnabled && pop.pwSsid === "" && pop.savedNets.length > 0
+                visible: pop.net.wifiRadio && pop.pwSsid === "" && pop.savedNets.length > 0
                 Layout.fillWidth: true
                 Layout.preferredHeight: contentHeight
                 interactive: false
@@ -426,7 +483,7 @@ fi
 
             // Available (unsaved) networks -- scrollable.
             Text {
-                visible: pop.wifiEnabled && pop.pwSsid === "" && pop.otherNets.length > 0
+                visible: pop.net.wifiRadio && pop.pwSsid === "" && pop.otherNets.length > 0
                 Layout.fillWidth: true
                 text: "Available"
                 color: pop.theme.textSecondary
@@ -436,7 +493,7 @@ fi
             }
             ListView {
                 id: otherList
-                visible: pop.wifiEnabled && pop.pwSsid === "" && pop.otherNets.length > 0
+                visible: pop.net.wifiRadio && pop.pwSsid === "" && pop.otherNets.length > 0
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.min(contentHeight, 240)
                 clip: true

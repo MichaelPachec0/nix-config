@@ -150,13 +150,13 @@ Item {
         }
     }
 
-    // Tasks 6/7 will add net: net; for now pass the existing props the popups accept.
+    // Task 7 will add ssid wiring to NetworkInfoPopup.
     NetworkPopup {
         id: popup
         theme: root.theme
         anchorItem: root
         barWindow: root.barWindow
-        wifiEnabled: net.wifiRadio
+        net: net
     }
 
     NetworkInfoPopup {
