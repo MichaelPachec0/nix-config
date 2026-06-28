@@ -22,7 +22,7 @@ QtObject {
     readonly property bool supportsQueue: ex.bus !== "" && ex.caps.queue === 1
     readonly property bool supportsPlaylists: ex.bus !== "" && ex.caps.playlists === 1
 
-    property var queue: []     // [{trackid,title,artist,length,art,current}]
+    property var queue: []     // [{trackid,title,artist,length,art,current,played}]
     property var playlists: [] // [{path,name,icon,active}]
 
     function _sh(mode, extra) {
@@ -80,9 +80,15 @@ QtObject {
     function goTo(trackid) {
         if (ex.bus === "" || !trackid)
             return;
-        ex.queue = ex.queue.map(function (t) {
+        // Re-tag: the jumped-to track becomes current, everything before it in
+        // context order is now "played" (greyed), everything after upcoming.
+        var j = ex.queue.findIndex(function (t) {
+            return t.trackid === trackid;
+        });
+        ex.queue = ex.queue.map(function (t, i) {
             return Object.assign({}, t, {
-                "current": t.trackid === trackid
+                "current": j >= 0 ? i === j : t.trackid === trackid,
+                "played": j >= 0 ? i < j : t.played
             });
         });
         Quickshell.execDetached(ex._sh("goto", trackid));

@@ -5,7 +5,7 @@
 # compact JSON. ncspot implements both optional interfaces; other players don't,
 # so read modes return empty -> the popup hides the tabs.
 #   mpris-extra.sh caps      <bus>            -> {"queue":0|1,"playlists":0|1}
-#   mpris-extra.sh queue     <bus>            -> [{trackid,title,artist,length,art,current}]
+#   mpris-extra.sh queue     <bus>            -> [{trackid,title,artist,length,art,current,played}]
 #   mpris-extra.sh playlists <bus>            -> [{path,name,icon,active}]
 #   mpris-extra.sh goto      <bus> <trackid>  -- jump to a queue entry
 #   mpris-extra.sh remove    <bus> <trackid>  -- drop a queue entry
@@ -41,8 +41,9 @@ def bc(*a):
                           capture_output=True, text=True, timeout=4)
 def unwrap(v, d=None):
     return v.get("data", d) if isinstance(v, dict) else (v if v is not None else d)
-LIMIT = 100  # window the fetch: a context can be thousands of tracks long, but
-             # the popup only needs the current track + what's coming up.
+BEFORE = 100  # played tracks to show above the current one (greyed out in the UI)
+AFTER = 100   # the current track + upcoming. A context can be thousands of tracks
+              # long, so both bounds keep the GetTracksMetadata fetch fast.
 r = bc("get-property", bus, P, TL, "Tracks")
 if r.returncode != 0:
     print("[]"); sys.exit()
@@ -60,26 +61,32 @@ try:
     start = paths.index(cur) if cur else 0
 except ValueError:
     start = 0
-paths = paths[start:start + LIMIT]
+lo = max(0, start - BEFORE) if cur else 0
+paths = paths[lo:start + AFTER]
 rg = bc("call", bus, P, TL, "GetTracksMetadata", "ao", str(len(paths)), *paths)
 if rg.returncode != 0:
     print("[]"); sys.exit()
 md = json.loads(rg.stdout)["data"][0]
 out = []
+before = bool(cur)  # rows before the current track are "played" (greyed out)
 for t in md:
     tid = unwrap(t.get("mpris:trackid"), "")
     artist = unwrap(t.get("xesam:artist"), [])
     if isinstance(artist, list):
         artist = ", ".join(artist)
     length = unwrap(t.get("mpris:length"), 0) or 0
+    is_cur = tid == cur
     out.append({
         "trackid": tid or "",
         "title": unwrap(t.get("xesam:title"), "") or "",
         "artist": artist or "",
         "length": int(length) // 1000000,
         "art": unwrap(t.get("mpris:artUrl"), "") or "",
-        "current": tid == cur,
+        "current": is_cur,
+        "played": before and not is_cur,
     })
+    if is_cur:
+        before = False
 print(json.dumps(out))
 PY
         ;;

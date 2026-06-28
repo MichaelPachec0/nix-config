@@ -327,6 +327,41 @@ PopupWindow {
                     clip: true
                     spacing: 2
                     model: ex.queue
+
+                    // Played tracks sit above the current one, so bring current
+                    // near the top (a couple played rows peeking above) when the
+                    // tab opens or the song changes -- but never on routine polls,
+                    // so scrolling back through history isn't yanked away.
+                    property string anchoredId: ""
+                    function syncToCurrent(force) {
+                        var idx = -1;
+                        var cid = "";
+                        for (var i = 0; i < ex.queue.length; ++i)
+                            if (ex.queue[i].current) {
+                                idx = i;
+                                cid = ex.queue[i].trackid;
+                                break;
+                            }
+                        if (idx < 0)
+                            return;
+                        if (force || cid !== queueList.anchoredId) {
+                            queueList.anchoredId = cid;
+                            queueList.positionViewAtIndex(Math.max(0, idx - 2), ListView.Beginning);
+                        }
+                    }
+                    onVisibleChanged: if (visible)
+                        Qt.callLater(function () {
+                            queueList.syncToCurrent(true);
+                        })
+                    Connections {
+                        target: ex
+                        function onQueueChanged() {
+                            Qt.callLater(function () {
+                                queueList.syncToCurrent(false);
+                            });
+                        }
+                    }
+
                     delegate: Rectangle {
                         id: qrow
                         required property var modelData
@@ -334,6 +369,9 @@ PopupWindow {
                         height: 40
                         radius: 6
                         color: qHover.hovered ? pop.theme.bgItemHover : (qrow.modelData.current ? Qt.rgba(pop.theme.accent.r, pop.theme.accent.g, pop.theme.accent.b, 0.16) : "transparent")
+                        // Played tracks render dimmed; hovering one restores full
+                        // opacity so it reads as clickable (jump back / remove).
+                        opacity: (qrow.modelData.played && !qHover.hovered) ? 0.45 : 1
 
                         RowLayout {
                             anchors.fill: parent
