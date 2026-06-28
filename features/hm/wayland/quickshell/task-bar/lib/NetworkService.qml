@@ -4,12 +4,14 @@ import Quickshell
 
 // Shared network state for the bar widget + popups: radio/connectivity, the
 // primary connection (wired or Wi-Fi) with SSID/BSSID/IP/gateway/signal/name,
-// and the VPN connection list. One bash poll (nmcli + ip) emits K:V lines (plus
-// VPN: lines). Mirrors AudioService/MprisExtras: actions update locally first,
-// then fire nmcli + re-poll. "Primary" = the device carrying the default route.
+// and the list of non-Wi-Fi connection profiles (ethernet/VPN/WireGuard/...).
+// One bash poll (nmcli + ip) emits K:V lines (plus CONN: lines). Mirrors
+// AudioService/MprisExtras: actions update locally first, then fire nmcli +
+// re-poll. "Primary" = the device carrying the default route.
 QtObject {
     id: svc
 
+    property bool hasWifi: false
     property bool wifiRadio: false
     property string primaryType: "none" // "wifi" | "ethernet" | "none"
     property string connState: "disconnected" // "activating" | "activated" | ...
@@ -22,12 +24,29 @@ QtObject {
     property int signalVal: 0 // "signal" is a reserved QML keyword
     property string connectivity: "unknown" // full|limited|portal|none|unknown
     property string wifiUuid: "" // active Wi-Fi connection uuid (for disconnect)
-    property var vpns: [] // [{uuid,name,active}]
+    property var conns: [] // [{uuid,name,type,active,ip,gateway}] -- all non-Wi-Fi profiles
+    // VPN/WireGuard subset of conns, for the bar shield + info-panel VPN row.
+    readonly property var vpns: {
+        var r = [];
+        for (var i = 0; i < svc.conns.length; ++i) {
+            var c = svc.conns[i];
+            if (c.type === "vpn" || c.type === "wireguard")
+                r.push(c);
+        }
+        return r;
+    }
     readonly property bool vpnActive: {
         for (var i = 0; i < svc.vpns.length; ++i)
             if (svc.vpns[i].active)
                 return true;
         return false;
+    }
+    readonly property var ethernetConns: {
+        var r = [];
+        for (var i = 0; i < svc.conns.length; ++i)
+            if (svc.conns[i].type === "802-3-ethernet")
+                r.push(svc.conns[i]);
+        return r;
     }
 
     function refresh() {
@@ -42,10 +61,10 @@ QtObject {
         Quickshell.execDetached(["nmcli", "con", "down", "uuid", svc.wifiUuid]);
         svc.statusPoll.poll();
     }
-    function toggleVpn(uuid, up) {
+    function toggleConn(uuid, up) {
         if (!uuid)
             return;
-        svc.vpns = svc.vpns.map(function (x) {
+        svc.conns = svc.conns.map(function (x) {
             return x.uuid === uuid ? Object.assign({}, x, {
                 "active": up
             }) : x;
@@ -54,9 +73,29 @@ QtObject {
         svc.statusPoll.poll();
     }
 
+    function defaultTab() {
+        var wifiUp = svc.hasWifi && svc.connState === "activated" && svc.primaryType === "wifi";
+        var ethUp = false;
+        for (var i = 0; i < svc.ethernetConns.length; ++i)
+            if (svc.ethernetConns[i].active) {
+                ethUp = true;
+                break;
+            }
+        if (!wifiUp && ethUp)
+            return "ethernet";
+        if (svc.hasWifi)
+            return "wifi";
+        if (svc.ethernetConns.length > 0)
+            return "ethernet";
+        if (svc.vpns.length > 0)
+            return "vpn";
+        return "wifi";
+    }
+
     function _parse(o) {
         var r = {
             wifiRadio: false,
+            hasWifi: false,
             connectivity: "unknown",
             primaryType: "none",
             connState: "disconnected",
@@ -68,16 +107,19 @@ QtObject {
             connName: "",
             signal: 0,
             wifiUuid: "",
-            vpns: []
+            conns: []
         };
         String(o).split(/\r?\n/).forEach(function (line) {
-            if (line.indexOf("VPN:") === 0) {
-                var p = line.slice(4).split("|");
-                if (p.length >= 3)
-                    r.vpns.push({
+            if (line.indexOf("CONN:") === 0) {
+                var p = line.slice(5).split("|");
+                if (p.length >= 4)
+                    r.conns.push({
                         "uuid": p[0],
                         "name": p[1],
-                        "active": p[2] === "up"
+                        "type": p[2],
+                        "active": p[3] === "up",
+                        "ip": p.length > 4 ? p[4] : "",
+                        "gateway": p.length > 5 ? p[5] : ""
                     });
                 return;
             }
@@ -88,6 +130,8 @@ QtObject {
             var v = line.slice(i + 1).trim();
             if (k === "WIFI")
                 r.wifiRadio = (v === "enabled");
+            else if (k === "HASWIFI")
+                r.hasWifi = (v === "1");
             else if (k === "CONNECTIVITY")
                 r.connectivity = v || "unknown";
             else if (k === "PTYPE")
@@ -115,6 +159,7 @@ QtObject {
     }
     function _apply(v) {
         svc.wifiRadio = v.wifiRadio;
+        svc.hasWifi = v.hasWifi;
         svc.connectivity = v.connectivity;
         svc.primaryType = v.primaryType;
         svc.connState = v.connState;
@@ -126,13 +171,14 @@ QtObject {
         svc.connName = v.connName;
         svc.signalVal = v.signal;
         svc.wifiUuid = v.wifiUuid;
-        svc.vpns = v.vpns;
+        svc.conns = v.conns;
     }
 
     property CommandPoll statusPoll: CommandPoll {
         interval: 4000
         command: ["bash", "-c", `
 WIFI=$(nmcli -g WIFI radio 2>/dev/null || echo unknown); echo "WIFI:$WIFI"
+case "$WIFI" in enabled | disabled) echo "HASWIFI:1" ;; *) echo "HASWIFI:0" ;; esac
 echo "CONNECTIVITY:$(nmcli -g CONNECTIVITY general status 2>/dev/null)"
 PDEV=$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="dev"){print $(i+1);exit}}')
 echo "IFACE:$PDEV"
@@ -161,10 +207,17 @@ else
 fi
 ACT=$(nmcli -t -f UUID connection show --active 2>/dev/null)
 nmcli -t -f UUID,TYPE connection show 2>/dev/null | while IFS=: read -r u t; do
-  case "$t" in vpn|wireguard) ;; *) continue;; esac
+  # All non-Wi-Fi profiles become chips/rows (ethernet/vpn/wireguard/...).
+  # Wi-Fi has its own scan list; loopback is noise.
+  case "$t" in 802-11-wireless | loopback) continue ;; esac
   n=$(nmcli -g connection.id connection show uuid "$u" 2>/dev/null)
-  st=down; printf '%s\n' "$ACT" | grep -qx "$u" && st=up
-  echo "VPN:$u|$n|$st"
+  st=down; cip=""; cgw=""
+  if printf '%s\n' "$ACT" | grep -qx "$u"; then
+    st=up
+    cip=$(nmcli -g IP4.ADDRESS connection show uuid "$u" 2>/dev/null | head -n1 | cut -d/ -f1)
+    cgw=$(nmcli -g IP4.GATEWAY connection show uuid "$u" 2>/dev/null | head -n1)
+  fi
+  echo "CONN:$u|$n|$t|$st|$cip|$cgw"
 done
 `]
         parse: svc._parse
