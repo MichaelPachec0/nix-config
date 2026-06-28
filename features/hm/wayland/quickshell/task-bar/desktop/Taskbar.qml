@@ -37,6 +37,36 @@ PanelWindow {
         return false;
     }
 
+    // hy3 group/tab transitions leave Quickshell's *incremental* toplevel model
+    // stale for the now-hidden windows: their lastIpcObject loses `class` (and
+    // sometimes `workspace`), so iconFor() gets "" and the window renders as an
+    // invisible slot -- a tab group of N looks like 1 icon. hy3 does NOT use
+    // Hyprland's native group events; grouping/tab-switching surfaces only as
+    // activewindowv2 (a focus/visibility flip -- confirmed against socket2). A
+    // full refreshToplevels() re-syncs every field, so fire it on the events
+    // that change the window list or its visibility, debounced so a burst
+    // collapses into one `hyprctl clients`. windowtitle* is excluded on purpose
+    // -- terminals emit it constantly.
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            switch (event.name) {
+            case "openwindow":
+            case "closewindow":
+            case "movewindowv2":
+            case "activewindowv2":
+                toplevelRefresh.restart();
+                break;
+            }
+        }
+    }
+    Timer {
+        id: toplevelRefresh
+        interval: 150
+        repeat: false
+        onTriggered: Hyprland.refreshToplevels()
+    }
+
     // Map a Hyprland window class to a themed icon path. A few classes don't
     // match a desktop entry / icon name (firefox-dev, the hy3proj terminal);
     // override those, else use the desktop-entry heuristic, else the raw class.
