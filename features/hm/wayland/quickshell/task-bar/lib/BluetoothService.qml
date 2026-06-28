@@ -35,6 +35,15 @@ QtObject {
     readonly property var discoveredDevices: svc.devices.filter(function (d) {
         return !d.paired;
     })
+    // Discovered split: devices that broadcast a Name vs. address-only. BlueZ
+    // leaves `Name` (-> deviceName) empty for nameless devices, so deviceName
+    // being non-empty is the test; `name`/Alias falls back to the MAC.
+    readonly property var discoveredNamed: svc.discoveredDevices.filter(function (d) {
+        return String(d.deviceName || "").length > 0;
+    })
+    readonly property var discoveredUnnamed: svc.discoveredDevices.filter(function (d) {
+        return String(d.deviceName || "").length === 0;
+    })
 
     // Address of a just-paired device to auto-connect once pairing completes.
     property string pendingConnectAddr: ""

@@ -248,11 +248,20 @@ PopupWindow {
                 devices: pop.bt.pairedDevices
                 visible: pop.bt.enabled && pop.bt.pairedDevices.length > 0
             }
+            // Discovered devices, split: those broadcasting a name vs the rest.
             Section {
                 title: "Available"
-                devices: pop.bt.discoveredDevices
+                devices: pop.bt.discoveredNamed
                 scroll: true
-                visible: pop.bt.enabled && pop.bt.discovering && pop.bt.discoveredDevices.length > 0
+                maxH: 200
+                visible: pop.bt.enabled && pop.bt.discovering && pop.bt.discoveredNamed.length > 0
+            }
+            Section {
+                title: "Unnamed"
+                devices: pop.bt.discoveredUnnamed
+                scroll: true
+                maxH: 150
+                visible: pop.bt.enabled && pop.bt.discovering && pop.bt.discoveredUnnamed.length > 0
             }
             // Empty hint when powered but nothing to show.
             Text {
@@ -292,6 +301,7 @@ PopupWindow {
         property string title: ""
         property var devices: []
         property bool scroll: false
+        property int maxH: 240
         Layout.fillWidth: true
         spacing: 4
 
@@ -307,7 +317,7 @@ PopupWindow {
             Layout.fillWidth: true
             interactive: sec.scroll
             clip: sec.scroll
-            Layout.preferredHeight: sec.scroll ? Math.min(contentHeight, 240) : contentHeight
+            Layout.preferredHeight: sec.scroll ? Math.min(contentHeight, sec.maxH) : contentHeight
             model: sec.devices
             delegate: DeviceRow {
                 required property var modelData
