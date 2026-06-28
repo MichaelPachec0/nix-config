@@ -28,6 +28,9 @@
     pkgs.python3
     pkgs.systemd # busctl (mpris-extra.sh)
     pkgs.pbpctrl # Pixel Buds control (btinfo.sh pbp/set)
+    pkgs.wl-clipboard # wl-copy (network widget middle-click copy)
+    pkgs.networkmanager # nmcli (NetworkService)
+    pkgs.iproute2 # ip (NetworkService default-route lookup)
   ];
 
   quickshell' = pkgs.quickshell.overrideAttrs (o: {
