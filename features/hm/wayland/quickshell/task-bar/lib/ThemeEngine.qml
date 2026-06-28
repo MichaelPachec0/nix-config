@@ -37,6 +37,9 @@ Scope {
     readonly property color accentRed: root.data.colors?.accentRed ?? "#fb4934"
     readonly property color accentSlider: root.data.colors?.accentSlider ?? "#8ec07c"
     readonly property color accentSlider2: root.data.colors?.accentOrange ?? "#fe8019"
+    readonly property color accentGreen: root.data.colors?.accentGreen ?? "#b8bb26"
+    readonly property color accentYellow: root.data.colors?.accentYellow ?? "#fabd2f"
+    readonly property color accentOrange: root.data.colors?.accentOrange ?? "#fe8019"
 
     // Lines / fills (no JSON key -> derive/static; border maps to borderInactive)
     readonly property color border: root.data.colors?.borderInactive ?? "#595959"
