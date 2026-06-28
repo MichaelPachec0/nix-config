@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import "../lib" as Lib
 
-// Bar WiFi widget (native nm-applet replacement, step 4a): a signal-strength
+// Bar network widget (native nm-applet replacement, step 4a): a signal-strength
 // glyph + current SSID; click opens the WiFi popup (network list / connect land
 // in 4b+). Status (radio state, SSID, signal) comes from nmcli on a 5s poll.
 Item {
@@ -130,7 +130,7 @@ echo "SIGNAL:$(nmcli -g IN-USE,SIGNAL dev wifi list 2>/dev/null | awk -F: '$1=="
         }
     }
 
-    WifiPopup {
+    NetworkPopup {
         id: popup
         theme: root.theme
         anchorItem: root
@@ -138,7 +138,7 @@ echo "SIGNAL:$(nmcli -g IN-USE,SIGNAL dev wifi list 2>/dev/null | awk -F: '$1=="
         wifiEnabled: root.wifiEnabled
     }
 
-    WifiInfoPopup {
+    NetworkInfoPopup {
         id: info
         theme: root.theme
         anchorItem: root

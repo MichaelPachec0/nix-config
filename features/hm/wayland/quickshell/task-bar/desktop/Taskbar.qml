@@ -245,7 +245,7 @@ PanelWindow {
         }
 
         // WiFi (native nm-applet replacement): signal glyph + SSID, click for menu.
-        WifiWidget {
+        NetworkWidget {
             Layout.alignment: Qt.AlignVCenter
             theme: dock.theme
             barWindow: dock
