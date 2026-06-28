@@ -25,6 +25,10 @@
     accentBlue = "83a598"; # gruvbox blue
     accentRed = "fb4934"; # gruvbox bright red (urgent/critical)
     accentOrange = "fe8019"; # gruvbox orange
+    accentGreen = "8ec07c"; # gruvbox aqua-green; connectivity "full" status.
+    # Reads clearly green vs the b8bb26 lime (ThemeEngine's fallback), which
+    # looked yellow next to the portal/yellow state. Matches accentSlider.
+    accentYellow = "fabd2f"; # gruvbox yellow; connectivity "portal" status.
     accentSlider = "8ec07c"; # gruvbox aqua (secondary green)
     borderInactive = "595959"; # inactive window border grey (kept identical)
   };
