@@ -26,7 +26,24 @@ PanelWindow {
     color: dock.theme.bgMain
     WlrLayershell.layer: WlrLayer.Top
 
-    readonly property int activeWs: Hyprland.focusedMonitor?.activeWorkspace?.id ?? -1
+    // This bar's Hyprland monitor (one Taskbar per screen via Variants). Scope
+    // the workspace list + active highlight to it so each monitor's bar shows
+    // only its own workspaces, not every workspace across all monitors.
+    readonly property var monitor: dock.screen ? Hyprland.monitorFor(dock.screen) : null
+    readonly property int activeWs: dock.monitor?.activeWorkspace?.id ?? -1
+
+    // Workspaces owned by this monitor, id-sorted.
+    readonly property var monitorWorkspaces: {
+        var all = Hyprland.workspaces?.values ?? [];
+        var out = [];
+        for (var i = 0; i < all.length; i++)
+            if (all[i].monitor && all[i].monitor === dock.monitor)
+                out.push(all[i]);
+        out.sort(function (a, b) {
+            return a.id - b.id;
+        });
+        return out;
+    }
 
     // Reactive: true when any toplevel is on the active workspace.
     readonly property bool hasWindows: {
@@ -169,7 +186,7 @@ PanelWindow {
         spacing: 8
 
         Repeater {
-            model: Hyprland.workspaces
+            model: dock.monitorWorkspaces
             Rectangle {
                 id: ws
                 required property var modelData
