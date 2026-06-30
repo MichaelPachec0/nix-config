@@ -184,7 +184,7 @@
       nvim-lightbulb # lightbulb hints when a line is actionable
       lsp-inlayhints-nvim
       vim-wakatime # time-tracker
-      null-ls-nvim # code action/lint/diagnostics configurator
+      none-ls-nvim
       harpoon # mark files for later use
       vim-visual-multi # multi cursor
 
