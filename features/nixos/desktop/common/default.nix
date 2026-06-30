@@ -92,12 +92,12 @@ in {
 
         # video players
         # WARN: mpv: 2026-06-18: getting errors trying to build
-        # mpv
+        mpv
 
         # vlc
 
         # WARN: mpv: 2026-06-18: getting errors trying to build
-        # open-in-mpv
+        open-in-mpv
 
         # telegram
         ## cli
