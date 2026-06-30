@@ -32,12 +32,14 @@ PanelWindow {
     readonly property var monitor: dock.screen ? Hyprland.monitorFor(dock.screen) : null
     readonly property int activeWs: dock.monitor?.activeWorkspace?.id ?? -1
 
-    // Workspaces owned by this monitor, id-sorted.
+    // Workspaces owned by this monitor, id-sorted. Special/scratchpad
+    // workspaces share this model but carry negative ids (e.g. scratchpad
+    // is -98), so id > 0 keeps the numbered strip while dropping them.
     readonly property var monitorWorkspaces: {
         var all = Hyprland.workspaces?.values ?? [];
         var out = [];
         for (var i = 0; i < all.length; i++)
-            if (all[i].monitor && all[i].monitor === dock.monitor)
+            if (all[i].id > 0 && all[i].monitor && all[i].monitor === dock.monitor)
                 out.push(all[i]);
         out.sort(function (a, b) {
             return a.id - b.id;
