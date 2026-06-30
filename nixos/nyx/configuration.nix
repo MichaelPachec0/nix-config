@@ -1388,6 +1388,9 @@ in {
     ];
     nix.settings.extra-platforms = config.boot.binfmt.emulatedSystems;
 
+    # 2026-06-29: WARN: bypassing issue with xanmod  not building a bzimage by default
+    system.boot.loader.kernelFile = "vmlinuz";
+
     # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
     # system.stateVersion = "23.11";
     system.stateVersion = "24.11";
