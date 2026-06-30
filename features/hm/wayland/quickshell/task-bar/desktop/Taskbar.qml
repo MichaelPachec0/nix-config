@@ -226,44 +226,48 @@ PanelWindow {
         }
 
         // Windows on the active workspace -- real app icons, click to focus.
-        Repeater {
-            model: Hyprland.toplevels
-            MouseArea {
-                id: win
-                required property var modelData
-                readonly property bool onActive: (modelData.workspace?.id ?? -2) === dock.activeWs
-                readonly property bool isActive: modelData === Hyprland.activeToplevel
-                readonly property string cls: modelData.lastIpcObject?.class ?? ""
-                readonly property string addr: {
-                    var a = (modelData.address && modelData.address.length > 0) ? modelData.address : (modelData.lastIpcObject?.address ?? "");
-                    return (a.indexOf("0x") === 0) ? a : ("0x" + a);
-                }
-                visible: onActive
-                implicitWidth: 36
-                implicitHeight: 32
-                onClicked: Hyprland.dispatch('hl.dsp.focus({ window = "address:' + win.addr + '" })')
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 8
-                    color: win.isActive ? dock.theme.bgItemHover : "transparent"
-
-                    Image {
-                        anchors.centerIn: parent
-                        width: 20
-                        height: 20
-                        sourceSize.width: 40
-                        sourceSize.height: 40
-                        source: dock.iconFor(win.cls)
+        // Nested row so icon size + gap are independent of the workspace chips.
+        RowLayout {
+            spacing: 0 // tiles already pad ~10px between glyphs; raise for more air
+            Repeater {
+                model: Hyprland.toplevels
+                MouseArea {
+                    id: win
+                    required property var modelData
+                    readonly property bool onActive: (modelData.workspace?.id ?? -2) === dock.activeWs
+                    readonly property bool isActive: modelData === Hyprland.activeToplevel
+                    readonly property string cls: modelData.lastIpcObject?.class ?? ""
+                    readonly property string addr: {
+                        var a = (modelData.address && modelData.address.length > 0) ? modelData.address : (modelData.lastIpcObject?.address ?? "");
+                        return (a.indexOf("0x") === 0) ? a : ("0x" + a);
                     }
+                    visible: onActive
+                    implicitWidth: 26 // tile size (icon + padding == effective spacing)
+                    implicitHeight: 26
+                    onClicked: Hyprland.dispatch('hl.dsp.focus({ window = "address:' + win.addr + '" })')
+
                     Rectangle {
-                        visible: win.isActive
-                        anchors.bottom: parent.bottom
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: 16
-                        height: 2
-                        radius: 1
-                        color: dock.theme.accent
+                        anchors.fill: parent
+                        radius: 6
+                        color: win.isActive ? dock.theme.bgItemHover : "transparent"
+
+                        Image {
+                            anchors.centerIn: parent
+                            width: 16 // icon glyph size
+                            height: 16
+                            sourceSize.width: 32
+                            sourceSize.height: 32
+                            source: dock.iconFor(win.cls)
+                        }
+                        Rectangle {
+                            visible: win.isActive
+                            anchors.bottom: parent.bottom
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 12
+                            height: 2
+                            radius: 1
+                            color: dock.theme.accent
+                        }
                     }
                 }
             }
