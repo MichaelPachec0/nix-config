@@ -2,6 +2,7 @@
   config,
   pkgs,
   lib,
+  inputs,
   ...
 }: let
   cfg = config.desktop;
@@ -15,6 +16,8 @@ in {
       };
     };
   };
+  imports = [
+  ];
   config = lib.mkIf cfg.common.enable {
     assertions = [
       {
@@ -227,5 +230,6 @@ in {
       };
     };
     programs.appimage.binfmt = true;
+    services.windscribe.enable = true;
   };
 }

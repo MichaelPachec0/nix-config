@@ -245,6 +245,7 @@
               # secure boot
               inputs.lanzaboote.nixosModules.lanzaboote
               inputs.sops-nix.nixosModules.sops
+              inputs.flake-playground.nixosModules.default
               ./nixos/nyx/configuration.nix
               ./nixos/nyx/hardware-configuration.nix
               ./nixos/nyx/intel.nix
@@ -268,6 +269,7 @@
               inputs.lanzaboote.nixosModules.lanzaboote
               inputs.sops-nix.nixosModules.sops
               inputs.jlink.nixosModule
+              inputs.flake-playground.nixosModules.default
               # shared laptop config
               # TODO: move away from here
               ./nixos/nyx/boot.nix

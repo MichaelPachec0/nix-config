@@ -24,8 +24,6 @@ in {
     #inputs.nwg-displays-pkgs.packages.${pkgs.system}.nwg-displays
 
     # inputs.kmonad-pkgs.nixosModules.default
-    inputs.flake-playground.nixosModules.cynthion
-    inputs.flake-playground.nixosModules.zsa
     # Import your generated (nixos-generate-config) hardware configuration
     ../../features/nixos/desktop/common/neovim.nix
     ../../features/nixos/auth
@@ -1390,6 +1388,7 @@ in {
 
     # 2026-06-29: WARN: bypassing issue with xanmod  not building a bzimage by default
     system.boot.loader.kernelFile = "vmlinuz";
+    services.windscribe.addUsersToGroup = ["michael"];
 
     # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
     # system.stateVersion = "23.11";

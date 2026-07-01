@@ -895,11 +895,11 @@
         "pyproject-nix": "pyproject-nix"
       },
       "locked": {
-        "lastModified": 1782800705,
-        "narHash": "sha256-EasTlu2W6asona8TePYFLJNo9fORtVyjxl5nbe2Vjd8=",
+        "lastModified": 1782866480,
+        "narHash": "sha256-GZYp1x6CmAGAln/VPdmmkGcuIRdzcNWg444ceQ7YVUE=",
         "owner": "MichaelPachec0",
         "repo": "flake-playground",
-        "rev": "34cc86edc73005a6d45f6c14132cf0f8a03e34c2",
+        "rev": "c88159a0cdaaca6af6e0b4a4eb5d8e09c3fc68a5",
         "type": "github"
       },
       "original": {
