@@ -147,44 +147,89 @@
   # common.nix's toLuaAction classification, humanised for display.
   chPrettyMods = {
     Mod4 = "Super";
-    shift = "Shift"; Shift = "Shift"; SHIFT = "Shift";
-    alt = "Alt"; Alt = "Alt"; ALT = "Alt";
-    control = "Ctrl"; Control = "Ctrl"; CONTROL = "Ctrl"; ctrl = "Ctrl"; Ctrl = "Ctrl";
+    shift = "Shift";
+    Shift = "Shift";
+    SHIFT = "Shift";
+    alt = "Alt";
+    Alt = "Alt";
+    ALT = "Alt";
+    control = "Ctrl";
+    Control = "Ctrl";
+    CONTROL = "Ctrl";
+    ctrl = "Ctrl";
+    Ctrl = "Ctrl";
   };
-  chPrettyKeys = {minus = "-"; equal = "="; bracketleft = "["; bracketright = "]"; slash = "/";};
+  chPrettyKeys = {
+    minus = "-";
+    equal = "=";
+    bracketleft = "[";
+    bracketright = "]";
+    slash = "/";
+  };
   chCombo = combo: let
     parts = lib.splitString "+" combo;
     key = lib.last parts;
     mods = lib.init parts;
   in
     lib.concatStringsSep "+" ((map (m: chPrettyMods.${m} or m) mods) ++ [(chPrettyKeys.${key} or key)]);
-  chPad = n: s: let len = lib.stringLength s; in s + lib.concatStrings (lib.genList (_: " ") (if n > len then n - len else 0));
+  chPad = n: s: let
+    len = lib.stringLength s;
+  in
+    s
+    + lib.concatStrings (lib.genList (_: " ") (
+      if n > len
+      then n - len
+      else 0
+    ));
   chRow = key: desc: "${chPad 24 key}${desc}";
   chDescribe = cmd:
-    if lib.hasInfix "grim" cmd then "Screenshot region"
-    else if lib.hasInfix "swaynag" cmd then "Exit session (prompt)"
+    if lib.hasInfix "grim" cmd
+    then "Screenshot region"
+    else if lib.hasInfix "swaynag" cmd
+    then "Exit session (prompt)"
     else if lib.hasPrefix "exec " cmd
-    then (let toks = lib.splitString " " (lib.removePrefix "exec " cmd);
-          in builtins.baseNameOf (builtins.head toks)
-             + lib.optionalString (builtins.length toks > 1) " ${lib.concatStringsSep " " (builtins.tail toks)}")
-    else if cmd == "kill" then "Close focused (group-aware)"
-    else if cmd == "reload" then "Reload config"
-    else if cmd == "focus parent" then "Focus parent group"
-    else if cmd == "focus child" then "Focus child node"
-    else if lib.hasPrefix "focus " cmd then "Focus ${lib.removePrefix "focus " cmd}"
-    else if lib.hasPrefix "workspace number " cmd then "Workspace ${lib.removePrefix "workspace number " cmd}"
-    else if lib.hasPrefix "move container to workspace number " cmd then "Move to workspace ${lib.removePrefix "move container to workspace number " cmd}"
-    else if cmd == "move scratchpad" then "Move to scratchpad"
-    else if lib.hasPrefix "move " cmd then "Move ${lib.removePrefix "move " cmd}"
-    else if cmd == "floating toggle" then "Toggle floating"
-    else if cmd == "fullscreen toggle" then "Toggle fullscreen"
-    else if cmd == "scratchpad show" then "Show scratchpad"
-    else if cmd == "splith" then "Split: new horizontal group"
-    else if cmd == "splitv" then "Split: new vertical group"
-    else if cmd == "layout toggle split" then "Toggle split orientation"
-    else if cmd == "layout stacking" then "Tabbed group"
-    else if cmd == "layout tabbed" then "Tabbed group"
-    else if cmd == "mode 'resize'" then "Resize mode"
+    then
+      (let
+        toks = lib.splitString " " (lib.removePrefix "exec " cmd);
+      in
+        builtins.baseNameOf (builtins.head toks)
+        + lib.optionalString (builtins.length toks > 1) " ${lib.concatStringsSep " " (builtins.tail toks)}")
+    else if cmd == "kill"
+    then "Close focused (group-aware)"
+    else if cmd == "reload"
+    then "Reload config"
+    else if cmd == "focus parent"
+    then "Focus parent group"
+    else if cmd == "focus child"
+    then "Focus child node"
+    else if lib.hasPrefix "focus " cmd
+    then "Focus ${lib.removePrefix "focus " cmd}"
+    else if lib.hasPrefix "workspace number " cmd
+    then "Workspace ${lib.removePrefix "workspace number " cmd}"
+    else if lib.hasPrefix "move container to workspace number " cmd
+    then "Move to workspace ${lib.removePrefix "move container to workspace number " cmd}"
+    else if cmd == "move scratchpad"
+    then "Move to scratchpad"
+    else if lib.hasPrefix "move " cmd
+    then "Move ${lib.removePrefix "move " cmd}"
+    else if cmd == "floating toggle"
+    then "Toggle floating"
+    else if cmd == "fullscreen toggle"
+    then "Toggle fullscreen"
+    else if cmd == "scratchpad show"
+    then "Show scratchpad"
+    else if cmd == "splith"
+    then "Split: new horizontal group"
+    else if cmd == "splitv"
+    then "Split: new vertical group"
+    else if cmd == "layout toggle split"
+    then "Toggle split orientation"
+    else if cmd == "layout stacking"
+    then "Tabbed group"
+    else if cmd == "layout tabbed"
+    then "Tabbed group"
+    else if cmd == "mode 'resize'"
+    then "Resize mode"
     else cmd;
   chCoreRows = lib.mapAttrsToList (k: v: chRow (chCombo k) (chDescribe v)) generatedSwayBinds;
   cheatText = lib.concatStringsSep "\n" (
@@ -301,6 +346,21 @@ in {
     # Super+/ bind invokes it by store path regardless).
     home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript];
 
+    # Keep floating windows that drift on resize pinned in place. Windscribe
+    # (Electron) shoves its own window up when the Locations panel expands and
+    # never restores it -- Hyprland has no declarative fix, so the keeper daemon
+    # (./hypr-window-keeper.nix) re-centers it. See the float-windscribe
+    # window_rule below (float + no_blur); this handles position.
+    services.hyprWindowKeeper = {
+      enable = true;
+      rules = [
+        {
+          match = {title = "^Windscribe$";};
+          position = "center";
+        }
+      ];
+    };
+
     wayland = {
       windowManager.hyprland = {
         enable = true;
@@ -410,21 +470,80 @@ in {
 
           # hl.curve(name, {...}) -- bezier curves referenced by the animations.
           curve = [
-            {_args = ["md3_standard" {type = "bezier"; points = [[0.2 0.0] [0.0 1.0]];}];}
-            {_args = ["md3_decel" {type = "bezier"; points = [[0.05 0.7] [0.1 1.0]];}];}
-            {_args = ["md3_accel" {type = "bezier"; points = [[0.3 0.0] [0.8 0.15]];}];}
+            {
+              _args = [
+                "md3_standard"
+                {
+                  type = "bezier";
+                  points = [[0.2 0.0] [0.0 1.0]];
+                }
+              ];
+            }
+            {
+              _args = [
+                "md3_decel"
+                {
+                  type = "bezier";
+                  points = [[0.05 0.7] [0.1 1.0]];
+                }
+              ];
+            }
+            {
+              _args = [
+                "md3_accel"
+                {
+                  type = "bezier";
+                  points = [[0.3 0.0] [0.8 0.15]];
+                }
+              ];
+            }
           ];
 
           # hl.animation({...}) -- per-leaf animations (lua leaf names, verified
           # via --verify-config; "leaf" replaces the hyprlang animation name,
           # "speed" the duration, "style" the trailing style).
           animation = [
-            {leaf = "windows"; enabled = true; speed = 3; bezier = "md3_standard"; style = "popin 85%";}
-            {leaf = "windowsIn"; enabled = true; speed = 3; bezier = "md3_decel"; style = "popin 85%";}
-            {leaf = "windowsOut"; enabled = true; speed = 3; bezier = "md3_accel"; style = "popin 85%";}
-            {leaf = "windowsMove"; enabled = true; speed = 3; bezier = "md3_standard"; style = "slide";}
-            {leaf = "fade"; enabled = true; speed = 2; bezier = "md3_standard";}
-            {leaf = "workspaces"; enabled = true; speed = 3; bezier = "md3_decel"; style = "slidefade 15%";}
+            {
+              leaf = "windows";
+              enabled = true;
+              speed = 3;
+              bezier = "md3_standard";
+              style = "popin 85%";
+            }
+            {
+              leaf = "windowsIn";
+              enabled = true;
+              speed = 3;
+              bezier = "md3_decel";
+              style = "popin 85%";
+            }
+            {
+              leaf = "windowsOut";
+              enabled = true;
+              speed = 3;
+              bezier = "md3_accel";
+              style = "popin 85%";
+            }
+            {
+              leaf = "windowsMove";
+              enabled = true;
+              speed = 3;
+              bezier = "md3_standard";
+              style = "slide";
+            }
+            {
+              leaf = "fade";
+              enabled = true;
+              speed = 2;
+              bezier = "md3_standard";
+            }
+            {
+              leaf = "workspaces";
+              enabled = true;
+              speed = 3;
+              bezier = "md3_decel";
+              style = "slidefade 15%";
+            }
           ];
 
           # hl.env("KEY", "VALUE")
@@ -452,16 +571,48 @@ in {
 
           # hl.monitor({...}) -- the sway desc rules split into fields.
           monitor = [
-            {output = "desc:LG Display 0x0676"; mode = "1920x1080@60.02"; position = "6400x0"; scale = 1.0;}
-            {output = "desc:Shenzhen KTC Technology Group H27S17 0x00000001"; mode = "2560x1440@119.99"; position = "3840x0"; scale = 1.0; bitdepth = 10;}
-            {output = "desc:ASUSTek COMPUTER INC VG279 K5LMQS018158"; mode = "1920x1080@119.98"; position = "0x0"; scale = 1.0; bitdepth = 10;}
-            {output = "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054"; mode = "1920x1080@119.88"; position = "1920x0"; scale = 1.0; bitdepth = 10;}
-            {output = ""; mode = "preferred"; position = "auto"; scale = 1;}
+            {
+              output = "desc:LG Display 0x0676";
+              mode = "1920x1080@60.02";
+              position = "6400x0";
+              scale = 1.0;
+            }
+            {
+              output = "desc:Shenzhen KTC Technology Group H27S17 0x00000001";
+              mode = "2560x1440@119.99";
+              position = "3840x0";
+              scale = 1.0;
+              bitdepth = 10;
+            }
+            {
+              output = "desc:ASUSTek COMPUTER INC VG279 K5LMQS018158";
+              mode = "1920x1080@119.98";
+              position = "0x0";
+              scale = 1.0;
+              bitdepth = 10;
+            }
+            {
+              output = "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054";
+              mode = "1920x1080@119.88";
+              position = "1920x0";
+              scale = 1.0;
+              bitdepth = 10;
+            }
+            {
+              output = "";
+              mode = "preferred";
+              position = "auto";
+              scale = 1;
+            }
           ];
 
           # hl.gesture({...}) -- 3-finger horizontal swipe to switch workspaces.
           gesture = [
-            {fingers = 3; direction = "horizontal"; action = "workspace";}
+            {
+              fingers = 3;
+              direction = "horizontal";
+              action = "workspace";
+            }
           ];
 
           # hl.device({...}) -- PS4 controller touchpad override (parity with
@@ -499,51 +650,221 @@ in {
           # float criteria -- Hyprland has no role/type match.
           window_rule = [
             # -- Floating (title) --
-            {name = "float-ff-share"; match = {title = "Firefox.*Sharing Indicator";}; float = true; no_focus = true;}
-            {name = "float-pip"; match = {title = "Picture-in-Picture";}; float = true;}
-            {name = "float-ff-dropdown"; match = {title = "Dropdown";}; float = true;}
-            {name = "float-ff-about"; match = {title = "^About Mozilla Firefox$";}; float = true;}
-            {name = "float-complete-install"; match = {title = "^Complete Installation$";}; float = true;}
-            {name = "float-steam-news"; match = {title = "^Steam - News";}; float = true;}
-            {name = "float-steam-update"; match = {title = "^Steam - Update";}; float = true;}
-            {name = "float-steam-selfupd"; match = {title = "^Steam - Self Updater$";}; float = true;}
-            {name = "float-steam-guard"; match = {title = "^Steam Guard";}; float = true;}
-            {name = "float-zoom"; match = {title = "^zoom$";}; float = true;}
+            {
+              name = "float-ff-share";
+              match = {title = "Firefox.*Sharing Indicator";};
+              float = true;
+              no_focus = true;
+            }
+            {
+              name = "float-pip";
+              match = {title = "Picture-in-Picture";};
+              float = true;
+            }
+            {
+              name = "float-ff-dropdown";
+              match = {title = "Dropdown";};
+              float = true;
+            }
+            {
+              name = "float-ff-about";
+              match = {title = "^About Mozilla Firefox$";};
+              float = true;
+            }
+            {
+              name = "float-complete-install";
+              match = {title = "^Complete Installation$";};
+              float = true;
+            }
+            {
+              name = "float-steam-news";
+              match = {title = "^Steam - News";};
+              float = true;
+            }
+            {
+              name = "float-steam-update";
+              match = {title = "^Steam - Update";};
+              float = true;
+            }
+            {
+              name = "float-steam-selfupd";
+              match = {title = "^Steam - Self Updater$";};
+              float = true;
+            }
+            {
+              name = "float-steam-guard";
+              match = {title = "^Steam Guard";};
+              float = true;
+            }
+            {
+              name = "float-zoom";
+              match = {title = "^zoom$";};
+              float = true;
+            }
 
             # -- Floating (class / app_id -> Hyprland class) --
-            {name = "float-keepassxc"; match = {class = "^KeePassXC$";}; float = true;}
-            {name = "float-mpv"; match = {class = "^Mpv$";}; float = true;}
-            {name = "float-pavucontrol"; match = {class = "[Pp]avucontrol";}; float = true;}
-            {name = "float-launcher"; match = {class = "launcher";}; float = true;}
-            {name = "float-nm-editor"; match = {class = "^nm-connection-editor$";}; float = true;}
-            {name = "float-ibus"; match = {class = "Ibus-ui-gtk3";}; float = true;}
-            {name = "float-pinentry"; match = {class = "Pinentry";}; float = true;}
-            {name = "float-force-float"; match = {class = ".*force_float.*";}; float = true;}
-            {name = "float-zenity"; match = {class = "zenity";}; float = true;}
-            {name = "float-floating-update"; match = {class = "floating_update";}; float = true;}
+            {
+              name = "float-keepassxc";
+              match = {class = "^KeePassXC$";};
+              float = true;
+            }
+            {
+              name = "float-mpv";
+              match = {class = "^Mpv$";};
+              float = true;
+            }
+            {
+              name = "float-pavucontrol";
+              match = {class = "[Pp]avucontrol";};
+              float = true;
+            }
+            {
+              name = "float-launcher";
+              match = {class = "launcher";};
+              float = true;
+            }
+            {
+              name = "float-nm-editor";
+              match = {class = "^nm-connection-editor$";};
+              float = true;
+            }
+            {
+              name = "float-ibus";
+              match = {class = "Ibus-ui-gtk3";};
+              float = true;
+            }
+            {
+              name = "float-pinentry";
+              match = {class = "Pinentry";};
+              float = true;
+            }
+            {
+              name = "float-force-float";
+              match = {class = ".*force_float.*";};
+              float = true;
+            }
+            {
+              name = "float-zenity";
+              match = {class = "zenity";};
+              float = true;
+            }
+            {
+              name = "float-floating-update";
+              match = {class = "floating_update";};
+              float = true;
+            }
+            # Windscribe VPN mini-window (Electron, empty app_id -> matched by
+            # title). Float it, borderless, and disable blur. Windscribe does
+            # NOT shrink its Wayland surface when the Locations panel closes --
+            # it keeps the expanded (~350x600) surface with the vacated area
+            # transparent, so Hyprland frosts the desktop behind it (the blurred
+            # leftover) and follows the app's off-screen top position (window
+            # drifts up). no_blur kills the frosted leftover; and we deliberately
+            # do NOT force size/min_size -- overriding the geometry the app chose
+            # desyncs its own expand/collapse and is what leaves it stuck tall.
+            # Opacity 1.0 lives in the opacity-exceptions block below (beats
+            # opacity-all).
+            {
+              name = "float-windscribe";
+              match = {title = "^Windscribe$";};
+              float = true;
+              no_blur = true;
+              border_size = 0;
+              rounding = 0;
+            }
 
             # -- Floating (Anki child windows: class + title) --
-            {name = "float-anki-profiles"; match = {class = "Anki"; title = "Profiles";}; float = true;}
-            {name = "float-anki-add"; match = {class = "Anki"; title = "Add";}; float = true;}
-            {name = "float-anki-browse"; match = {class = "Anki"; title = "^Browse.*";}; float = true;}
+            {
+              name = "float-anki-profiles";
+              match = {
+                class = "Anki";
+                title = "Profiles";
+              };
+              float = true;
+            }
+            {
+              name = "float-anki-add";
+              match = {
+                class = "Anki";
+                title = "Add";
+              };
+              float = true;
+            }
+            {
+              name = "float-anki-browse";
+              match = {
+                class = "Anki";
+                title = "^Browse.*";
+              };
+              float = true;
+            }
 
             # -- Opacity (sway "for_window opacity set"). The global 0.9 mirrors
             # sway's translucency; drop it if you prefer opaque windows on
             # Hyprland (the decoration block above keeps active/inactive at 1.0).
             # Per-app 1.0 exceptions must follow the global rule to override it.
-            {name = "opacity-all"; match = {class = ".*";}; opacity = "0.9 0.9";}
-            {name = "opacity-gimp"; match = {class = "[Gg]imp";}; opacity = "1.0 1.0";}
-            {name = "opacity-krita"; match = {class = "[Kk]rita";}; opacity = "1.0 1.0";}
-            {name = "opacity-inkscape"; match = {class = "org.inkscape.Inkscape";}; opacity = "1.0 1.0";}
-            {name = "opacity-virt-manager"; match = {class = "virt-manager";}; opacity = "1.0 1.0";}
-            {name = "opacity-obs"; match = {class = "com.obsproject.Studio";}; opacity = "1.0 1.0";}
+            {
+              name = "opacity-all";
+              match = {class = ".*";};
+              opacity = "0.9 0.9";
+            }
+            {
+              name = "opacity-gimp";
+              match = {class = "[Gg]imp";};
+              opacity = "1.0 1.0";
+            }
+            {
+              name = "opacity-krita";
+              match = {class = "[Kk]rita";};
+              opacity = "1.0 1.0";
+            }
+            {
+              name = "opacity-inkscape";
+              match = {class = "org.inkscape.Inkscape";};
+              opacity = "1.0 1.0";
+            }
+            {
+              name = "opacity-virt-manager";
+              match = {class = "virt-manager";};
+              opacity = "1.0 1.0";
+            }
+            {
+              name = "opacity-obs";
+              match = {class = "com.obsproject.Studio";};
+              opacity = "1.0 1.0";
+            }
+            {
+              name = "opacity-windscribe";
+              match = {title = "^Windscribe$";};
+              opacity = "1.0 1.0";
+            }
 
             # -- Blur exceptions (sway "for_window blur disable") --
-            {name = "noblur-gimp"; match = {class = "[Gg]imp";}; no_blur = true;}
-            {name = "noblur-krita"; match = {class = "[Kk]rita";}; no_blur = true;}
-            {name = "noblur-inkscape"; match = {class = "org.inkscape.Inkscape";}; no_blur = true;}
-            {name = "noblur-virt-manager"; match = {class = "virt-manager";}; no_blur = true;}
-            {name = "noblur-obs"; match = {class = "com.obsproject.Studio";}; no_blur = true;}
+            {
+              name = "noblur-gimp";
+              match = {class = "[Gg]imp";};
+              no_blur = true;
+            }
+            {
+              name = "noblur-krita";
+              match = {class = "[Kk]rita";};
+              no_blur = true;
+            }
+            {
+              name = "noblur-inkscape";
+              match = {class = "org.inkscape.Inkscape";};
+              no_blur = true;
+            }
+            {
+              name = "noblur-virt-manager";
+              match = {class = "virt-manager";};
+              no_blur = true;
+            }
+            {
+              name = "noblur-obs";
+              match = {class = "com.obsproject.Studio";};
+              no_blur = true;
+            }
           ];
 
           # hy3 plugin config (tabs look + autotile) is applied at startup by
@@ -594,8 +915,7 @@ in {
         # hl.dispatch(), NOT a trailing (). Arg shapes (dir, layout) verified
         # live against the patched plugin (see hy3-groupwith memory note).
         submaps.groupwith.settings.bind = let
-          gw = dir: layout:
-            ''function() hl.plugin.hy3.group_with("${dir}", "${layout}")(); hl.dispatch(hl.dsp.submap("reset")) end'';
+          gw = dir: layout: ''function() hl.plugin.hy3.group_with("${dir}", "${layout}")(); hl.dispatch(hl.dsp.submap("reset")) end'';
         in [
           # Vertical (bare).
           (submapBind "h" (gw "l" "v") {})
