@@ -309,8 +309,10 @@ toHypr = combo: cmd:
 
     # "move scratchpad" must precede the generic "move " prefix below, else it
     # is mis-parsed as a directional move (move_window("scratchpad")).
+    # follow = false -> silent move (movetoworkspacesilent): stash the focused
+    # window without surfacing the special pane, which would keep it on screen.
     else if cmd == "move scratchpad" then
-      mkInline ''hl.dsp.window.move({ workspace = "special:magic" })''
+      mkInline ''hl.dsp.window.move({ workspace = "special:magic", follow = false })''
 
     else if lib.hasPrefix "move " cmd then
       let

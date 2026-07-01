@@ -72,6 +72,18 @@
     {_args = ["SUPER + SHIFT + g" (mkLuaInline ''hl.dsp.submap("groupwith")'')];}
   ];
 
+  # Mouse binds -- sway's `floating_modifier $mod` equivalent (a sway setting,
+  # not a keybind, so nothing in swayKeybindings translates it; defined here).
+  # Super + left-drag moves the window under the cursor, Super + right-drag
+  # resizes it (floating windows move/resize freely; tiled ones resize the
+  # split). The Lua config manager has no `bindm`: a mouse bind is a normal bind
+  # with { mouse = true; }. drag()/resize() take no args -> the interactive,
+  # held-button move/resize (not a one-shot).
+  mouseBinds = [
+    {_args = ["SUPER + mouse:272" (mkLuaInline "hl.dsp.window.drag()") {mouse = true;}];}
+    {_args = ["SUPER + mouse:273" (mkLuaInline "hl.dsp.window.resize()") {mouse = true;}];}
+  ];
+
   # hy3 plugin setup at startup. Two constraints:
   #  - hy3's config keys (plugin:hy3:*) only register once the plugin loads, so
   #    they can't be set at config-parse time ("unknown config key").
@@ -114,16 +126,15 @@
   autostartHook = mkLuaInline ''
     function()
       hl.exec_cmd("qs -c task-bar")
-      hl.exec_cmd("sworkstyle >/tmp/sworkstyle.log 2>&1")
       hl.exec_cmd(${luaStr "${lib.getExe pkgs.activate-linux} -t \"Activate NixOS\" -m \"Edit configuration.nix to activate NixOS.\" -x 360 -c \"1-1-1-0.10\""})
-      hl.exec_cmd("[workspace 1 silent] kitty")
-      hl.exec_cmd(${luaStr "[workspace 2 silent] ${firefox}"})
-      hl.exec_cmd(${luaStr "[workspace 3 silent] ${firefox} --private-window google.com"})
-      hl.exec_cmd("[workspace 3 silent] legcord")
-      hl.exec_cmd("[workspace 3 silent] keepassxc")
+      hl.exec_cmd("[workspace special:magic silent] keepassxc")
+      hl.exec_cmd("[workspace special:magic silent] Windscribe")
       hl.exec_cmd("[workspace 3 silent] telegram")
     end
   '';
+  # hl.exec_cmd(${luaStr "[workspace 2 silent] ${firefox}"})
+  # hl.exec_cmd(${luaStr "[workspace 3 silent] ${firefox} --private-window google.com"})
+  # hl.exec_cmd("[workspace 3 silent] legcord")
 
   # hl.env("KEY", "VALUE") -- split "KEY,VALUE" (value may itself contain commas,
   # e.g. GDK_BACKEND,wayland,x11).
@@ -340,26 +351,22 @@
     runtimeInputs = [hy3LayoutTuiPython pkgs.latest.hyprland];
     text = ''exec python3 ${hy3LayoutTuiSrc}/hy3_layout_tui.py "$@"'';
   };
+
+  # scratchpad-cycle: sway-style cycling scratchpad (special:magic). Super+-
+  # (rebound below) reveals the next parked window and hides the previous, one
+  # at a time; Super+Shift+- (generated "move scratchpad") parks the focused
+  # window. stdlib Python; hyprctl for IPC, notify-send for the empty toast.
+  # Pure rotation logic covered by scratchpad_cycle_test.py.
+  scratchpadCycleScript = pkgs.writeShellApplication {
+    name = "scratchpad-cycle";
+    runtimeInputs = [pkgs.python3 pkgs.latest.hyprland pkgs.libnotify];
+    text = ''exec python3 ${./scratchpad_cycle.py} "$@"'';
+  };
 in {
   config = {
     # `keybind-cheatsheet` on PATH so it's runnable from a terminal too (the
     # Super+/ bind invokes it by store path regardless).
-    home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript];
-
-    # Keep floating windows that drift on resize pinned in place. Windscribe
-    # (Electron) shoves its own window up when the Locations panel expands and
-    # never restores it -- Hyprland has no declarative fix, so the keeper daemon
-    # (./hypr-window-keeper.nix) re-centers it. See the float-windscribe
-    # window_rule below (float + no_blur); this handles position.
-    services.hyprWindowKeeper = {
-      enable = true;
-      rules = [
-        {
-          match = {title = "^Windscribe$";};
-          position = "center";
-        }
-      ];
-    };
+    home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript scratchpadCycleScript];
 
     wayland = {
       windowManager.hyprland = {
@@ -628,7 +635,21 @@ in {
 
           # hl.bind(...) -- generated from swayKeybindings (toLua) + hy3 extras
           # + the Super+/ cheatsheet bind.
-          bind = generatedLuaBinds ++ hy3ExtraBinds ++ [cheatBind hy3ProjectBind hubBind];
+          # Super+- normally maps (via toLua) to toggle_special("magic"); drop
+          # that generated bind and rebind Super+- to the cycling scratchpad.
+          # Super+Shift+- ("move scratchpad" -> special:magic) stays generated.
+          # Super+Ctrl+- resets: send the pulled-out member back to the pad.
+          bind =
+            (builtins.filter (b: (builtins.elemAt b._args 0) != "SUPER + minus") generatedLuaBinds)
+            ++ hy3ExtraBinds
+            ++ mouseBinds
+            ++ [
+              {_args = ["SUPER + minus" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle")'')];}
+              {_args = ["SUPER + CONTROL + minus" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle reset")'')];}
+              cheatBind
+              hy3ProjectBind
+              hubBind
+            ];
 
           # hl.on("hyprland.start", function() ... end). hy3 setup runs first
           # (load + config), then the autostart apps.
@@ -668,7 +689,7 @@ in {
             }
             {
               name = "float-ff-about";
-              match = {title = "^About Mozilla Firefox$";};
+              match = {title = "^About.*[Ff]irefox.*$";};
               float = true;
             }
             {
@@ -705,8 +726,11 @@ in {
             # -- Floating (class / app_id -> Hyprland class) --
             {
               name = "float-keepassxc";
-              match = {class = "^KeePassXC$";};
+              match = {class = "^org.keepassxc.KeePassXC$";};
+              center = true;
               float = true;
+              size = "800 600";
+              workspace = "special:magic"; # park in the cycling scratchpad
             }
             {
               name = "float-mpv";
@@ -753,24 +777,31 @@ in {
               match = {class = "floating_update";};
               float = true;
             }
-            # Windscribe VPN mini-window (Electron, empty app_id -> matched by
-            # title). Float it, borderless, and disable blur. Windscribe does
-            # NOT shrink its Wayland surface when the Locations panel closes --
-            # it keeps the expanded (~350x600) surface with the vacated area
-            # transparent, so Hyprland frosts the desktop behind it (the blurred
-            # leftover) and follows the app's off-screen top position (window
-            # drifts up). no_blur kills the frosted leftover; and we deliberately
-            # do NOT force size/min_size -- overriding the geometry the app chose
-            # desyncs its own expand/collapse and is what leaves it stuck tall.
-            # Opacity 1.0 lives in the opacity-exceptions block below (beats
-            # opacity-all).
+            # Windscribe VPN mini-window: fixed 350x240 pinned at 1560,51, no
+            # border/rounding, tearing on. `move` is an ABSOLUTE compositor
+            # coord (single-monitor era) -- see note; swap for `center = true`
+            # to place it on the focused monitor instead. Opacity 1.0 lives in
+            # the opacity-exceptions block below (must beat opacity-all).
             {
               name = "float-windscribe";
-              match = {title = "^Windscribe$";};
+              match = {class = "^Windscribe$";};
               float = true;
-              no_blur = true;
+              size = "350 240";
+              # move = "1560 51";
+              min_size = "1 1";
               border_size = 0;
               rounding = 0;
+              immediate = true;
+            }
+            # Scratchpad: park Windscribe in special:magic. Matched by TITLE --
+            # Windscribe is a Qt app that sets no Wayland app_id (empty class),
+            # so the class rule above never matches; title is the only reliable
+            # key. float so it doesn't tile when cycled onto a workspace.
+            {
+              name = "scratch-windscribe";
+              match = {title = "^Windscribe$";};
+              float = true;
+              workspace = "special:magic";
             }
 
             # -- Floating (Anki child windows: class + title) --
@@ -835,7 +866,7 @@ in {
             }
             {
               name = "opacity-windscribe";
-              match = {title = "^Windscribe$";};
+              match = {class = "^Windscribe$";};
               opacity = "1.0 1.0";
             }
 
