@@ -111,8 +111,9 @@
     "XF86MonBrightnessUp" = "exec brightnessctl -e s 2%+";
     "XF86MonBrightnessDown" = "exec brightnessctl -e s 2%-";
 
-    "${mod}+n" =
-      "exec ${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw";
+    # Notifications: toggle the Quickshell notifications panel only (SUPER+Alt_R
+    # opens the full hub, which includes notifications below it).
+    "${mod}+n" = "global quickshell:notifToggle";
   };
 
   # Translation Layer -> Hyprland
@@ -229,6 +230,10 @@ toHypr = combo: cmd:
       else if cmd == "mode 'resize'" then
         "submap, resize"
 
+      else if lib.hasPrefix "global " cmd then
+        # Quickshell GlobalShortcut dispatch (e.g. the hub toggle).
+        "global, ${lib.removePrefix "global " cmd}"
+
       else
         "exec, ${cmd}";
 
@@ -268,6 +273,11 @@ toHypr = combo: cmd:
     if lib.hasPrefix "exec " cmd then
       mkInline "hl.dsp.exec_cmd(${luaStr (lib.removePrefix "exec " cmd)})"
 
+    else if lib.hasPrefix "global " cmd then
+      # Quickshell GlobalShortcut dispatch (mirrors hubBind's
+      # hl.dsp.global("quickshell:hubToggle") in hyprland.nix).
+      mkInline "hl.dsp.global(${luaStr (lib.removePrefix "global " cmd)})"
+
     else if cmd == "kill" then
       # hy3 kill_active closes the whole focused node (every window in the
       # focused group/tab), not just one window like native window.close.
@@ -299,8 +309,10 @@ toHypr = combo: cmd:
 
     # "move scratchpad" must precede the generic "move " prefix below, else it
     # is mis-parsed as a directional move (move_window("scratchpad")).
+    # follow = false -> silent move (movetoworkspacesilent): stash the focused
+    # window without surfacing the special pane, which would keep it on screen.
     else if cmd == "move scratchpad" then
-      mkInline ''hl.dsp.window.move({ workspace = "special:magic" })''
+      mkInline ''hl.dsp.window.move({ workspace = "special:magic", follow = false })''
 
     else if lib.hasPrefix "move " cmd then
       let

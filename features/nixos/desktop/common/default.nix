@@ -2,6 +2,7 @@
   config,
   pkgs,
   lib,
+  inputs,
   ...
 }: let
   cfg = config.desktop;
@@ -15,6 +16,8 @@ in {
       };
     };
   };
+  imports = [
+  ];
   config = lib.mkIf cfg.common.enable {
     assertions = [
       {
@@ -92,12 +95,12 @@ in {
 
         # video players
         # WARN: mpv: 2026-06-18: getting errors trying to build
-        # mpv
+        mpv
 
         # vlc
 
         # WARN: mpv: 2026-06-18: getting errors trying to build
-        # open-in-mpv
+        open-in-mpv
 
         # telegram
         ## cli
@@ -196,6 +199,7 @@ in {
         obsidian
         obsidian-export
         udftools
+        pbpctrl
       ]
       ++ lib.optionals config.networking.wireless.iwd.enable [iwgtk]
       ++ lib.optionals config.devMachine.enable [
@@ -226,5 +230,6 @@ in {
       };
     };
     programs.appimage.binfmt = true;
+    services.windscribe.enable = true;
   };
 }

@@ -11,9 +11,9 @@
   config,
   lib,
   pkgs,
+  theme,
   generatedLuaBinds,
   generatedSwayBinds,
-  waybarLaunch,
   ...
 }: let
   firefox = "${lib.getExe config.programs.firefox.package}";
@@ -72,6 +72,18 @@
     {_args = ["SUPER + SHIFT + g" (mkLuaInline ''hl.dsp.submap("groupwith")'')];}
   ];
 
+  # Mouse binds -- sway's `floating_modifier $mod` equivalent (a sway setting,
+  # not a keybind, so nothing in swayKeybindings translates it; defined here).
+  # Super + left-drag moves the window under the cursor, Super + right-drag
+  # resizes it (floating windows move/resize freely; tiled ones resize the
+  # split). The Lua config manager has no `bindm`: a mouse bind is a normal bind
+  # with { mouse = true; }. drag()/resize() take no args -> the interactive,
+  # held-button move/resize (not a one-shot).
+  mouseBinds = [
+    {_args = ["SUPER + mouse:272" (mkLuaInline "hl.dsp.window.drag()") {mouse = true;}];}
+    {_args = ["SUPER + mouse:273" (mkLuaInline "hl.dsp.window.resize()") {mouse = true;}];}
+  ];
+
   # hy3 plugin setup at startup. Two constraints:
   #  - hy3's config keys (plugin:hy3:*) only register once the plugin loads, so
   #    they can't be set at config-parse time ("unknown config key").
@@ -89,7 +101,19 @@
         hl.config({
           plugin = {
             hy3 = {
-              tabs = { height = 22, padding = 6, render_text = true, text_center = true },
+              tabs = {
+                height = 22,
+                padding = 6,
+                render_text = true,
+                text_center = true,
+                text_font = "${theme.fonts.ui}",
+                ["col.active"] = "rgba(${theme.palette.accent}ff)",
+                ["col.inactive"] = "rgba(${theme.palette.bgItem}ff)",
+                ["col.urgent"] = "rgba(${theme.palette.accentRed}ff)",
+                ["col.text.active"] = "rgba(${theme.palette.textOnAccent}ff)",
+                ["col.text.inactive"] = "rgba(${theme.palette.textPrimary}ff)",
+                ["col.text.urgent"] = "rgba(${theme.palette.textOnAccent}ff)",
+              },
               autotile = { enable = true, ephemeral_groups = true },
             },
           },
@@ -101,17 +125,16 @@
   # exec-once -> a single hl.on("hyprland.start", ...) handler.
   autostartHook = mkLuaInline ''
     function()
-      hl.exec_cmd(${luaStr waybarLaunch})
-      hl.exec_cmd("sworkstyle >/tmp/sworkstyle.log 2>&1")
+      hl.exec_cmd("qs -c task-bar")
       hl.exec_cmd(${luaStr "${lib.getExe pkgs.activate-linux} -t \"Activate NixOS\" -m \"Edit configuration.nix to activate NixOS.\" -x 360 -c \"1-1-1-0.10\""})
-      hl.exec_cmd("[workspace 1 silent] kitty")
-      hl.exec_cmd(${luaStr "[workspace 2 silent] ${firefox}"})
-      hl.exec_cmd(${luaStr "[workspace 3 silent] ${firefox} --private-window google.com"})
-      hl.exec_cmd("[workspace 3 silent] legcord")
-      hl.exec_cmd("[workspace 3 silent] keepassxc")
+      hl.exec_cmd("[workspace special:magic silent] keepassxc")
+      hl.exec_cmd("[workspace special:magic silent] Windscribe")
       hl.exec_cmd("[workspace 3 silent] telegram")
     end
   '';
+  # hl.exec_cmd(${luaStr "[workspace 2 silent] ${firefox}"})
+  # hl.exec_cmd(${luaStr "[workspace 3 silent] ${firefox} --private-window google.com"})
+  # hl.exec_cmd("[workspace 3 silent] legcord")
 
   # hl.env("KEY", "VALUE") -- split "KEY,VALUE" (value may itself contain commas,
   # e.g. GDK_BACKEND,wayland,x11).
@@ -135,44 +158,89 @@
   # common.nix's toLuaAction classification, humanised for display.
   chPrettyMods = {
     Mod4 = "Super";
-    shift = "Shift"; Shift = "Shift"; SHIFT = "Shift";
-    alt = "Alt"; Alt = "Alt"; ALT = "Alt";
-    control = "Ctrl"; Control = "Ctrl"; CONTROL = "Ctrl"; ctrl = "Ctrl"; Ctrl = "Ctrl";
+    shift = "Shift";
+    Shift = "Shift";
+    SHIFT = "Shift";
+    alt = "Alt";
+    Alt = "Alt";
+    ALT = "Alt";
+    control = "Ctrl";
+    Control = "Ctrl";
+    CONTROL = "Ctrl";
+    ctrl = "Ctrl";
+    Ctrl = "Ctrl";
   };
-  chPrettyKeys = {minus = "-"; equal = "="; bracketleft = "["; bracketright = "]"; slash = "/";};
+  chPrettyKeys = {
+    minus = "-";
+    equal = "=";
+    bracketleft = "[";
+    bracketright = "]";
+    slash = "/";
+  };
   chCombo = combo: let
     parts = lib.splitString "+" combo;
     key = lib.last parts;
     mods = lib.init parts;
   in
     lib.concatStringsSep "+" ((map (m: chPrettyMods.${m} or m) mods) ++ [(chPrettyKeys.${key} or key)]);
-  chPad = n: s: let len = lib.stringLength s; in s + lib.concatStrings (lib.genList (_: " ") (if n > len then n - len else 0));
+  chPad = n: s: let
+    len = lib.stringLength s;
+  in
+    s
+    + lib.concatStrings (lib.genList (_: " ") (
+      if n > len
+      then n - len
+      else 0
+    ));
   chRow = key: desc: "${chPad 24 key}${desc}";
   chDescribe = cmd:
-    if lib.hasInfix "grim" cmd then "Screenshot region"
-    else if lib.hasInfix "swaynag" cmd then "Exit session (prompt)"
+    if lib.hasInfix "grim" cmd
+    then "Screenshot region"
+    else if lib.hasInfix "swaynag" cmd
+    then "Exit session (prompt)"
     else if lib.hasPrefix "exec " cmd
-    then (let toks = lib.splitString " " (lib.removePrefix "exec " cmd);
-          in builtins.baseNameOf (builtins.head toks)
-             + lib.optionalString (builtins.length toks > 1) " ${lib.concatStringsSep " " (builtins.tail toks)}")
-    else if cmd == "kill" then "Close focused (group-aware)"
-    else if cmd == "reload" then "Reload config"
-    else if cmd == "focus parent" then "Focus parent group"
-    else if cmd == "focus child" then "Focus child node"
-    else if lib.hasPrefix "focus " cmd then "Focus ${lib.removePrefix "focus " cmd}"
-    else if lib.hasPrefix "workspace number " cmd then "Workspace ${lib.removePrefix "workspace number " cmd}"
-    else if lib.hasPrefix "move container to workspace number " cmd then "Move to workspace ${lib.removePrefix "move container to workspace number " cmd}"
-    else if cmd == "move scratchpad" then "Move to scratchpad"
-    else if lib.hasPrefix "move " cmd then "Move ${lib.removePrefix "move " cmd}"
-    else if cmd == "floating toggle" then "Toggle floating"
-    else if cmd == "fullscreen toggle" then "Toggle fullscreen"
-    else if cmd == "scratchpad show" then "Show scratchpad"
-    else if cmd == "splith" then "Split: new horizontal group"
-    else if cmd == "splitv" then "Split: new vertical group"
-    else if cmd == "layout toggle split" then "Toggle split orientation"
-    else if cmd == "layout stacking" then "Tabbed group"
-    else if cmd == "layout tabbed" then "Tabbed group"
-    else if cmd == "mode 'resize'" then "Resize mode"
+    then
+      (let
+        toks = lib.splitString " " (lib.removePrefix "exec " cmd);
+      in
+        builtins.baseNameOf (builtins.head toks)
+        + lib.optionalString (builtins.length toks > 1) " ${lib.concatStringsSep " " (builtins.tail toks)}")
+    else if cmd == "kill"
+    then "Close focused (group-aware)"
+    else if cmd == "reload"
+    then "Reload config"
+    else if cmd == "focus parent"
+    then "Focus parent group"
+    else if cmd == "focus child"
+    then "Focus child node"
+    else if lib.hasPrefix "focus " cmd
+    then "Focus ${lib.removePrefix "focus " cmd}"
+    else if lib.hasPrefix "workspace number " cmd
+    then "Workspace ${lib.removePrefix "workspace number " cmd}"
+    else if lib.hasPrefix "move container to workspace number " cmd
+    then "Move to workspace ${lib.removePrefix "move container to workspace number " cmd}"
+    else if cmd == "move scratchpad"
+    then "Move to scratchpad"
+    else if lib.hasPrefix "move " cmd
+    then "Move ${lib.removePrefix "move " cmd}"
+    else if cmd == "floating toggle"
+    then "Toggle floating"
+    else if cmd == "fullscreen toggle"
+    then "Toggle fullscreen"
+    else if cmd == "scratchpad show"
+    then "Show scratchpad"
+    else if cmd == "splith"
+    then "Split: new horizontal group"
+    else if cmd == "splitv"
+    then "Split: new vertical group"
+    else if cmd == "layout toggle split"
+    then "Toggle split orientation"
+    else if cmd == "layout stacking"
+    then "Tabbed group"
+    else if cmd == "layout tabbed"
+    then "Tabbed group"
+    else if cmd == "mode 'resize'"
+    then "Resize mode"
     else cmd;
   chCoreRows = lib.mapAttrsToList (k: v: chRow (chCombo k) (chDescribe v)) generatedSwayBinds;
   cheatText = lib.concatStringsSep "\n" (
@@ -238,6 +306,14 @@
   };
   hy3ProjectBind = {_args = ["SUPER + SHIFT + P" (mkLuaInline ''hl.dsp.exec_cmd("${hy3ProjectScript}/bin/hy3-project --pick")'')];};
 
+  # Quickshell Hub toggle. The `global` dispatch fires the GlobalShortcut the
+  # shell registers as "quickshell:hubToggle" (quickshell/task-bar/shell.qml).
+  # SUPER + Right Alt (Alt_R). NOTE: binding a modifier keysym while another mod
+  # is held can be flaky in Hyprland, and Alt_R is ISO_Level3_Shift (AltGr) on
+  # some layouts -- if it doesn't fire, rebind to a normal key or use Alt_R's
+  # actual keysym for this layout.
+  hubBind = {_args = ["SUPER + Alt_R" (mkLuaInline ''hl.dsp.global("quickshell:hubToggle")'')];};
+
   # ---- hy3-layout: compile the hy3 notation to/from a live layout -----------
   # `hy3-layout build '<notation>'` constructs the layout live; `show` prints the
   # active (or --wk N / --wk all) workspace as notation; --visualize prints an
@@ -275,11 +351,38 @@
     runtimeInputs = [hy3LayoutTuiPython pkgs.latest.hyprland];
     text = ''exec python3 ${hy3LayoutTuiSrc}/hy3_layout_tui.py "$@"'';
   };
+
+  # scratchpad-cycle: sway-style cycling scratchpad (special:magic). Super+-
+  # (rebound below) reveals the next parked window and hides the previous, one
+  # at a time; Super+Shift+- (generated "move scratchpad") parks the focused
+  # window. stdlib Python; hyprctl for IPC, notify-send for the empty toast.
+  # Pure rotation logic covered by scratchpad_cycle_test.py.
+  scratchpadCycleScript = pkgs.writeShellApplication {
+    name = "scratchpad-cycle";
+    runtimeInputs = [pkgs.python3 pkgs.latest.hyprland pkgs.libnotify];
+    text = ''exec python3 ${./scratchpad_cycle.py} "$@"'';
+  };
 in {
   config = {
     # `keybind-cheatsheet` on PATH so it's runnable from a terminal too (the
     # Super+/ bind invokes it by store path regardless).
-    home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript];
+    home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript scratchpadCycleScript];
+
+    # Keep floating windows that drift on resize pinned in place. Windscribe
+    # (Qt, empty app_id) shoves its own window up when the Locations panel
+    # expands and never restores it -- Hyprland has no declarative fix, so the
+    # keeper daemon (./hypr-window-keeper.nix) re-centers it. Pairs with the
+    # scratch-windscribe window_rule below (float + special:magic); the rule
+    # parks it, the keeper handles position while it's out of the pad.
+    services.hyprWindowKeeper = {
+      enable = true;
+      rules = [
+        {
+          match = {title = "^Windscribe$";};
+          position = "center";
+        }
+      ];
+    };
 
     wayland = {
       windowManager.hyprland = {
@@ -301,21 +404,21 @@ in {
           config = {
             general = {
               layout = "hy3";
-              gaps_in = 3;
-              gaps_out = 6;
-              border_size = 3;
+              gaps_in = 2;
+              gaps_out = 4;
+              border_size = 2;
               resize_on_border = false;
               allow_tearing = false;
-              "col.active_border" = "rgba(87b158bf)";
-              "col.inactive_border" = "rgba(595959aa)";
+              "col.active_border" = "rgba(${theme.palette.accent}bf)";
+              "col.inactive_border" = "rgba(${theme.palette.borderInactive}aa)";
             };
 
             decoration = {
-              rounding = 10;
+              rounding = 8;
               active_opacity = 1.0;
-              inactive_opacity = 1.0;
-              dim_inactive = false;
-              dim_strength = 0.19;
+              inactive_opacity = 0.9;
+              dim_inactive = true;
+              dim_strength = 0.18;
               dim_around = 0.6;
 
               blur = {
@@ -333,11 +436,19 @@ in {
               };
 
               shadow = {
-                enabled = false;
+                enabled = true;
                 range = 4;
-                render_power = 3;
-                color = "rgba(00220044)";
+                render_power = 17;
+                color = "rgba(${theme.palette.bgMain}66)"; # active: stronger
+                color_inactive = "rgba(${theme.palette.bgMain}22)"; # inactive: recede
               };
+            };
+
+            misc = {
+              disable_hyprland_logo = true;
+              animate_manual_resizes = true;
+              enable_swallow = true;
+              swallow_regex = "^(kitty)$";
             };
 
             render = {
@@ -347,10 +458,14 @@ in {
             };
 
             group = {
-              "col.border_active" = "rgba(5eead4ee)";
+              # Teal dropped (spec 12.2): group node border now uses the Gruvbox
+              # accent. hy3 draws its own tab bar (colored in hy3SetupHook), so the
+              # native groupbar greys below are inert under hy3 but kept
+              # seam-derived for consistency if the layout ever changes.
+              "col.border_active" = "rgba(${theme.palette.accent}ee)";
               groupbar = {
-                "col.inactive" = "rgba(595959aa)";
-                "col.active" = "rgba(595959FF)";
+                "col.inactive" = "rgba(${theme.palette.bgItem}ff)";
+                "col.active" = "rgba(${theme.palette.accent}ff)";
               };
             };
 
@@ -378,21 +493,80 @@ in {
 
           # hl.curve(name, {...}) -- bezier curves referenced by the animations.
           curve = [
-            {_args = ["easeOutQuint" {type = "bezier"; points = [[0.22 1] [0.36 1]];}];}
-            {_args = ["easeInQuart" {type = "bezier"; points = [[0.89 0.03] [0.68 0.19]];}];}
-            {_args = ["softLinear" {type = "bezier"; points = [[0.1 0.1] [1 1]];}];}
+            {
+              _args = [
+                "md3_standard"
+                {
+                  type = "bezier";
+                  points = [[0.2 0.0] [0.0 1.0]];
+                }
+              ];
+            }
+            {
+              _args = [
+                "md3_decel"
+                {
+                  type = "bezier";
+                  points = [[0.05 0.7] [0.1 1.0]];
+                }
+              ];
+            }
+            {
+              _args = [
+                "md3_accel"
+                {
+                  type = "bezier";
+                  points = [[0.3 0.0] [0.8 0.15]];
+                }
+              ];
+            }
           ];
 
           # hl.animation({...}) -- per-leaf animations (lua leaf names, verified
           # via --verify-config; "leaf" replaces the hyprlang animation name,
           # "speed" the duration, "style" the trailing style).
           animation = [
-            {leaf = "windows"; enabled = true; speed = 3; bezier = "easeOutQuint"; style = "popin 90%";}
-            {leaf = "windowsIn"; enabled = true; speed = 3; bezier = "easeOutQuint"; style = "popin 90%";}
-            {leaf = "windowsOut"; enabled = true; speed = 2; bezier = "easeInQuart"; style = "popin 95%";}
-            {leaf = "windowsMove"; enabled = true; speed = 3; bezier = "easeOutQuint"; style = "slide";}
-            {leaf = "fade"; enabled = true; speed = 3; bezier = "softLinear";}
-            {leaf = "workspaces"; enabled = true; speed = 4; bezier = "easeOutQuint"; style = "slidefade 20%";}
+            {
+              leaf = "windows";
+              enabled = true;
+              speed = 3;
+              bezier = "md3_standard";
+              style = "popin 85%";
+            }
+            {
+              leaf = "windowsIn";
+              enabled = true;
+              speed = 3;
+              bezier = "md3_decel";
+              style = "popin 85%";
+            }
+            {
+              leaf = "windowsOut";
+              enabled = true;
+              speed = 3;
+              bezier = "md3_accel";
+              style = "popin 85%";
+            }
+            {
+              leaf = "windowsMove";
+              enabled = true;
+              speed = 3;
+              bezier = "md3_standard";
+              style = "slide";
+            }
+            {
+              leaf = "fade";
+              enabled = true;
+              speed = 2;
+              bezier = "md3_standard";
+            }
+            {
+              leaf = "workspaces";
+              enabled = true;
+              speed = 3;
+              bezier = "md3_decel";
+              style = "slidefade 15%";
+            }
           ];
 
           # hl.env("KEY", "VALUE")
@@ -420,16 +594,48 @@ in {
 
           # hl.monitor({...}) -- the sway desc rules split into fields.
           monitor = [
-            {output = "desc:LG Display 0x0676"; mode = "1920x1080@60.02"; position = "6400x0"; scale = 1.0;}
-            {output = "desc:Shenzhen KTC Technology Group H27S17 0x00000001"; mode = "2560x1440@119.99"; position = "3840x0"; scale = 1.0; bitdepth = 10;}
-            {output = "desc:ASUSTek COMPUTER INC VG279 K5LMQS018158"; mode = "1920x1080@119.98"; position = "0x0"; scale = 1.0; bitdepth = 10;}
-            {output = "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054"; mode = "1920x1080@119.88"; position = "1920x0"; scale = 1.0; bitdepth = 10;}
-            {output = ""; mode = "preferred"; position = "auto"; scale = 1;}
+            {
+              output = "desc:LG Display 0x0676";
+              mode = "1920x1080@60.02";
+              position = "6400x0";
+              scale = 1.0;
+            }
+            {
+              output = "desc:Shenzhen KTC Technology Group H27S17 0x00000001";
+              mode = "2560x1440@119.99";
+              position = "3840x0";
+              scale = 1.0;
+              bitdepth = 10;
+            }
+            {
+              output = "desc:ASUSTek COMPUTER INC VG279 K5LMQS018158";
+              mode = "1920x1080@119.98";
+              position = "0x0";
+              scale = 1.0;
+              bitdepth = 10;
+            }
+            {
+              output = "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054";
+              mode = "1920x1080@119.88";
+              position = "1920x0";
+              scale = 1.0;
+              bitdepth = 10;
+            }
+            {
+              output = "";
+              mode = "preferred";
+              position = "auto";
+              scale = 1;
+            }
           ];
 
           # hl.gesture({...}) -- 3-finger horizontal swipe to switch workspaces.
           gesture = [
-            {fingers = 3; direction = "horizontal"; action = "workspace";}
+            {
+              fingers = 3;
+              direction = "horizontal";
+              action = "workspace";
+            }
           ];
 
           # hl.device({...}) -- PS4 controller touchpad override (parity with
@@ -445,7 +651,21 @@ in {
 
           # hl.bind(...) -- generated from swayKeybindings (toLua) + hy3 extras
           # + the Super+/ cheatsheet bind.
-          bind = generatedLuaBinds ++ hy3ExtraBinds ++ [cheatBind hy3ProjectBind];
+          # Super+- normally maps (via toLua) to toggle_special("magic"); drop
+          # that generated bind and rebind Super+- to the cycling scratchpad.
+          # Super+Shift+- ("move scratchpad" -> special:magic) stays generated.
+          # Super+Ctrl+- resets: send the pulled-out member back to the pad.
+          bind =
+            (builtins.filter (b: (builtins.elemAt b._args 0) != "SUPER + minus") generatedLuaBinds)
+            ++ hy3ExtraBinds
+            ++ mouseBinds
+            ++ [
+              {_args = ["SUPER + minus" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle")'')];}
+              {_args = ["SUPER + CONTROL + minus" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle reset")'')];}
+              cheatBind
+              hy3ProjectBind
+              hubBind
+            ];
 
           # hl.on("hyprland.start", function() ... end). hy3 setup runs first
           # (load + config), then the autostart apps.
@@ -467,51 +687,226 @@ in {
           # float criteria -- Hyprland has no role/type match.
           window_rule = [
             # -- Floating (title) --
-            {name = "float-ff-share"; match = {title = "Firefox.*Sharing Indicator";}; float = true; no_focus = true;}
-            {name = "float-pip"; match = {title = "Picture-in-Picture";}; float = true;}
-            {name = "float-ff-dropdown"; match = {title = "Dropdown";}; float = true;}
-            {name = "float-ff-about"; match = {title = "^About Mozilla Firefox$";}; float = true;}
-            {name = "float-complete-install"; match = {title = "^Complete Installation$";}; float = true;}
-            {name = "float-steam-news"; match = {title = "^Steam - News";}; float = true;}
-            {name = "float-steam-update"; match = {title = "^Steam - Update";}; float = true;}
-            {name = "float-steam-selfupd"; match = {title = "^Steam - Self Updater$";}; float = true;}
-            {name = "float-steam-guard"; match = {title = "^Steam Guard";}; float = true;}
-            {name = "float-zoom"; match = {title = "^zoom$";}; float = true;}
+            {
+              name = "float-ff-share";
+              match = {title = "Firefox.*Sharing Indicator";};
+              float = true;
+              no_focus = true;
+            }
+            {
+              name = "float-pip";
+              match = {title = "Picture-in-Picture";};
+              float = true;
+            }
+            {
+              name = "float-ff-dropdown";
+              match = {title = "Dropdown";};
+              float = true;
+            }
+            {
+              name = "float-ff-about";
+              match = {title = "^About.*[Ff]irefox.*$";};
+              float = true;
+            }
+            {
+              name = "float-complete-install";
+              match = {title = "^Complete Installation$";};
+              float = true;
+            }
+            {
+              name = "float-steam-news";
+              match = {title = "^Steam - News";};
+              float = true;
+            }
+            {
+              name = "float-steam-update";
+              match = {title = "^Steam - Update";};
+              float = true;
+            }
+            {
+              name = "float-steam-selfupd";
+              match = {title = "^Steam - Self Updater$";};
+              float = true;
+            }
+            {
+              name = "float-steam-guard";
+              match = {title = "^Steam Guard";};
+              float = true;
+            }
+            {
+              name = "float-zoom";
+              match = {title = "^zoom$";};
+              float = true;
+            }
 
             # -- Floating (class / app_id -> Hyprland class) --
-            {name = "float-keepassxc"; match = {class = "^KeePassXC$";}; float = true;}
-            {name = "float-mpv"; match = {class = "^Mpv$";}; float = true;}
-            {name = "float-pavucontrol"; match = {class = "[Pp]avucontrol";}; float = true;}
-            {name = "float-launcher"; match = {class = "launcher";}; float = true;}
-            {name = "float-nm-editor"; match = {class = "^nm-connection-editor$";}; float = true;}
-            {name = "float-ibus"; match = {class = "Ibus-ui-gtk3";}; float = true;}
-            {name = "float-pinentry"; match = {class = "Pinentry";}; float = true;}
-            {name = "float-force-float"; match = {class = ".*force_float.*";}; float = true;}
-            {name = "float-zenity"; match = {class = "zenity";}; float = true;}
-            {name = "float-floating-update"; match = {class = "floating_update";}; float = true;}
+            {
+              name = "float-keepassxc";
+              match = {class = "^org.keepassxc.KeePassXC$";};
+              center = true;
+              float = true;
+              size = "800 600";
+              workspace = "special:magic"; # park in the cycling scratchpad
+            }
+            {
+              name = "float-mpv";
+              match = {class = "^Mpv$";};
+              float = true;
+            }
+            {
+              name = "float-pavucontrol";
+              match = {class = "[Pp]avucontrol";};
+              float = true;
+            }
+            {
+              name = "float-launcher";
+              match = {class = "launcher";};
+              float = true;
+            }
+            {
+              name = "float-nm-editor";
+              match = {class = "^nm-connection-editor$";};
+              float = true;
+            }
+            {
+              name = "float-ibus";
+              match = {class = "Ibus-ui-gtk3";};
+              float = true;
+            }
+            {
+              name = "float-pinentry";
+              match = {class = "Pinentry";};
+              float = true;
+            }
+            {
+              name = "float-force-float";
+              match = {class = ".*force_float.*";};
+              float = true;
+            }
+            {
+              name = "float-zenity";
+              match = {class = "zenity";};
+              float = true;
+            }
+            {
+              name = "float-floating-update";
+              match = {class = "floating_update";};
+              float = true;
+            }
+            # Windscribe VPN mini-window + scratchpad. Matched by TITLE --
+            # Windscribe is a Qt app that sets no Wayland app_id (empty class),
+            # so a class rule never fires; title is the only reliable key.
+            # Fixed 350x240 mini-window, no border/rounding, tearing on; floated
+            # so it never tiles when cycled onto a workspace, and parked in the
+            # cycling scratchpad (special:magic). Centering while it's out of the
+            # pad is handled live by hypr-window-keeper -- Windscribe shoves its
+            # own window up when the Locations panel expands, and app-driven
+            # resizes emit no rule event. Opacity 1.0 lives in the
+            # opacity-exceptions block below (must beat opacity-all).
+            {
+              name = "scratch-windscribe";
+              match = {title = "^Windscribe$";};
+              float = true;
+              size = "350 240";
+              min_size = "1 1";
+              border_size = 0;
+              rounding = 0;
+              immediate = true;
+              workspace = "special:magic";
+            }
 
             # -- Floating (Anki child windows: class + title) --
-            {name = "float-anki-profiles"; match = {class = "Anki"; title = "Profiles";}; float = true;}
-            {name = "float-anki-add"; match = {class = "Anki"; title = "Add";}; float = true;}
-            {name = "float-anki-browse"; match = {class = "Anki"; title = "^Browse.*";}; float = true;}
+            {
+              name = "float-anki-profiles";
+              match = {
+                class = "Anki";
+                title = "Profiles";
+              };
+              float = true;
+            }
+            {
+              name = "float-anki-add";
+              match = {
+                class = "Anki";
+                title = "Add";
+              };
+              float = true;
+            }
+            {
+              name = "float-anki-browse";
+              match = {
+                class = "Anki";
+                title = "^Browse.*";
+              };
+              float = true;
+            }
 
             # -- Opacity (sway "for_window opacity set"). The global 0.9 mirrors
             # sway's translucency; drop it if you prefer opaque windows on
             # Hyprland (the decoration block above keeps active/inactive at 1.0).
             # Per-app 1.0 exceptions must follow the global rule to override it.
-            {name = "opacity-all"; match = {class = ".*";}; opacity = "0.9 0.9";}
-            {name = "opacity-gimp"; match = {class = "[Gg]imp";}; opacity = "1.0 1.0";}
-            {name = "opacity-krita"; match = {class = "[Kk]rita";}; opacity = "1.0 1.0";}
-            {name = "opacity-inkscape"; match = {class = "org.inkscape.Inkscape";}; opacity = "1.0 1.0";}
-            {name = "opacity-virt-manager"; match = {class = "virt-manager";}; opacity = "1.0 1.0";}
-            {name = "opacity-obs"; match = {class = "com.obsproject.Studio";}; opacity = "1.0 1.0";}
+            {
+              name = "opacity-all";
+              match = {class = ".*";};
+              opacity = "0.9 0.9";
+            }
+            {
+              name = "opacity-gimp";
+              match = {class = "[Gg]imp";};
+              opacity = "1.0 1.0";
+            }
+            {
+              name = "opacity-krita";
+              match = {class = "[Kk]rita";};
+              opacity = "1.0 1.0";
+            }
+            {
+              name = "opacity-inkscape";
+              match = {class = "org.inkscape.Inkscape";};
+              opacity = "1.0 1.0";
+            }
+            {
+              name = "opacity-virt-manager";
+              match = {class = "virt-manager";};
+              opacity = "1.0 1.0";
+            }
+            {
+              name = "opacity-obs";
+              match = {class = "com.obsproject.Studio";};
+              opacity = "1.0 1.0";
+            }
+            {
+              name = "opacity-windscribe";
+              match = {title = "^Windscribe$";};
+              opacity = "1.0 1.0";
+            }
 
             # -- Blur exceptions (sway "for_window blur disable") --
-            {name = "noblur-gimp"; match = {class = "[Gg]imp";}; no_blur = true;}
-            {name = "noblur-krita"; match = {class = "[Kk]rita";}; no_blur = true;}
-            {name = "noblur-inkscape"; match = {class = "org.inkscape.Inkscape";}; no_blur = true;}
-            {name = "noblur-virt-manager"; match = {class = "virt-manager";}; no_blur = true;}
-            {name = "noblur-obs"; match = {class = "com.obsproject.Studio";}; no_blur = true;}
+            {
+              name = "noblur-gimp";
+              match = {class = "[Gg]imp";};
+              no_blur = true;
+            }
+            {
+              name = "noblur-krita";
+              match = {class = "[Kk]rita";};
+              no_blur = true;
+            }
+            {
+              name = "noblur-inkscape";
+              match = {class = "org.inkscape.Inkscape";};
+              no_blur = true;
+            }
+            {
+              name = "noblur-virt-manager";
+              match = {class = "virt-manager";};
+              no_blur = true;
+            }
+            {
+              name = "noblur-obs";
+              match = {class = "com.obsproject.Studio";};
+              no_blur = true;
+            }
           ];
 
           # hy3 plugin config (tabs look + autotile) is applied at startup by
@@ -562,8 +957,7 @@ in {
         # hl.dispatch(), NOT a trailing (). Arg shapes (dir, layout) verified
         # live against the patched plugin (see hy3-groupwith memory note).
         submaps.groupwith.settings.bind = let
-          gw = dir: layout:
-            ''function() hl.plugin.hy3.group_with("${dir}", "${layout}")(); hl.dispatch(hl.dsp.submap("reset")) end'';
+          gw = dir: layout: ''function() hl.plugin.hy3.group_with("${dir}", "${layout}")(); hl.dispatch(hl.dsp.submap("reset")) end'';
         in [
           # Vertical (bare).
           (submapBind "h" (gw "l" "v") {})

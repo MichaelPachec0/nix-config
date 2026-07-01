@@ -1,0 +1,41 @@
+From 59a93c1b017c7ac598ddbe27db0ea0511f3028e3 Mon Sep 17 00:00:00 2001
+From: Michael Pacheco <git@michaelpacheco.org>
+Date: Sun, 28 Jun 2026 02:49:06 -0700
+Subject: [PATCH] fix(popup): guard m_resource->m_surface in
+ coordsRelativeToParent
+
+CPopup::coordsRelativeToParent() dereferences the weak pointer
+m_resource->m_surface after only checking m_resource for validity. During
+client teardown a popup can outlive its XDG surface resource (it lingers
+while fading out, with visible() still returning true for m_fadingOut),
+so m_resource->m_surface is expired here. Reading
+m_current.geometry.pos() off the dangling resource segfaults in
+CBox::pos().
+
+This path is reached when a layer surface unmaps (CLayerSurface::onUnmap
+-> simulateMouseMovement -> mouseMoveUnified -> getSurfaceBoxGlobal ->
+CPopup::coordsGlobal) and a fading-out popup is hit-tested mid-destroy.
+
+Guard m_resource->m_surface as well, matching every other access site in
+this file (onUnmap, onCommit, the popupsAt walk). Affects v0.55.4 and
+current main (function unchanged after the geometricBox refactor).
+---
+ src/desktop/view/Popup.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/desktop/view/Popup.cpp b/src/desktop/view/Popup.cpp
+index 0b87f384..19def536 100644
+--- a/src/desktop/view/Popup.cpp
++++ b/src/desktop/view/Popup.cpp
+@@ -381,7 +381,7 @@ PHLLS CPopup::layerOwner() const {
+ Vector2D CPopup::coordsRelativeToParent() const {
+     Vector2D offset;
+ 
+-    if (!m_resource)
++    if (!m_resource || !m_resource->m_surface)
+         return m_lastPos;
+ 
+     WP<CPopup> current = m_self;
+-- 
+2.54.0
+

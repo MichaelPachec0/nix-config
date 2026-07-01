@@ -197,7 +197,8 @@
           ]); # buildInputs = (old.buildInputs or []) ++ (with prev; [cmake]);
         buildNativeInputs = (old.buildInputs or []) ++ (with prev; [cmake ninja _scenefx]);
       });
-      swayfx-unwrapped = inputs.swayfx.packages.${prev.stdenv.hostPlatform.system}.swayfx-unwrapped-git.overrideAttrs (old: {
+      # swayfx-unwrapped = inputs.swayfx.packages.${prev.stdenv.hostPlatform.system}.swayfx-unwrapped-git.overrideAttrs (old: {
+      swayfx-unwrapped = prev.swayfx-unwrapped.overrideAttrs (old: {
         # (_swayfx-unwrapped.override {
         #   scenefx = _scenefx;
         #   # wlroots_0_18 = prev.wlroots_0_19;
@@ -384,6 +385,30 @@
     fastanime = inputs.fastanime.packages.${prev.stdenv.hostPlatform.system}.default;
   };
 
+  # cantarell-fonts (0.311+) runs afdko's otfautohint during its build. A
+  # spurious assertion in calcInstanceStems() aborts hinting whenever a 'high'
+  # ghost stem is a glyph's first stem -- exactly the case for Cantarell's small
+  # diagonal accents -- so the whole font fails to build. Patch the afdko used
+  # by the font build. The override is scoped through cantarell's own python3
+  # argument, so the system-wide python3 package set is untouched: only afdko
+  # and the handful of build inputs that depend on it (e.g. cffsubr) rebuild.
+  # See overlays/afdko-otfautohint-high-ghost-assert.patch.
+  fonts = final: prev: {
+    cantarell-fonts = prev.cantarell-fonts.override {
+      python3 = prev.python3.override {
+        packageOverrides = _pyFinal: pyPrev: {
+          afdko = pyPrev.afdko.overrideAttrs (old: {
+            patches =
+              (old.patches or [])
+              ++ [
+                ../overlays/afdko-otfautohint-high-ghost-assert.patch
+              ];
+          });
+        };
+      };
+    };
+  };
+
   pam_rssh = final: prev: {
     pam_rssh = prev.callPackage ../overlays/pam_rssh {};
   };
@@ -413,13 +438,32 @@
   #     });
   # };
   latest = final: prev: let
+    # Downstream fix for a Hyprland SIGSEGV (seen with the Quickshell popup
+    # work): CPopup::coordsRelativeToParent() dereferences the weak pointer
+    # m_resource->m_surface after only checking m_resource. A popup that
+    # outlives its XDG surface during client teardown -- still "visible" while
+    # m_fadingOut, hit-tested when a layer surface unmap re-runs
+    # simulateMouseMovement -- has an expired m_surface, so reading
+    # m_current.geometry.pos() segfaults in CBox::pos(). Every other access
+    # site in Popup.cpp guards both; this one doesn't. Present in v0.55.4 and
+    # upstream main. See overlays/0005-*.patch.
+    hyprland-patched = final.hyprland.overrideAttrs (old: {
+      patches =
+        (old.patches or [])
+        ++ [
+          ../overlays/0005-fix-hyprland-popup-coords-null-surface-deref.patch
+        ];
+    });
   in {
     latest = {
-      inherit (final) hyprland;
+      hyprland = hyprland-patched;
       inherit (prev) waybar;
 
       sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
-      hy3 = final.hyprlandPlugins.hy3.overrideAttrs (old: {
+      # Build hy3 against the patched hyprland so the plugin's embedded
+      # version/commit hash matches the running compositor (ABI is otherwise
+      # unchanged -- the patch only touches a .cpp, no headers).
+      hy3 = (final.hyprlandPlugins.hy3.override {hyprland = hyprland-patched;}).overrideAttrs (old: {
         patches =
           (old.patches or [])
           ++ [
@@ -457,6 +501,7 @@
     figma-linux
     ncspot
     fastanime
+    fonts
     # NOTE: still need to migrate from using this, as sg has now moved from using an overlay.
     # inputs.sg.overlays.default
   ];
