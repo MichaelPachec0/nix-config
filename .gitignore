@@ -7,3 +7,4 @@ flake.lock*-*
 rootdir/
 scratchpad/
 logs/
+__pycache__
