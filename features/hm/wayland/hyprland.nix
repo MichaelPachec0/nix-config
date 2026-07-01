@@ -368,6 +368,22 @@ in {
     # Super+/ bind invokes it by store path regardless).
     home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript scratchpadCycleScript];
 
+    # Keep floating windows that drift on resize pinned in place. Windscribe
+    # (Qt, empty app_id) shoves its own window up when the Locations panel
+    # expands and never restores it -- Hyprland has no declarative fix, so the
+    # keeper daemon (./hypr-window-keeper.nix) re-centers it. Pairs with the
+    # scratch-windscribe window_rule below (float + special:magic); the rule
+    # parks it, the keeper handles position while it's out of the pad.
+    services.hyprWindowKeeper = {
+      enable = true;
+      rules = [
+        {
+          match = {title = "^Windscribe$";};
+          position = "center";
+        }
+      ];
+    };
+
     wayland = {
       windowManager.hyprland = {
         enable = true;
@@ -777,30 +793,25 @@ in {
               match = {class = "floating_update";};
               float = true;
             }
-            # Windscribe VPN mini-window: fixed 350x240 pinned at 1560,51, no
-            # border/rounding, tearing on. `move` is an ABSOLUTE compositor
-            # coord (single-monitor era) -- see note; swap for `center = true`
-            # to place it on the focused monitor instead. Opacity 1.0 lives in
-            # the opacity-exceptions block below (must beat opacity-all).
-            {
-              name = "float-windscribe";
-              match = {class = "^Windscribe$";};
-              float = true;
-              size = "350 240";
-              # move = "1560 51";
-              min_size = "1 1";
-              border_size = 0;
-              rounding = 0;
-              immediate = true;
-            }
-            # Scratchpad: park Windscribe in special:magic. Matched by TITLE --
+            # Windscribe VPN mini-window + scratchpad. Matched by TITLE --
             # Windscribe is a Qt app that sets no Wayland app_id (empty class),
-            # so the class rule above never matches; title is the only reliable
-            # key. float so it doesn't tile when cycled onto a workspace.
+            # so a class rule never fires; title is the only reliable key.
+            # Fixed 350x240 mini-window, no border/rounding, tearing on; floated
+            # so it never tiles when cycled onto a workspace, and parked in the
+            # cycling scratchpad (special:magic). Centering while it's out of the
+            # pad is handled live by hypr-window-keeper -- Windscribe shoves its
+            # own window up when the Locations panel expands, and app-driven
+            # resizes emit no rule event. Opacity 1.0 lives in the
+            # opacity-exceptions block below (must beat opacity-all).
             {
               name = "scratch-windscribe";
               match = {title = "^Windscribe$";};
               float = true;
+              size = "350 240";
+              min_size = "1 1";
+              border_size = 0;
+              rounding = 0;
+              immediate = true;
               workspace = "special:magic";
             }
 
@@ -866,7 +877,7 @@ in {
             }
             {
               name = "opacity-windscribe";
-              match = {class = "^Windscribe$";};
+              match = {title = "^Windscribe$";};
               opacity = "1.0 1.0";
             }
 
