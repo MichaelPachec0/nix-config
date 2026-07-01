@@ -15,6 +15,7 @@
     ./rofi.nix
     ./common.nix
     ./hyprland.nix
+    ./hypr-window-keeper.nix
     ./sway.nix
   ];
   config = {
