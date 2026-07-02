@@ -18,6 +18,11 @@ Item {
              : q === "fair" ? root.theme.accentYellow
              : root.theme.accentRed;
     }
+    function battColor() {
+        return root.svc.battery.charging ? root.theme.accentGreen
+             : (root.svc.battery.percent !== undefined && root.svc.battery.percent < 20
+                ? root.theme.accentRed : root.theme.textSecondary);
+    }
 
     RowLayout {
         id: rowLayout
@@ -44,11 +49,12 @@ Item {
                 }
             }
         }
+        // Network-type tag (JetBrainsMono, like the other bar labels).
         Text {
             visible: root.svc.reachable && !root.svc.authError && (root.svc.cellular.supported !== false)
             text: root.svc.cellular.gen || "?"
-            font.family: root.theme.textFont
-            font.pixelSize: 9
+            font.family: root.theme.iconFont
+            font.pixelSize: 11
             font.weight: Font.DemiBold
             color: root.theme.textSecondary
         }
@@ -61,25 +67,43 @@ Item {
             font.pixelSize: 12
             color: root.theme.accentRed
         }
-        // Battery pill (router's -- glyph distinguishes from laptop battery).
-        Text {
+        // Battery pill (router's -- faFont glyph distinguishes from the laptop
+        // battery; the percent is JetBrainsMono like the other bar labels).
+        RowLayout {
+            Layout.alignment: Qt.AlignVCenter
             visible: root.svc.reachable
-            text: String.fromCharCode(0xF519) + " " + (root.svc.battery.percent !== undefined
-                  ? root.svc.battery.percent + "%" : "--")
-            font.family: root.theme.faFont
-            font.pixelSize: 11
-            color: root.svc.battery.charging ? root.theme.accentGreen
-                 : (root.svc.battery.percent !== undefined && root.svc.battery.percent < 20
-                    ? root.theme.accentRed : root.theme.textSecondary)
+            spacing: 3
+            Text {
+                text: String.fromCharCode(0xF519) // fa network-wired (router)
+                font.family: root.theme.faFont
+                font.pixelSize: 11
+                color: root.battColor()
+            }
+            Text {
+                text: root.svc.battery.percent !== undefined ? root.svc.battery.percent + "%" : "--"
+                font.family: root.theme.iconFont
+                font.pixelSize: 11
+                color: root.battColor()
+            }
         }
         // Dimmed "not connected" chip.
-        Text {
+        RowLayout {
+            Layout.alignment: Qt.AlignVCenter
             visible: !root.svc.reachable
-            text: String.fromCharCode(0xF519) + " off"
-            font.family: root.theme.faFont
-            font.pixelSize: 11
             opacity: 0.4
-            color: root.theme.textSecondary
+            spacing: 3
+            Text {
+                text: String.fromCharCode(0xF519) // fa network-wired (router)
+                font.family: root.theme.faFont
+                font.pixelSize: 11
+                color: root.theme.textSecondary
+            }
+            Text {
+                text: "off"
+                font.family: root.theme.iconFont
+                font.pixelSize: 11
+                color: root.theme.textSecondary
+            }
         }
     }
 
