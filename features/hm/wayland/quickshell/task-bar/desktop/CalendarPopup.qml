@@ -84,7 +84,7 @@ PopupWindow {
     readonly property var segments: [
         { label: "1", val: 0, on: true },
         { label: "3", val: 1, on: true },
-        { label: "12", val: 2, on: false }
+        { label: "12", val: 2, on: true }
     ]
 
     Rectangle {
@@ -205,7 +205,7 @@ PopupWindow {
             // Body: the layout selected by calState.layout.
             Loader {
                 id: body
-                sourceComponent: pop.calState.layout === 1 ? threeView : singleView
+                sourceComponent: pop.calState.layout === 2 ? yearView : (pop.calState.layout === 1 ? threeView : singleView)
             }
         }
 
@@ -232,6 +232,39 @@ PopupWindow {
                         when: new Date(pop.focusDate.getFullYear(), pop.focusDate.getMonth() + g3.modelData, 1)
                         today: pop.today
                         showWeeks: true
+                    }
+                }
+            }
+        }
+
+        Component {
+            id: yearView
+            GridLayout {
+                columns: 4
+                rowSpacing: 10
+                columnSpacing: 12
+                Repeater {
+                    model: 12
+                    delegate: ColumnLayout {
+                        id: mini
+                        required property int index
+                        spacing: 2
+                        Text {
+                            text: Qt.formatDate(new Date(pop.focusDate.getFullYear(), mini.index, 1), "MMM")
+                            font.family: pop.theme.textFont
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                            color: pop.theme.textSecondary
+                        }
+                        Hub.CalendarGrid {
+                            theme: pop.theme
+                            when: new Date(pop.focusDate.getFullYear(), mini.index, 1)
+                            today: pop.today
+                            showWeeks: true
+                            cellWidth: 16
+                            cellHeight: 14
+                            fontSize: 9
+                        }
                     }
                 }
             }
