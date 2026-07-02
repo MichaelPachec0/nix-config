@@ -66,3 +66,117 @@ def usage_step(state, cur_rx, cur_tx, now_ts, reset_day):
         "last_rx": cur_rx,
         "last_tx": cur_tx,
     }
+
+
+def _active_uplink(networks):
+    nets = networks or []
+    for n in nets:
+        if n.get("online"):
+            return n
+    for n in nets:
+        if n.get("up"):
+            return n
+    return nets[0] if nets else {}
+
+
+def build_status(parts):
+    ts = parts.get("ts", 0)
+    if not parts.get("reachable"):
+        return {"schema": 1, "ts": ts, "reachable": False}
+
+    gs = parts.get("get_status") or {}
+    sysd = gs.get("system") or {}
+    mcu = sysd.get("mcu") or {}
+    client = (gs.get("client") or [{}])[0]
+    up = _active_uplink(gs.get("network"))
+    speed = parts.get("get_speed") or {}
+    info = parts.get("info") or {}
+    sig_list = parts.get("signals")
+    sig = (sig_list or [{}])[0] if sig_list else {}
+    usage = parts.get("usage") or {}
+    marker = parts.get("recovery")
+    vpn_list = (parts.get("vpn") or {}).get("status_list") or []
+    vpn_active = next((v for v in vpn_list if v.get("enabled")), None)
+
+    return {
+        "schema": 1,
+        "ts": ts,
+        "reachable": True,
+        "device": {
+            "model": "GL-" + str(info.get("model", "E5800")).upper().replace("GL-", ""),
+            "firmware": info.get("firmware_version", ""),
+            "modem": info.get("modem", "Quectel RG650V-NA"),
+            "carrier": parts.get("carrier", ""),
+        },
+        "battery": {
+            "percent": mcu.get("charge_percent"),
+            "charging": bool(mcu.get("charging_status")),
+            "plugged": bool(parts.get("plugged")),
+            "fastcharge": bool(mcu.get("fastcharge")),
+            "temp": mcu.get("temperature"),
+        },
+        "uplink": {
+            "interface": up.get("interface"),
+            "online": bool(up.get("online")),
+            "up": bool(up.get("up")),
+        },
+        "recovery": {
+            "active": marker is not None,
+            "action": (marker or {}).get("action"),
+            "started": (marker or {}).get("started"),
+            "result": (marker or {}).get("result"),
+        },
+        "cellular": {
+            "supported": bool(sig_list),
+            "gen": gen_from_network_type(sig.get("network_type")),
+            "network_type": sig.get("network_type"),
+            "strength": sig.get("strength"),
+            "rsrp": sig.get("rsrp"),
+            "rsrq": sig.get("rsrq"),
+            "sinr": sig.get("sinr"),
+            "slot": sig.get("slot"),
+        },
+        "throughput": {
+            "rx": speed.get("speed_rx"),
+            "tx": speed.get("speed_tx"),
+            "unit": parts.get("speed_unit", "Bps"),
+        },
+        "data": {
+            "cycle_rx": usage.get("cycle_rx"),
+            "cycle_tx": usage.get("cycle_tx"),
+            "cycle_start": usage.get("cycle_start"),
+            "reset_day": parts.get("reset_day", 1),
+            "source": parts.get("data_source", "counter"),
+        },
+        "system": {
+            "cpu_temp": (sysd.get("cpu") or {}).get("temperature"),
+            "load": sysd.get("load_average", []),
+            "mem_total": sysd.get("memory_total"),
+            "mem_free": sysd.get("memory_free"),
+            "mem_buff": sysd.get("memory_buff_cache"),
+            "flash_total": sysd.get("flash_total"),
+            "flash_free": sysd.get("flash_free"),
+            "uptime": sysd.get("uptime"),
+        },
+        "clients": {
+            "wireless": client.get("wireless_total", 0),
+            "cable": client.get("cable_total", 0),
+            "usbeth": client.get("usbeth_total", 0),
+            "list": [
+                {"name": c.get("name"), "ip": c.get("ip"),
+                 "online": bool(c.get("online")),
+                 "rx": c.get("rx"), "tx": c.get("tx")}
+                for c in ((parts.get("get_list") or {}).get("clients") or [])
+            ],
+        },
+        "wifi": [
+            {"band": w.get("band"), "ssid": w.get("ssid"),
+             "up": bool(w.get("up")), "guest": bool(w.get("guest"))}
+            for w in (gs.get("wifi") or [])
+        ],
+        "vpn": {
+            "active": vpn_active is not None,
+            "name": (vpn_active or {}).get("name"),
+            "type": (vpn_active or {}).get("type"),
+        },
+    }
