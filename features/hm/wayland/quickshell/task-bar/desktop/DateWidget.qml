@@ -29,7 +29,7 @@ Item {
         id: label
         anchors.centerIn: parent
         color: root.theme.textSecondary
-        font.family: root.theme.textFont
+        font.family: root.theme.iconFont
         font.pixelSize: 13
         text: {
             root.barWindow.tick; // ride the clock tick (updates at midnight)

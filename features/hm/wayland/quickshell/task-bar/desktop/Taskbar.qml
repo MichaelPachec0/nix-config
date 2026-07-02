@@ -200,7 +200,7 @@ PanelWindow {
                     anchors.centerIn: parent
                     text: ws.modelData.id
                     color: ws.active ? dock.theme.textOnAccent : dock.theme.textSecondary
-                    font.family: dock.theme.textFont
+                    font.family: dock.theme.iconFont
                     font.pixelSize: 12
                 }
                 MouseArea {
@@ -330,7 +330,7 @@ PanelWindow {
                 Text {
                     text: Math.round(dock.stats ? dock.stats.cpuPct : 0) + "%"
                     color: dock.theme.textSecondary
-                    font.family: dock.theme.textFont
+                    font.family: dock.theme.iconFont
                     font.pixelSize: 11
                 }
             }
@@ -345,7 +345,7 @@ PanelWindow {
                 Text {
                     text: Math.round(dock.stats ? dock.stats.ramPct : 0) + "%"
                     color: dock.theme.textSecondary
-                    font.family: dock.theme.textFont
+                    font.family: dock.theme.iconFont
                     font.pixelSize: 11
                 }
             }
@@ -442,7 +442,7 @@ PanelWindow {
         Text {
             id: clockText
             color: dock.theme.textPrimary
-            font.family: dock.theme.textFont
+            font.family: dock.theme.iconFont
             font.pixelSize: 13
             text: {
                 dock.tick; // re-evaluate every second

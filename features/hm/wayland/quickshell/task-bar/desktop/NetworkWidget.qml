@@ -105,7 +105,7 @@ Item {
         Text {
             text: root.label()
             color: root.theme.textSecondary
-            font.family: root.theme.textFont
+            font.family: root.theme.iconFont
             font.pixelSize: 11
             elide: Text.ElideRight
             Layout.maximumWidth: 160

@@ -128,7 +128,7 @@ Item {
             Layout.alignment: Qt.AlignVCenter
             text: (root.wx ? root.wx.temp : "--") + String.fromCodePoint(0x00B0)
             color: root.theme.textSecondary
-            font.family: root.theme.textFont
+            font.family: root.theme.iconFont
             font.pixelSize: 13
         }
     }

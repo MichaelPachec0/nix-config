@@ -101,7 +101,7 @@ Item {
                 id: label
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.label
-                font.family: root.theme.textFont
+                font.family: root.theme.iconFont
                 font.pixelSize: 11
                 color: root.theme.textSecondary
                 onTextChanged: x = 0

@@ -51,7 +51,7 @@ Item {
             Layout.maximumWidth: 120
             visible: text.length > 0
             text: root.label()
-            font.family: root.theme.textFont
+            font.family: root.theme.iconFont
             font.pixelSize: 11
             color: root.theme.textSecondary
             elide: Text.ElideRight

@@ -85,7 +85,7 @@ Item {
                 anchors.centerIn: parent
                 text: root.active ? "Keep awake: on" : "Keep awake: off"
                 color: root.theme.textPrimary
-                font.family: root.theme.textFont
+                font.family: root.theme.iconFont
                 font.pixelSize: 11
             }
         }

@@ -37,7 +37,7 @@ Item {
         Text {
             Layout.alignment: Qt.AlignVCenter
             text: root.label()
-            font.family: root.theme.textFont
+            font.family: root.theme.iconFont
             font.pixelSize: 11
             color: root.theme.textSecondary
         }

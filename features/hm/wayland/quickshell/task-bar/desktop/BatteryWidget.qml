@@ -85,7 +85,7 @@ Item {
             Layout.alignment: Qt.AlignVCenter
             text: Math.round(root.pct) + "%"
             color: root.low ? root.theme.accentRed : (root.onAC ? root.theme.accentSlider : root.theme.textPrimary)
-            font.family: root.theme.textFont
+            font.family: root.theme.iconFont
             font.pixelSize: 13
         }
     }
