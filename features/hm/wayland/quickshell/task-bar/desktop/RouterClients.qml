@@ -11,7 +11,7 @@ ColumnLayout {
 
     Text {
         text: "Clients (" + root.clients.length + ")"
-        font.family: root.theme.textFont
+        font.family: root.theme.iconFont
         font.pixelSize: 11
         font.weight: Font.DemiBold
         color: root.theme.textSecondary
@@ -24,7 +24,7 @@ ColumnLayout {
             spacing: 8
             Text {
                 text: modelData.name || modelData.ip || "?"
-                font.family: root.theme.textFont
+                font.family: root.theme.iconFont
                 font.pixelSize: 10
                 color: root.theme.textPrimary
                 Layout.preferredWidth: 90
@@ -32,7 +32,7 @@ ColumnLayout {
             }
             Text {
                 text: modelData.ip ? "." + String(modelData.ip).split(".").pop() : ""
-                font.family: root.theme.textFont
+                font.family: root.theme.iconFont
                 font.pixelSize: 10
                 color: root.theme.textSecondary
                 Layout.preferredWidth: 40
@@ -42,7 +42,7 @@ ColumnLayout {
                 text: (modelData.rx || modelData.tx)
                     ? ("dn " + RouterFmt.fmtRate(modelData.rx) + "  up " + RouterFmt.fmtRate(modelData.tx))
                     : "idle"
-                font.family: root.theme.textFont
+                font.family: root.theme.iconFont
                 font.pixelSize: 10
                 color: root.theme.textSecondary
             }

@@ -55,7 +55,7 @@ PopupWindow {
             Text {
                 visible: !pop.svc.reachable
                 text: "Not connected to GL-E5800"
-                font.family: pop.theme.textFont
+                font.family: pop.theme.iconFont
                 font.pixelSize: 12
                 color: pop.theme.textSecondary
             }
@@ -66,7 +66,7 @@ PopupWindow {
                 Layout.fillWidth: true
                 Text {
                     text: pop.svc.device.model || "GL-E5800"
-                    font.family: pop.theme.textFont; font.pixelSize: 13; font.weight: Font.Bold
+                    font.family: pop.theme.iconFont; font.pixelSize: 13; font.weight: Font.Bold
                     color: pop.theme.textPrimary
                 }
                 Item { Layout.fillWidth: true }
@@ -78,7 +78,7 @@ PopupWindow {
                 }
                 Text {
                     text: (pop.svc.battery.percent !== undefined ? pop.svc.battery.percent + "%" : "--")
-                    font.family: pop.theme.textFont; font.pixelSize: 12
+                    font.family: pop.theme.iconFont; font.pixelSize: 12
                     color: pop.svc.battery.charging ? pop.theme.accentGreen : pop.theme.textPrimary
                 }
             }
@@ -105,7 +105,7 @@ PopupWindow {
                         }
                         Text {
                             text: "SSH key rejected"
-                            font.family: pop.theme.textFont; font.pixelSize: 11; font.weight: Font.Bold
+                            font.family: pop.theme.iconFont; font.pixelSize: 11; font.weight: Font.Bold
                             color: pop.theme.accentRed
                         }
                     }
@@ -115,7 +115,7 @@ PopupWindow {
                         text: "The router rejected the key (likely factory-reset). Re-run the "
                             + "E5800 key setup: re-add the e5800poll public key and clear the pinned "
                             + "host key, then it reconnects."
-                        font.family: pop.theme.textFont; font.pixelSize: 10
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
                         color: pop.theme.textSecondary
                     }
                 }
@@ -130,7 +130,7 @@ PopupWindow {
                     spacing: 8
                     Text {
                         text: (pop.svc.cellular.gen || "?") + "   " + (pop.svc.device.carrier || "")
-                        font.family: pop.theme.textFont; font.pixelSize: 12; font.weight: Font.DemiBold
+                        font.family: pop.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
                         color: pop.theme.textPrimary
                     }
                 }
@@ -138,22 +138,22 @@ PopupWindow {
                     spacing: 12
                     Text {
                         text: "RSRP " + (pop.svc.cellular.rsrp !== undefined ? pop.svc.cellular.rsrp : "--")
-                        font.family: pop.theme.textFont; font.pixelSize: 11
+                        font.family: pop.theme.iconFont; font.pixelSize: 11
                         color: pop.qColor(RouterFmt.quality("rsrp", pop.svc.cellular.rsrp))
                     }
                     Text {
                         text: "RSRQ " + (pop.svc.cellular.rsrq !== undefined ? pop.svc.cellular.rsrq : "--")
-                        font.family: pop.theme.textFont; font.pixelSize: 11
+                        font.family: pop.theme.iconFont; font.pixelSize: 11
                         color: pop.qColor(RouterFmt.quality("rsrq", pop.svc.cellular.rsrq))
                     }
                     Text {
                         text: "SINR " + (pop.svc.cellular.sinr !== undefined ? pop.svc.cellular.sinr : "--")
-                        font.family: pop.theme.textFont; font.pixelSize: 11
+                        font.family: pop.theme.iconFont; font.pixelSize: 11
                         color: pop.qColor(RouterFmt.quality("sinr", pop.svc.cellular.sinr))
                     }
                     Text {
                         text: pop.svc.cellular.network_type || ""
-                        font.family: pop.theme.textFont; font.pixelSize: 10
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
                         color: pop.theme.textSecondary
                     }
                 }
@@ -167,14 +167,14 @@ PopupWindow {
                 Text {
                     text: "dn " + RouterFmt.fmtRate(pop.svc.throughput.rx)
                         + "   up " + RouterFmt.fmtRate(pop.svc.throughput.tx)
-                    font.family: pop.theme.textFont; font.pixelSize: 11
+                    font.family: pop.theme.iconFont; font.pixelSize: 11
                     color: pop.theme.textPrimary
                 }
                 Item { Layout.fillWidth: true }
                 Text {
                     text: "used " + RouterFmt.fmtBytes((pop.svc.dataUsage.cycle_rx || 0)
                                                        + (pop.svc.dataUsage.cycle_tx || 0))
-                    font.family: pop.theme.textFont; font.pixelSize: 11
+                    font.family: pop.theme.iconFont; font.pixelSize: 11
                     color: pop.theme.textSecondary
                 }
             }
@@ -185,7 +185,7 @@ PopupWindow {
                 text: "CPU " + (pop.svc.system.cpu_temp || "--") + "C   load "
                     + ((pop.svc.system.load || [])[0] || "--") + "   up "
                     + Math.floor((pop.svc.system.uptime || 0) / 3600) + "h"
-                font.family: pop.theme.textFont; font.pixelSize: 10
+                font.family: pop.theme.iconFont; font.pixelSize: 10
                 color: pop.theme.textSecondary
             }
 
@@ -195,7 +195,7 @@ PopupWindow {
                 text: "Wi-Fi  " + (pop.svc.wifi || []).filter(function (w) { return w.up; })
                     .map(function (w) { return w.band; }).join(" ")
                     + "     VPN  " + (pop.svc.vpn.active ? pop.svc.vpn.name : "(none)")
-                font.family: pop.theme.textFont; font.pixelSize: 10
+                font.family: pop.theme.iconFont; font.pixelSize: 10
                 color: pop.theme.textSecondary
             }
 
@@ -215,7 +215,7 @@ PopupWindow {
                 Text {
                     text: pop.svc.recovering ? ("Recovering: " + (pop.svc.data.recovery
                           ? pop.svc.data.recovery.action : "") + "...") : "Recover:"
-                    font.family: pop.theme.textFont; font.pixelSize: 10
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
                     color: pop.theme.textSecondary
                 }
                 Repeater {
@@ -237,7 +237,7 @@ PopupWindow {
                             id: txt
                             anchors.centerIn: parent
                             text: btn.armed ? "confirm?" : btn.modelData.label
-                            font.family: pop.theme.textFont; font.pixelSize: 10
+                            font.family: pop.theme.iconFont; font.pixelSize: 10
                             color: btn.armed ? pop.theme.textOnAccent : pop.theme.textSecondary
                         }
                         Timer { id: disarm; interval: 4000; onTriggered: btn.armed = false }
