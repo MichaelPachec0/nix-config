@@ -52,6 +52,7 @@ Scope {
         id: file
         path: root.statusPath
         watchChanges: true
+        printErrors: false
         onFileChanged: reload()
         Component.onCompleted: reload()
         onLoaded: {
@@ -61,5 +62,16 @@ Scope {
                 root.data = {};
             }
         }
+    }
+
+    // The poll service rewrites status.json atomically (temp + rename), which
+    // breaks a plain file watch, and the file may not exist when the bar starts.
+    // Poll a reload (matching the service cadence) so the widget reliably tracks
+    // the artifact whenever it appears or changes.
+    Timer {
+        running: true
+        interval: 2000
+        repeat: true
+        onTriggered: file.reload()
     }
 }
