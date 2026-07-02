@@ -315,7 +315,9 @@ PanelWindow {
         }
 
         // CPU / RAM (shared SysStats): microchip + memory glyph, then percent.
+        // Hover opens the system stats popup (gates SysStats detail polling).
         RowLayout {
+            id: statsRow
             spacing: 10
             visible: dock.stats !== null
 
@@ -348,6 +350,35 @@ PanelWindow {
                     font.family: dock.theme.iconFont
                     font.pixelSize: 11
                 }
+            }
+
+            HoverHandler {
+                id: statsHover
+                onHoveredChanged: {
+                    if (statsHover.hovered) {
+                        if (dock.stats)
+                            dock.stats.wantDetail = true;
+                        sysPopup.show();
+                    } else {
+                        statsHideTimer.restart();
+                    }
+                }
+            }
+            Timer {
+                id: statsHideTimer
+                interval: 250
+                onTriggered: if (!statsHover.hovered && !sysPopup.contentHovered) {
+                    sysPopup.hide();
+                    if (dock.stats)
+                        dock.stats.wantDetail = false;
+                }
+            }
+            SysPopup {
+                id: sysPopup
+                theme: dock.theme
+                stats: dock.stats
+                barWindow: dock
+                anchorItem: statsRow
             }
         }
 
