@@ -102,6 +102,7 @@ def build_status(parts):
         "schema": 1,
         "ts": ts,
         "reachable": True,
+        "auth_error": bool(parts.get("auth_error", False)),
         "device": {
             "model": "GL-" + str(info.get("model", "E5800")).upper().replace("GL-", ""),
             "firmware": info.get("firmware_version", ""),

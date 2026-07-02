@@ -69,27 +69,42 @@ def _reachable():
 
 
 def _ssh(cmd):
+    """Run a command on the router over SSH. Returns (stdout, returncode).
+    Host keys are verified (TOFU): the first connect pins the router's key into
+    the persistent known_hosts; later mismatches (rejected key OR a factory
+    reset's new host key) make ssh exit 255, which we surface as auth_error so
+    the widget can prompt re-authentication (re-add the key + clear known_hosts)."""
     args = ["ssh", "-i", SSH_KEY, "-o", "BatchMode=yes",
             "-o", "StrictHostKeyChecking=accept-new",
-            "-o", "ConnectTimeout=5",
             "-o", "UserKnownHostsFile={}/known_hosts".format(STATE),
+            "-o", "ConnectTimeout=5",
             "{}@{}".format(USER, HOSTPORT[0]), cmd]
-    return subprocess.run(args, capture_output=True, timeout=15).stdout.decode()
+    try:
+        p = subprocess.run(args, capture_output=True, timeout=15)
+        return p.stdout.decode(), p.returncode
+    except subprocess.SubprocessError:
+        return "", 255
 
 
 def _signals():
+    """Returns (signals_list_or_None, ssh_auth_failed)."""
+    out, rc = _ssh("ubus call cellular.collect get_signals '{\"bus\":\"x\"}'")
+    if rc == 255:
+        return None, True
     try:
-        out = _ssh("ubus call cellular.collect get_signals '{\"bus\":\"x\"}'")
-        return (json.loads(out) or {}).get("signals")
-    except (subprocess.SubprocessError, ValueError, json.JSONDecodeError):
-        return None
+        return (json.loads(out) or {}).get("signals"), False
+    except (ValueError, json.JSONDecodeError):
+        return None, False
 
 
 def _netdev_bytes():
-    """Cumulative rx/tx bytes for the modem uplink netdev via /proc/net/dev on the router."""
+    """Cumulative rx/tx bytes for the modem uplink netdev via /proc/net/dev on the
+    router. Returns ((rx, tx) or None, ssh_auth_failed)."""
     dev = NETDEV
+    out, rc = _ssh("cat /proc/net/dev")
+    if rc == 255:
+        return None, True
     try:
-        out = _ssh("cat /proc/net/dev")
         for line in out.splitlines():
             if ":" not in line:
                 continue
@@ -101,10 +116,10 @@ def _netdev_bytes():
                                 or name.startswith("modem")):
                 continue
             f = rest.split()
-            return int(f[0]), int(f[8])
-    except (subprocess.SubprocessError, ValueError, IndexError):
+            return (int(f[0]), int(f[8])), False
+    except (ValueError, IndexError):
         pass
-    return None
+    return None, False
 
 
 def _load_state():
@@ -163,13 +178,18 @@ def collect_once():
         parts["plugged"] = bool((_call(sid, "lpm", "get_status") or {}).get("power_insert"))
     except (urllib.error.URLError, OSError, KeyError, ValueError):
         pass
-    parts["signals"] = _signals()
-    nb = _netdev_bytes()
+    sig, sig_auth = _signals()
+    parts["signals"] = sig
+    nb, nb_auth = _netdev_bytes()
     if nb is not None:
         st = L.usage_step(_load_state(), nb[0], nb[1], ts, RESET_DAY)
         _save_state(st)
         parts["usage"] = st
         parts["data_source"] = "counter"
+    # Reachable at the network layer but SSH rejected (exit 255) => the key no
+    # longer works (e.g. router was factory-reset). Surface it so the widget can
+    # prompt re-authentication.
+    parts["auth_error"] = bool(sig_auth or nb_auth)
     parts["recovery"] = _marker()
     return L.build_status(parts)
 

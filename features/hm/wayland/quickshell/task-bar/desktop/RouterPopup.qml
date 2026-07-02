@@ -83,9 +83,47 @@ PopupWindow {
                 }
             }
 
+            // --- Re-auth banner: reachable but SSH key rejected (factory reset) ---
+            Rectangle {
+                visible: pop.svc.reachable && pop.svc.authError
+                Layout.fillWidth: true
+                implicitHeight: authCol.implicitHeight + 12
+                radius: 4
+                color: Qt.rgba(pop.theme.accentRed.r, pop.theme.accentRed.g, pop.theme.accentRed.b, 0.15)
+                border.width: 1
+                border.color: pop.theme.accentRed
+                ColumnLayout {
+                    id: authCol
+                    anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 8 }
+                    spacing: 2
+                    RowLayout {
+                        spacing: 6
+                        Text {
+                            text: String.fromCharCode(0xF071) // fa exclamation-triangle
+                            font.family: pop.theme.faFont; font.pixelSize: 11
+                            color: pop.theme.accentRed
+                        }
+                        Text {
+                            text: "SSH key rejected"
+                            font.family: pop.theme.textFont; font.pixelSize: 11; font.weight: Font.Bold
+                            color: pop.theme.accentRed
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: "The router rejected the key (likely factory-reset). Re-run the "
+                            + "E5800 key setup: re-add the e5800poll public key and clear the pinned "
+                            + "host key, then it reconnects."
+                        font.family: pop.theme.textFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                }
+            }
+
             // --- Cellular hero ---
             ColumnLayout {
-                visible: pop.svc.reachable && (pop.svc.cellular.supported !== false)
+                visible: pop.svc.reachable && !pop.svc.authError && (pop.svc.cellular.supported !== false)
                 Layout.fillWidth: true
                 spacing: 2
                 RowLayout {

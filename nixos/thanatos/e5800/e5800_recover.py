@@ -35,8 +35,8 @@ RECOVER_CMDS = {
 def _ssh(cmd):
     args = ["ssh", "-i", SSH_KEY, "-o", "BatchMode=yes",
             "-o", "StrictHostKeyChecking=accept-new",
-            "-o", "ConnectTimeout=5",
             "-o", "UserKnownHostsFile={}/known_hosts".format(STATE),
+            "-o", "ConnectTimeout=5",
             "{}@{}".format(USER, HOST), cmd]
     subprocess.run(args, timeout=30)
 

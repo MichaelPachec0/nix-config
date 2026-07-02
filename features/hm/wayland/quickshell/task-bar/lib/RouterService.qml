@@ -15,6 +15,8 @@ Scope {
 
     property var data: ({})
     readonly property bool reachable: root.data.reachable === true
+    // Reachable but SSH key rejected (e.g. router factory-reset) -> prompt re-auth.
+    readonly property bool authError: root.data.auth_error === true
     readonly property var cellular: root.data.cellular || ({})
     readonly property var battery: root.data.battery || ({})
     readonly property var uplink: root.data.uplink || ({})

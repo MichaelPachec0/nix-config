@@ -27,7 +27,7 @@ Item {
         // Signal bars (5 segments); fill + color from RSRP band.
         Row {
             spacing: 1
-            visible: root.svc.reachable && (root.svc.cellular.supported !== false)
+            visible: root.svc.reachable && !root.svc.authError && (root.svc.cellular.supported !== false)
             Repeater {
                 model: 5
                 delegate: Rectangle {
@@ -45,12 +45,21 @@ Item {
             }
         }
         Text {
-            visible: root.svc.reachable && (root.svc.cellular.supported !== false)
+            visible: root.svc.reachable && !root.svc.authError && (root.svc.cellular.supported !== false)
             text: root.svc.cellular.gen || "?"
             font.family: root.theme.textFont
             font.pixelSize: 9
             font.weight: Font.DemiBold
             color: root.theme.textSecondary
+        }
+        // Re-auth warning glyph: reachable but SSH key rejected (router factory-reset).
+        // The popup carries the "re-add the key" explanation.
+        Text {
+            visible: root.svc.reachable && root.svc.authError
+            text: String.fromCharCode(0xF071) // fa exclamation-triangle
+            font.family: root.theme.faFont
+            font.pixelSize: 12
+            color: root.theme.accentRed
         }
         // Battery pill (router's -- glyph distinguishes from laptop battery).
         Text {

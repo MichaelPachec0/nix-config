@@ -124,6 +124,18 @@ class TestBuildStatus(unittest.TestCase):
         s = L.build_status(parts)
         self.assertFalse(s["cellular"]["supported"])
 
+    def test_auth_error_defaults_false(self):
+        s = L.build_status({"ts": 1, "reachable": True})
+        self.assertFalse(s["auth_error"])
+
+    def test_auth_error_propagates(self):
+        s = L.build_status({"ts": 1, "reachable": True, "auth_error": True})
+        self.assertTrue(s["auth_error"])
+
+    def test_unreachable_has_no_auth_error_key(self):
+        s = L.build_status({"ts": 1, "reachable": False, "auth_error": True})
+        self.assertNotIn("auth_error", s)  # unreachable == off the router, not an auth problem
+
 
 class TestRecover(unittest.TestCase):
     def test_command_map(self):
