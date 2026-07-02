@@ -31,7 +31,7 @@ Item {
             Layout.alignment: Qt.AlignVCenter
             text: root.audio ? root.audio.volumeGlyph(root.audio.volume, root.audio.muted) : ""
             font.family: root.theme.iconFont
-            font.pixelSize: 14
+            font.pixelSize: 13
             color: (root.audio && root.audio.muted) ? root.theme.textSecondary : root.theme.accent
         }
         Text {

@@ -64,7 +64,7 @@ Item {
             visible: root.svc.reachable && root.svc.authError
             text: String.fromCharCode(0xF071) // fa exclamation-triangle
             font.family: root.theme.faFont
-            font.pixelSize: 12
+            font.pixelSize: 13
             color: root.theme.accentRed
         }
         // Battery pill (router's -- faFont glyph distinguishes from the laptop
@@ -76,7 +76,7 @@ Item {
             Text {
                 text: String.fromCharCode(0xF519) // fa network-wired (router)
                 font.family: root.theme.faFont
-                font.pixelSize: 11
+                font.pixelSize: 13
                 color: root.battColor()
             }
             Text {
@@ -95,7 +95,7 @@ Item {
             Text {
                 text: String.fromCharCode(0xF519) // fa network-wired (router)
                 font.family: root.theme.faFont
-                font.pixelSize: 11
+                font.pixelSize: 13
                 color: root.theme.textSecondary
             }
             Text {

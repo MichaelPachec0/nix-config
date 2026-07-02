@@ -122,14 +122,14 @@ Item {
             text: WeatherIcons.glyph(root.wx ? root.wx.icon : "cloudy")
             color: root.theme.weatherIcon
             font.family: root.theme.iconFont
-            font.pixelSize: 14
+            font.pixelSize: 13
         }
         Text {
             Layout.alignment: Qt.AlignVCenter
             text: (root.wx ? root.wx.temp : "--") + String.fromCodePoint(0x00B0)
             color: root.theme.textSecondary
             font.family: root.theme.iconFont
-            font.pixelSize: 13
+            font.pixelSize: 11
         }
     }
 

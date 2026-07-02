@@ -86,7 +86,7 @@ Item {
             text: Math.round(root.pct) + "%"
             color: root.low ? root.theme.accentRed : (root.onAC ? root.theme.accentSlider : root.theme.textPrimary)
             font.family: root.theme.iconFont
-            font.pixelSize: 13
+            font.pixelSize: 11
         }
     }
 

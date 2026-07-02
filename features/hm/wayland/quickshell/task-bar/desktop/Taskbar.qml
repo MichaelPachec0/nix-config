@@ -201,7 +201,7 @@ PanelWindow {
                     text: ws.modelData.id
                     color: ws.active ? dock.theme.textOnAccent : dock.theme.textSecondary
                     font.family: dock.theme.iconFont
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -325,7 +325,7 @@ PanelWindow {
                     text: String.fromCharCode(0xF2DB) // microchip
                     color: dock.theme.textSecondary
                     font.family: dock.theme.faFont
-                    font.pixelSize: 10
+                    font.pixelSize: 13
                 }
                 Text {
                     text: Math.round(dock.stats ? dock.stats.cpuPct : 0) + "%"
@@ -340,7 +340,7 @@ PanelWindow {
                     text: String.fromCharCode(0xF538) // memory
                     color: dock.theme.textSecondary
                     font.family: dock.theme.faFont
-                    font.pixelSize: 10
+                    font.pixelSize: 13
                 }
                 Text {
                     text: Math.round(dock.stats ? dock.stats.ramPct : 0) + "%"
@@ -443,7 +443,7 @@ PanelWindow {
             id: clockText
             color: dock.theme.textPrimary
             font.family: dock.theme.iconFont
-            font.pixelSize: 13
+            font.pixelSize: 11
             text: {
                 dock.tick; // re-evaluate every second
                 if (clockMouse.containsMouse)

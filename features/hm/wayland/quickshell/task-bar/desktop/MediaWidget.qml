@@ -71,7 +71,7 @@ Item {
             Layout.alignment: Qt.AlignVCenter
             text: String.fromCodePoint(root.isPlaying ? 0xF04C : 0xF04B)
             font.family: root.theme.iconFont
-            font.pixelSize: 12
+            font.pixelSize: 13
             color: playHover.hovered ? root.theme.textPrimary : root.theme.textSecondary
             HoverHandler {
                 id: playHover

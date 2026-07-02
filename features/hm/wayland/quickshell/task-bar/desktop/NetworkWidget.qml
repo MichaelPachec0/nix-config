@@ -117,7 +117,7 @@ Item {
             text: String.fromCodePoint(0xF099D) // shield-lock vpn
             color: root.theme.accentGreen
             font.family: root.theme.iconFont
-            font.pixelSize: 12
+            font.pixelSize: 13
         }
     }
 
