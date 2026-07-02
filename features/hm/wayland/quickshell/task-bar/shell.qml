@@ -26,6 +26,12 @@ ShellRoot {
         id: audioSvc
     }
 
+    // Shared, disk-persisted calendar layout choice (one instance for all
+    // monitors; passed into every Taskbar).
+    Lib.CalState {
+        id: calState
+    }
+
     // Mirror Hyprland's screencast state into the notification service so toasts
     // are suppressed while screen sharing -- the QS-native replacement for the
     // swaync screencast inhibitor (see quickshell-notifications-cutover). The
@@ -77,6 +83,7 @@ ShellRoot {
                 weatherState: weatherState
                 bt: btSvc
                 audio: audioSvc
+                calState: calState
             }
 
             // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a
