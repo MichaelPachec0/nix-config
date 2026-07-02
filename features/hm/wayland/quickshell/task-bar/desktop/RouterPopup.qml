@@ -1,0 +1,220 @@
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import "../lib/routerfmt.js" as RouterFmt
+
+PopupWindow {
+    id: pop
+    required property QtObject theme
+    required property var svc
+    required property var barWindow
+    required property var anchorItem
+    property bool contentHovered: cardHover.hovered
+
+    implicitWidth: card.implicitWidth
+    implicitHeight: card.implicitHeight
+    onImplicitWidthChanged: if (pop.visible) Qt.callLater(pop.reclamp)
+    color: "transparent"
+    visible: false
+    grabFocus: false
+    anchor.window: pop.barWindow
+    anchor.edges: Edges.Bottom
+    anchor.gravity: Edges.Bottom | Edges.Right
+
+    function reclamp() {
+        var x = pop.anchorItem.mapToItem(null, 0, 0).x;
+        pop.anchor.rect.x = Math.max(4, Math.min(x, pop.barWindow.width - pop.implicitWidth - 8));
+        pop.anchor.rect.y = pop.barWindow.height + 4;
+        pop.anchor.rect.width = 0;
+        pop.anchor.rect.height = 0;
+    }
+    function show() { if (!pop.visible) { pop.reclamp(); pop.visible = true; } }
+    function hide() { pop.visible = false; }
+
+    function qColor(q) {
+        return q === "good" ? pop.theme.accentGreen
+             : q === "fair" ? pop.theme.accentYellow : pop.theme.accentRed;
+    }
+
+    Rectangle {
+        id: card
+        implicitWidth: 380
+        implicitHeight: col.implicitHeight + 24
+        radius: pop.theme.radiusOuter
+        color: pop.theme.bgCard
+        border.width: 1
+        border.color: pop.theme.border
+        HoverHandler { id: cardHover }
+
+        ColumnLayout {
+            id: col
+            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 12 }
+            spacing: 8
+
+            // --- Not-connected card ---
+            Text {
+                visible: !pop.svc.reachable
+                text: "Not connected to GL-E5800"
+                font.family: pop.theme.textFont
+                font.pixelSize: 12
+                color: pop.theme.textSecondary
+            }
+
+            // --- Header ---
+            RowLayout {
+                visible: pop.svc.reachable
+                Layout.fillWidth: true
+                Text {
+                    text: pop.svc.device.model || "GL-E5800"
+                    font.family: pop.theme.textFont; font.pixelSize: 13; font.weight: Font.Bold
+                    color: pop.theme.textPrimary
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    text: (pop.svc.uplink.online ? String.fromCharCode(0xF111) + " online"
+                                                 : String.fromCharCode(0xF111) + " offline")
+                    font.family: pop.theme.faFont; font.pixelSize: 10
+                    color: pop.svc.uplink.online ? pop.theme.accentGreen : pop.theme.accentRed
+                }
+                Text {
+                    text: (pop.svc.battery.percent !== undefined ? pop.svc.battery.percent + "%" : "--")
+                    font.family: pop.theme.textFont; font.pixelSize: 12
+                    color: pop.svc.battery.charging ? pop.theme.accentGreen : pop.theme.textPrimary
+                }
+            }
+
+            // --- Cellular hero ---
+            ColumnLayout {
+                visible: pop.svc.reachable && (pop.svc.cellular.supported !== false)
+                Layout.fillWidth: true
+                spacing: 2
+                RowLayout {
+                    spacing: 8
+                    Text {
+                        text: (pop.svc.cellular.gen || "?") + "   " + (pop.svc.device.carrier || "")
+                        font.family: pop.theme.textFont; font.pixelSize: 12; font.weight: Font.DemiBold
+                        color: pop.theme.textPrimary
+                    }
+                }
+                RowLayout {
+                    spacing: 12
+                    Text {
+                        text: "RSRP " + (pop.svc.cellular.rsrp !== undefined ? pop.svc.cellular.rsrp : "--")
+                        font.family: pop.theme.textFont; font.pixelSize: 11
+                        color: pop.qColor(RouterFmt.quality("rsrp", pop.svc.cellular.rsrp))
+                    }
+                    Text {
+                        text: "RSRQ " + (pop.svc.cellular.rsrq !== undefined ? pop.svc.cellular.rsrq : "--")
+                        font.family: pop.theme.textFont; font.pixelSize: 11
+                        color: pop.qColor(RouterFmt.quality("rsrq", pop.svc.cellular.rsrq))
+                    }
+                    Text {
+                        text: "SINR " + (pop.svc.cellular.sinr !== undefined ? pop.svc.cellular.sinr : "--")
+                        font.family: pop.theme.textFont; font.pixelSize: 11
+                        color: pop.qColor(RouterFmt.quality("sinr", pop.svc.cellular.sinr))
+                    }
+                    Text {
+                        text: pop.svc.cellular.network_type || ""
+                        font.family: pop.theme.textFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                }
+            }
+
+            // --- Throughput + data used ---
+            RowLayout {
+                visible: pop.svc.reachable
+                Layout.fillWidth: true
+                spacing: 12
+                Text {
+                    text: "dn " + RouterFmt.fmtRate(pop.svc.throughput.rx)
+                        + "   up " + RouterFmt.fmtRate(pop.svc.throughput.tx)
+                    font.family: pop.theme.textFont; font.pixelSize: 11
+                    color: pop.theme.textPrimary
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    text: "used " + RouterFmt.fmtBytes((pop.svc.dataUsage.cycle_rx || 0)
+                                                       + (pop.svc.dataUsage.cycle_tx || 0))
+                    font.family: pop.theme.textFont; font.pixelSize: 11
+                    color: pop.theme.textSecondary
+                }
+            }
+
+            // --- Health ---
+            Text {
+                visible: pop.svc.reachable
+                text: "CPU " + (pop.svc.system.cpu_temp || "--") + "C   load "
+                    + ((pop.svc.system.load || [])[0] || "--") + "   up "
+                    + Math.floor((pop.svc.system.uptime || 0) / 3600) + "h"
+                font.family: pop.theme.textFont; font.pixelSize: 10
+                color: pop.theme.textSecondary
+            }
+
+            // --- WiFi + VPN ---
+            Text {
+                visible: pop.svc.reachable
+                text: "Wi-Fi  " + (pop.svc.wifi || []).filter(function (w) { return w.up; })
+                    .map(function (w) { return w.band; }).join(" ")
+                    + "     VPN  " + (pop.svc.vpn.active ? pop.svc.vpn.name : "(none)")
+                font.family: pop.theme.textFont; font.pixelSize: 10
+                color: pop.theme.textSecondary
+            }
+
+            // --- Clients ---
+            RouterClients {
+                visible: pop.svc.reachable
+                Layout.fillWidth: true
+                theme: pop.theme
+                clients: pop.svc.clients.list || []
+            }
+
+            // --- Recovery buttons ---
+            RowLayout {
+                visible: pop.svc.reachable
+                Layout.fillWidth: true
+                spacing: 6
+                Text {
+                    text: pop.svc.recovering ? ("Recovering: " + (pop.svc.data.recovery
+                          ? pop.svc.data.recovery.action : "") + "...") : "Recover:"
+                    font.family: pop.theme.textFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
+                Repeater {
+                    model: [
+                        { label: "Redial", action: "redial" },
+                        { label: "Airplane", action: "airplane" },
+                        { label: "Reboot", action: "reboot" }
+                    ]
+                    delegate: Rectangle {
+                        id: btn
+                        required property var modelData
+                        property bool armed: false
+                        width: txt.implicitWidth + 16
+                        height: 20
+                        radius: 4
+                        opacity: pop.svc.recovering ? 0.4 : 1.0
+                        color: btn.armed ? pop.theme.accentRed : pop.theme.bgItem
+                        Text {
+                            id: txt
+                            anchors.centerIn: parent
+                            text: btn.armed ? "confirm?" : btn.modelData.label
+                            font.family: pop.theme.textFont; font.pixelSize: 10
+                            color: btn.armed ? pop.theme.textOnAccent : pop.theme.textSecondary
+                        }
+                        Timer { id: disarm; interval: 4000; onTriggered: btn.armed = false }
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: !pop.svc.recovering
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (!btn.armed) { btn.armed = true; disarm.restart(); }
+                                else { btn.armed = false; pop.svc.reconnect(btn.modelData.action); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
