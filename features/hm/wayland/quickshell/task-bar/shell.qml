@@ -60,6 +60,13 @@ ShellRoot {
                 id: calState
             }
 
+            // GL-E5800 router status (reads the hardened poll service's
+            // /run/e5800/status.json). Like CalState, must live INSIDE the
+            // Variants Scope so it resolves across the delegate.
+            Lib.RouterService {
+                id: routerSvc
+            }
+
             // Shared CPU/RAM poller, read by the bar and the hub header.
             Lib.SysStats {
                 id: sysStats
@@ -88,6 +95,7 @@ ShellRoot {
                 bt: btSvc
                 audio: audioSvc
                 calState: calState
+                routerSvc: routerSvc
             }
 
             // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a

@@ -17,6 +17,7 @@ PanelWindow {
     property QtObject bt: null
     property QtObject audio: null
     property var calState: null
+    property var routerSvc: null
 
     anchors {
         top: true
@@ -302,6 +303,15 @@ PanelWindow {
             theme: dock.theme
             barWindow: dock
             bt: dock.bt
+        }
+
+        // GL-E5800 router: signal + gen + battery (or away chip / re-auth
+        // warning), hover for the status dashboard.
+        RouterWidget {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            barWindow: dock
+            svc: dock.routerSvc
         }
 
         // CPU / RAM (shared SysStats): microchip + memory glyph, then percent.
