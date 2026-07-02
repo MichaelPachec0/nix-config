@@ -70,11 +70,18 @@ PopupWindow {
                     color: pop.theme.textPrimary
                 }
                 Item { Layout.fillWidth: true }
-                Text {
-                    text: (pop.svc.uplink.online ? String.fromCharCode(0xF111) + " online"
-                                                 : String.fromCharCode(0xF111) + " offline")
-                    font.family: pop.theme.faFont; font.pixelSize: 10
-                    color: pop.svc.uplink.online ? pop.theme.accentGreen : pop.theme.accentRed
+                RowLayout {
+                    spacing: 4
+                    Text {
+                        text: String.fromCharCode(0xF111) // fa circle
+                        font.family: pop.theme.faFont; font.pixelSize: 9
+                        color: pop.svc.uplink.online ? pop.theme.accentGreen : pop.theme.accentRed
+                    }
+                    Text {
+                        text: pop.svc.uplink.online ? "online" : "offline"
+                        font.family: pop.theme.iconFont; font.pixelSize: 11
+                        color: pop.svc.uplink.online ? pop.theme.accentGreen : pop.theme.accentRed
+                    }
                 }
                 Text {
                     text: (pop.svc.battery.percent !== undefined ? pop.svc.battery.percent + "%" : "--")
