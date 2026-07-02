@@ -26,12 +26,6 @@ ShellRoot {
         id: audioSvc
     }
 
-    // Shared, disk-persisted calendar layout choice (one instance for all
-    // monitors; passed into every Taskbar).
-    Lib.CalState {
-        id: calState
-    }
-
     // Mirror Hyprland's screencast state into the notification service so toasts
     // are suppressed while screen sharing -- the QS-native replacement for the
     // swaync screencast inhibitor (see quickshell-notifications-cutover). The
@@ -54,6 +48,16 @@ ShellRoot {
 
             Lib.ThemeEngine {
                 id: screenTheme
+            }
+
+            // Disk-persisted calendar layout choice. Must live INSIDE the Variants
+            // Scope (like screenTheme/weatherState): a ShellRoot-level instance does
+            // not resolve when referenced across the Variants delegate, so the date
+            // popup would receive calState=undefined and render empty. Per-screen
+            // instances all read/write the same state file; FileView watchChanges
+            // keeps monitors in sync.
+            Lib.CalState {
+                id: calState
             }
 
             // Shared CPU/RAM poller, read by the bar and the hub header.
