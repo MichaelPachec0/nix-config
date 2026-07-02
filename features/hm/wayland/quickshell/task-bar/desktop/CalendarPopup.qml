@@ -60,7 +60,11 @@ PopupWindow {
         var f = pop.focusDate, t = pop.today;
         if (pop.calState.layout === 2)
             return f.getFullYear() === t.getFullYear();
-        return f.getFullYear() === t.getFullYear() && f.getMonth() === t.getMonth();
+        var fi = f.getFullYear() * 12 + f.getMonth();
+        var ti = t.getFullYear() * 12 + t.getMonth();
+        if (pop.calState.layout === 1)
+            return Math.abs(fi - ti) <= 1; // today anywhere in the visible trio
+        return fi === ti; // single month
     }
     readonly property string title: {
         if (pop.calState.layout === 2)
@@ -79,7 +83,7 @@ PopupWindow {
     // three/year to true as their views land).
     readonly property var segments: [
         { label: "1", val: 0, on: true },
-        { label: "3", val: 1, on: false },
+        { label: "3", val: 1, on: true },
         { label: "12", val: 2, on: false }
     ]
 
@@ -198,13 +202,38 @@ PopupWindow {
                 }
             }
 
-            // Body: single month. Task 4 replaces this with a Loader that
-            // switches single/three; Task 5 adds year.
+            // Body: the layout selected by calState.layout.
+            Loader {
+                id: body
+                sourceComponent: pop.calState.layout === 1 ? threeView : singleView
+            }
+        }
+
+        Component {
+            id: singleView
             Hub.CalendarGrid {
                 theme: pop.theme
                 when: pop.focusDate
                 today: pop.today
                 showWeeks: true
+            }
+        }
+
+        Component {
+            id: threeView
+            RowLayout {
+                spacing: 12
+                Repeater {
+                    model: [-1, 0, 1]
+                    delegate: Hub.CalendarGrid {
+                        id: g3
+                        required property int modelData
+                        theme: pop.theme
+                        when: new Date(pop.focusDate.getFullYear(), pop.focusDate.getMonth() + g3.modelData, 1)
+                        today: pop.today
+                        showWeeks: true
+                    }
+                }
             }
         }
     }
