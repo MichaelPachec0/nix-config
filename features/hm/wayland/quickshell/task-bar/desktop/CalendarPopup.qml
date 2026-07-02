@@ -22,6 +22,9 @@ PopupWindow {
 
     implicitWidth: card.implicitWidth
     implicitHeight: card.implicitHeight
+    // Re-clamp when the layout switch resizes the popup while it is open, so a
+    // wide layout (year) does not overflow the bar's right edge.
+    onImplicitWidthChanged: if (pop.visible) Qt.callLater(pop.reclamp)
     color: "transparent"
     visible: false
     grabFocus: false
@@ -30,16 +33,19 @@ PopupWindow {
     anchor.edges: Edges.Bottom
     anchor.gravity: Edges.Bottom | Edges.Right
 
-    function show() {
-        if (pop.visible)
-            return;
-        pop.today = new Date();
-        pop.focusDate = new Date();
+    function reclamp() {
         var x = pop.anchorItem.mapToItem(null, 0, 0).x;
         pop.anchor.rect.x = Math.max(4, Math.min(x, pop.barWindow.width - pop.implicitWidth - 8));
         pop.anchor.rect.y = pop.barWindow.height + 4;
         pop.anchor.rect.width = 0;
         pop.anchor.rect.height = 0;
+    }
+    function show() {
+        if (pop.visible)
+            return;
+        pop.today = new Date();
+        pop.focusDate = new Date();
+        pop.reclamp();
         pop.visible = true;
     }
     function hide() {
