@@ -238,6 +238,11 @@ PopupWindow {
                         when: new Date(pop.focusDate.getFullYear(), pop.focusDate.getMonth() + g3.modelData, 1)
                         today: pop.today
                         showWeeks: true
+                        // Compact cells (match the year view) so the 3-month view is
+                        // not much larger than the single/year views.
+                        cellWidth: 16
+                        cellHeight: 14
+                        fontSize: 9
                     }
                 }
             }
