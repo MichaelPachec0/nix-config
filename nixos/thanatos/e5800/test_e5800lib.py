@@ -125,5 +125,25 @@ class TestBuildStatus(unittest.TestCase):
         self.assertFalse(s["cellular"]["supported"])
 
 
+class TestRecover(unittest.TestCase):
+    def test_command_map(self):
+        import e5800_recover as R
+        self.assertIn("redial", R.RECOVER_CMDS)
+        self.assertIn("airplane", R.RECOVER_CMDS)
+        self.assertIn("reboot", R.RECOVER_CMDS)
+        # redial bounces the named interface (no bus needed)
+        self.assertTrue(any("network.interface.modem_cpu" in c
+                            and "down" in c for c in R.RECOVER_CMDS["redial"]))
+        self.assertTrue(any("network.interface.modem_cpu" in c
+                            and "up" in c for c in R.RECOVER_CMDS["redial"]))
+        # airplane toggles on then off
+        self.assertTrue(any("set_airplane_mode" in c and "true" in c
+                            for c in R.RECOVER_CMDS["airplane"]))
+        self.assertTrue(any("set_airplane_mode" in c and "false" in c
+                            for c in R.RECOVER_CMDS["airplane"]))
+        # reboot is the AT+CFUN=1,1 radio reset
+        self.assertTrue(any("CFUN=1,1" in c for c in R.RECOVER_CMDS["reboot"]))
+
+
 if __name__ == "__main__":
     unittest.main()
