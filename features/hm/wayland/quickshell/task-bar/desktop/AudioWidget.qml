@@ -19,8 +19,6 @@ Item {
     function label() {
         if (!root.audio || !root.audio.ready)
             return "No audio";
-        if (root.audio.muted)
-            return "Muted";
         return root.audio.volume + "%";
     }
 
@@ -33,14 +31,14 @@ Item {
             text: root.audio ? root.audio.volumeGlyph(root.audio.volume, root.audio.muted) : ""
             font.family: root.theme.iconFont
             font.pixelSize: 13
-            color: (root.audio && root.audio.muted) ? root.theme.textSecondary : root.theme.accent
+            color: (root.audio && root.audio.muted) ? root.theme.accentRed : root.theme.accent
         }
         Lib.BarText {
             Layout.alignment: Qt.AlignVCenter
             text: root.label()
             font.family: root.theme.iconFont
             font.pixelSize: 11
-            color: root.theme.textPrimary
+            color: (root.audio && root.audio.muted) ? root.theme.accentRed : root.theme.textPrimary
         }
     }
 
