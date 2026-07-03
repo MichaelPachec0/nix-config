@@ -321,6 +321,15 @@ PanelWindow {
             spacing: 10
             visible: dock.stats !== null
 
+            // Width reference for the percent labels: reserve room for the widest
+            // value ("100%") so d% -> dd% -> ddd% never reflows the bar (monospace).
+            TextMetrics {
+                id: pctMetrics
+                font.family: dock.theme.iconFont
+                font.pixelSize: 11
+                text: "100%"
+            }
+
             RowLayout {
                 spacing: 4
                 Text {
@@ -334,6 +343,8 @@ PanelWindow {
                     color: dock.theme.textSecondary
                     font.family: dock.theme.iconFont
                     font.pixelSize: 11
+                    Layout.preferredWidth: Math.ceil(pctMetrics.advanceWidth)
+                    horizontalAlignment: Text.AlignRight
                 }
             }
             RowLayout {
@@ -349,6 +360,8 @@ PanelWindow {
                     color: dock.theme.textSecondary
                     font.family: dock.theme.iconFont
                     font.pixelSize: 11
+                    Layout.preferredWidth: Math.ceil(pctMetrics.advanceWidth)
+                    horizontalAlignment: Text.AlignRight
                 }
             }
 
