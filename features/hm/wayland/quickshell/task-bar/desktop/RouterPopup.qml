@@ -164,6 +164,15 @@ PopupWindow {
                         color: pop.theme.textSecondary
                     }
                 }
+                // Serving-cell bands + aggregation mode (from AT+QENG="servingcell").
+                Text {
+                    property var ca: pop.svc.cellular.ca
+                    visible: !!ca
+                    text: ca ? ((ca.mode ? ca.mode + "   " : "") + "Bands  "
+                               + (ca.bands || []).join(" + ")) : ""
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
             }
 
             // --- Throughput + data used ---
@@ -196,14 +205,33 @@ PopupWindow {
                 color: pop.theme.textSecondary
             }
 
-            // --- WiFi + VPN ---
-            Text {
+            // --- WiFi (one token per radio, green when active; guest shown as "g") + VPN ---
+            RowLayout {
                 visible: pop.svc.reachable
-                text: "Wi-Fi  " + (pop.svc.wifi || []).filter(function (w) { return w.up; })
-                    .map(function (w) { return w.band; }).join(" ")
-                    + "     VPN  " + (pop.svc.vpn.active ? pop.svc.vpn.name : "(none)")
-                font.family: pop.theme.iconFont; font.pixelSize: 10
-                color: pop.theme.textSecondary
+                Layout.fillWidth: true
+                spacing: 6
+                Text {
+                    text: "Wi-Fi"
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
+                Repeater {
+                    model: pop.svc.wifi || []
+                    delegate: Text {
+                        required property var modelData
+                        text: modelData.guest ? "g" : (modelData.band || "?")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                        color: modelData.up ? pop.theme.accentGreen : pop.theme.textSecondary
+                        opacity: modelData.up ? 1.0 : 0.45
+                    }
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    text: "VPN  " + (pop.svc.vpn.active ? pop.svc.vpn.name : "(none)")
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.svc.vpn.active ? pop.theme.accentGreen : pop.theme.textSecondary
+                }
             }
 
             // --- Clients ---

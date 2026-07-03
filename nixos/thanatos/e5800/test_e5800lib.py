@@ -19,6 +19,44 @@ class TestAuthGen(unittest.TestCase):
         self.assertEqual(L.gen_from_network_type(None), "?")
 
 
+class TestQeng(unittest.TestCase):
+    # Real AT+QENG="servingcell" capture: 5G NSA, LTE B2 anchor + NR n41, idle.
+    SAMPLE = ('\r\n+QENG: "servingcell","NOCONN"\r\n'
+              '+QENG: "LTE","FDD",310,260,1762809,322,675,2,4,4,3C6E,'
+              '-88,-18,-51,16,13,-110,-\r\n'
+              '+QENG: "NR5G-NSA",310,260,704,-81,22,-10,501390,41,12,1\r\n\r\nOK\r\n')
+
+    def test_parses_nsa_two_bands(self):
+        r = L.parse_qeng(self.SAMPLE)
+        self.assertEqual(r["state"], "NOCONN")
+        self.assertEqual(r["mode"], "NSA")
+        self.assertEqual(r["count"], 2)
+        self.assertEqual(r["bands"], ["B2", "n41"])
+
+    def test_cells_detail(self):
+        cells = L.parse_qeng(self.SAMPLE)["cells"]
+        self.assertEqual(cells[0], {"rat": "LTE", "band": 2, "label": "B2"})
+        self.assertEqual(cells[1]["rat"], "NR5G-NSA")
+        self.assertEqual(cells[1]["band"], 41)
+        self.assertEqual(cells[1]["label"], "n41")
+
+    def test_lte_only(self):
+        data = ('\r\n+QENG: "servingcell","CONNECT"\r\n'
+                '+QENG: "LTE","FDD",310,260,1762809,322,675,66,4,4,3C6E,'
+                '-88,-18,-51,16,13,-110,-\r\n\r\nOK\r\n')
+        r = L.parse_qeng(data)
+        self.assertEqual(r["mode"], "LTE")
+        self.assertEqual(r["bands"], ["B66"])
+        self.assertEqual(r["count"], 1)
+        self.assertEqual(r["state"], "CONNECT")
+
+    def test_empty_and_no_service_return_none(self):
+        self.assertIsNone(L.parse_qeng(None))
+        self.assertIsNone(L.parse_qeng(""))
+        self.assertIsNone(L.parse_qeng("\r\nOK\r\n"))
+        self.assertIsNone(L.parse_qeng("\r\n+QNWINFO: No Service\r\n\r\nOK\r\n"))
+
+
 class TestUsage(unittest.TestCase):
     # 2026-07-02 12:00 UTC = 1782043200; 2026-07-01 00:00 UTC = 1782000000... use datetime.
     def _ts(self, y, mo, d, h=0):
@@ -123,6 +161,19 @@ class TestBuildStatus(unittest.TestCase):
         parts = {"ts": 1, "reachable": True, "signals": []}
         s = L.build_status(parts)
         self.assertFalse(s["cellular"]["supported"])
+
+    def test_qeng_wired_into_cellular_ca(self):
+        parts = {"ts": 1, "reachable": True,
+                 "qeng": '\r\n+QENG: "servingcell","NOCONN"\r\n'
+                         '+QENG: "NR5G-NSA",310,260,704,-81,22,-10,501390,41,12,1\r\n\r\nOK\r\n'}
+        ca = L.build_status(parts)["cellular"]["ca"]
+        self.assertEqual(ca["bands"], ["n41"])
+        self.assertEqual(ca["count"], 1)
+        self.assertEqual(ca["mode"], "NSA")
+
+    def test_no_qeng_leaves_ca_none(self):
+        s = L.build_status({"ts": 1, "reachable": True})
+        self.assertIsNone(s["cellular"]["ca"])
 
     def test_auth_error_defaults_false(self):
         s = L.build_status({"ts": 1, "reachable": True})

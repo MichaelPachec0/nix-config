@@ -2,8 +2,9 @@ import QtQuick
 import QtQuick.Layouts
 import "../lib/routerfmt.js" as RouterFmt
 
-// Bar item: cellular signal (colored by RSRP) + gen tag + router battery, or a
-// dimmed "not connected" chip when off the E5800. Hover opens RouterPopup.
+// Bar item: cellular signal bars (colored by RSRP) + network-type tag (tinted by
+// uplink health) + battery, or a dimmed "not connected" chip when off the E5800.
+// Hover opens RouterPopup.
 Item {
     id: root
     required property QtObject theme
@@ -22,6 +23,12 @@ Item {
         return root.svc.battery.charging ? root.theme.accentGreen
              : (root.svc.battery.percent !== undefined && root.svc.battery.percent < 20
                 ? root.theme.accentRed : root.theme.textSecondary);
+    }
+    // Router glyph tint: working uplink -> green, reachable but no uplink -> red.
+    function connColor() {
+        if (!root.svc.reachable)
+            return root.theme.textSecondary;
+        return root.svc.uplink.online ? root.theme.accentGreen : root.theme.accentRed;
     }
 
     RowLayout {
@@ -49,13 +56,22 @@ Item {
                 }
             }
         }
-        // Network-type tag (JetBrainsMono, like the other bar labels).
+        // Network-type tag, tinted by uplink health (green online / red no uplink).
         Text {
             visible: root.svc.reachable && !root.svc.authError && (root.svc.cellular.supported !== false)
             text: root.svc.cellular.gen || "?"
             font.family: root.theme.iconFont
             font.pixelSize: 11
             font.weight: Font.DemiBold
+            color: root.connColor()
+        }
+        // Carrier-aggregation count (e.g. "2CA") when more than one band is up.
+        Text {
+            property var ca: root.svc.cellular.ca
+            visible: root.svc.reachable && !root.svc.authError && ca && ca.count > 1
+            text: ca ? (ca.count + "CA") : ""
+            font.family: root.theme.iconFont
+            font.pixelSize: 11
             color: root.theme.textSecondary
         }
         // Re-auth warning glyph: reachable but SSH key rejected (router factory-reset).
@@ -67,24 +83,14 @@ Item {
             font.pixelSize: 13
             color: root.theme.accentRed
         }
-        // Battery pill (router's -- faFont glyph distinguishes from the laptop
-        // battery; the percent is JetBrainsMono like the other bar labels).
-        RowLayout {
+        // Router battery percent (JetBrainsMono, like the other bar labels).
+        Text {
             Layout.alignment: Qt.AlignVCenter
             visible: root.svc.reachable
-            spacing: 3
-            Text {
-                text: String.fromCharCode(0xF519) // fa network-wired (router)
-                font.family: root.theme.faFont
-                font.pixelSize: 13
-                color: root.battColor()
-            }
-            Text {
-                text: root.svc.battery.percent !== undefined ? root.svc.battery.percent + "%" : "--"
-                font.family: root.theme.iconFont
-                font.pixelSize: 11
-                color: root.battColor()
-            }
+            text: root.svc.battery.percent !== undefined ? root.svc.battery.percent + "%" : "--"
+            font.family: root.theme.iconFont
+            font.pixelSize: 11
+            color: root.battColor()
         }
         // Dimmed "not connected" chip.
         RowLayout {

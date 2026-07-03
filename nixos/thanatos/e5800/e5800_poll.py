@@ -26,6 +26,12 @@ WEB_INTERVAL = 4.0
 SSH_INTERVAL = 20.0
 RECOVER_INTERVAL = 2.0
 RECOVER_TIMEOUT = 120.0
+QENG_INTERVAL = 30.0  # serving-cell bands change slowly; refresh sparingly
+
+# Last good raw QENG payload + when it was last fetched. Kept across cycles so a
+# transient SSH/AT miss does not blank cellular.ca and flicker the widget.
+_QENG_CACHE = None
+_QENG_LAST = 0.0
 
 
 def _read(path):
@@ -93,6 +99,26 @@ def _signals():
         return None, True
     try:
         return (json.loads(out) or {}).get("signals"), False
+    except (ValueError, json.JSONDecodeError):
+        return None, False
+
+
+# AT+QENG="servingcell" via the modem AT passthrough. The inner quotes around
+# servingcell must survive the JSON string (\") and the remote shell's single
+# quotes, hence the double-escaping. get_result_AT returns {"data": <raw AT>}.
+_QENG_CMD = ("ubus call modem.CPU.AT get_result_AT "
+             "'{\"cmd\":\"AT+QENG=\\\"servingcell\\\"\","
+             "\"timeout\":5,\"source_flag\":0,\"sub_id\":0}'")
+
+
+def _qeng():
+    """Camped serving-cell bands via AT passthrough (populates even in RRC
+    idle, unlike QCAINFO/QNWINFO). Returns (raw_at_data_or_None, ssh_auth)."""
+    out, rc = _ssh(_QENG_CMD)
+    if rc == 255:
+        return None, True
+    try:
+        return (json.loads(out) or {}).get("data"), False
     except (ValueError, json.JSONDecodeError):
         return None, False
 
@@ -180,6 +206,18 @@ def collect_once():
         pass
     sig, sig_auth = _signals()
     parts["signals"] = sig
+    # Refresh the serving-cell bands sparingly and latch the last good value:
+    # QENG shares the modem AT channel and the router's SSH is flaky under load,
+    # so a per-cycle fetch flickers cellular.ca. Retry every cycle only until the
+    # first success, then throttle; never overwrite a good value with a miss.
+    global _QENG_CACHE, _QENG_LAST
+    qeng_auth = False
+    if not sig_auth and (_QENG_CACHE is None or ts - _QENG_LAST >= QENG_INTERVAL):
+        raw, qeng_auth = _qeng()
+        _QENG_LAST = ts
+        if raw:
+            _QENG_CACHE = raw
+    parts["qeng"] = _QENG_CACHE
     nb, nb_auth = _netdev_bytes()
     if nb is not None:
         st = L.usage_step(_load_state(), nb[0], nb[1], ts, RESET_DAY)
@@ -189,7 +227,7 @@ def collect_once():
     # Reachable at the network layer but SSH rejected (exit 255) => the key no
     # longer works (e.g. router was factory-reset). Surface it so the widget can
     # prompt re-authentication.
-    parts["auth_error"] = bool(sig_auth or nb_auth)
+    parts["auth_error"] = bool(sig_auth or nb_auth or qeng_auth)
     parts["recovery"] = _marker()
     return L.build_status(parts)
 

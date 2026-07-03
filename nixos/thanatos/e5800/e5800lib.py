@@ -23,6 +23,67 @@ def gen_from_network_type(nt):
     return "?"
 
 
+def _int_or_none(s):
+    try:
+        return int(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_qeng(data):
+    """Parse an AT+QENG="servingcell" response into serving-cell band info.
+
+    QENG reports the *camped* cells, so it works even in RRC idle ("NOCONN"),
+    unlike QCAINFO/QNWINFO which only populate during an active data session.
+    In the Quectel RG650V "servingcell" output the RAT name is the first token;
+    the LTE band sits at token index 7 and the NR5G band at index 8 (0-based).
+
+    Returns None when no serving cell is reported (idle-uncamped, No Service, or
+    an empty/failed response), else:
+        {"state": "NOCONN"|"CONNECT"|..., "mode": "NSA"|"SA"|"LTE"|None,
+         "count": <int>, "bands": ["B2", "n41", ...],
+         "cells": [{"rat": "LTE", "band": 2, "label": "B2"}, ...]}
+    """
+    if not data:
+        return None
+    state = None
+    cells = []
+    for raw in str(data).splitlines():
+        line = raw.strip()
+        if not line.startswith("+QENG:"):
+            continue
+        toks = [t.strip().strip('"') for t in line[len("+QENG:"):].split(",")]
+        head = toks[0] if toks else ""
+        if head == "servingcell":
+            state = toks[1] if len(toks) > 1 else None
+        elif head == "LTE" and len(toks) > 7:
+            b = _int_or_none(toks[7])
+            if b is not None:
+                cells.append({"rat": "LTE", "band": b, "label": "B" + str(b)})
+        elif head.startswith("NR5G") and len(toks) > 8:
+            b = _int_or_none(toks[8])
+            if b is not None:
+                cells.append({"rat": head, "band": b, "label": "n" + str(b)})
+    if not cells:
+        return None
+    rats = [c["rat"] for c in cells]
+    if any("NSA" in r for r in rats):
+        mode = "NSA"
+    elif any(r.startswith("NR5G") for r in rats):
+        mode = "SA"
+    elif "LTE" in rats:
+        mode = "LTE"
+    else:
+        mode = None
+    return {
+        "state": state,
+        "mode": mode,
+        "count": len(cells),
+        "bands": [c["label"] for c in cells],
+        "cells": cells,
+    }
+
+
 def cycle_anchor(now_ts, reset_day):
     """Unix ts of the most recent reset-day 00:00 UTC at or before now_ts."""
     now = datetime.datetime.fromtimestamp(now_ts, datetime.timezone.utc)
@@ -136,6 +197,7 @@ def build_status(parts):
             "rsrq": sig.get("rsrq"),
             "sinr": sig.get("sinr"),
             "slot": sig.get("slot"),
+            "ca": parse_qeng(parts.get("qeng")),
         },
         "throughput": {
             "rx": speed.get("speed_rx"),
