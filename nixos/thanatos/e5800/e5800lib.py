@@ -285,7 +285,8 @@ def build_status(parts):
             "rsrq": sig.get("rsrq"),
             "sinr": sig.get("sinr"),
             "slot": sig.get("slot"),
-            "ca": parse_qeng(parts.get("qeng")),
+            "ca": parse_qcainfo(parts.get("qcainfo")),
+            "serving": parse_qeng(parts.get("qeng")),
         },
         "throughput": {
             "rx": speed.get("speed_rx"),

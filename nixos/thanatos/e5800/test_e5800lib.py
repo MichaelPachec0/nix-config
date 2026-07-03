@@ -226,18 +226,30 @@ class TestBuildStatus(unittest.TestCase):
         s = L.build_status(parts)
         self.assertFalse(s["cellular"]["supported"])
 
-    def test_qeng_wired_into_cellular_ca(self):
+    def test_qcainfo_wired_into_cellular_ca(self):
+        parts = {"ts": 1, "reachable": True,
+                 "qcainfo": '+QCAINFO: "PCC",66786,100,"LTE BAND 66",1,322,'
+                            '-92,-10,-59,6\r\n'
+                            '+QCAINFO: "SCC",521310,11,"NR5G BAND 41",704'
+                            '\r\n\r\nOK\r\n'}
+        ca = L.build_status(parts)["cellular"]["ca"]
+        self.assertEqual(ca["count"], 2)
+        self.assertEqual(ca["bands"], ["B66", "n41"])
+        self.assertEqual(ca["active_count"], 2)
+
+    def test_qeng_wired_into_cellular_serving(self):
         parts = {"ts": 1, "reachable": True,
                  "qeng": '\r\n+QENG: "servingcell","NOCONN"\r\n'
-                         '+QENG: "NR5G-NSA",310,260,704,-81,22,-10,501390,41,12,1\r\n\r\nOK\r\n'}
-        ca = L.build_status(parts)["cellular"]["ca"]
-        self.assertEqual(ca["bands"], ["n41"])
-        self.assertEqual(ca["count"], 1)
-        self.assertEqual(ca["mode"], "NSA")
+                         '+QENG: "NR5G-NSA",310,260,704,-81,22,-10,501390,41,'
+                         '12,1\r\n\r\nOK\r\n'}
+        serving = L.build_status(parts)["cellular"]["serving"]
+        self.assertEqual(serving["bands"], ["n41"])
+        self.assertEqual(serving["mode"], "NSA")
 
-    def test_no_qeng_leaves_ca_none(self):
-        s = L.build_status({"ts": 1, "reachable": True})
-        self.assertIsNone(s["cellular"]["ca"])
+    def test_no_at_payloads_leave_ca_and_serving_none(self):
+        cell = L.build_status({"ts": 1, "reachable": True})["cellular"]
+        self.assertIsNone(cell["ca"])
+        self.assertIsNone(cell["serving"])
 
     def test_auth_error_defaults_false(self):
         s = L.build_status({"ts": 1, "reachable": True})
