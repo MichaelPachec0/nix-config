@@ -304,6 +304,11 @@
               inputs.hardware.nixosModules.apple-t2
 
               inputs.sops-nix.nixosModules.sops
+              # nyx/configuration.nix (shared below) sets hardware.cynthion,
+              # hardware.zsa and services.windscribe, all defined by
+              # flake-playground's default module. Import it here too so the
+              # shared config evaluates (matches nyx/thanatos).
+              inputs.flake-playground.nixosModules.default
               # shared laptop config
               # TODO: move away from here
               ./nixos/nyx/configuration.nix
