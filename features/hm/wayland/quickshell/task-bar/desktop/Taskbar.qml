@@ -152,118 +152,124 @@ PanelWindow {
         theme: dock.theme
     }
 
-    // Left: workspaces + window icons
+    // Left: workspaces + window icons, wrapped in a pill so it gets the same
+    // glass fill / shadow / text treatment as the right-side clusters.
     RowLayout {
         anchors.left: parent.left
         anchors.leftMargin: 10
         anchors.verticalCenter: parent.verticalCenter
         spacing: 8
 
-        Repeater {
-            model: dock.monitorWorkspaces
-            Rectangle {
-                id: ws
-                required property var modelData
-                readonly property bool active: modelData.id === dock.activeWs
-                implicitWidth: active ? 34 : 26
-                implicitHeight: 22
-                radius: 11
-                color: active ? dock.theme.accent : dock.theme.bgItem
-                Behavior on implicitWidth {
-                    NumberAnimation {
-                        duration: 150
-                        easing.type: Easing.OutBack
-                    }
-                }
-                Lib.BarText {
-                    anchors.centerIn: parent
-                    text: ws.modelData.id
-                    color: ws.active ? dock.theme.textOnAccent : dock.theme.textSecondary
-                    font.family: dock.theme.iconFont
-                    font.pixelSize: 11
-                }
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: Hyprland.dispatch("hl.dsp.focus({ workspace = " + ws.modelData.id + " })")
-                }
-            }
-        }
-
-        // Divider (only when the active workspace has windows)
-        Rectangle {
-            visible: dock.hasWindows
-            Layout.preferredWidth: 1
-            Layout.preferredHeight: 18
-            color: dock.theme.border
-        }
-
-        // Windows on the active workspace -- real app icons, click to focus.
-        // Nested row so icon size + gap are independent of the workspace chips.
-        RowLayout {
-            spacing: 0 // tiles already pad ~10px between glyphs; raise for more air
-            Repeater {
-                model: Hyprland.toplevels
-                MouseArea {
-                    id: win
-                    required property var modelData
-                    readonly property bool onActive: (modelData.workspace?.id ?? -2) === dock.activeWs
-                    readonly property bool isActive: modelData === Hyprland.activeToplevel
-                    readonly property string cls: modelData.lastIpcObject?.class ?? ""
-                    readonly property string addr: {
-                        var a = (modelData.address && modelData.address.length > 0) ? modelData.address : (modelData.lastIpcObject?.address ?? "");
-                        return (a.indexOf("0x") === 0) ? a : ("0x" + a);
-                    }
-                    visible: onActive
-                    implicitWidth: 26 // tile size (icon + padding == effective spacing)
-                    implicitHeight: 26
-                    onClicked: Hyprland.dispatch('hl.dsp.focus({ window = "address:' + win.addr + '" })')
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 6
-                        color: win.isActive ? dock.theme.bgItemHover : "transparent"
-
-                        Image {
-                            anchors.centerIn: parent
-                            width: 16 // icon glyph size
-                            height: 16
-                            sourceSize.width: 32
-                            sourceSize.height: 32
-                            source: dock.iconFor(win.cls)
-                        }
-                        Rectangle {
-                            visible: win.isActive
-                            anchors.bottom: parent.bottom
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            width: 12
-                            height: 2
-                            radius: 1
-                            color: dock.theme.accent
-                        }
-                    }
-                }
-            }
-        }
-
-        // Focused window title (elided), after the app icons. Scoped to this
-        // monitor's active workspace so multi-monitor bars don't all mirror the
-        // same focus; hidden when empty so it never leaves a gap. Binds the
-        // reactive HyprlandToplevel.title (titleChanged), so it live-updates on
-        // same-window title changes (browser tab, terminal) with no full
-        // toplevel refresh -- the churn the model deliberately avoids above.
-        Lib.BarText {
-            id: focusedTitle
-            readonly property var active: Hyprland.activeToplevel
+        Lib.Pill {
             Layout.alignment: Qt.AlignVCenter
-            Layout.maximumWidth: 240
-            visible: focusedTitle.active !== null
-                && (focusedTitle.active.workspace?.id ?? -2) === dock.activeWs
-                && focusedTitle.text.length > 0
-            text: focusedTitle.active?.title ?? ""
-            elide: Text.ElideRight
-            color: dock.theme.textPrimary
-            font.family: dock.theme.iconFont
-            font.pixelSize: 11
+            theme: dock.theme
+
+            Repeater {
+                model: dock.monitorWorkspaces
+                Rectangle {
+                    id: ws
+                    required property var modelData
+                    readonly property bool active: modelData.id === dock.activeWs
+                    implicitWidth: active ? 34 : 26
+                    implicitHeight: 22
+                    radius: 11
+                    color: active ? dock.theme.accent : dock.theme.bgItem
+                    Behavior on implicitWidth {
+                        NumberAnimation {
+                            duration: 150
+                            easing.type: Easing.OutBack
+                        }
+                    }
+                    Lib.BarText {
+                        anchors.centerIn: parent
+                        text: ws.modelData.id
+                        color: ws.active ? dock.theme.textOnAccent : dock.theme.textSecondary
+                        font.family: dock.theme.iconFont
+                        font.pixelSize: 11
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: Hyprland.dispatch("hl.dsp.focus({ workspace = " + ws.modelData.id + " })")
+                    }
+                }
+            }
+
+            // Divider (only when the active workspace has windows)
+            Rectangle {
+                visible: dock.hasWindows
+                Layout.preferredWidth: 1
+                Layout.preferredHeight: 18
+                color: dock.theme.border
+            }
+
+            // Windows on the active workspace -- real app icons, click to focus.
+            // Nested row so icon size + gap are independent of the workspace chips.
+            RowLayout {
+                spacing: 0 // tiles already pad ~10px between glyphs; raise for more air
+                Repeater {
+                    model: Hyprland.toplevels
+                    MouseArea {
+                        id: win
+                        required property var modelData
+                        readonly property bool onActive: (modelData.workspace?.id ?? -2) === dock.activeWs
+                        readonly property bool isActive: modelData === Hyprland.activeToplevel
+                        readonly property string cls: modelData.lastIpcObject?.class ?? ""
+                        readonly property string addr: {
+                            var a = (modelData.address && modelData.address.length > 0) ? modelData.address : (modelData.lastIpcObject?.address ?? "");
+                            return (a.indexOf("0x") === 0) ? a : ("0x" + a);
+                        }
+                        visible: onActive
+                        implicitWidth: 26 // tile size (icon + padding == effective spacing)
+                        implicitHeight: 26
+                        onClicked: Hyprland.dispatch('hl.dsp.focus({ window = "address:' + win.addr + '" })')
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 6
+                            color: win.isActive ? dock.theme.bgItemHover : "transparent"
+
+                            Image {
+                                anchors.centerIn: parent
+                                width: 16 // icon glyph size
+                                height: 16
+                                sourceSize.width: 32
+                                sourceSize.height: 32
+                                source: dock.iconFor(win.cls)
+                            }
+                            Rectangle {
+                                visible: win.isActive
+                                anchors.bottom: parent.bottom
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                width: 12
+                                height: 2
+                                radius: 1
+                                color: dock.theme.accent
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Focused window title (elided), after the app icons. Scoped to this
+            // monitor's active workspace so multi-monitor bars don't all mirror the
+            // same focus; hidden when empty so it never leaves a gap. Binds the
+            // reactive HyprlandToplevel.title (titleChanged), so it live-updates on
+            // same-window title changes (browser tab, terminal) with no full
+            // toplevel refresh -- the churn the model deliberately avoids above.
+            Lib.BarText {
+                id: focusedTitle
+                readonly property var active: Hyprland.activeToplevel
+                Layout.alignment: Qt.AlignVCenter
+                Layout.maximumWidth: 240
+                visible: focusedTitle.active !== null
+                    && (focusedTitle.active.workspace?.id ?? -2) === dock.activeWs
+                    && focusedTitle.text.length > 0
+                text: focusedTitle.active?.title ?? ""
+                elide: Text.ElideRight
+                color: dock.theme.textPrimary
+                font.family: dock.theme.iconFont
+                font.pixelSize: 11
+            }
         }
     }
 
@@ -284,7 +290,7 @@ PanelWindow {
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 8 // gap between pills
+        spacing: 4 // gap between pills
 
         // sound: media + audio
         Lib.Pill {
