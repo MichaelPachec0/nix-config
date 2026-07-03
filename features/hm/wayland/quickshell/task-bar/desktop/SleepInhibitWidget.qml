@@ -23,10 +23,17 @@ Item {
     // systemd-inhibit takes the block inhibitor, then `sleep infinity` keeps it
     // held until we stop it (SIGTERM on running=false), which releases the lock.
     // Runs as the user -- no root/polkit -- and auto-releases on shell reload.
+    //
+    // Two inhibitor classes are needed. "sleep" (a high-level lock) blocks
+    // idle-triggered auto-suspend, the sleep key, and other apps calling
+    // suspend. But lid-close is exempt from high-level locks by default
+    // (logind's LidSwitchIgnoreInhibited defaults to "yes"), so it would still
+    // suspend on lid close. "handle-lid-switch" is a low-level lock that logind
+    // *always* honors, which is what actually covers the lid.
     Process {
         id: inhibitor
         running: root.active
-        command: ["systemd-inhibit", "--what=sleep", "--who=Quickshell",
+        command: ["systemd-inhibit", "--what=sleep:handle-lid-switch", "--who=Quickshell",
             "--why=Disable sleep toggle", "--mode=block", "sleep", "infinity"]
     }
 
