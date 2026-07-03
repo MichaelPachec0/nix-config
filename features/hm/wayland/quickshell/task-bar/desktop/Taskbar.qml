@@ -265,6 +265,37 @@ PanelWindow {
                 }
             }
         }
+
+        // Focused window title (elided), after the app icons. Scoped to this
+        // monitor's active workspace so multi-monitor bars don't all mirror the
+        // same focus; hidden when empty so it never leaves a gap. Binds the
+        // reactive HyprlandToplevel.title (titleChanged), so it live-updates on
+        // same-window title changes (browser tab, terminal) with no full
+        // toplevel refresh -- the churn the model deliberately avoids above.
+        Text {
+            id: focusedTitle
+            readonly property var active: Hyprland.activeToplevel
+            Layout.alignment: Qt.AlignVCenter
+            Layout.maximumWidth: 240
+            visible: focusedTitle.active !== null
+                && (focusedTitle.active.workspace?.id ?? -2) === dock.activeWs
+                && focusedTitle.text.length > 0
+            text: focusedTitle.active?.title ?? ""
+            elide: Text.ElideRight
+            color: dock.theme.textSecondary
+            font.family: dock.theme.iconFont
+            font.pixelSize: 11
+        }
+    }
+
+    // Center: reserved scaffold for future widgets (empty for now). Anchored to
+    // the bar's horizontal center so future content sits truly centered.
+    RowLayout {
+        id: centerRow
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 8
+        // Intentionally empty -- future center-zone widgets go here.
     }
 
     // Right: status widgets (media, CPU/RAM, tray, battery, weather, date, clock).
@@ -272,7 +303,7 @@ PanelWindow {
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 14
+        spacing: 8
 
         // MPRIS now-playing: play/pause + marquee title (only while a player runs).
         // Hover reveals a full-player popup with seek.
@@ -399,7 +430,7 @@ PanelWindow {
         // secondary, right-click opens the item's DBus context menu. Items that
         // are menu-only (no activate action) open their menu on left-click too.
         RowLayout {
-            spacing: 8
+            spacing: 6
             visible: SystemTray.items.values.length > 0
 
             Repeater {
@@ -408,8 +439,8 @@ PanelWindow {
                     id: trayItem
                     required property var modelData
                     Layout.alignment: Qt.AlignVCenter
-                    implicitWidth: 20
-                    implicitHeight: 20
+                    implicitWidth: 16
+                    implicitHeight: 16
                     acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                     onClicked: function (mouse) {
                         var item = trayItem.modelData;
@@ -444,9 +475,11 @@ PanelWindow {
                         }
                     }
                     Image {
-                        anchors.fill: parent
-                        sourceSize.width: 40
-                        sourceSize.height: 40
+                        anchors.centerIn: parent
+                        width: 14
+                        height: 14
+                        sourceSize.width: 28 // 2x for crisp downscaling
+                        sourceSize.height: 28
                         fillMode: Image.PreserveAspectFit
                         source: trayItem.modelData.icon
                     }
