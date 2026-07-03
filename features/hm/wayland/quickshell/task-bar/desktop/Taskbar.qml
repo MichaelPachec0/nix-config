@@ -4,6 +4,7 @@ import Quickshell.Wayland
 import Quickshell.Services.SystemTray
 import QtQuick
 import QtQuick.Layouts
+import "../lib/sysfmt.js" as SysFmt
 
 // Top bar (waybar-style). Top-anchored so it RESERVES its height (windows sit
 // below it). Draws the bar background + workspace chips + per-window app icons.
@@ -120,7 +121,13 @@ PanelWindow {
         return Quickshell.iconPath(name, "application-x-executable");
     }
 
-    // --- Clock helpers (12/24h toggle + UTC/NYC) ---
+    // Severity -> accent color for the inline CPU/RAM readouts (matches SysPopup).
+    function sevColor(sev) {
+        return sev === "good" ? dock.theme.accentGreen
+             : sev === "fair" ? dock.theme.accentYellow : dock.theme.accentRed;
+    }
+
+    // --- Clock helpers (12/24h toggle; world clocks live in ClockPopup) ---
     property bool h12: false
     property bool tick: false // toggled every second; bindings read it to re-eval
 
@@ -128,38 +135,6 @@ PanelWindow {
         var d = new Date();
         return dock.h12 ? Qt.formatDateTime(d, "h:mm AP") : Qt.formatDateTime(d, "HH:mm");
     }
-    function fmtHM(h, m) {
-        var mm = (m < 10 ? "0" : "") + m;
-        if (dock.h12) {
-            var ap = h >= 12 ? "PM" : "AM";
-            var hh = h % 12;
-            if (hh === 0)
-                hh = 12;
-            return hh + ":" + mm + " " + ap;
-        }
-        return (h < 10 ? "0" : "") + h + ":" + mm;
-    }
-    // US DST: 2nd Sun Mar .. 1st Sun Nov (boundary approximated at 07:00 UTC).
-    function nycIsDst(d) {
-        var y = d.getUTCFullYear();
-        function nthSun(month, n) {
-            var first = new Date(Date.UTC(y, month, 1, 7, 0, 0));
-            var firstSun = 1 + ((7 - first.getUTCDay()) % 7);
-            return Date.UTC(y, month, firstSun + (n - 1) * 7, 7, 0, 0);
-        }
-        var t = d.getTime();
-        return t >= nthSun(2, 2) && t < nthSun(10, 1);
-    }
-    function tzTime(tz) {
-        var d = new Date();
-        if (tz === "UTC")
-            return dock.fmtHM(d.getUTCHours(), d.getUTCMinutes());
-        // NYC (America/New_York): EDT (UTC-4) in summer, EST (UTC-5) otherwise.
-        var off = dock.nycIsDst(d) ? -4 : -5;
-        var h = ((d.getUTCHours() + off) % 24 + 24) % 24;
-        return dock.fmtHM(h, d.getUTCMinutes());
-    }
-
     Timer {
         interval: 1000
         running: true
@@ -409,7 +384,7 @@ PanelWindow {
                 }
                 Text {
                     text: Math.round(dock.stats ? dock.stats.cpuPct : 0) + "%"
-                    color: dock.theme.textSecondary
+                    color: dock.sevColor(SysFmt.severity("cpu", dock.stats ? dock.stats.cpuPct : 0))
                     font.family: dock.theme.iconFont
                     font.pixelSize: 11
                     Layout.preferredWidth: Math.ceil(pctMetrics.advanceWidth)
@@ -426,7 +401,7 @@ PanelWindow {
                 }
                 Text {
                     text: Math.round(dock.stats ? dock.stats.ramPct : 0) + "%"
-                    color: dock.theme.textSecondary
+                    color: dock.sevColor(SysFmt.severity("mem", dock.stats ? dock.stats.ramPct : 0))
                     font.family: dock.theme.iconFont
                     font.pixelSize: 11
                     Layout.preferredWidth: Math.ceil(pctMetrics.advanceWidth)
@@ -570,8 +545,6 @@ PanelWindow {
             font.pixelSize: 11
             text: {
                 dock.tick; // re-evaluate every second
-                if (clockMouse.containsMouse)
-                    return "UTC " + dock.tzTime("UTC") + "   NYC " + dock.tzTime("NYC");
                 return dock.localTime();
             }
             MouseArea {
@@ -580,6 +553,20 @@ PanelWindow {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: dock.h12 = !dock.h12
+                onContainsMouseChanged: clockMouse.containsMouse ? clockPop.show() : clockHideTimer.restart()
+            }
+            Timer {
+                id: clockHideTimer
+                interval: 250
+                onTriggered: if (!clockMouse.containsMouse && !clockPop.contentHovered) clockPop.hide()
+            }
+            ClockPopup {
+                id: clockPop
+                theme: dock.theme
+                barWindow: dock
+                anchorItem: clockText
+                h12: dock.h12
+                tick: dock.tick
             }
         }
     }
