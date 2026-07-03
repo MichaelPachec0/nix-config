@@ -278,6 +278,15 @@
               ./nixos/thanatos/hardware-configuration.nix
               inputs.disko.nixosModules.disko
               ./nixos/thanatos/disk-config.nix
+              ./nixos/thanatos/e5800.nix
+              ./features/nixos/common/nix-access-tokens.nix
+              {
+                services.e5800 = {
+                  enable = true;
+                  cycleResetDay = 1;
+                };
+                local.nixAccessTokens.enable = true;
+              }
               # ./nixos/thanatos/extras.nix
             ];
         };
