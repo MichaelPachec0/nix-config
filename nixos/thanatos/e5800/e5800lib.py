@@ -84,6 +84,94 @@ def parse_qeng(data):
     }
 
 
+def _parse_ca_band(s):
+    """QCAINFO band string -> (rat, band_int, label).
+
+    "LTE BAND 66" -> ("LTE", 66, "B66"); "NR5G BAND 41" -> ("NR5G", 41, "n41").
+    Returns (None, None, None) when unparseable.
+    """
+    parts = str(s).split()
+    if len(parts) < 3:
+        return (None, None, None)
+    rat = parts[0]
+    num = _int_or_none(parts[-1])
+    if num is None:
+        return (None, None, None)
+    return (rat, num, ("B" if rat == "LTE" else "n") + str(num))
+
+
+def parse_qcainfo(data):
+    """Parse an AT+QCAINFO response into component-carrier aggregation info.
+
+    QCAINFO enumerates the PCC and every SCC with a per-carrier activation
+    state, so unlike QENG servingcell it sees all aggregated carriers (e.g. a
+    second NR SCC). <scell_state>: 0=deconfigured, 1=configured-deactivated,
+    2=configured-activated. The PCC line's state field is *registration* state
+    (a different enum), so the PCC is always treated as the active primary. NR
+    SCCs in EN-DC may appear in a short form ("SCC",freq,bw,band,PCID) with no
+    state field; that is the serving NR PSCell and is treated as active.
+
+    Returns None when no PCC line is present (idle / no service), else:
+        {"mode": "NSA"|"SA"|"LTE"|None,
+         "count": <configured carriers, state>=1>,
+         "active_count": <activated carriers, state==2 / PCC / short-form>,
+         "bands": [labels of configured carriers, report order],
+         "carriers": [{"role","rat","band","label","state","active"}, ...]}
+    (carriers includes deconfigured (state 0) carriers so the UI can dim them;
+    count and bands exclude them.)
+    """
+    if not data:
+        return None
+    carriers = []
+    configured_flags = []
+    have_pcc = False
+    for raw in str(data).splitlines():
+        line = raw.strip()
+        if not line.startswith("+QCAINFO:"):
+            continue
+        toks = [t.strip().strip('"')
+                for t in line[len("+QCAINFO:"):].split(",")]
+        role = toks[0] if toks else ""
+        if role not in ("PCC", "SCC"):
+            continue
+        rat, band, label = _parse_ca_band(toks[3] if len(toks) > 3 else "")
+        if band is None:
+            continue
+        if role == "PCC":
+            have_pcc = True
+            state, active, configured = None, True, True
+        elif len(toks) <= 5:
+            # NR short form (serving PSCell): no state field, treat as active.
+            state, active, configured = None, True, True
+        else:
+            state = _int_or_none(toks[4])
+            active = state == 2
+            configured = state is not None and state >= 1
+        carriers.append({"role": role, "rat": rat, "band": band,
+                         "label": label, "state": state, "active": active})
+        configured_flags.append(configured)
+    if not have_pcc:
+        return None
+    configured = [c for c, f in zip(carriers, configured_flags) if f]
+    pcc = next((c for c in carriers if c["role"] == "PCC"), None)
+    rats = [c["rat"] for c in configured]
+    if pcc and pcc["rat"] and pcc["rat"].startswith("NR5G"):
+        mode = "SA"
+    elif "LTE" in rats and any(r and r.startswith("NR5G") for r in rats):
+        mode = "NSA"
+    elif "LTE" in rats:
+        mode = "LTE"
+    else:
+        mode = None
+    return {
+        "mode": mode,
+        "count": len(configured),
+        "active_count": sum(1 for c in carriers if c["active"]),
+        "bands": [c["label"] for c in configured],
+        "carriers": carriers,
+    }
+
+
 def cycle_anchor(now_ts, reset_day):
     """Unix ts of the most recent reset-day 00:00 UTC at or before now_ts."""
     now = datetime.datetime.fromtimestamp(now_ts, datetime.timezone.utc)

@@ -57,6 +57,70 @@ class TestQeng(unittest.TestCase):
         self.assertIsNone(L.parse_qeng("\r\n+QNWINFO: No Service\r\n\r\nOK\r\n"))
 
 
+class TestQcainfo(unittest.TestCase):
+    # Real AT+QCAINFO capture: 3-carrier EN-DC. PCC LTE B66 + NR n41 (short-form
+    # PSCell, active) + NR n71 (scell_state=1, configured but deactivated).
+    NSA = ('+QCAINFO: "PCC",66786,100,"LTE BAND 66",1,322,-92,-10,-59,6\r\n'
+           '+QCAINFO: "SCC",521310,11,"NR5G BAND 41",704\r\n'
+           '+QCAINFO: "SCC",126530,3,"NR5G BAND 71",1,71,0,-,-\r\n\r\nOK\r\n')
+
+    def test_nsa_three_carriers(self):
+        r = L.parse_qcainfo(self.NSA)
+        self.assertEqual(r["count"], 3)
+        self.assertEqual(r["active_count"], 2)
+        self.assertEqual(r["mode"], "NSA")
+        self.assertEqual(r["bands"], ["B66", "n41", "n71"])
+
+    def test_nsa_carrier_states(self):
+        cs = L.parse_qcainfo(self.NSA)["carriers"]
+        self.assertEqual(cs[0], {"role": "PCC", "rat": "LTE", "band": 66,
+                                 "label": "B66", "state": None, "active": True})
+        self.assertEqual(cs[1]["label"], "n41")
+        self.assertTrue(cs[1]["active"])           # short-form PSCell
+        self.assertEqual(cs[2]["label"], "n71")
+        self.assertEqual(cs[2]["state"], 1)
+        self.assertFalse(cs[2]["active"])          # configured, deactivated
+
+    def test_lte_scc_activated(self):
+        # Manual doc example: LTE PCC B1 + LTE SCC B3 (scell_state=2, activated).
+        data = ('+QCAINFO: "PCC",300,100,"LTE BAND 1",1,23,-66,-12,-34,30\r\n'
+                '+QCAINFO: "SCC",1575,100,"LTE BAND 3",2,43,-64,-7,-24,30,0,-,-'
+                '\r\n\r\nOK\r\n')
+        r = L.parse_qcainfo(data)
+        self.assertEqual(r["mode"], "LTE")
+        self.assertEqual(r["count"], 2)
+        self.assertEqual(r["active_count"], 2)
+        self.assertEqual(r["bands"], ["B1", "B3"])
+
+    def test_sa_mode(self):
+        # NR PCC (SA short form) + NR SCC activated.
+        data = ('+QCAINFO: "PCC",647328,12,"NR5G BAND 78",500\r\n'
+                '+QCAINFO: "SCC",633984,3,"NR5G BAND 78",2,501,1,3,647328'
+                '\r\n\r\nOK\r\n')
+        r = L.parse_qcainfo(data)
+        self.assertEqual(r["mode"], "SA")
+        self.assertEqual(r["count"], 2)
+        self.assertEqual(r["bands"], ["n78", "n78"])
+
+    def test_deconfigured_scc_excluded_but_present(self):
+        # scell_state=0 -> deconfigured: not counted, still listed (dim in UI).
+        data = ('+QCAINFO: "PCC",66786,100,"LTE BAND 66",1,322,-92,-10,-59,6\r\n'
+                '+QCAINFO: "SCC",126530,3,"NR5G BAND 71",0,71,0,-,-\r\n\r\nOK\r\n')
+        r = L.parse_qcainfo(data)
+        self.assertEqual(r["count"], 1)              # only PCC configured
+        self.assertEqual(r["bands"], ["B66"])
+        self.assertEqual(len(r["carriers"]), 2)      # n71 still listed
+        self.assertEqual(r["carriers"][1]["state"], 0)
+        self.assertFalse(r["carriers"][1]["active"])
+
+    def test_no_pcc_and_empty_return_none(self):
+        self.assertIsNone(L.parse_qcainfo(None))
+        self.assertIsNone(L.parse_qcainfo(""))
+        self.assertIsNone(L.parse_qcainfo("\r\nOK\r\n"))
+        self.assertIsNone(L.parse_qcainfo(
+            '+QCAINFO: "SCC",126530,3,"NR5G BAND 71",1,71,0,-,-\r\n'))
+
+
 class TestUsage(unittest.TestCase):
     # 2026-07-02 12:00 UTC = 1782043200; 2026-07-01 00:00 UTC = 1782000000... use datetime.
     def _ts(self, y, mo, d, h=0):
