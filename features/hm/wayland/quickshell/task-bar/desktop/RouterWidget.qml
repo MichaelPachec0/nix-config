@@ -66,10 +66,12 @@ Item {
             font.weight: Font.DemiBold
             color: root.connColor()
         }
-        // Carrier-aggregation count (e.g. "2CA") when more than one band is up.
+        // Carrier-aggregation count (e.g. "3CA"), from AT+QCAINFO. Shown whenever
+        // at least the primary carrier is up -- fixed width, so a count change
+        // (3CA <-> 1CA) never reflows the taskbar.
         Lib.BarText {
             property var ca: root.svc.cellular.ca
-            visible: root.svc.reachable && !root.svc.authError && ca && ca.count > 1
+            visible: root.svc.reachable && !root.svc.authError && ca && ca.count >= 1
             text: ca ? (ca.count + "CA") : ""
             font.family: root.theme.iconFont
             font.pixelSize: 11
