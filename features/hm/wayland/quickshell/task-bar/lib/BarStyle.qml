@@ -21,7 +21,7 @@ Singleton {
         onFileChanged: reload()
         onLoaded: {
             var t = (file.text() || "").trim();
-            root.current = (t === "ghost") ? "ghost" : "frosted";
+            root.current = (t === "ghost" || t === "ghost-glass") ? t : "frosted";
         }
     }
 }

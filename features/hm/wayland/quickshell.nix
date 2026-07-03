@@ -41,8 +41,28 @@
       (o.qtWrapperArgs or [])
       ++ ["--prefix PATH : ${lib.makeBinPath runtimeDeps}"];
   });
+
+  # Toggle the bar look at runtime: `bar-style ghost` / `bar-style frosted`.
+  # Writes a state file OUTSIDE ~/.config/quickshell (the repo symlink) that the
+  # BarStyle singleton's FileView watches, so the bar hot-swaps with no reload.
+  barStyleCmd = pkgs.writeShellApplication {
+    name = "bar-style";
+    text = ''
+      style="''${1:-}"
+      case "$style" in
+        ghost | frosted | ghost-glass) ;;
+        *)
+          echo "usage: bar-style <ghost|frosted|ghost-glass>" >&2
+          exit 1
+          ;;
+      esac
+      dir="''${XDG_STATE_HOME:-$HOME/.local/state}/quickshell"
+      mkdir -p "$dir"
+      printf '%s\n' "$style" >"$dir/bar-style"
+    '';
+  };
 in {
-  home.packages = [quickshell'];
+  home.packages = [quickshell' barStyleCmd];
 
   # DEV: live-editable config tree. Hardcoded thanatos repo path on purpose --
   # this is temporary; the port plan's 2g task replaces it with a baked install.
