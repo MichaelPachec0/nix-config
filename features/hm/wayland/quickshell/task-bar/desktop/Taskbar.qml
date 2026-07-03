@@ -26,7 +26,7 @@ PanelWindow {
         left: true
         right: true
     }
-    implicitHeight: 40
+    implicitHeight: 44
     color: "transparent"
     WlrLayershell.layer: WlrLayer.Top
     // Distinct layer namespace so the Hyprland blur layer_rule targets only the
@@ -261,7 +261,7 @@ PanelWindow {
                 && focusedTitle.text.length > 0
             text: focusedTitle.active?.title ?? ""
             elide: Text.ElideRight
-            color: dock.theme.textSecondary
+            color: dock.theme.textPrimary
             font.family: dock.theme.iconFont
             font.pixelSize: 11
         }
@@ -384,7 +384,7 @@ PanelWindow {
                     spacing: 4
                     Lib.BarText {
                         text: String.fromCharCode(0xF2DB) // microchip
-                        color: dock.theme.textSecondary
+                        color: dock.theme.textPrimary
                         font.family: dock.theme.faFont
                         font.pixelSize: 13
                     }
@@ -401,7 +401,7 @@ PanelWindow {
                     spacing: 4
                     Lib.BarText {
                         text: String.fromCharCode(0xF538) // memory
-                        color: dock.theme.textSecondary
+                        color: dock.theme.textPrimary
                         font.family: dock.theme.faFont
                         font.pixelSize: 13
                     }
