@@ -75,7 +75,7 @@ Item {
             text: ca ? (ca.count + "CA") : ""
             font.family: root.theme.iconFont
             font.pixelSize: 11
-            color: root.theme.textSecondary
+            color: root.theme.textPrimary
         }
         // Re-auth warning glyph: reachable but SSH key rejected (router factory-reset).
         // The popup carries the "re-add the key" explanation.
@@ -105,13 +105,13 @@ Item {
                 text: String.fromCharCode(0xF519) // fa network-wired (router)
                 font.family: root.theme.faFont
                 font.pixelSize: 13
-                color: root.theme.textSecondary
+                color: root.theme.textPrimary
             }
             Lib.BarText {
                 text: "off"
                 font.family: root.theme.iconFont
                 font.pixelSize: 11
-                color: root.theme.textSecondary
+                color: root.theme.textPrimary
             }
         }
     }

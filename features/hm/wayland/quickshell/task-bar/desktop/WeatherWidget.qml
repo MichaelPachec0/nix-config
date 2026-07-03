@@ -127,7 +127,7 @@ Item {
         Lib.BarText {
             Layout.alignment: Qt.AlignVCenter
             text: (root.wx ? root.wx.temp : "--") + String.fromCodePoint(0x00B0)
-            color: root.theme.textSecondary
+            color: root.theme.textPrimary
             font.family: root.theme.iconFont
             font.pixelSize: 11
         }

@@ -40,7 +40,7 @@ Item {
             text: root.label()
             font.family: root.theme.iconFont
             font.pixelSize: 11
-            color: root.theme.textSecondary
+            color: root.theme.textPrimary
         }
     }
 

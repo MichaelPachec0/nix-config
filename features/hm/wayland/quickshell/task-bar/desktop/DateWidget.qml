@@ -29,7 +29,7 @@ Item {
     Lib.BarText {
         id: label
         anchors.centerIn: parent
-        color: root.theme.textSecondary
+        color: root.theme.textPrimary
         font.family: root.theme.iconFont
         font.pixelSize: 11
         text: {
