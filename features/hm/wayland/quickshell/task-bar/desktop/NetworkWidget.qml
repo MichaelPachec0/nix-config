@@ -102,13 +102,65 @@ Item {
             font.family: root.theme.iconFont
             font.pixelSize: 13
         }
-        Lib.BarText {
-            text: root.label()
-            color: root.glyphColor()
+        // Wi-Fi label: adapt the media widget's marquee -- clip to ~12 chars and
+        // ping-pong scroll when the SSID overflows, instead of hard-eliding. The
+        // icon font is monospace, so 12 chars of it is the cap width.
+        TextMetrics {
+            id: capMetrics
             font.family: root.theme.iconFont
             font.pixelSize: 11
-            elide: Text.ElideRight
-            Layout.maximumWidth: 160
+            text: "MMMMMMMMMMMM" // 12 chars
+        }
+        Item {
+            id: marquee
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: Math.min(wifiLabel.implicitWidth, capMetrics.advanceWidth)
+            Layout.preferredHeight: 24
+            clip: true
+
+            readonly property real scrollDist: Math.max(0, wifiLabel.implicitWidth - marquee.width)
+            readonly property bool overflow: marquee.scrollDist > 0
+            // ms per pixel: higher = slower. ~11 px/s.
+            readonly property int scrollDur: Math.max(2000, marquee.scrollDist * 90)
+
+            Lib.BarText {
+                id: wifiLabel
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.label()
+                color: root.glyphColor()
+                font.family: root.theme.iconFont
+                font.pixelSize: 11
+                onTextChanged: x = 0
+            }
+
+            SequentialAnimation {
+                running: marquee.overflow && hover.containsMouse
+                loops: Animation.Infinite
+                onRunningChanged: if (!running)
+                    wifiLabel.x = 0
+                PauseAnimation {
+                    duration: 1400
+                }
+                NumberAnimation {
+                    target: wifiLabel
+                    property: "x"
+                    from: 0
+                    to: -marquee.scrollDist
+                    duration: marquee.scrollDur
+                    easing.type: Easing.InOutQuad
+                }
+                PauseAnimation {
+                    duration: 1400
+                }
+                NumberAnimation {
+                    target: wifiLabel
+                    property: "x"
+                    from: -marquee.scrollDist
+                    to: 0
+                    duration: marquee.scrollDur
+                    easing.type: Easing.InOutQuad
+                }
+            }
         }
         // VPN shield, only when a VPN is up.
         // Codepoint F099D (shield-lock); F0582 verified as ornamental knot, swapped.
@@ -122,6 +174,7 @@ Item {
     }
 
     MouseArea {
+        id: hover
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
