@@ -164,12 +164,41 @@ PopupWindow {
                         color: pop.theme.textSecondary
                     }
                 }
-                // Serving-cell bands + aggregation mode (from AT+QENG="servingcell").
-                Text {
+                // Aggregation: component carriers from AT+QCAINFO, each colored by
+                // activation state -- green = moving data (state 2 / PCC / NR
+                // PSCell), default = configured-idle (state 1), dim = deconfigured
+                // (state 0). Mirrors the Wi-Fi chip row pattern below.
+                RowLayout {
+                    id: aggRow
                     property var ca: pop.svc.cellular.ca
-                    visible: !!ca
-                    text: ca ? ((ca.mode ? ca.mode + "   " : "") + "Bands  "
-                               + (ca.bands || []).join(" + ")) : ""
+                    visible: !!ca && (ca.carriers || []).length > 0
+                    Layout.fillWidth: true
+                    spacing: 6
+                    Text {
+                        text: "Aggregation"
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Repeater {
+                        model: aggRow.ca ? aggRow.ca.carriers : []
+                        delegate: Text {
+                            required property var modelData
+                            required property int index
+                            text: (index === 0 ? "" : "+ ") + modelData.label
+                            font.family: pop.theme.iconFont; font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                            color: modelData.active ? pop.theme.accentGreen
+                                 : (modelData.state === 0 ? pop.theme.textSecondary
+                                    : pop.theme.textPrimary)
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+                // Serving cell (from AT+QENG="servingcell").
+                Text {
+                    property var serving: pop.svc.cellular.serving
+                    visible: !!serving
+                    text: serving ? ("Serving  " + (serving.bands || []).join(" + ")) : ""
                     font.family: pop.theme.iconFont; font.pixelSize: 10
                     color: pop.theme.textSecondary
                 }
