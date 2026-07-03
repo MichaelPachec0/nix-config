@@ -1,4 +1,5 @@
 import QtQuick
+import "../lib" as Lib
 import QtQuick.Layouts
 import "../lib/routerfmt.js" as RouterFmt
 
@@ -57,7 +58,7 @@ Item {
             }
         }
         // Network-type tag, tinted by uplink health (green online / red no uplink).
-        Text {
+        Lib.BarText {
             visible: root.svc.reachable && !root.svc.authError && (root.svc.cellular.supported !== false)
             text: root.svc.cellular.gen || "?"
             font.family: root.theme.iconFont
@@ -66,7 +67,7 @@ Item {
             color: root.connColor()
         }
         // Carrier-aggregation count (e.g. "2CA") when more than one band is up.
-        Text {
+        Lib.BarText {
             property var ca: root.svc.cellular.ca
             visible: root.svc.reachable && !root.svc.authError && ca && ca.count > 1
             text: ca ? (ca.count + "CA") : ""
@@ -76,7 +77,7 @@ Item {
         }
         // Re-auth warning glyph: reachable but SSH key rejected (router factory-reset).
         // The popup carries the "re-add the key" explanation.
-        Text {
+        Lib.BarText {
             visible: root.svc.reachable && root.svc.authError
             text: String.fromCharCode(0xF071) // fa exclamation-triangle
             font.family: root.theme.faFont
@@ -84,7 +85,7 @@ Item {
             color: root.theme.accentRed
         }
         // Router battery percent (JetBrainsMono, like the other bar labels).
-        Text {
+        Lib.BarText {
             Layout.alignment: Qt.AlignVCenter
             visible: root.svc.reachable
             text: root.svc.battery.percent !== undefined ? root.svc.battery.percent + "%" : "--"
@@ -98,13 +99,13 @@ Item {
             visible: !root.svc.reachable
             opacity: 0.4
             spacing: 3
-            Text {
+            Lib.BarText {
                 text: String.fromCharCode(0xF519) // fa network-wired (router)
                 font.family: root.theme.faFont
                 font.pixelSize: 13
                 color: root.theme.textSecondary
             }
-            Text {
+            Lib.BarText {
                 text: "off"
                 font.family: root.theme.iconFont
                 font.pixelSize: 11

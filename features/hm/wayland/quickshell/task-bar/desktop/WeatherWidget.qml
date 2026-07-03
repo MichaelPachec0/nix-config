@@ -117,14 +117,14 @@ Item {
         anchors.fill: parent
         spacing: 5
 
-        Text {
+        Lib.BarText {
             Layout.alignment: Qt.AlignVCenter
             text: WeatherIcons.glyph(root.wx ? root.wx.icon : "cloudy")
             color: root.theme.weatherIcon
             font.family: root.theme.iconFont
             font.pixelSize: 13
         }
-        Text {
+        Lib.BarText {
             Layout.alignment: Qt.AlignVCenter
             text: (root.wx ? root.wx.temp : "--") + String.fromCodePoint(0x00B0)
             color: root.theme.textSecondary

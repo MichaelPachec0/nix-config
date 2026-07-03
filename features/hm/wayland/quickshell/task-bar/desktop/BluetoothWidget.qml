@@ -1,4 +1,5 @@
 import QtQuick
+import "../lib" as Lib
 import QtQuick.Layouts
 
 // Bar Bluetooth widget: a state glyph + the connected device name. Mirrors
@@ -39,14 +40,14 @@ Item {
         anchors.fill: parent
         spacing: 6
 
-        Text {
+        Lib.BarText {
             Layout.alignment: Qt.AlignVCenter
             text: root.stateGlyph()
             font.family: root.theme.iconFont
             font.pixelSize: 13
             color: root.connectedCount > 0 ? root.theme.accent : root.theme.textSecondary
         }
-        Text {
+        Lib.BarText {
             Layout.alignment: Qt.AlignVCenter
             Layout.maximumWidth: 120
             visible: text.length > 0

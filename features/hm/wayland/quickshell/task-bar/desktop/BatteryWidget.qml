@@ -1,4 +1,5 @@
 import QtQuick
+import "../lib" as Lib
 import QtQuick.Layouts
 import Quickshell.Services.UPower
 
@@ -53,7 +54,7 @@ Item {
                 // Text behind it, since GraphicalEffects is avoided here) so it
                 // stays legible over both the green fill and the dark empty area
                 // without the harsh orange-on-green vibration.
-                Text {
+                Lib.BarText {
                     anchors.centerIn: parent
                     anchors.horizontalCenterOffset: 0.5
                     anchors.verticalCenterOffset: 0.75
@@ -63,7 +64,7 @@ Item {
                     font.family: root.theme.iconFont
                     font.pixelSize: 10
                 }
-                Text {
+                Lib.BarText {
                     anchors.centerIn: parent
                     visible: root.onAC
                     text: String.fromCodePoint(0xF0E7) // bolt
@@ -81,7 +82,7 @@ Item {
                 color: root.low ? root.theme.accentRed : root.theme.textSecondary
             }
         }
-        Text {
+        Lib.BarText {
             Layout.alignment: Qt.AlignVCenter
             text: Math.round(root.pct) + "%"
             color: root.low ? root.theme.accentRed : (root.onAC ? root.theme.accentSlider : root.theme.textPrimary)

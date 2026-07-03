@@ -1,4 +1,5 @@
 import QtQuick
+import "../lib" as Lib
 
 // Bar date widget: the date string (click cycles its format) plus a hover
 // calendar popup. Mirrors WeatherWidget's hover-persistence (widget hover OR
@@ -25,7 +26,7 @@ Item {
         return Qt.formatDateTime(d, "ddd, MMM d yyyy");
     }
 
-    Text {
+    Lib.BarText {
         id: label
         anchors.centerIn: parent
         color: root.theme.textSecondary

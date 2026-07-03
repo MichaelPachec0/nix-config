@@ -96,13 +96,13 @@ Item {
         id: row
         anchors.fill: parent
         spacing: 5
-        Text {
+        Lib.BarText {
             text: root.stateGlyph()
             color: root.glyphColor()
             font.family: root.theme.iconFont
             font.pixelSize: 13
         }
-        Text {
+        Lib.BarText {
             text: root.label()
             color: root.glyphColor()
             font.family: root.theme.iconFont
@@ -112,7 +112,7 @@ Item {
         }
         // VPN shield, only when a VPN is up.
         // Codepoint F099D (shield-lock); F0582 verified as ornamental knot, swapped.
-        Text {
+        Lib.BarText {
             visible: net.vpnActive
             text: String.fromCodePoint(0xF099D) // shield-lock vpn
             color: root.theme.accentGreen

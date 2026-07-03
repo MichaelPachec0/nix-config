@@ -4,6 +4,7 @@ import Quickshell.Wayland
 import Quickshell.Services.SystemTray
 import QtQuick
 import QtQuick.Layouts
+import "../lib" as Lib
 import "../lib/sysfmt.js" as SysFmt
 
 // Top bar (waybar-style). Top-anchored so it RESERVES its height (windows sit
@@ -26,8 +27,11 @@ PanelWindow {
         right: true
     }
     implicitHeight: 40
-    color: dock.theme.bgMain
+    color: "transparent"
     WlrLayershell.layer: WlrLayer.Top
+    // Distinct layer namespace so the Hyprland blur layer_rule targets only the
+    // bar (not popups/toasts, which stay on the default "quickshell" namespace).
+    WlrLayershell.namespace: "quickshell:bar"
 
     // This bar's Hyprland monitor (one Taskbar per screen via Variants). Scope
     // the workspace list + active highlight to it so each monitor's bar shows
@@ -171,7 +175,7 @@ PanelWindow {
                         easing.type: Easing.OutBack
                     }
                 }
-                Text {
+                Lib.BarText {
                     anchors.centerIn: parent
                     text: ws.modelData.id
                     color: ws.active ? dock.theme.textOnAccent : dock.theme.textSecondary
@@ -247,7 +251,7 @@ PanelWindow {
         // reactive HyprlandToplevel.title (titleChanged), so it live-updates on
         // same-window title changes (browser tab, terminal) with no full
         // toplevel refresh -- the churn the model deliberately avoids above.
-        Text {
+        Lib.BarText {
             id: focusedTitle
             readonly property var active: Hyprland.activeToplevel
             Layout.alignment: Qt.AlignVCenter
@@ -273,300 +277,300 @@ PanelWindow {
         // Intentionally empty -- future center-zone widgets go here.
     }
 
-    // Right: status widgets (media, CPU/RAM, tray, battery, weather, date, clock).
+    // Right: status widgets grouped into floating pills (per cluster). The 1px
+    // dividers are gone -- each pill IS the grouping. Bar stays opaque until the
+    // transparent-bar step; pills use the translucent bgPill token either way.
     RowLayout {
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 8
+        spacing: 8 // gap between pills
 
-        // MPRIS now-playing: play/pause + marquee title (only while a player runs).
-        // Hover reveals a full-player popup with seek.
-        MediaWidget {
+        // sound: media + audio
+        Lib.Pill {
             Layout.alignment: Qt.AlignVCenter
             theme: dock.theme
-            barWindow: dock
-        }
 
-        // Audio (native PipeWire): volume glyph + %, click for the mixer.
-        AudioWidget {
-            Layout.alignment: Qt.AlignVCenter
-            theme: dock.theme
-            barWindow: dock
-            audio: dock.audio
-        }
-
-        // group separator: sound | connectivity
-        Rectangle {
-            Layout.alignment: Qt.AlignVCenter
-            Layout.preferredWidth: 1
-            Layout.preferredHeight: 18
-            color: dock.theme.border
-        }
-
-        // WiFi (native nm-applet replacement): signal glyph + SSID, click for menu.
-        NetworkWidget {
-            Layout.alignment: Qt.AlignVCenter
-            theme: dock.theme
-            barWindow: dock
-        }
-
-        // Bluetooth: state glyph + connected device, click for the device menu.
-        BluetoothWidget {
-            Layout.alignment: Qt.AlignVCenter
-            theme: dock.theme
-            barWindow: dock
-            bt: dock.bt
-        }
-
-        // GL-E5800 router: signal + gen + battery (or away chip / re-auth
-        // warning), hover for the status dashboard.
-        RouterWidget {
-            Layout.alignment: Qt.AlignVCenter
-            theme: dock.theme
-            barWindow: dock
-            svc: dock.routerSvc
-        }
-
-        // group separator: connectivity | awake
-        Rectangle {
-            Layout.alignment: Qt.AlignVCenter
-            Layout.preferredWidth: 1
-            Layout.preferredHeight: 18
-            color: dock.theme.border
-        }
-
-        // Keep-awake: toggle a Wayland idle inhibitor (blocks idle lock / DPMS).
-        InhibitWidget {
-            Layout.alignment: Qt.AlignVCenter
-            theme: dock.theme
-            barWindow: dock
-        }
-
-        // Disable sleep: systemd-logind block inhibitor (suspend/hibernate).
-        SleepInhibitWidget {
-            Layout.alignment: Qt.AlignVCenter
-            theme: dock.theme
-            barWindow: dock
-        }
-
-        // group separator: awake | system
-        Rectangle {
-            Layout.alignment: Qt.AlignVCenter
-            Layout.preferredWidth: 1
-            Layout.preferredHeight: 18
-            color: dock.theme.border
-        }
-
-        // CPU / RAM (shared SysStats): microchip + memory glyph, then percent.
-        // Hover opens the system stats popup (gates SysStats detail polling).
-        RowLayout {
-            id: statsRow
-            spacing: 10
-            visible: dock.stats !== null
-
-            // Width reference for the percent labels: reserve room for the widest
-            // value ("100%") so d% -> dd% -> ddd% never reflows the bar (monospace).
-            TextMetrics {
-                id: pctMetrics
-                font.family: dock.theme.iconFont
-                font.pixelSize: 11
-                text: "100%"
+            // MPRIS now-playing: play/pause + marquee title (only while a player runs).
+            // Hover reveals a full-player popup with seek.
+            MediaWidget {
+                Layout.alignment: Qt.AlignVCenter
+                theme: dock.theme
+                barWindow: dock
             }
 
+            // Audio (native PipeWire): volume glyph + %, click for the mixer.
+            AudioWidget {
+                Layout.alignment: Qt.AlignVCenter
+                theme: dock.theme
+                barWindow: dock
+                audio: dock.audio
+            }
+        }
+
+        // connectivity: wifi + bluetooth + router
+        Lib.Pill {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+
+            // WiFi (native nm-applet replacement): signal glyph + SSID, click for menu.
+            NetworkWidget {
+                Layout.alignment: Qt.AlignVCenter
+                theme: dock.theme
+                barWindow: dock
+            }
+
+            // Bluetooth: state glyph + connected device, click for the device menu.
+            BluetoothWidget {
+                Layout.alignment: Qt.AlignVCenter
+                theme: dock.theme
+                barWindow: dock
+                bt: dock.bt
+            }
+
+            // GL-E5800 router: signal + gen + battery (or away chip / re-auth
+            // warning), hover for the status dashboard.
+            RouterWidget {
+                Layout.alignment: Qt.AlignVCenter
+                theme: dock.theme
+                barWindow: dock
+                svc: dock.routerSvc
+            }
+        }
+
+        // awake: keep-awake + disable-sleep
+        Lib.Pill {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+
+            // Keep-awake: toggle a Wayland idle inhibitor (blocks idle lock / DPMS).
+            InhibitWidget {
+                Layout.alignment: Qt.AlignVCenter
+                theme: dock.theme
+                barWindow: dock
+            }
+
+            // Disable sleep: systemd-logind block inhibitor (suspend/hibernate).
+            SleepInhibitWidget {
+                Layout.alignment: Qt.AlignVCenter
+                theme: dock.theme
+                barWindow: dock
+            }
+        }
+
+        // system: cpu/ram + battery
+        Lib.Pill {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            gap: 10
+
+            // CPU / RAM (shared SysStats): microchip + memory glyph, then percent.
+            // Hover opens the system stats popup (gates SysStats detail polling).
             RowLayout {
-                spacing: 4
-                Text {
-                    text: String.fromCharCode(0xF2DB) // microchip
-                    color: dock.theme.textSecondary
-                    font.family: dock.theme.faFont
-                    font.pixelSize: 13
-                }
-                Text {
-                    text: Math.round(dock.stats ? dock.stats.cpuPct : 0) + "%"
-                    color: dock.sevColor(SysFmt.severity("cpu", dock.stats ? dock.stats.cpuPct : 0))
+                id: statsRow
+                spacing: 10
+                visible: dock.stats !== null
+
+                // Width reference for the percent labels: reserve room for the widest
+                // value ("100%") so d% -> dd% -> ddd% never reflows the bar (monospace).
+                TextMetrics {
+                    id: pctMetrics
                     font.family: dock.theme.iconFont
                     font.pixelSize: 11
-                    Layout.preferredWidth: Math.ceil(pctMetrics.advanceWidth)
-                    horizontalAlignment: Text.AlignRight
+                    text: "100%"
                 }
-            }
-            RowLayout {
-                spacing: 4
-                Text {
-                    text: String.fromCharCode(0xF538) // memory
-                    color: dock.theme.textSecondary
-                    font.family: dock.theme.faFont
-                    font.pixelSize: 13
-                }
-                Text {
-                    text: Math.round(dock.stats ? dock.stats.ramPct : 0) + "%"
-                    color: dock.sevColor(SysFmt.severity("mem", dock.stats ? dock.stats.ramPct : 0))
-                    font.family: dock.theme.iconFont
-                    font.pixelSize: 11
-                    Layout.preferredWidth: Math.ceil(pctMetrics.advanceWidth)
-                    horizontalAlignment: Text.AlignRight
-                }
-            }
 
-            HoverHandler {
-                id: statsHover
-                onHoveredChanged: {
-                    if (statsHover.hovered) {
-                        if (dock.stats)
-                            dock.stats.wantDetail = true;
-                        sysPopup.show();
-                    } else {
-                        statsHideTimer.restart();
+                RowLayout {
+                    spacing: 4
+                    Lib.BarText {
+                        text: String.fromCharCode(0xF2DB) // microchip
+                        color: dock.theme.textSecondary
+                        font.family: dock.theme.faFont
+                        font.pixelSize: 13
+                    }
+                    Lib.BarText {
+                        text: Math.round(dock.stats ? dock.stats.cpuPct : 0) + "%"
+                        color: dock.sevColor(SysFmt.severity("cpu", dock.stats ? dock.stats.cpuPct : 0))
+                        font.family: dock.theme.iconFont
+                        font.pixelSize: 11
+                        Layout.preferredWidth: Math.ceil(pctMetrics.advanceWidth)
+                        horizontalAlignment: Text.AlignRight
                     }
                 }
-            }
-            Timer {
-                id: statsHideTimer
-                interval: 250
-                onTriggered: if (!statsHover.hovered && !sysPopup.contentHovered) {
-                    sysPopup.hide();
-                    if (dock.stats)
-                        dock.stats.wantDetail = false;
+                RowLayout {
+                    spacing: 4
+                    Lib.BarText {
+                        text: String.fromCharCode(0xF538) // memory
+                        color: dock.theme.textSecondary
+                        font.family: dock.theme.faFont
+                        font.pixelSize: 13
+                    }
+                    Lib.BarText {
+                        text: Math.round(dock.stats ? dock.stats.ramPct : 0) + "%"
+                        color: dock.sevColor(SysFmt.severity("mem", dock.stats ? dock.stats.ramPct : 0))
+                        font.family: dock.theme.iconFont
+                        font.pixelSize: 11
+                        Layout.preferredWidth: Math.ceil(pctMetrics.advanceWidth)
+                        horizontalAlignment: Text.AlignRight
+                    }
                 }
-            }
-            SysPopup {
-                id: sysPopup
-                theme: dock.theme
-                stats: dock.stats
-                barWindow: dock
-                anchorItem: statsRow
-            }
-        }
 
-        // Battery (laptop only): drawn battery + charging bolt; hover for details.
-        BatteryWidget {
-            Layout.alignment: Qt.AlignVCenter
-            theme: dock.theme
-            barWindow: dock
-        }
-
-        // group separator: system | weather
-        Rectangle {
-            Layout.alignment: Qt.AlignVCenter
-            Layout.preferredWidth: 1
-            Layout.preferredHeight: 18
-            color: dock.theme.border
-        }
-
-        // Weather: current condition glyph + temperature; hover for details.
-        WeatherWidget {
-            Layout.alignment: Qt.AlignVCenter
-            theme: dock.theme
-            barWindow: dock
-            weatherState: dock.weatherState
-        }
-
-        // group separator: weather | tray + time
-        Rectangle {
-            Layout.alignment: Qt.AlignVCenter
-            Layout.preferredWidth: 1
-            Layout.preferredHeight: 18
-            color: dock.theme.border
-        }
-
-        // System tray (StatusNotifier items): left-click activate, middle-click
-        // secondary, right-click opens the item's DBus context menu. Items that
-        // are menu-only (no activate action) open their menu on left-click too.
-        RowLayout {
-            spacing: 6
-            visible: SystemTray.items.values.length > 0
-
-            Repeater {
-                model: SystemTray.items
-                MouseArea {
-                    id: trayItem
-                    required property var modelData
-                    Layout.alignment: Qt.AlignVCenter
-                    implicitWidth: 16
-                    implicitHeight: 16
-                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
-                    onClicked: function (mouse) {
-                        var item = trayItem.modelData;
-                        var wantMenu = mouse.button === Qt.RightButton || (mouse.button === Qt.LeftButton && item.onlyMenu);
-                        if (wantMenu) {
-                            if (item.hasMenu) {
-                                // nm-applet rebuilds its menu on every Wi-Fi scan,
-                                // which thrashes the QML drill-down, so it uses the
-                                // native menu. Everything else uses the themed popup.
-                                // We deliberately do NOT route Chromium/Electron apps
-                                // to native: Quickshell segfaults in PlatformMenuEntry
-                                // teardown when a canonical-dbusmenu item whose native
-                                // menu was opened later unregisters (reproduced on
-                                // several Electron apps' exit). nm-applet uses the
-                                // ayatana menu backend and a persistent process, so it
-                                // doesn't hit that path.
-                                var id = (item.id || "").toLowerCase();
-                                var native = id.indexOf("nm-applet") >= 0;
-                                if (native) {
-                                    var pl = trayItem.mapToItem(null, 0, trayItem.height + 4);
-                                    item.display(dock, pl.x, pl.y);
-                                } else {
-                                    // Themed menu, right-aligned under the icon.
-                                    var p = trayItem.mapToItem(null, trayItem.width, trayItem.height + 4);
-                                    trayMenu.openAt(dock, p.x, p.y, item.menu);
-                                }
-                            }
-                        } else if (mouse.button === Qt.MiddleButton) {
-                            item.secondaryActivate();
+                HoverHandler {
+                    id: statsHover
+                    onHoveredChanged: {
+                        if (statsHover.hovered) {
+                            if (dock.stats)
+                                dock.stats.wantDetail = true;
+                            sysPopup.show();
                         } else {
-                            item.activate();
+                            statsHideTimer.restart();
                         }
                     }
-                    Image {
-                        anchors.centerIn: parent
-                        width: 14
-                        height: 14
-                        sourceSize.width: 28 // 2x for crisp downscaling
-                        sourceSize.height: 28
-                        fillMode: Image.PreserveAspectFit
-                        source: trayItem.modelData.icon
+                }
+                Timer {
+                    id: statsHideTimer
+                    interval: 250
+                    onTriggered: if (!statsHover.hovered && !sysPopup.contentHovered) {
+                        sysPopup.hide();
+                        if (dock.stats)
+                            dock.stats.wantDetail = false;
                     }
                 }
+                SysPopup {
+                    id: sysPopup
+                    theme: dock.theme
+                    stats: dock.stats
+                    barWindow: dock
+                    anchorItem: statsRow
+                }
+            }
+
+            // Battery (laptop only): drawn battery + charging bolt; hover for details.
+            BatteryWidget {
+                Layout.alignment: Qt.AlignVCenter
+                theme: dock.theme
+                barWindow: dock
             }
         }
 
-        // Date: string (click cycles format) + hover calendar popup.
-        DateWidget {
+        // weather
+        Lib.Pill {
             Layout.alignment: Qt.AlignVCenter
             theme: dock.theme
-            barWindow: dock
-            calState: dock.calState
-        }
-        Text {
-            id: clockText
-            color: dock.theme.textPrimary
-            font.family: dock.theme.iconFont
-            font.pixelSize: 11
-            text: {
-                dock.tick; // re-evaluate every second
-                return dock.localTime();
-            }
-            MouseArea {
-                id: clockMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: dock.h12 = !dock.h12
-                onContainsMouseChanged: clockMouse.containsMouse ? clockPop.show() : clockHideTimer.restart()
-            }
-            Timer {
-                id: clockHideTimer
-                interval: 250
-                onTriggered: if (!clockMouse.containsMouse && !clockPop.contentHovered) clockPop.hide()
-            }
-            ClockPopup {
-                id: clockPop
+
+            // Weather: current condition glyph + temperature; hover for details.
+            WeatherWidget {
+                Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
-                anchorItem: clockText
-                h12: dock.h12
-                tick: dock.tick
+                weatherState: dock.weatherState
+            }
+        }
+
+        // tray + time
+        Lib.Pill {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+
+            // System tray (StatusNotifier items): left-click activate, middle-click
+            // secondary, right-click opens the item's DBus context menu. Items that
+            // are menu-only (no activate action) open their menu on left-click too.
+            RowLayout {
+                spacing: 6
+                visible: SystemTray.items.values.length > 0
+
+                Repeater {
+                    model: SystemTray.items
+                    MouseArea {
+                        id: trayItem
+                        required property var modelData
+                        Layout.alignment: Qt.AlignVCenter
+                        implicitWidth: 16
+                        implicitHeight: 16
+                        acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+                        onClicked: function (mouse) {
+                            var item = trayItem.modelData;
+                            var wantMenu = mouse.button === Qt.RightButton || (mouse.button === Qt.LeftButton && item.onlyMenu);
+                            if (wantMenu) {
+                                if (item.hasMenu) {
+                                    // nm-applet rebuilds its menu on every Wi-Fi scan,
+                                    // which thrashes the QML drill-down, so it uses the
+                                    // native menu. Everything else uses the themed popup.
+                                    // We deliberately do NOT route Chromium/Electron apps
+                                    // to native: Quickshell segfaults in PlatformMenuEntry
+                                    // teardown when a canonical-dbusmenu item whose native
+                                    // menu was opened later unregisters (reproduced on
+                                    // several Electron apps' exit). nm-applet uses the
+                                    // ayatana menu backend and a persistent process, so it
+                                    // doesn't hit that path.
+                                    var id = (item.id || "").toLowerCase();
+                                    var native = id.indexOf("nm-applet") >= 0;
+                                    if (native) {
+                                        var pl = trayItem.mapToItem(null, 0, trayItem.height + 4);
+                                        item.display(dock, pl.x, pl.y);
+                                    } else {
+                                        // Themed menu, right-aligned under the icon.
+                                        var p = trayItem.mapToItem(null, trayItem.width, trayItem.height + 4);
+                                        trayMenu.openAt(dock, p.x, p.y, item.menu);
+                                    }
+                                }
+                            } else if (mouse.button === Qt.MiddleButton) {
+                                item.secondaryActivate();
+                            } else {
+                                item.activate();
+                            }
+                        }
+                        Image {
+                            anchors.centerIn: parent
+                            width: 14
+                            height: 14
+                            sourceSize.width: 28 // 2x for crisp downscaling
+                            sourceSize.height: 28
+                            fillMode: Image.PreserveAspectFit
+                            source: trayItem.modelData.icon
+                        }
+                    }
+                }
+            }
+
+            // Date: string (click cycles format) + hover calendar popup.
+            DateWidget {
+                Layout.alignment: Qt.AlignVCenter
+                theme: dock.theme
+                barWindow: dock
+                calState: dock.calState
+            }
+            Lib.BarText {
+                id: clockText
+                Layout.alignment: Qt.AlignVCenter
+                color: dock.theme.textPrimary
+                font.family: dock.theme.iconFont
+                font.pixelSize: 11
+                text: {
+                    dock.tick; // re-evaluate every second
+                    return dock.localTime();
+                }
+                MouseArea {
+                    id: clockMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: dock.h12 = !dock.h12
+                    onContainsMouseChanged: clockMouse.containsMouse ? clockPop.show() : clockHideTimer.restart()
+                }
+                Timer {
+                    id: clockHideTimer
+                    interval: 250
+                    onTriggered: if (!clockMouse.containsMouse && !clockPop.contentHovered) clockPop.hide()
+                }
+                ClockPopup {
+                    id: clockPop
+                    theme: dock.theme
+                    barWindow: dock
+                    anchorItem: clockText
+                    h12: dock.h12
+                    tick: dock.tick
+                }
             }
         }
     }

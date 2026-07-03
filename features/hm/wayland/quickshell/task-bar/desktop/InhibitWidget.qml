@@ -1,4 +1,5 @@
 import QtQuick
+import "../lib" as Lib
 import Quickshell
 import Quickshell.Wayland
 
@@ -23,7 +24,7 @@ Item {
         enabled: root.active
     }
 
-    Text {
+    Lib.BarText {
         anchors.centerIn: parent
         // fa mug-hot (steaming) while inhibiting, mug-saucer (plain) at rest.
         text: String.fromCodePoint(root.active ? 0xF7B6 : 0xF0F4)

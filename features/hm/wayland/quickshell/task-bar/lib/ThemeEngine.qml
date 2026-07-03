@@ -25,6 +25,14 @@ Scope {
     readonly property color bgItemHover: root.data.colors?.bgItemHover ?? "#504945"
     readonly property color bgWidget: root.data.colors?.bgCard ?? "#282828"
 
+    // Pill (floating-capsule) fill: translucent bgCard so the bar can go
+    // transparent and pills frost over the wallpaper (Hyprland blurs behind the
+    // bar layer). Opaque legibility fallback = set bgPillOpacity to 1.0 (or add
+    // a solid "bgPill" hex to colors.json, which is used verbatim when present).
+    readonly property real bgPillOpacity: root.data.colors?.bgPillOpacity ?? 0.64
+    readonly property color bgPill: root.data.colors?.bgPill
+        ?? Qt.rgba(bgCard.r, bgCard.g, bgCard.b, bgPillOpacity)
+
     // Text
     readonly property color textPrimary: root.data.colors?.textPrimary ?? "#ebdbb2"
     readonly property color textSecondary: root.data.colors?.textSecondary ?? "#a89984"

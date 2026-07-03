@@ -1,4 +1,5 @@
 import QtQuick
+import "../lib" as Lib
 import Quickshell
 import Quickshell.Io
 
@@ -37,7 +38,7 @@ Item {
             "--why=Disable sleep toggle", "--mode=block", "sleep", "infinity"]
     }
 
-    Text {
+    Lib.BarText {
         anchors.centerIn: parent
         text: String.fromCodePoint(0xF236) // fa bed
         font.family: root.theme.faFont

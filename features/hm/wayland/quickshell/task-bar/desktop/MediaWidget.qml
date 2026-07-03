@@ -1,4 +1,5 @@
 import QtQuick
+import "../lib" as Lib
 import QtQuick.Layouts
 import Quickshell.Services.Mpris
 
@@ -67,7 +68,7 @@ Item {
         spacing: 6
 
         // Play / pause toggle.
-        Text {
+        Lib.BarText {
             Layout.alignment: Qt.AlignVCenter
             text: String.fromCodePoint(root.isPlaying ? 0xF04C : 0xF04B)
             font.family: root.theme.iconFont
@@ -97,7 +98,7 @@ Item {
             // ms per pixel: higher = slower. ~11 px/s.
             readonly property int scrollDur: Math.max(2000, marquee.scrollDist * 90)
 
-            Text {
+            Lib.BarText {
                 id: label
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.label
