@@ -27,11 +27,17 @@ SSH_INTERVAL = 20.0
 RECOVER_INTERVAL = 2.0
 RECOVER_TIMEOUT = 120.0
 QENG_INTERVAL = 30.0  # serving-cell bands change slowly; refresh sparingly
+QCAINFO_INTERVAL = 10.0  # SCC activation changes with traffic; refresh often
 
 # Last good raw QENG payload + when it was last fetched. Kept across cycles so a
 # transient SSH/AT miss does not blank cellular.ca and flicker the widget.
 _QENG_CACHE = None
 _QENG_LAST = 0.0
+
+# Last good raw QCAINFO payload + fetch time, latched like QENG so a transient
+# SSH/AT miss does not blank cellular.ca.
+_QCAINFO_CACHE = None
+_QCAINFO_LAST = 0.0
 
 
 def _read(path):
@@ -115,6 +121,25 @@ def _qeng():
     """Camped serving-cell bands via AT passthrough (populates even in RRC
     idle, unlike QCAINFO/QNWINFO). Returns (raw_at_data_or_None, ssh_auth)."""
     out, rc = _ssh(_QENG_CMD)
+    if rc == 255:
+        return None, True
+    try:
+        return (json.loads(out) or {}).get("data"), False
+    except (ValueError, json.JSONDecodeError):
+        return None, False
+
+
+# AT+QCAINFO via the modem AT passthrough (same channel/escaping as QENG). Lists
+# the PCC + every SCC with activation state -> the full carrier-aggregation view.
+_QCAINFO_CMD = ("ubus call modem.CPU.AT get_result_AT "
+                "'{\"cmd\":\"AT+QCAINFO\",\"timeout\":5,"
+                "\"source_flag\":0,\"sub_id\":0}'")
+
+
+def _qcainfo():
+    """Component-carrier aggregation via AT passthrough.
+    Returns (raw_at_data_or_None, ssh_auth)."""
+    out, rc = _ssh(_QCAINFO_CMD)
     if rc == 255:
         return None, True
     try:
@@ -218,6 +243,19 @@ def collect_once():
         if raw:
             _QENG_CACHE = raw
     parts["qeng"] = _QENG_CACHE
+    # QCAINFO carries the full aggregation (PCC + all SCCs with activation
+    # state). Latch like QENG but keyed on a PCC line: a total SSH/AT miss keeps
+    # the last value (no blank), while a valid PCC-only idle read is allowed
+    # through so the badge honestly drops when SCCs deconfigure (track-real-state).
+    global _QCAINFO_CACHE, _QCAINFO_LAST
+    qcainfo_auth = False
+    if not sig_auth and (_QCAINFO_CACHE is None
+                         or ts - _QCAINFO_LAST >= QCAINFO_INTERVAL):
+        raw, qcainfo_auth = _qcainfo()
+        _QCAINFO_LAST = ts
+        if raw and '"PCC"' in raw:
+            _QCAINFO_CACHE = raw
+    parts["qcainfo"] = _QCAINFO_CACHE
     nb, nb_auth = _netdev_bytes()
     if nb is not None:
         st = L.usage_step(_load_state(), nb[0], nb[1], ts, RESET_DAY)
@@ -227,7 +265,7 @@ def collect_once():
     # Reachable at the network layer but SSH rejected (exit 255) => the key no
     # longer works (e.g. router was factory-reset). Surface it so the widget can
     # prompt re-authentication.
-    parts["auth_error"] = bool(sig_auth or nb_auth or qeng_auth)
+    parts["auth_error"] = bool(sig_auth or nb_auth or qeng_auth or qcainfo_auth)
     parts["recovery"] = _marker()
     return L.build_status(parts)
 
