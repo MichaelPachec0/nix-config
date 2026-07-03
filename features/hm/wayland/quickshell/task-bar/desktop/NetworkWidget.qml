@@ -104,7 +104,7 @@ Item {
         }
         Text {
             text: root.label()
-            color: root.theme.textSecondary
+            color: root.glyphColor()
             font.family: root.theme.iconFont
             font.pixelSize: 11
             elide: Text.ElideRight
