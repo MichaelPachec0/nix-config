@@ -423,7 +423,11 @@ in {
 
               blur = {
                 enabled = true;
-                size = 5;
+                # size bumped 5 -> 8 for a stronger frosted-glass look behind the
+                # quickshell bar. Blur strength is global in Hyprland (layerrule
+                # only toggles blur on/off, no per-layer size), so this also
+                # deepens window/popup blur.
+                size = 8;
                 # Heavy blur (4 passes + xray) only on strong-GPU hosts (thanatos);
                 # everything else falls back to a lighter 3-pass, no-xray blur.
                 passes =
@@ -906,6 +910,22 @@ in {
               name = "noblur-obs";
               match = {class = "com.obsproject.Studio";};
               no_blur = true;
+            }
+          ];
+
+          # hl.layer_rule({...}) -- frost the bar. blur enables wallpaper blur
+          # behind the bar layer; ignore_alpha 0.5 restricts it to pixels with
+          # alpha >= 0.5, so the >=0.64-alpha frosted pills blur while the
+          # transparent gaps (and ghost pill interiors) show sharp wallpaper.
+          # Scoped to the bar's namespace (Taskbar.qml sets
+          # WlrLayershell.namespace = "quickshell:bar") so popups/toasts
+          # (namespace "quickshell") are unaffected.
+          layer_rule = [
+            {
+              name = "blur-quickshell-bar";
+              match = {namespace = "quickshell:bar";};
+              blur = true;
+              ignore_alpha = 0.5;
             }
           ];
 
