@@ -321,6 +321,14 @@ PanelWindow {
             audio: dock.audio
         }
 
+        // group separator: sound | connectivity
+        Rectangle {
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: 1
+            Layout.preferredHeight: 18
+            color: dock.theme.border
+        }
+
         // WiFi (native nm-applet replacement): signal glyph + SSID, click for menu.
         NetworkWidget {
             Layout.alignment: Qt.AlignVCenter
@@ -343,6 +351,36 @@ PanelWindow {
             theme: dock.theme
             barWindow: dock
             svc: dock.routerSvc
+        }
+
+        // group separator: connectivity | awake
+        Rectangle {
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: 1
+            Layout.preferredHeight: 18
+            color: dock.theme.border
+        }
+
+        // Keep-awake: toggle a Wayland idle inhibitor (blocks idle lock / DPMS).
+        InhibitWidget {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            barWindow: dock
+        }
+
+        // Disable sleep: systemd-logind block inhibitor (suspend/hibernate).
+        SleepInhibitWidget {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            barWindow: dock
+        }
+
+        // group separator: awake | system
+        Rectangle {
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: 1
+            Layout.preferredHeight: 18
+            color: dock.theme.border
         }
 
         // CPU / RAM (shared SysStats): microchip + memory glyph, then percent.
@@ -426,6 +464,37 @@ PanelWindow {
             }
         }
 
+        // Battery (laptop only): drawn battery + charging bolt; hover for details.
+        BatteryWidget {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            barWindow: dock
+        }
+
+        // group separator: system | weather
+        Rectangle {
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: 1
+            Layout.preferredHeight: 18
+            color: dock.theme.border
+        }
+
+        // Weather: current condition glyph + temperature; hover for details.
+        WeatherWidget {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            barWindow: dock
+            weatherState: dock.weatherState
+        }
+
+        // group separator: weather | tray + time
+        Rectangle {
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: 1
+            Layout.preferredHeight: 18
+            color: dock.theme.border
+        }
+
         // System tray (StatusNotifier items): left-click activate, middle-click
         // secondary, right-click opens the item's DBus context menu. Items that
         // are menu-only (no activate action) open their menu on left-click too.
@@ -485,28 +554,6 @@ PanelWindow {
                     }
                 }
             }
-        }
-
-        // Keep-awake: toggle a Wayland idle inhibitor (blocks idle lock / DPMS).
-        InhibitWidget {
-            Layout.alignment: Qt.AlignVCenter
-            theme: dock.theme
-            barWindow: dock
-        }
-
-        // Battery (laptop only): drawn battery + charging bolt; hover for details.
-        BatteryWidget {
-            Layout.alignment: Qt.AlignVCenter
-            theme: dock.theme
-            barWindow: dock
-        }
-
-        // Weather: current condition glyph + temperature; hover for details.
-        WeatherWidget {
-            Layout.alignment: Qt.AlignVCenter
-            theme: dock.theme
-            barWindow: dock
-            weatherState: dock.weatherState
         }
 
         // Date: string (click cycles format) + hover calendar popup.
