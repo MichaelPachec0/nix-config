@@ -9,7 +9,7 @@
   standalone ? true,
   ...
 }: let
-  spicetify = inputs.spicetify;
+  inherit (inputs) spicetify;
   spicePkgs = spicetify.packages.${pkgs.stdenv.hostPlatform.system}.default;
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-hard;
   fluffychat = pkgs.callPackage (
@@ -301,7 +301,6 @@ in {
   systemd.user.sessionVariables = {
   };
   # {}
-  # programs.nixneovim.nvchad.enable = true;
   home.packages = let
     # fastanime = pkgs.fastanime.overrideAttrs (old: {
     #   # TODO: add fzf to

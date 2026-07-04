@@ -397,8 +397,7 @@
         pre_pkgs ? nixpkgs.legacyPackages,
         # extraSpecialArgs ? {inherit inputs ouputs;},
         extraSpecialArgs ? {
-          inputs = inputs;
-          outputs = outputs;
+          inherit inputs outputs;
           # standalone `home-manager switch`; the integrated NixOS path
           # (features/nixos/home) passes standalone = false. Module args do not
           # honor `? true` defaults, so it must be supplied here for every config.
