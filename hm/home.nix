@@ -9,7 +9,7 @@
   standalone ? true,
   ...
 }: let
-  spicetify = inputs.spicetify;
+  inherit (inputs) spicetify;
   spicePkgs = spicetify.packages.${pkgs.stdenv.hostPlatform.system}.default;
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-hard;
   fluffychat = pkgs.callPackage (
@@ -274,6 +274,7 @@ in {
     # / programs.cspell below.
     inputs.flake-playground.homeManagerModules.nvchad
     inputs.flake-playground.homeManagerModules.cspell
+    inputs.glide.homeModules.default
   ];
   # Only applied for standalone HM; when integrated (useGlobalPkgs) the system pkgs
   # already carry this overlay via helpers/overlays.nix hmIntegrationOverlays.
@@ -300,7 +301,6 @@ in {
   systemd.user.sessionVariables = {
   };
   # {}
-  # programs.nixneovim.nvchad.enable = true;
   home.packages = let
     # fastanime = pkgs.fastanime.overrideAttrs (old: {
     #   # TODO: add fzf to
@@ -629,6 +629,7 @@ in {
     };
   };
   # Nicely reload system units when changing configs
+  programs.glide-browser.enable = true;
   systemd.user.startServices = "sd-switch";
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
   home.stateVersion = "23.11";
