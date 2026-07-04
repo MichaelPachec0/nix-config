@@ -107,12 +107,36 @@
                 render_text = true,
                 text_center = true,
                 text_font = "${theme.fonts.ui}",
-                ["col.active"] = "rgba(${theme.palette.accent}ff)",
-                ["col.inactive"] = "rgba(${theme.palette.bgItem}ff)",
-                ["col.urgent"] = "rgba(${theme.palette.accentRed}ff)",
-                ["col.text.active"] = "rgba(${theme.palette.textOnAccent}ff)",
-                ["col.text.inactive"] = "rgba(${theme.palette.textPrimary}ff)",
-                ["col.text.urgent"] = "rgba(${theme.palette.textOnAccent}ff)",
+                -- hy3 moved tab colors under a `colors` subtable with renamed keys
+                -- (active/focused/inactive/urgent + _border/_text). The old flat
+                -- col.active / col.text.active keys are unknown here, so they were
+                -- silently dropped and the selected tab fell back to hy3's default
+                -- light-blue fill + border. Set every visible state to a gruvbox
+                -- color -- fill, 2px border, and text -- so nothing defaults. The
+                -- selected tab is `active` (and `focused` while it has keyboard
+                -- focus); both map to accent.
+                colors = {
+                  active = "rgba(${theme.palette.accent}ff)",
+                  active_border = "rgba(${theme.palette.accent}ff)",
+                  active_text = "rgba(${theme.palette.textOnAccent}ff)",
+                  focused = "rgba(${theme.palette.accent}ff)",
+                  focused_border = "rgba(${theme.palette.accent}ff)",
+                  focused_text = "rgba(${theme.palette.textOnAccent}ff)",
+                  inactive = "rgba(${theme.palette.bgItem}ff)",
+                  inactive_border = "rgba(${theme.palette.borderInactive}ff)",
+                  inactive_text = "rgba(${theme.palette.textPrimary}ff)",
+                  urgent = "rgba(${theme.palette.accentRed}ff)",
+                  urgent_border = "rgba(${theme.palette.accentRed}ff)",
+                  urgent_text = "rgba(${theme.palette.textOnAccent}ff)",
+                  locked = "rgba(${theme.palette.accentYellow}ff)",
+                  locked_border = "rgba(${theme.palette.accentYellow}ff)",
+                  locked_text = "rgba(${theme.palette.textOnAccent}ff)",
+                  -- active tab on a non-focused monitor: dark like inactive but
+                  -- ringed in accent so it still reads as "active over there".
+                  active_alt_monitor = "rgba(${theme.palette.bgItem}ff)",
+                  active_alt_monitor_border = "rgba(${theme.palette.accent}ff)",
+                  active_alt_monitor_text = "rgba(${theme.palette.textPrimary}ff)",
+                },
               },
               autotile = { enable = true, ephemeral_groups = true },
             },
