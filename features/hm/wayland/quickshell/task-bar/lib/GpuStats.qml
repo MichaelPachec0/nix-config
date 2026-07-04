@@ -12,7 +12,8 @@ QtObject {
     property real vramUsed: 0
     property real vramTotal: 0
     property real temp: 0
-    property var gpuHist: []
+    property var gpuHist: []    // utilization % history
+    property var vramHist: []   // VRAM used % history
 
     property CommandPoll poll: CommandPoll {
         interval: 2000
@@ -47,9 +48,13 @@ QtObject {
         }
         onUpdated: {
             var v = value;
-            root.available = (v.util !== null && !isNaN(v.util));
-            if (!root.available)
+            // Latch availability: a transient empty sysfs read (util null) must
+            // NOT drop the GPU section for a tick (flicker). Once a good read is
+            // seen, keep available true and just skip the bad tick. Machines with
+            // no GPU never produce util, so available stays false (section hidden).
+            if (v.util === null || isNaN(v.util))
                 return;
+            root.available = true;
             root.util = v.util;
             root.vramUsed = v.vramUsed;
             root.vramTotal = v.vramTotal;
@@ -59,6 +64,12 @@ QtObject {
             if (h.length > 30)
                 h.shift();
             root.gpuHist = h;
+            var vp = root.vramTotal > 0 ? (root.vramUsed / root.vramTotal * 100) : 0;
+            var hv = root.vramHist.slice();
+            hv.push(vp);
+            if (hv.length > 30)
+                hv.shift();
+            root.vramHist = hv;
         }
     }
 }

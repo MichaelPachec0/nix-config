@@ -54,17 +54,21 @@ QtObject {
         running: root.active
         command: ["bash", "-lc", "cat /proc/meminfo"]
         parse: function (o) {
+            // Return a fresh object every tick so CommandPoll's change-detection
+            // always fires updated() -- otherwise a steady ram% would suppress it
+            // and ramHist (the sparkline) would never advance.
             var t = String(o).match(/MemTotal:\s+(\d+)/);
             var a = String(o).match(/MemAvailable:\s+(\d+)/);
+            var pct = 0;
             if (t && a) {
                 var total = Number(t[1]);
                 var avail = Number(a[1]);
-                return total > 0 ? Math.round(100 * (total - avail) / total) : 0;
+                pct = total > 0 ? Math.round(100 * (total - avail) / total) : 0;
             }
-            return 0;
+            return { pct: pct };
         }
         onUpdated: {
-            root.ramPct = value;
+            root.ramPct = value.pct;
             root.ramHist = root._pushHist(root.ramHist, root.ramPct);
         }
     }
