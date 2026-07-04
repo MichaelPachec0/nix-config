@@ -1,0 +1,276 @@
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Services.Mpris
+
+// Hub Media card (Phase 2d, step 5): MPRIS now-playing -- album art, title,
+// artist, a linear progress bar with elapsed/total time, and prev/play-pause/
+// next. Collapses to zero height (and drops out of the layout) when no player is
+// playing or paused. Simplified from surface-dots: no album-art colour
+// extraction or wavy progress (Gruvbox-themed; those are post-v1). Quickshell's
+// MprisPlayer reports position/length already in seconds, so no unit guessing.
+Rectangle {
+    id: root
+
+    required property QtObject theme
+
+    signal closeRequested
+
+    // --- player selection: prefer a playing one, else paused, else first ---
+    // Drop the playerctld proxy (a duplicate that mirrors the active player).
+    readonly property var players: (Mpris.players.values || []).filter(function (p) {
+        return p && (p.dbusName || "").indexOf("playerctld") < 0;
+    })
+    property MprisPlayer player: null
+
+    function pickPlayer() {
+        var ps = root.players || [];
+        for (var i = 0; i < ps.length; i++)
+            if (ps[i] && ps[i].isPlaying) {
+                root.player = ps[i];
+                return;
+            }
+        for (var j = 0; j < ps.length; j++)
+            if (ps[j] && ps[j].playbackState === MprisPlaybackState.Paused) {
+                root.player = ps[j];
+                return;
+            }
+        root.player = ps.length ? ps[0] : null;
+    }
+    Timer {
+        interval: 1500
+        repeat: true
+        running: true
+        triggeredOnStart: true
+        onTriggered: root.pickPlayer()
+    }
+
+    readonly property bool hasPlayer: root.player !== null
+    readonly property int pbState: root.player ? root.player.playbackState : MprisPlaybackState.Stopped
+    readonly property bool isPlaying: root.pbState === MprisPlaybackState.Playing
+    // Visible while a player is playing or paused; collapses when stopped/gone.
+    readonly property bool playerActive: root.hasPlayer && root.pbState !== MprisPlaybackState.Stopped
+
+    // --- track + time ---
+    readonly property string title: root.player ? (root.player.trackTitle || "Unknown Title") : ""
+    readonly property string artist: root.player ? (root.player.trackArtist || "Unknown Artist") : ""
+    readonly property string artUrl: root.player ? (root.player.trackArtUrl || "") : ""
+    readonly property real lenSec: root.player ? (root.player.length || 0) : 0
+    property real posSec: 0
+    readonly property real progress: root.lenSec > 0 ? Math.max(0, Math.min(1, root.posSec / root.lenSec)) : 0
+
+    onPlayerChanged: root.posSec = root.player ? root.player.position : 0
+    // Poll position while open (reading it always returns the current value;
+    // Quickshell only updates it reactively for nonlinear jumps).
+    Timer {
+        interval: 1000
+        repeat: true
+        running: root.visible && root.hasPlayer
+        triggeredOnStart: true
+        onTriggered: root.posSec = root.player ? root.player.position : 0
+    }
+
+    function fmt(s) {
+        if (isNaN(s) || s < 0)
+            return "0:00";
+        var m = Math.floor(s / 60);
+        var ss = Math.floor(s % 60);
+        return m + ":" + (ss < 10 ? "0" : "") + ss;
+    }
+
+    // --- collapse / appearance ---
+    readonly property int baseHeight: 112
+    implicitHeight: root.playerActive ? root.baseHeight : 0
+    Behavior on implicitHeight {
+        NumberAnimation {
+            duration: 220
+            easing.type: Easing.OutCubic
+        }
+    }
+    visible: implicitHeight > 1 // drops out of the hub layout once fully collapsed
+    opacity: root.playerActive ? 1 : 0
+    Behavior on opacity {
+        NumberAnimation {
+            duration: 170
+        }
+    }
+    clip: true
+
+    radius: root.theme.radiusOuter
+    color: root.theme.bgCard
+    border.width: 1
+    border.color: root.theme.border
+
+    // Round transport button: a glyph with hover/press feedback; `primary` is the
+    // larger filled play/pause; dims + ignores input when its action is disabled.
+    component CtlButton: Rectangle {
+        id: ctl
+        property int glyph: 0
+        property int glyphSize: 15
+        property bool primary: false
+        property bool enabledAction: true
+        signal activated
+
+        width: primary ? 42 : 32
+        height: primary ? 42 : 32
+        radius: width / 2
+        color: primary ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, ctlHover.hovered ? 0.28 : 0.18) : (ctlHover.hovered ? root.theme.bgItemHover : "transparent")
+        opacity: ctl.enabledAction ? 1 : 0.35
+        Behavior on color {
+            ColorAnimation {
+                duration: 130
+            }
+        }
+        scale: ctlTap.pressed ? 0.9 : 1
+        Behavior on scale {
+            NumberAnimation {
+                duration: 100
+                easing.type: Easing.OutCubic
+            }
+        }
+        Text {
+            anchors.centerIn: parent
+            text: String.fromCodePoint(ctl.glyph)
+            color: ctl.primary ? root.theme.textPrimary : root.theme.textSecondary
+            font.family: root.theme.iconFont
+            font.pixelSize: ctl.glyphSize
+        }
+        HoverHandler {
+            id: ctlHover
+            enabled: ctl.enabledAction
+            cursorShape: Qt.PointingHandCursor
+        }
+        TapHandler {
+            id: ctlTap
+            enabled: ctl.enabledAction
+            onTapped: ctl.activated()
+        }
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 10
+        spacing: 12
+
+        // Album art (square) with a music-note fallback.
+        Rectangle {
+            Layout.preferredWidth: 88
+            Layout.preferredHeight: 88
+            Layout.alignment: Qt.AlignVCenter
+            radius: 8
+            color: root.theme.bgItem
+            clip: true
+            Text {
+                anchors.centerIn: parent
+                visible: art.status !== Image.Ready
+                text: String.fromCodePoint(0xF001) // music note
+                color: root.theme.textSecondary
+                font.family: root.theme.iconFont
+                font.pixelSize: 30
+            }
+            Image {
+                id: art
+                anchors.fill: parent
+                source: root.artUrl
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                cache: true
+                sourceSize.width: 176
+                sourceSize.height: 176
+            }
+        }
+
+        // Title / artist / progress + times.
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 3
+
+            Item {
+                Layout.fillHeight: true
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: root.title
+                color: root.theme.textPrimary
+                font.family: root.theme.textFont
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+            }
+            Text {
+                Layout.fillWidth: true
+                text: root.artist
+                color: root.theme.textSecondary
+                font.family: root.theme.textFont
+                font.pixelSize: 12
+                elide: Text.ElideRight
+            }
+
+            // Progress bar
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                implicitHeight: 4
+                radius: 2
+                color: root.theme.bgItem
+                Rectangle {
+                    width: parent.width * root.progress
+                    height: parent.height
+                    radius: 2
+                    color: root.theme.accent
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    text: root.fmt(root.posSec)
+                    color: root.theme.textSecondary
+                    font.family: root.theme.textFont
+                    font.pixelSize: 10
+                }
+                Item {
+                    Layout.fillWidth: true
+                }
+                Text {
+                    text: root.lenSec > 0.5 ? root.fmt(root.lenSec) : "--:--"
+                    color: root.theme.textSecondary
+                    font.family: root.theme.textFont
+                    font.pixelSize: 10
+                }
+            }
+
+            Item {
+                Layout.fillHeight: true
+            }
+        }
+
+        // Transport controls: prev / play-pause / next.
+        RowLayout {
+            Layout.alignment: Qt.AlignVCenter
+            spacing: 4
+
+            CtlButton {
+                glyph: 0xF048 // step-backward
+                enabledAction: root.player ? root.player.canGoPrevious : false
+                onActivated: if (root.player)
+                    root.player.previous()
+            }
+            CtlButton {
+                glyph: root.isPlaying ? 0xF04C : 0xF04B // pause / play
+                glyphSize: 18
+                primary: true
+                enabledAction: root.player ? root.player.canTogglePlaying : false
+                onActivated: if (root.player)
+                    root.player.togglePlaying()
+            }
+            CtlButton {
+                glyph: 0xF051 // step-forward
+                enabledAction: root.player ? root.player.canGoNext : false
+                onActivated: if (root.player)
+                    root.player.next()
+            }
+        }
+    }
+}

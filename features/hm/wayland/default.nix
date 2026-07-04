@@ -8,11 +8,14 @@
   ...
 }: {
   imports = [
+    ./theme.nix
+    ./quickshell.nix
     ./swayidle.nix
     ./waybar
     ./rofi.nix
     ./common.nix
     ./hyprland.nix
+    ./hypr-window-keeper.nix
     ./sway.nix
   ];
   config = {
@@ -101,6 +104,13 @@
         name = "Adwaita";
         package = pkgs.adwaita-icon-theme;
         size = 24;
+      };
+      # A real icon theme so themed names (drive-removable-media, nm/bluetooth,
+      # app icons, mimetypes) resolve -- without this Qt/Quickshell only sees the
+      # sparse hicolor fallback, leaving tray/window icons blank.
+      iconTheme = {
+        name = "Papirus-Dark";
+        package = pkgs.papirus-icon-theme;
       };
       font = {
         package = pkgs.dejavu_fonts;
@@ -402,7 +412,11 @@
       };
     };
     services.swaync = {
-      enable = true;
+      # Retired in favour of the Quickshell-native notification server (hub
+      # NotificationsCard + toast overlay, Phase 2f/step 8). Only one process can
+      # own org.freedesktop.Notifications; with this false, Quickshell owns it.
+      # The settings/widgets below are kept dormant for now; clean up later.
+      enable = false;
       settings = let
         control-center-width = 400;
         notification-window-width = 300;
@@ -1003,7 +1017,7 @@
     };
     # WARN: mpv: 2026-06-18: getting errors trying to build
     programs.mpv = {
-      enable = false;
+      enable = true;
       # package = pkgs.emptyDirectory;
       scripts = with pkgs; [
         mpvScripts.mpris
