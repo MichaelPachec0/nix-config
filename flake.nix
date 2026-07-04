@@ -208,6 +208,11 @@
     #   # inputs.hyprland.follows = "nixpkgs";
     #   inputs.nixpkgs.follows = "nixpkgs";
     # };
+    glide = {
+      url = "github:glide-browser/glide.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.home-manager.follows = "home-manager";
+    };
   };
   outputs = {
     self,

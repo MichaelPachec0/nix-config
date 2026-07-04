@@ -1374,6 +1374,29 @@
         "type": "github"
       }
     },
+    "glide": {
+      "inputs": {
+        "home-manager": [
+          "home-manager"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1782680989,
+        "narHash": "sha256-7OxxwIdXZRagnvsnVVp4Ju3Qhmht8hljiS8b7SfGOe4=",
+        "owner": "glide-browser",
+        "repo": "glide.nix",
+        "rev": "bba480c72761ded14314811c440c106360da5572",
+        "type": "github"
+      },
+      "original": {
+        "owner": "glide-browser",
+        "repo": "glide.nix",
+        "type": "github"
+      }
+    },
     "hardware": {
       "locked": {
         "lastModified": 1771158183,
@@ -2488,6 +2511,7 @@
         "firefox": "firefox",
         "flake-playground": "flake-playground",
         "flake-utils": "flake-utils_5",
+        "glide": "glide",
         "hardware": "hardware",
         "home-manager": "home-manager_2",
         "home-manager-stable": "home-manager-stable",
