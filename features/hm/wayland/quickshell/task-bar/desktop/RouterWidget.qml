@@ -50,10 +50,15 @@ Item {
                     anchors.bottom: parent ? parent.bottom : undefined
                     radius: 1
                     property int fill: RouterFmt.barFill(root.svc.cellular.strength)
+                    // Empty segments: a solid dim grey (the pill's ring color), NOT a
+                    // translucent one. The pill casts a per-glyph drop shadow from each
+                    // child's alpha; at low alpha the dark shadow overpowers the bar and
+                    // it reads as sitting *below* the shadow. Full opacity keeps the empty
+                    // track on the same depth plane as the colored (opaque) bars; the
+                    // dim hue -- not transparency -- is what reads as "off".
                     color: index < fill
                         ? root.qColor(RouterFmt.quality("rsrp", root.svc.cellular.rsrp))
-                        : Qt.rgba(root.theme.textSecondary.r, root.theme.textSecondary.g,
-                                  root.theme.textSecondary.b, 0.3)
+                        : root.theme.border
                 }
             }
         }
