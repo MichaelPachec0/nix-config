@@ -9,6 +9,16 @@ QtObject {
     property bool active: true
     property real cpuPct: 0
     property real ramPct: 0
+    property var cpuHist: []
+    property var ramHist: []
+    readonly property int _histMax: 30
+    function _pushHist(arr, v) {
+        var h = arr.slice();
+        h.push(v);
+        if (h.length > root._histMax)
+            h.shift();
+        return h;
+    }
     property var _prevCpu: null
 
     property CommandPoll cpuPoll: CommandPoll {
@@ -35,6 +45,7 @@ QtObject {
                     root.cpuPct = Math.max(0, Math.min(100, Math.round(100 * (1 - di / dt))));
             }
             root._prevCpu = cur;
+            root.cpuHist = root._pushHist(root.cpuHist, root.cpuPct);
         }
     }
 
@@ -52,7 +63,10 @@ QtObject {
             }
             return 0;
         }
-        onUpdated: root.ramPct = value
+        onUpdated: {
+            root.ramPct = value;
+            root.ramHist = root._pushHist(root.ramHist, root.ramPct);
+        }
     }
 
     // --- Detailed stats for the system popup; polled only while it is open. ---
@@ -108,8 +122,8 @@ QtObject {
             "echo @P; head -1 /proc/pressure/cpu; head -1 /proc/pressure/memory; " +
             "echo @U; cat /proc/uptime; " +
             "echo @T; for h in /sys/class/hwmon/hwmon*; do [ \"$(cat $h/name 2>/dev/null)\" = zenpower ] && cat $h/temp1_input 2>/dev/null && break; done; " +
-            "echo @TM; ps -eo comm,rss,pmem --sort=-rss | head -6; " +
-            "echo @TC; ps -eo comm,pcpu --sort=-pcpu | head -6"]
+            "echo @TM; ps -eo pid,rss,pmem,comm --sort=-rss | head -6; " +
+            "echo @TC; ps -eo pid,pcpu,comm --sort=-pcpu | head -6"]
         parse: function (o) {
             var out = { load: [0, 0, 0], mem: {}, swap: {}, psi: { cpu: 0, mem: 0 },
                         uptime: 0, cpuTemp: 0, topMem: [], topCpu: [] };
@@ -146,17 +160,19 @@ QtObject {
                 } else if (tag === "T") {
                     out.cpuTemp = Math.round(Number(ln.trim()) / 1000);
                 } else if (tag === "TM") {
-                    if (/^\s*COMMAND/i.test(ln))
+                    if (/^\s*PID/i.test(ln))
                         continue;
                     var pm = ln.trim().split(/\s+/);
-                    if (pm.length >= 3)
-                        out.topMem.push({ name: pm[0], rssKB: Number(pm[1]), pmem: Number(pm[2]) });
+                    if (pm.length >= 4)
+                        out.topMem.push({ pid: Number(pm[0]), rssKB: Number(pm[1]),
+                                          pmem: Number(pm[2]), name: pm.slice(3).join(" ") });
                 } else if (tag === "TC") {
-                    if (/^\s*COMMAND/i.test(ln))
+                    if (/^\s*PID/i.test(ln))
                         continue;
                     var pc = ln.trim().split(/\s+/);
-                    if (pc.length >= 2)
-                        out.topCpu.push({ name: pc[0], pcpu: Number(pc[1]) });
+                    if (pc.length >= 3)
+                        out.topCpu.push({ pid: Number(pc[0]), pcpu: Number(pc[1]),
+                                          name: pc.slice(2).join(" ") });
                 }
             }
             var total = mi.MemTotal || 0, free = mi.MemFree || 0;
