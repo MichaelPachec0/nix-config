@@ -1,39 +1,62 @@
 import QtQuick
 import "../lib" as Lib
-import Quickshell
-import Quickshell.Wayland
+import QtQuick.Layouts
 
-// Bar toggle that inhibits the lock screen / idle. Uses the Wayland idle-inhibit
-// protocol attached to the bar surface, which swayidle honors through the
-// compositor -- so toggling it engages/releases instantly with no daemon
-// restarts. Click to keep the session awake; the coffee icon turns red while
-// active. Hover shows a small state tooltip. Defaults off; in-memory.
+// Bar keep-awake icon (idle concern): coffee mug + a fixed-width countdown slot.
+// State comes from the shared InhibitService (svc); the actual IdleInhibitor
+// lives in AwakeCluster (it needs the bar window). Click quick-toggles idle to
+// indefinite (both, if locked); hover (handled by AwakeCluster) opens the popup.
 Item {
     id: root
 
     required property QtObject theme
     required property var barWindow
+    required property var svc
 
-    property bool active: false
+    readonly property bool active: root.svc.idleOn
 
-    implicitWidth: 18
+    implicitWidth: row.implicitWidth
     implicitHeight: 24
 
-    IdleInhibitor {
-        window: root.barWindow
-        enabled: root.active
-    }
+    RowLayout {
+        id: row
+        anchors.fill: parent
+        spacing: 4
 
-    Lib.BarText {
-        anchors.centerIn: parent
-        // fa mug-hot (steaming) while inhibiting, mug-saucer (plain) at rest.
-        text: String.fromCodePoint(root.active ? 0xF7B6 : 0xF0F4)
-        font.family: root.theme.faFont
-        font.pixelSize: 13
-        color: root.active ? root.theme.accentRed : (hover.containsMouse ? root.theme.textPrimary : root.theme.textSecondary)
-        Behavior on color {
-            ColorAnimation {
-                duration: 150
+        Lib.BarText {
+            Layout.alignment: Qt.AlignVCenter
+            // fa mug-hot (steaming) while inhibiting, mug-saucer (plain) at rest.
+            text: String.fromCodePoint(root.active ? 0xF7B6 : 0xF0F4)
+            font.family: root.theme.faFont
+            font.pixelSize: 13
+            color: root.active ? root.theme.accentRed : (hover.containsMouse ? root.theme.textPrimary : root.theme.textSecondary)
+            Behavior on color {
+                ColorAnimation {
+                    duration: 150
+                }
+            }
+        }
+
+        // Fixed-width timer slot: width of "00:00:00" so counting never shifts
+        // the pill; centered content is the countdown, an infinity mark when
+        // indefinite, or empty (hidden) when off.
+        Item {
+            Layout.alignment: Qt.AlignVCenter
+            visible: root.active
+            implicitWidth: slotMetrics.advanceWidth
+            implicitHeight: 24
+            TextMetrics {
+                id: slotMetrics
+                font.family: root.theme.iconFont
+                font.pixelSize: 10
+                text: "00:00:00"
+            }
+            Lib.BarText {
+                anchors.centerIn: parent
+                text: root.svc.countdownText("idle")
+                color: root.theme.textPrimary
+                font.family: root.theme.iconFont
+                font.pixelSize: 10
             }
         }
     }
@@ -43,52 +66,6 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.active = !root.active
-        onContainsMouseChanged: containsMouse ? tip.show() : tip.hide()
-    }
-
-    // Small hover tooltip.
-    PopupWindow {
-        id: tip
-
-        implicitWidth: tipText.implicitWidth + 20
-        implicitHeight: tipText.implicitHeight + 12
-        color: "transparent"
-        visible: false
-        grabFocus: false
-
-        anchor.window: root.barWindow
-        anchor.edges: Edges.Bottom
-        anchor.gravity: Edges.Bottom | Edges.Right
-
-        function show() {
-            if (tip.visible)
-                return;
-            var x = root.mapToItem(null, 0, 0).x;
-            tip.anchor.rect.x = Math.max(4, Math.min(x, root.barWindow.width - tip.implicitWidth - 8));
-            tip.anchor.rect.y = root.barWindow.height + 4;
-            tip.anchor.rect.width = 0;
-            tip.anchor.rect.height = 0;
-            tip.visible = true;
-        }
-        function hide() {
-            tip.visible = false;
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            radius: root.theme.radiusOuter
-            color: root.theme.bgCard
-            border.width: 1
-            border.color: root.theme.border
-            Text {
-                id: tipText
-                anchors.centerIn: parent
-                text: root.active ? "Keep awake: on" : "Keep awake: off"
-                color: root.theme.textPrimary
-                font.family: root.theme.iconFont
-                font.pixelSize: 11
-            }
-        }
+        onClicked: root.svc.toggleIndefinite("idle")
     }
 }

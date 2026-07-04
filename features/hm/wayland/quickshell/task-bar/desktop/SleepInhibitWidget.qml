@@ -1,52 +1,58 @@
 import QtQuick
 import "../lib" as Lib
-import Quickshell
-import Quickshell.Io
+import QtQuick.Layouts
 
-// Bar toggle that blocks system suspend/hibernate via a systemd-logind "block"
-// inhibitor. This is a separate concern from the keep-awake widget: keep-awake
-// uses the Wayland idle-inhibit protocol to stop the screen blanking / lock,
-// whereas this keeps the *machine* from sleeping. The two own their own state
-// and do not interact. Defaults off; in-memory. Click to disable sleep; the bed
-// icon turns red while active.
+// Bar prevent-sleep icon (sleep concern): bed glyph + a fixed-width countdown
+// slot. State + the systemd-inhibit engagement live in the shared
+// InhibitService (svc). Click quick-toggles sleep to indefinite (both, if
+// locked); hover (handled by AwakeCluster) opens the popup.
 Item {
     id: root
 
     required property QtObject theme
     required property var barWindow
+    required property var svc
 
-    property bool active: false
+    readonly property bool active: root.svc.sleepOn
 
-    implicitWidth: 18
+    implicitWidth: row.implicitWidth
     implicitHeight: 24
 
-    // The logind lock is held for exactly as long as this process runs:
-    // systemd-inhibit takes the block inhibitor, then `sleep infinity` keeps it
-    // held until we stop it (SIGTERM on running=false), which releases the lock.
-    // Runs as the user -- no root/polkit -- and auto-releases on shell reload.
-    //
-    // Two inhibitor classes are needed. "sleep" (a high-level lock) blocks
-    // idle-triggered auto-suspend, the sleep key, and other apps calling
-    // suspend. But lid-close is exempt from high-level locks by default
-    // (logind's LidSwitchIgnoreInhibited defaults to "yes"), so it would still
-    // suspend on lid close. "handle-lid-switch" is a low-level lock that logind
-    // *always* honors, which is what actually covers the lid.
-    Process {
-        id: inhibitor
-        running: root.active
-        command: ["systemd-inhibit", "--what=sleep:handle-lid-switch", "--who=Quickshell",
-            "--why=Disable sleep toggle", "--mode=block", "sleep", "infinity"]
-    }
+    RowLayout {
+        id: row
+        anchors.fill: parent
+        spacing: 4
 
-    Lib.BarText {
-        anchors.centerIn: parent
-        text: String.fromCodePoint(0xF236) // fa bed
-        font.family: root.theme.faFont
-        font.pixelSize: 13
-        color: root.active ? root.theme.accentRed : (hover.containsMouse ? root.theme.textPrimary : root.theme.textSecondary)
-        Behavior on color {
-            ColorAnimation {
-                duration: 150
+        Lib.BarText {
+            Layout.alignment: Qt.AlignVCenter
+            text: String.fromCodePoint(0xF236) // fa bed
+            font.family: root.theme.faFont
+            font.pixelSize: 13
+            color: root.active ? root.theme.accentRed : (hover.containsMouse ? root.theme.textPrimary : root.theme.textSecondary)
+            Behavior on color {
+                ColorAnimation {
+                    duration: 150
+                }
+            }
+        }
+
+        Item {
+            Layout.alignment: Qt.AlignVCenter
+            visible: root.active
+            implicitWidth: slotMetrics.advanceWidth
+            implicitHeight: 24
+            TextMetrics {
+                id: slotMetrics
+                font.family: root.theme.iconFont
+                font.pixelSize: 10
+                text: "00:00:00"
+            }
+            Lib.BarText {
+                anchors.centerIn: parent
+                text: root.svc.countdownText("sleep")
+                color: root.theme.textPrimary
+                font.family: root.theme.iconFont
+                font.pixelSize: 10
             }
         }
     }
@@ -56,52 +62,6 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.active = !root.active
-        onContainsMouseChanged: containsMouse ? tip.show() : tip.hide()
-    }
-
-    // Small hover tooltip.
-    PopupWindow {
-        id: tip
-
-        implicitWidth: tipText.implicitWidth + 20
-        implicitHeight: tipText.implicitHeight + 12
-        color: "transparent"
-        visible: false
-        grabFocus: false
-
-        anchor.window: root.barWindow
-        anchor.edges: Edges.Bottom
-        anchor.gravity: Edges.Bottom | Edges.Right
-
-        function show() {
-            if (tip.visible)
-                return;
-            var x = root.mapToItem(null, 0, 0).x;
-            tip.anchor.rect.x = Math.max(4, Math.min(x, root.barWindow.width - tip.implicitWidth - 8));
-            tip.anchor.rect.y = root.barWindow.height + 4;
-            tip.anchor.rect.width = 0;
-            tip.anchor.rect.height = 0;
-            tip.visible = true;
-        }
-        function hide() {
-            tip.visible = false;
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            radius: root.theme.radiusOuter
-            color: root.theme.bgCard
-            border.width: 1
-            border.color: root.theme.border
-            Text {
-                id: tipText
-                anchors.centerIn: parent
-                text: root.active ? "Disable sleep: on" : "Disable sleep: off"
-                color: root.theme.textPrimary
-                font.family: root.theme.iconFont
-                font.pixelSize: 11
-            }
-        }
+        onClicked: root.svc.toggleIndefinite("sleep")
     }
 }

@@ -344,20 +344,13 @@ PanelWindow {
             }
         }
 
-        // awake: keep-awake + disable-sleep
+        // awake: shared keep-awake + prevent-sleep cluster (icons + timers +
+        // shared hover popup). See desktop/AwakeCluster.qml.
         Lib.Pill {
             Layout.alignment: Qt.AlignVCenter
             theme: dock.theme
 
-            // Keep-awake: toggle a Wayland idle inhibitor (blocks idle lock / DPMS).
-            InhibitWidget {
-                Layout.alignment: Qt.AlignVCenter
-                theme: dock.theme
-                barWindow: dock
-            }
-
-            // Disable sleep: systemd-logind block inhibitor (suspend/hibernate).
-            SleepInhibitWidget {
+            AwakeCluster {
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
