@@ -30,3 +30,10 @@ Deno.test("fmtKB", () => {
   assertEquals(fmtKB(824234), "805M");
   assertEquals(fmtKB(6488064), "6.2G");
 });
+
+Deno.test("fmtRate scales bytes/s", () => {
+  assertEquals(fmtRate(0), "0 B/s");
+  assertEquals(fmtRate(512), "512 B/s");
+  assertEquals(fmtRate(1024), "1.0 K/s");
+  assertEquals(fmtRate(1536 * 1024), "1.5 M/s");
+});
