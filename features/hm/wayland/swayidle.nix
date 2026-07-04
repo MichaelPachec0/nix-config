@@ -10,6 +10,8 @@
   sys = "/run/current-system/sw";
 in {
   config = let
+    lockSec = 300; # idle -> loginctl lock-session
+    dpmsSec = 800; # idle -> DPMS screen off
     configPkg = pkgs.writeText "swaylockConfig" ''
       indicator-idle-visible
       indicator-radius=100
@@ -27,6 +29,11 @@ in {
     '';
   in {
     xdg.configFile."swaylock/config".source = configPkg;
+    # Idle-policy seam for the Quickshell "stay awake" popup: same numbers the
+    # swayidle timeouts use, emitted as JSON the popup reads. Lives outside
+    # ~/.config/quickshell (that dir is a repo symlink).
+    xdg.configFile."quickshell-idle/policy.json".text =
+      builtins.toJSON {inherit lockSec dpmsSec;};
     # xdg
     systemd.user = {
       services = {
@@ -91,7 +98,7 @@ in {
         # package = pkgs.swayidle.override {systemdSupport = false;};
         timeouts = [
           {
-            timeout = 300;
+            timeout = lockSec;
             command = "${sys}/bin/loginctl lock-session";
           }
           {
@@ -99,7 +106,7 @@ in {
             # WARN: found out that this is way because of a change on how wlroots
             # handles display modifiers, and on high res displays. Setting
             # WLR_DRM_NO_MODIFIERS "fixes" this.
-            timeout = 800;
+            timeout = dpmsSec;
             command = "${mkDpms "off"}";
             resumeCommand = "${mkDpms "on"}";
           }
