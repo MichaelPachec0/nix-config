@@ -1,10 +1,12 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import "../lib/sysfmt.js" as SysFmt
+import Quickshell.Io
+import "../lib" as Lib
 
 // System stats popup shown on hover over the bar CPU/RAM block. Read-only.
 // Mirrors RouterPopup's anchor/hover/reclamp. All text JetBrainsMono; glyphs faFont.
+// Layout mode (0=tall 1=tabs 2=grid) persisted in sys-ui.json via CalState idiom.
 PopupWindow {
     id: pop
     required property QtObject theme
@@ -12,6 +14,9 @@ PopupWindow {
     required property var barWindow
     required property var anchorItem
     property bool contentHovered: cardHover.hovered
+
+    readonly property string _stateDir: (Quickshell.env("XDG_STATE_HOME")
+        || (Quickshell.env("HOME") + "/.local/state")) + "/quickshell"
 
     implicitWidth: card.implicitWidth
     implicitHeight: card.implicitHeight
@@ -33,18 +38,31 @@ PopupWindow {
     function show() { if (!pop.visible) { pop.reclamp(); pop.visible = true; } }
     function hide() { pop.visible = false; }
 
-    function sevColor(sev) {
-        return sev === "good" ? pop.theme.accentGreen
-             : sev === "fair" ? pop.theme.accentYellow : pop.theme.accentRed;
-    }
     function fmtUptime(s) {
         var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
         return h > 0 ? (h + "h " + m + "m") : (m + "m");
     }
 
+    // Persistence: layout mode (0=tall 1=tabs 2=grid) written to sys-ui.json
+    Process { running: true; command: ["mkdir", "-p", pop._stateDir] }
+    FileView {
+        id: uiFile
+        path: pop._stateDir + "/sys-ui.json"
+        watchChanges: true
+        onFileChanged: reload()
+        onAdapterUpdated: writeAdapter()
+        Component.onCompleted: reload()
+        JsonAdapter { id: uiAdapter; property int layout: 0 }
+    }
+
+    Lib.GpuStats  { id: gpu;  active: pop.visible }
+    Lib.DiskStats { id: disk; active: pop.visible }
+    Lib.NetStats  { id: net;  active: pop.visible }
+
     Rectangle {
         id: card
-        implicitWidth: 420
+        // Grid (two-column) mode needs more width so the columns are not cramped.
+        implicitWidth: uiAdapter.layout === 2 ? 600 : 420
         implicitHeight: col.implicitHeight + 24
         radius: pop.theme.radiusOuter
         color: pop.theme.bgCard
@@ -71,185 +89,36 @@ PopupWindow {
                     font.family: pop.theme.iconFont; font.pixelSize: 11
                     color: pop.theme.textSecondary
                 }
-            }
-
-            // --- CPU section ---
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 12
-                Text {
-                    text: "CPU " + Math.round(pop.stats.cpuPct) + "%"
-                    font.family: pop.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
-                    color: pop.sevColor(SysFmt.severity("cpu", pop.stats.cpuPct))
+                // Layout switcher: tall / tabs / grid
+                Rectangle {
+                    implicitWidth: _sw0.implicitWidth + 8; implicitHeight: 14; radius: 3
+                    color: uiAdapter.layout === 0 ? pop.theme.accent : "transparent"
+                    Text { id: _sw0; anchors.centerIn: parent; text: "tall"; font.family: pop.theme.iconFont; font.pixelSize: 9; color: uiAdapter.layout === 0 ? pop.theme.bgCard : pop.theme.textSecondary }
+                    MouseArea { anchors.fill: parent; onClicked: uiAdapter.layout = 0 }
                 }
-                Text {
-                    text: "load " + (pop.stats.load[0] || 0).toFixed(2) + " "
-                        + (pop.stats.load[1] || 0).toFixed(2) + " " + (pop.stats.load[2] || 0).toFixed(2)
-                    font.family: pop.theme.iconFont; font.pixelSize: 11
-                    color: pop.theme.textSecondary
+                Rectangle {
+                    implicitWidth: _sw1.implicitWidth + 8; implicitHeight: 14; radius: 3
+                    color: uiAdapter.layout === 1 ? pop.theme.accent : "transparent"
+                    Text { id: _sw1; anchors.centerIn: parent; text: "tabs"; font.family: pop.theme.iconFont; font.pixelSize: 9; color: uiAdapter.layout === 1 ? pop.theme.bgCard : pop.theme.textSecondary }
+                    MouseArea { anchors.fill: parent; onClicked: uiAdapter.layout = 1 }
                 }
-                Item { Layout.fillWidth: true }
-                Text {
-                    text: "zen " + Math.round(pop.stats.cpuTemp) + " C"
-                    font.family: pop.theme.iconFont; font.pixelSize: 11
-                    color: pop.sevColor(SysFmt.severity("temp", pop.stats.cpuTemp))
-                }
-            }
-            // Per-core mini bars.
-            Row {
-                Layout.fillWidth: true
-                spacing: 2
-                Repeater {
-                    model: pop.stats.perCore
-                    delegate: Rectangle {
-                        required property int index
-                        required property var modelData
-                        width: 6
-                        height: 16
-                        radius: 1
-                        color: Qt.rgba(pop.theme.textSecondary.r, pop.theme.textSecondary.g,
-                                       pop.theme.textSecondary.b, 0.2)
-                        Rectangle {
-                            anchors.bottom: parent.bottom
-                            width: parent.width
-                            height: Math.max(1, parent.height * modelData / 100)
-                            radius: 1
-                            color: pop.sevColor(SysFmt.severity("cpu", modelData))
-                        }
-                    }
+                Rectangle {
+                    implicitWidth: _sw2.implicitWidth + 8; implicitHeight: 14; radius: 3
+                    color: uiAdapter.layout === 2 ? pop.theme.accent : "transparent"
+                    Text { id: _sw2; anchors.centerIn: parent; text: "grid"; font.family: pop.theme.iconFont; font.pixelSize: 9; color: uiAdapter.layout === 2 ? pop.theme.bgCard : pop.theme.textSecondary }
+                    MouseArea { anchors.fill: parent; onClicked: uiAdapter.layout = 2 }
                 }
             }
 
-            Rectangle { Layout.fillWidth: true; height: 1; color: pop.theme.border }
-
-            // --- Memory section ---
-            RowLayout {
-                Layout.fillWidth: true
-                Text {
-                    text: "Memory  " + SysFmt.fmtKB(pop.stats.mem.usedKB || 0) + " / "
-                        + SysFmt.fmtKB(pop.stats.mem.totalKB || 0) + "  (" + (pop.stats.mem.usedPct || 0) + "%)"
-                    font.family: pop.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
-                    color: pop.sevColor(SysFmt.severity("mem", pop.stats.mem.usedPct))
-                }
-            }
-            // Segmented bar: used | cached | free.
-            Rectangle {
-                Layout.fillWidth: true
-                height: 10
-                radius: 3
-                color: Qt.rgba(pop.theme.textSecondary.r, pop.theme.textSecondary.g,
-                               pop.theme.textSecondary.b, 0.15)
-                readonly property real total: (pop.stats.mem.totalKB || 1)
-                Row {
-                    anchors.fill: parent
-                    Rectangle {
-                        width: parent.width * (pop.stats.mem.usedKB || 0) / parent.parent.total
-                        height: parent.height
-                        color: pop.sevColor(SysFmt.severity("mem", pop.stats.mem.usedPct))
-                    }
-                    Rectangle {
-                        width: parent.width * (pop.stats.mem.cachedKB || 0) / parent.parent.total
-                        height: parent.height
-                        color: Qt.rgba(pop.theme.textSecondary.r, pop.theme.textSecondary.g,
-                                       pop.theme.textSecondary.b, 0.4)
-                    }
-                }
-            }
-            Text {
-                Layout.fillWidth: true
-                text: "used " + SysFmt.fmtKB(pop.stats.mem.usedKB || 0)
-                    + "    cached " + SysFmt.fmtKB(pop.stats.mem.cachedKB || 0)
-                    + "    free " + SysFmt.fmtKB(pop.stats.mem.freeKB || 0)
-                font.family: pop.theme.iconFont; font.pixelSize: 10
-                color: pop.theme.textSecondary
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 12
-                Text {
-                    text: "swap " + SysFmt.fmtKB(pop.stats.swap.usedKB || 0) + " / "
-                        + SysFmt.fmtKB(pop.stats.swap.totalKB || 0)
-                    font.family: pop.theme.iconFont; font.pixelSize: 10
-                    color: pop.sevColor(SysFmt.severity("swap", pop.stats.swap.pct))
-                }
-                Item { Layout.fillWidth: true }
-                Text {
-                    text: "pressure  mem " + (pop.stats.psi.mem || 0) + "%"
-                    font.family: pop.theme.iconFont; font.pixelSize: 10
-                    color: pop.sevColor(SysFmt.severity("psi", pop.stats.psi.mem))
-                }
-                Text {
-                    text: "cpu " + (pop.stats.psi.cpu || 0) + "%"
-                    font.family: pop.theme.iconFont; font.pixelSize: 10
-                    color: pop.sevColor(SysFmt.severity("psi", pop.stats.psi.cpu))
-                }
-            }
-
-            Rectangle { Layout.fillWidth: true; height: 1; color: pop.theme.border }
-
-            // --- Two top-process lists side by side ---
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 16
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 1
-                    spacing: 2
-                    Text {
-                        text: "Top memory"
-                        font.family: pop.theme.iconFont; font.pixelSize: 11; font.weight: Font.DemiBold
-                        color: pop.theme.textSecondary
-                    }
-                    Repeater {
-                        model: pop.stats.topMem
-                        delegate: RowLayout {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            Text {
-                                text: modelData.name
-                                font.family: pop.theme.iconFont; font.pixelSize: 10
-                                color: pop.theme.textPrimary
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                            Text {
-                                text: SysFmt.fmtKB(modelData.rssKB)
-                                font.family: pop.theme.iconFont; font.pixelSize: 10
-                                color: pop.theme.textSecondary
-                            }
-                        }
-                    }
-                }
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 1
-                    spacing: 2
-                    Text {
-                        text: "Top CPU"
-                        font.family: pop.theme.iconFont; font.pixelSize: 11; font.weight: Font.DemiBold
-                        color: pop.theme.textSecondary
-                    }
-                    Repeater {
-                        model: pop.stats.topCpu
-                        delegate: RowLayout {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            Text {
-                                text: modelData.name
-                                font.family: pop.theme.iconFont; font.pixelSize: 10
-                                color: pop.theme.textPrimary
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                            Text {
-                                text: modelData.pcpu + "%"
-                                font.family: pop.theme.iconFont; font.pixelSize: 10
-                                color: pop.theme.textSecondary
-                            }
-                        }
-                    }
-                }
-            }
+            // --- Layout switcher body ---
+            // Only the active layout is visible, so the card sizes to IT (a
+            // StackLayout reserves the tallest layout's height -> dead space in
+            // the compact modes; a Loader floods the log with construction-order
+            // "undefined provider" transients). All three instantiate once at
+            // load; the ColumnLayout collapses the two hidden ones.
+            SysLayoutTall   { Layout.fillWidth: true; visible: uiAdapter.layout === 0; theme: pop.theme; stats: pop.stats; gpu: gpu; disk: disk; net: net }
+            SysLayoutTabs   { Layout.fillWidth: true; visible: uiAdapter.layout === 1; theme: pop.theme; stats: pop.stats; gpu: gpu; disk: disk; net: net }
+            SysLayoutTwoCol { Layout.fillWidth: true; visible: uiAdapter.layout === 2; theme: pop.theme; stats: pop.stats; gpu: gpu; disk: disk; net: net }
         }
     }
 }
