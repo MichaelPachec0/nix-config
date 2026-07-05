@@ -12,6 +12,7 @@ ColumnLayout {
     property var gpu
     property var disk
     property var net
+    property var sensors
 
     SysCpuSection  { Layout.fillWidth: true; theme: root.theme; stats: root.stats }
 
@@ -30,6 +31,10 @@ ColumnLayout {
     Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: root.theme.border; visible: root.net.available }
 
     SysNetSection  { Layout.fillWidth: true; theme: root.theme; net: root.net }
+
+    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: root.theme.border; visible: root.sensors.available }
+
+    SysSensorSection { Layout.fillWidth: true; theme: root.theme; sensors: root.sensors }
 
     Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: root.theme.border }
 

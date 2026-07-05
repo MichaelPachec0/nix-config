@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import "../lib" as Lib
 
 // Tabs layout: compact metric strip at top, section tab bar, then full section detail.
-// Tab index 0=CPU 1=Mem 2=GPU 3=Disk 4=Net 5=Proc; aligns with StackLayout child order.
+// Tab index 0=CPU 1=Mem 2=GPU 3=Disk 4=Net 5=Proc 6=Temps; aligns with the detail order.
 ColumnLayout {
     id: root
     spacing: 6
@@ -13,6 +13,7 @@ ColumnLayout {
     property var gpu
     property var disk
     property var net
+    property var sensors
 
     property int tab: 0
 
@@ -31,6 +32,11 @@ ColumnLayout {
         target: root.net
         ignoreUnknownSignals: true
         function onAvailableChanged() { if (!root.net.available && root.tab === 4) root.tab = 0 }
+    }
+    Connections {
+        target: root.sensors
+        ignoreUnknownSignals: true
+        function onAvailableChanged() { if (!root.sensors.available && root.tab === 6) root.tab = 0 }
     }
 
     // Compact metric strip
@@ -117,6 +123,13 @@ ColumnLayout {
             Text { id: _t5; anchors.centerIn: parent; text: "Proc"; font.family: root.theme.iconFont; font.pixelSize: 10; color: root.tab === 5 ? root.theme.accent : root.theme.textSecondary }
             MouseArea { anchors.fill: parent; onClicked: root.tab = 5 }
         }
+        Rectangle {
+            visible: root.sensors.available
+            implicitWidth: _t6.implicitWidth + 10; implicitHeight: 16; radius: 3
+            color: root.tab === 6 ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, 0.15) : "transparent"
+            Text { id: _t6; anchors.centerIn: parent; text: "Temps"; font.family: root.theme.iconFont; font.pixelSize: 10; color: root.tab === 6 ? root.theme.accent : root.theme.textSecondary }
+            MouseArea { anchors.fill: parent; onClicked: root.tab = 6 }
+        }
 
         Item { Layout.fillWidth: true }
     }
@@ -135,5 +148,6 @@ ColumnLayout {
         SysDiskSection { Layout.fillWidth: true; visible: root.tab === 3 && root.disk.available; theme: root.theme; disk: root.disk }
         SysNetSection  { Layout.fillWidth: true; visible: root.tab === 4 && root.net.available; theme: root.theme; net: root.net }
         SysProcSection { Layout.fillWidth: true; visible: root.tab === 5; theme: root.theme; stats: root.stats }
+        SysSensorSection { Layout.fillWidth: true; visible: root.tab === 6 && root.sensors.available; theme: root.theme; sensors: root.sensors }
     }
 }
