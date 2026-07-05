@@ -39,5 +39,46 @@ class TestResolveMode(unittest.TestCase):
         self.assertEqual(fb.resolve_mode("bogus", True), "perf")
 
 
+INIT = fb.State(ema=None, hot_since=None)
+
+
+def mk(**kw: object) -> fb.Inputs:
+    base: dict[str, object] = dict(cpu_thm=None, peak=None, tctl=None, frame_age=0.0,
+                                   ac_online=True, override=None, now=0.0)
+    base.update(kw)
+    return fb.Inputs(**base)  # type: ignore[arg-type]
+
+
+class TestControlPath(unittest.TestCase):
+    def test_first_tick_seeds_ema_to_base(self) -> None:
+        d = fb.decide(mk(cpu_thm=40.0), INIT)
+        self.assertEqual(d.state.ema, 40.0)
+        self.assertEqual(d.published_mc, 40000)  # perf offset 0
+
+    def test_ema_smooths(self) -> None:
+        d = fb.decide(mk(cpu_thm=60.0), fb.State(ema=40.0, hot_since=None))
+        # 0.4*60 + 0.6*40 = 48
+        self.assertEqual(d.state.ema, 48.0)
+        self.assertEqual(d.published_mc, 48000)
+
+    def test_stale_falls_back_to_tctl(self) -> None:
+        d = fb.decide(mk(cpu_thm=40.0, tctl=90.0, frame_age=99.0), INIT)
+        self.assertEqual(d.state.ema, 90.0)  # used tctl, not cpu_thm
+
+    def test_quiet_offset_lowers_published(self) -> None:
+        perf = fb.decide(mk(cpu_thm=70.0, ac_online=True), INIT)
+        quiet = fb.decide(mk(cpu_thm=70.0, ac_online=False), INIT)
+        self.assertEqual(perf.published_mc - quiet.published_mc,
+                         int(fb.QUIET_OFFSET_C * 1000))
+
+    def test_total_sensor_loss_fails_safe(self) -> None:
+        d = fb.decide(mk(cpu_thm=None, tctl=None, frame_age=99.0), INIT)
+        self.assertEqual(d.published_mc, fb.FAIL_SAFE_MC)
+
+    def test_clamp_low(self) -> None:
+        d = fb.decide(mk(cpu_thm=2.0, ac_online=False), INIT)  # 2 - 9 = -7 -> 0
+        self.assertEqual(d.published_mc, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

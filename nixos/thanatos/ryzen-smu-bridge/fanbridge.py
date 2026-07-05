@@ -75,3 +75,25 @@ def resolve_mode(override: str | None, ac_online: bool) -> str:
         assert override is not None
         return override
     return "perf" if ac_online else "quiet"
+
+
+def _clamp(c: float) -> float:
+    return max(CLAMP_MIN_C, min(CLAMP_MAX_C, c))
+
+
+def decide(inp: Inputs, st: State) -> Decision:
+    # 1. source selection: fresh cpu_thm, else fall back to raw Tctl
+    fresh = inp.frame_age <= FRESH_S and inp.cpu_thm is not None
+    base = inp.cpu_thm if fresh else inp.tctl
+    if base is None:
+        # total sensor loss -> fail toward cold, keep prior smoothing state
+        return Decision(FAIL_SAFE_MC, st)
+    # 2. EMA (seed to base on first tick)
+    ema = base if st.ema is None else ALPHA * base + (1.0 - ALPHA) * st.ema
+    # 3. profile offset
+    mode = resolve_mode(inp.override, inp.ac_online)
+    offset = 0.0 if mode == "perf" else QUIET_OFFSET_C
+    control = ema - offset
+    # 4. (safety override added in Task 4)
+    control = _clamp(control)
+    return Decision(int(round(control * 1000)), State(ema=ema, hot_since=st.hot_since))
