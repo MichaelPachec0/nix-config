@@ -80,5 +80,40 @@ class TestControlPath(unittest.TestCase):
         self.assertEqual(d.published_mc, 0)
 
 
+class TestSafetyOverride(unittest.TestCase):
+    def _hot(self, now: float, hot_since: float | None) -> fb.Decision:
+        # Tctl over threshold; smoothing already warm at a mild temp.
+        st = fb.State(ema=70.0, hot_since=hot_since)
+        return fb.decide(mk(cpu_thm=70.0, tctl=98.0, now=now), st)
+
+    def test_hot_sets_hot_since_but_not_yet_forced(self) -> None:
+        d = self._hot(now=100.0, hot_since=None)
+        self.assertEqual(d.state.hot_since, 100.0)
+        self.assertNotEqual(d.published_mc, int(fb.FORCE_MAX_C * 1000))
+
+    def test_not_yet_sustained(self) -> None:
+        d = self._hot(now=102.9, hot_since=100.0)  # 2.9s < 3s
+        self.assertNotEqual(d.published_mc, int(fb.FORCE_MAX_C * 1000))
+
+    def test_sustained_forces_max(self) -> None:
+        d = self._hot(now=103.1, hot_since=100.0)  # 3.1s >= 3s
+        self.assertEqual(d.published_mc, int(fb.FORCE_MAX_C * 1000))
+
+    def test_peak_also_trips(self) -> None:
+        st = fb.State(ema=70.0, hot_since=100.0)
+        d = fb.decide(mk(cpu_thm=70.0, peak=100.5, now=104.0), st)
+        self.assertEqual(d.published_mc, int(fb.FORCE_MAX_C * 1000))
+
+    def test_cooling_resets_window(self) -> None:
+        st = fb.State(ema=70.0, hot_since=100.0)
+        d = fb.decide(mk(cpu_thm=70.0, tctl=80.0, peak=80.0, now=105.0), st)
+        self.assertIsNone(d.state.hot_since)
+
+    def test_force_max_bypasses_quiet_offset(self) -> None:
+        st = fb.State(ema=70.0, hot_since=100.0)
+        d = fb.decide(mk(cpu_thm=70.0, tctl=98.0, ac_online=False, now=104.0), st)
+        self.assertEqual(d.published_mc, int(fb.FORCE_MAX_C * 1000))  # no -9 applied
+
+
 if __name__ == "__main__":
     unittest.main()

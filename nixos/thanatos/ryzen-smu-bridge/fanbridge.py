@@ -86,14 +86,21 @@ def decide(inp: Inputs, st: State) -> Decision:
     fresh = inp.frame_age <= FRESH_S and inp.cpu_thm is not None
     base = inp.cpu_thm if fresh else inp.tctl
     if base is None:
-        # total sensor loss -> fail toward cold, keep prior smoothing state
-        return Decision(FAIL_SAFE_MC, st)
+        return Decision(FAIL_SAFE_MC, st)  # total sensor loss -> fail cold
     # 2. EMA (seed to base on first tick)
     ema = base if st.ema is None else ALPHA * base + (1.0 - ALPHA) * st.ema
     # 3. profile offset
     mode = resolve_mode(inp.override, inp.ac_online)
     offset = 0.0 if mode == "perf" else QUIET_OFFSET_C
     control = ema - offset
-    # 4. (safety override added in Task 4)
+    # 4. safety override on RAW values (never the EMA); sustained window
+    hot = (inp.tctl is not None and inp.tctl >= TCTL_HOT_C) or (
+        inp.peak is not None and inp.peak >= PEAK_HOT_C)
+    if hot:
+        hot_since = st.hot_since if st.hot_since is not None else inp.now
+    else:
+        hot_since = None
+    if hot_since is not None and (inp.now - hot_since) >= SUSTAIN_S:
+        control = FORCE_MAX_C  # overrides profile offset
     control = _clamp(control)
-    return Decision(int(round(control * 1000)), State(ema=ema, hot_since=st.hot_since))
+    return Decision(int(round(control * 1000)), State(ema=ema, hot_since=hot_since))
