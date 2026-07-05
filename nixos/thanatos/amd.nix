@@ -6,6 +6,33 @@
   pkgs,
   ...
 } @ args: let
+  # Root-only bridge: ryzen_monitor reads the SMU PM table (needs root + the
+  # ryzen_smu module) and streams influx line-protocol frames over a named pipe
+  # (continuously, without closing between frames). QuickShell watches regular
+  # files, not pipes, so we split the stream into whole frames and republish the
+  # latest one atomically as a world-readable regular file that the RyzenSmuStats
+  # provider polls.
+  # Checked python source: mypy --strict + unittest run at build time; a type
+  # error or failing test fails the build. See
+  # docs/superpowers/specs/2026-07-05-thinkfan-ryzen-smu-fan-control-design.md.
+  ryzenSmuBridgeSrc = pkgs.runCommand "ryzen-smu-bridge-src" {
+    nativeBuildInputs = [pkgs.python3 pkgs.mypy];
+  } ''
+    cp ${./ryzen-smu-bridge/fanbridge.py} fanbridge.py
+    cp ${./ryzen-smu-bridge/main.py} main.py
+    cp ${./ryzen-smu-bridge/test_fanbridge.py} test_fanbridge.py
+    mypy --strict fanbridge.py main.py test_fanbridge.py
+    python3 -m unittest test_fanbridge -v
+    install -d "$out"
+    cp fanbridge.py main.py "$out/"
+  '';
+  # Single merged service: republishes the SMU frame for Quickshell AND writes
+  # /run/thinkfan/temp for thinkfan. ryzen_monitor must be on PATH.
+  ryzenSmuBridge = pkgs.writeShellApplication {
+    name = "ryzen-smu-bridge";
+    runtimeInputs = [pkgs.python3 pkgs.playground.ryzen-monitor-ng pkgs.coreutils];
+    text = ''exec python3 ${ryzenSmuBridgeSrc}/main.py "$@"'';
+  };
 in {
   imports = [
     ./tlp.nix
@@ -42,6 +69,25 @@ in {
       radeontools
       pixiecore
     ];
+    # Publish SMU metrics (temps + power/limits) for the QuickShell system popup.
+    # Falls back gracefully: if this unit is down the file goes stale and the
+    # popup reverts to its lm_sensors group.
+    systemd.services.ryzen-smu-bridge = {
+      description = "Ryzen SMU -> Quickshell influx + thinkfan temp bridge";
+      wantedBy = ["multi-user.target"];
+      after = ["systemd-modules-load.service"];
+      serviceConfig = {
+        Type = "notify";
+        NotifyAccess = "main";
+        WatchdogSec = 15;
+        ExecStart = lib.getExe ryzenSmuBridge;
+        Restart = "always";
+        RestartSec = 5;
+        RuntimeDirectory = ["ryzen-monitor" "thinkfan"];
+        RuntimeDirectoryMode = "0755";
+        LogLevelMax = "err";
+      };
+    };
     networking.hostName = "thanatos";
     nix.gc = {
       automatic = true;
