@@ -115,5 +115,56 @@ class TestSafetyOverride(unittest.TestCase):
         self.assertEqual(d.published_mc, int(fb.FORCE_MAX_C * 1000))  # no -9 applied
 
 
+import os
+import tempfile
+import main as drv
+
+
+class TestDriverHelpers(unittest.TestCase):
+    def test_resolve_tctl_path(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            h = os.path.join(root, "hwmon9")
+            os.mkdir(h)
+            with open(os.path.join(h, "name"), "w") as f:
+                f.write("zenpower\n")
+            with open(os.path.join(h, "temp2_label"), "w") as f:
+                f.write("Tctl\n")
+            with open(os.path.join(h, "temp2_input"), "w") as f:
+                f.write("96000\n")
+            self.assertEqual(drv.resolve_tctl_path(root),
+                             os.path.join(h, "temp2_input"))
+
+    def test_resolve_tctl_path_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            self.assertIsNone(drv.resolve_tctl_path(root))
+
+    def test_read_millideg(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            p = os.path.join(root, "t")
+            with open(p, "w") as f:
+                f.write("96000\n")
+            self.assertEqual(drv.read_millideg(p), 96.0)
+            self.assertIsNone(drv.read_millideg(os.path.join(root, "missing")))
+            self.assertIsNone(drv.read_millideg(None))
+
+    def test_read_override(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            p = os.path.join(root, "mode")
+            self.assertIsNone(drv.read_override(p))  # absent
+            with open(p, "w") as f:
+                f.write("perf\n")
+            self.assertEqual(drv.read_override(p), "perf")
+            with open(p, "w") as f:
+                f.write("bogus\n")
+            self.assertIsNone(drv.read_override(p))  # invalid -> None
+
+    def test_atomic_write(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            p = os.path.join(root, "out")
+            drv.atomic_write(p, "84000\n", 0o644)
+            with open(p) as f:
+                self.assertEqual(f.read(), "84000\n")
+
+
 if __name__ == "__main__":
     unittest.main()
