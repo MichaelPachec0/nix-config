@@ -141,6 +141,8 @@ def main() -> int:
     os.makedirs(os.path.dirname(THINKFAN_TEMP), exist_ok=True)
     # seed a safe default so thinkfan has a value immediately
     atomic_write(THINKFAN_TEMP, "60000\n", 0o644)
+    # pre-create mode file world-writable so non-root can write/truncate in place
+    atomic_write(MODE_PATH, "", 0o666)
 
     for stale in (FIFO, INFLUX_OUT):
         try:
@@ -186,7 +188,7 @@ def main() -> int:
             # AC edge clears a per-power-session override
             if last_ac is not None and ac != last_ac:
                 try:
-                    os.unlink(MODE_PATH)
+                    atomic_write(MODE_PATH, "", 0o666)
                 except OSError:
                     pass
             last_ac = ac

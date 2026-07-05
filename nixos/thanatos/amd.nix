@@ -38,9 +38,10 @@
     runtimeInputs = [pkgs.coreutils];
     text = ''
       mode="''${1:-}"
+      [ -w /run/thinkfan/mode ] || { echo "fan-mode: ryzen-smu-bridge not running" >&2; exit 1; }
       case "$mode" in
         perf|quiet) printf '%s\n' "$mode" > /run/thinkfan/mode ;;
-        auto)       rm -f /run/thinkfan/mode ;;
+        auto)       : > /run/thinkfan/mode ;;
         *) echo "usage: fan-mode perf|quiet|auto" >&2; exit 2 ;;
       esac
       echo "fan-mode: ''${mode} (clears on AC state change)"
@@ -304,9 +305,10 @@ in {
       # smoothed cpu_thm feeds this now, so the spike-bias can relax; -s2 keeps
       # the poll short enough that the safety FORCE_MAX value acts within ~2s.
       extraArgs = ["-b0" "-s2"];
-      # Curve is on the cpu_thm scale (~13C below the old EC/Tctl scale). Wide
-      # ~6-7C hysteresis so it parks instead of hunting. Quiet profile is the
-      # same curve minus the bridge's QUIET_OFFSET.
+      # Curve is on the cpu_thm scale (~13C below the old EC/Tctl scale).
+      # ~6C hysteresis in the working range; the top disengage step is a
+      # deliberate tight 2C safety band. Quiet profile is the same curve minus
+      # the bridge's QUIET_OFFSET.
       levels = [
         [0 0 55]
         [2 48 66]
