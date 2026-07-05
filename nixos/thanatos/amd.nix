@@ -33,6 +33,19 @@
     runtimeInputs = [pkgs.python3 pkgs.playground.ryzen-monitor-ng pkgs.coreutils];
     text = ''exec python3 ${ryzenSmuBridgeSrc}/main.py "$@"'';
   };
+  fanMode = pkgs.writeShellApplication {
+    name = "fan-mode";
+    runtimeInputs = [pkgs.coreutils];
+    text = ''
+      mode="''${1:-}"
+      case "$mode" in
+        perf|quiet) printf '%s\n' "$mode" > /run/thinkfan/mode ;;
+        auto)       rm -f /run/thinkfan/mode ;;
+        *) echo "usage: fan-mode perf|quiet|auto" >&2; exit 2 ;;
+      esac
+      echo "fan-mode: ''${mode} (clears on AC state change)"
+    '';
+  };
 in {
   imports = [
     ./tlp.nix
@@ -68,6 +81,7 @@ in {
       amdctl
       radeontools
       pixiecore
+      fanMode
     ];
     # Publish SMU metrics (temps + power/limits) for the QuickShell system popup.
     # Falls back gracefully: if this unit is down the file goes stale and the
@@ -87,6 +101,10 @@ in {
         RuntimeDirectoryMode = "0755";
         LogLevelMax = "err";
       };
+    };
+    systemd.services.thinkfan = {
+      after = ["ryzen-smu-bridge.service"];
+      requires = ["ryzen-smu-bridge.service"];
     };
     networking.hostName = "thanatos";
     nix.gc = {
@@ -272,14 +290,9 @@ in {
       enable = true;
       smartSupport = true;
       sensors = [
-        # {
-        #   type = "tpacpi";
-        #   query = "/proc/acpi/ibm/thermal";
-        #   indices = [0];
-        # }
         {
           type = "hwmon";
-          query = "/sys/devices/platform/thinkpad_hwmon/hwmon/hwmon6/temp1_input";
+          query = "/run/thinkfan/temp";
         }
       ];
       fans = [
@@ -288,74 +301,19 @@ in {
           query = "/proc/acpi/ibm/fan";
         }
       ];
-      # to combat temp spikes
-      extraArgs = ["-b-3"];
+      # smoothed cpu_thm feeds this now, so the spike-bias can relax; -s2 keeps
+      # the poll short enough that the safety FORCE_MAX value acts within ~2s.
+      extraArgs = ["-b0" "-s2"];
+      # Curve is on the cpu_thm scale (~13C below the old EC/Tctl scale). Wide
+      # ~6-7C hysteresis so it parks instead of hunting. Quiet profile is the
+      # same curve minus the bridge's QUIET_OFFSET.
       levels = [
-        # [0 0 45]
-        # [1 40 50]
-        # [2 45 55]
-        # [3 50 60]
-        # [4 55 65]
-        # [5 60 65]
-        # [6 63 66]
-        # [7 69 72]
-        # [0 0 58]
-        # [1 52 62]
-        # [2 55 65]
-        # [3 58 68]
-        # [5 61 72]
-        # [7 66 85]
-        [0 0 58] # Fan off below 58°C
-        [1 54 62] # Low fan from 58-62°C
-        [2 57 66] # Moderate fan if climbing
-        [3 60 70] # Start reacting to higher sustained temps
-        [5 65 82] # High fan only if 80+ persists
-        [7 75 88] # Max fan near thermal throttle
-        ["level disengaged" 87 32767]
-        # [
-        #   0
-        #   0
-        #   55
-        # ]
-        # [
-        #   1
-        #   40
-        #   60
-        # ]
-        # [
-        #   2
-        #   50
-        #   61
-        # ]
-        # [
-        #   3
-        #   52
-        #   63
-        # ]
-        # [
-        #   6
-        #   56
-        #   65
-        # ]
-        # [
-        #   7
-        #   60
-        #   85
-        # ]
-        # [
-        #   "level disengaged"
-        #   80
-        #   32767
-        # ]
-        # [0 0 45]
-        # [1 40 50]
-        # [2 45 55]
-        # [3 50 60]
-        # [4 55 65]
-        # [5 60 68]
-        # [6 63 70]
-        # [7 66 73]
-        # ["level disengaged" 69 78]
+        [0 0 55]
+        [2 48 66]
+        [4 60 76]
+        [5 70 84]
+        [7 78 90]
+        ["level disengaged" 88 32767]
       ];
     };
     services.pixiecore = {
