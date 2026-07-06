@@ -55,10 +55,11 @@ PopupWindow {
         JsonAdapter { id: uiAdapter; property int layout: 0 }
     }
 
-    Lib.GpuStats    { id: gpu;     active: pop.visible }
-    Lib.DiskStats   { id: disk;    active: pop.visible }
-    Lib.NetStats    { id: net;     active: pop.visible }
-    Lib.SensorStats { id: sensors; active: pop.visible }
+    Lib.GpuStats      { id: gpu;     active: pop.visible }
+    Lib.DiskStats     { id: disk;    active: pop.visible }
+    Lib.NetStats      { id: net;     active: pop.visible }
+    Lib.SensorStats   { id: sensors; active: pop.visible }
+    Lib.RyzenSmuStats { id: smu;     active: pop.visible }
 
     Rectangle {
         id: card
@@ -117,9 +118,9 @@ PopupWindow {
             // the compact modes; a Loader floods the log with construction-order
             // "undefined provider" transients). All three instantiate once at
             // load; the ColumnLayout collapses the two hidden ones.
-            SysLayoutTall   { Layout.fillWidth: true; visible: uiAdapter.layout === 0; theme: pop.theme; stats: pop.stats; gpu: gpu; disk: disk; net: net; sensors: sensors }
-            SysLayoutTabs   { Layout.fillWidth: true; visible: uiAdapter.layout === 1; theme: pop.theme; stats: pop.stats; gpu: gpu; disk: disk; net: net; sensors: sensors }
-            SysLayoutTwoCol { Layout.fillWidth: true; visible: uiAdapter.layout === 2; theme: pop.theme; stats: pop.stats; gpu: gpu; disk: disk; net: net; sensors: sensors }
+            SysLayoutTall   { Layout.fillWidth: true; visible: uiAdapter.layout === 0; theme: pop.theme; stats: pop.stats; gpu: gpu; disk: disk; net: net; sensors: sensors; smu: smu }
+            SysLayoutTabs   { Layout.fillWidth: true; visible: uiAdapter.layout === 1; theme: pop.theme; stats: pop.stats; gpu: gpu; disk: disk; net: net; sensors: sensors; smu: smu }
+            SysLayoutTwoCol { Layout.fillWidth: true; visible: uiAdapter.layout === 2; theme: pop.theme; stats: pop.stats; gpu: gpu; disk: disk; net: net; sensors: sensors; smu: smu }
         }
     }
 }

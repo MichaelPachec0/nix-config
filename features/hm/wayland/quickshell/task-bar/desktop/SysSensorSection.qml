@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import "../lib/sysfmt.js" as SysFmt
+import "../lib/sensormerge.js" as SensorMerge
 
 // Sensor/temperature section: every populated temp from SensorStats, laid out in
 // a two-column grid, each value colorized by temp severity (green/yellow/red).
@@ -8,10 +9,16 @@ import "../lib/sysfmt.js" as SysFmt
 ColumnLayout {
     id: root
     spacing: 4
-    visible: root.sensors.available
+    visible: (root.sensors && root.sensors.available) || (root.smu && root.smu.available)
 
     required property QtObject theme
     required property var sensors
+    // Not `required`: it is fed by the parent layout's own `smu` binding, which
+    // is undefined at this child's construction time. A required property would
+    // fail creation ("failed to create variant") and never attach; a plain var
+    // starts undefined and the binding attaches reactively once the popup wires
+    // the provider through. The merge below already treats a null smu as absent.
+    property var smu
 
     function sevColor(sev) {
         return sev === "good" ? theme.accentGreen
@@ -32,7 +39,7 @@ ColumnLayout {
         columnSpacing: 14
         rowSpacing: 2
         Repeater {
-            model: root.sensors.sensors
+            model: SensorMerge.mergeSensors(root.sensors ? root.sensors.sensors : [], root.smu ? { available: root.smu.available, cpu: root.smu.cpu, peak: root.smu.peak, soc: root.smu.soc, gfx: root.smu.gfx } : null)
             delegate: RowLayout {
                 required property var modelData
                 Layout.fillWidth: true
