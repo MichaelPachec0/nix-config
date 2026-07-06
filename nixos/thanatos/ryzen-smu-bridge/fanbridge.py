@@ -86,12 +86,12 @@ def decide(inp: Inputs, st: State) -> Decision:
     fresh = inp.frame_age <= FRESH_S and inp.cpu_thm is not None
     base = inp.cpu_thm if fresh else inp.tctl
     if base is None:
-        return Decision(FAIL_SAFE_MC, st)  # total sensor loss -> fail cold
+        return Decision(FAIL_SAFE_MC, st)  # total sensor loss -> publish a high temp so thinkfan forces the fan on
     # 2. EMA (seed to base on first tick)
     ema = base if st.ema is None else ALPHA * base + (1.0 - ALPHA) * st.ema
     # 3. profile offset
     mode = resolve_mode(inp.override, inp.ac_online)
-    offset = 0.0 if mode == "perf" else QUIET_OFFSET_C
+    offset = QUIET_OFFSET_C if (fresh and mode == "quiet") else 0.0
     control = ema - offset
     # 4. safety override on RAW values (never the EMA); sustained window
     hot = (inp.tctl is not None and inp.tctl >= TCTL_HOT_C) or (
