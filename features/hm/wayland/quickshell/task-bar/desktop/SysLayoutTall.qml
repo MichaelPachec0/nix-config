@@ -13,6 +13,7 @@ ColumnLayout {
     property var disk
     property var net
     property var sensors
+    property var smu
 
     SysCpuSection  { Layout.fillWidth: true; theme: root.theme; stats: root.stats }
 
@@ -34,7 +35,11 @@ ColumnLayout {
 
     Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: root.theme.border; visible: root.sensors.available }
 
-    SysSensorSection { Layout.fillWidth: true; theme: root.theme; sensors: root.sensors }
+    SysSensorSection { Layout.fillWidth: true; theme: root.theme; sensors: root.sensors; smu: root.smu }
+
+    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: root.theme.border; visible: root.smu.available }
+
+    SysPowerSection { Layout.fillWidth: true; theme: root.theme; smu: root.smu }
 
     Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: root.theme.border }
 

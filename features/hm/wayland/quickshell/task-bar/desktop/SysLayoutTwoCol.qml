@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 
-// Two-column layout: CPU+Memory+GPU left, Sensors+Disk+Net right, Proc full-width below.
+// Two-column layout: CPU+Memory+GPU+Disk left, Sensors+Power+Net right, Proc full-width below.
 ColumnLayout {
     id: root
     spacing: 8
@@ -12,6 +12,7 @@ ColumnLayout {
     property var disk
     property var net
     property var sensors
+    property var smu
 
     RowLayout {
         Layout.fillWidth: true
@@ -23,9 +24,10 @@ ColumnLayout {
             Layout.alignment: Qt.AlignTop
             spacing: 8
 
-            SysCpuSection { Layout.fillWidth: true; theme: root.theme; stats: root.stats }
-            SysMemSection { Layout.fillWidth: true; theme: root.theme; stats: root.stats }
-            SysGpuSection { Layout.fillWidth: true; theme: root.theme; gpu: root.gpu }
+            SysCpuSection  { Layout.fillWidth: true; theme: root.theme; stats: root.stats }
+            SysMemSection  { Layout.fillWidth: true; theme: root.theme; stats: root.stats }
+            SysGpuSection  { Layout.fillWidth: true; theme: root.theme; gpu: root.gpu }
+            SysDiskSection { Layout.fillWidth: true; theme: root.theme; disk: root.disk }
         }
 
         ColumnLayout {
@@ -34,8 +36,8 @@ ColumnLayout {
             Layout.alignment: Qt.AlignTop
             spacing: 8
 
-            SysSensorSection { Layout.fillWidth: true; theme: root.theme; sensors: root.sensors }
-            SysDiskSection   { Layout.fillWidth: true; theme: root.theme; disk: root.disk }
+            SysSensorSection { Layout.fillWidth: true; theme: root.theme; sensors: root.sensors; smu: root.smu }
+            SysPowerSection  { Layout.fillWidth: true; theme: root.theme; smu: root.smu }
             SysNetSection    { Layout.fillWidth: true; theme: root.theme; net: root.net }
         }
     }
