@@ -29,3 +29,15 @@ function fmtKB(kb) {
     }
     return (i >= 2 ? v.toFixed(1) : String(Math.round(v))) + u[i];
 }
+
+// Bytes/second -> human string (binary units).
+function fmtRate(bps) {
+    var v = Number(bps) || 0;
+    var u = ["B", "K", "M", "G"];
+    var i = 0;
+    while (v >= 1024 && i < u.length - 1) {
+        v /= 1024;
+        i++;
+    }
+    return (i === 0 ? Math.round(v) : v.toFixed(1)) + " " + u[i] + "/s";
+}
