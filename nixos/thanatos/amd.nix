@@ -6,6 +6,47 @@
   pkgs,
   ...
 } @ args: let
+  # Root-only bridge: ryzen_monitor reads the SMU PM table (needs root + the
+  # ryzen_smu module) and streams influx line-protocol frames over a named pipe
+  # (continuously, without closing between frames). QuickShell watches regular
+  # files, not pipes, so we split the stream into whole frames and republish the
+  # latest one atomically as a world-readable regular file that the RyzenSmuStats
+  # provider polls.
+  # Checked python source: mypy --strict + unittest run at build time; a type
+  # error or failing test fails the build. See
+  # docs/superpowers/specs/2026-07-05-thinkfan-ryzen-smu-fan-control-design.md.
+  ryzenSmuBridgeSrc = pkgs.runCommand "ryzen-smu-bridge-src" {
+    nativeBuildInputs = [pkgs.python3 pkgs.mypy];
+  } ''
+    cp ${./ryzen-smu-bridge/fanbridge.py} fanbridge.py
+    cp ${./ryzen-smu-bridge/main.py} main.py
+    cp ${./ryzen-smu-bridge/test_fanbridge.py} test_fanbridge.py
+    mypy --strict fanbridge.py main.py test_fanbridge.py
+    python3 -m unittest test_fanbridge -v
+    install -d "$out"
+    cp fanbridge.py main.py "$out/"
+  '';
+  # Single merged service: republishes the SMU frame for Quickshell AND writes
+  # /run/thinkfan/temp for thinkfan. ryzen_monitor must be on PATH.
+  ryzenSmuBridge = pkgs.writeShellApplication {
+    name = "ryzen-smu-bridge";
+    runtimeInputs = [pkgs.python3 pkgs.playground.ryzen-monitor-ng pkgs.coreutils];
+    text = ''exec python3 ${ryzenSmuBridgeSrc}/main.py "$@"'';
+  };
+  fanMode = pkgs.writeShellApplication {
+    name = "fan-mode";
+    runtimeInputs = [pkgs.coreutils];
+    text = ''
+      mode="''${1:-}"
+      [ -w /run/thinkfan/mode ] || { echo "fan-mode: ryzen-smu-bridge not running" >&2; exit 1; }
+      case "$mode" in
+        perf|quiet) printf '%s\n' "$mode" > /run/thinkfan/mode ;;
+        auto)       : > /run/thinkfan/mode ;;
+        *) echo "usage: fan-mode perf|quiet|auto" >&2; exit 2 ;;
+      esac
+      echo "fan-mode: ''${mode} (clears on AC state change)"
+    '';
+  };
 in {
   imports = [
     ./tlp.nix
@@ -41,7 +82,31 @@ in {
       amdctl
       radeontools
       pixiecore
+      fanMode
     ];
+    # Publish SMU metrics (temps + power/limits) for the QuickShell system popup.
+    # Falls back gracefully: if this unit is down the file goes stale and the
+    # popup reverts to its lm_sensors group.
+    systemd.services.ryzen-smu-bridge = {
+      description = "Ryzen SMU -> Quickshell influx + thinkfan temp bridge";
+      wantedBy = ["multi-user.target"];
+      after = ["systemd-modules-load.service"];
+      serviceConfig = {
+        Type = "notify";
+        NotifyAccess = "main";
+        WatchdogSec = 15;
+        ExecStart = lib.getExe ryzenSmuBridge;
+        Restart = "always";
+        RestartSec = 5;
+        RuntimeDirectory = ["ryzen-monitor" "thinkfan"];
+        RuntimeDirectoryMode = "0755";
+        LogLevelMax = "err";
+      };
+    };
+    systemd.services.thinkfan = {
+      after = ["ryzen-smu-bridge.service"];
+      requires = ["ryzen-smu-bridge.service"];
+    };
     networking.hostName = "thanatos";
     nix.gc = {
       automatic = true;
@@ -226,14 +291,9 @@ in {
       enable = true;
       smartSupport = true;
       sensors = [
-        # {
-        #   type = "tpacpi";
-        #   query = "/proc/acpi/ibm/thermal";
-        #   indices = [0];
-        # }
         {
           type = "hwmon";
-          query = "/sys/devices/platform/thinkpad_hwmon/hwmon/hwmon6/temp1_input";
+          query = "/run/thinkfan/temp";
         }
       ];
       fans = [
@@ -242,74 +302,20 @@ in {
           query = "/proc/acpi/ibm/fan";
         }
       ];
-      # to combat temp spikes
-      extraArgs = ["-b-3"];
+      # smoothed cpu_thm feeds this now, so the spike-bias can relax; -s2 keeps
+      # the poll short enough that the safety FORCE_MAX value acts within ~2s.
+      extraArgs = ["-b0" "-s2"];
+      # Curve is on the cpu_thm scale (~13C below the old EC/Tctl scale).
+      # ~6C hysteresis in the working range; the top disengage step is a
+      # deliberate tight 2C safety band. Quiet profile is the same curve minus
+      # the bridge's QUIET_OFFSET.
       levels = [
-        # [0 0 45]
-        # [1 40 50]
-        # [2 45 55]
-        # [3 50 60]
-        # [4 55 65]
-        # [5 60 65]
-        # [6 63 66]
-        # [7 69 72]
-        # [0 0 58]
-        # [1 52 62]
-        # [2 55 65]
-        # [3 58 68]
-        # [5 61 72]
-        # [7 66 85]
-        [0 0 58] # Fan off below 58°C
-        [1 54 62] # Low fan from 58-62°C
-        [2 57 66] # Moderate fan if climbing
-        [3 60 70] # Start reacting to higher sustained temps
-        [5 65 82] # High fan only if 80+ persists
-        [7 75 88] # Max fan near thermal throttle
-        ["level disengaged" 87 32767]
-        # [
-        #   0
-        #   0
-        #   55
-        # ]
-        # [
-        #   1
-        #   40
-        #   60
-        # ]
-        # [
-        #   2
-        #   50
-        #   61
-        # ]
-        # [
-        #   3
-        #   52
-        #   63
-        # ]
-        # [
-        #   6
-        #   56
-        #   65
-        # ]
-        # [
-        #   7
-        #   60
-        #   85
-        # ]
-        # [
-        #   "level disengaged"
-        #   80
-        #   32767
-        # ]
-        # [0 0 45]
-        # [1 40 50]
-        # [2 45 55]
-        # [3 50 60]
-        # [4 55 65]
-        # [5 60 68]
-        # [6 63 70]
-        # [7 66 73]
-        # ["level disengaged" 69 78]
+        [0 0 55]
+        [2 48 66]
+        [4 60 76]
+        [5 70 84]
+        [7 78 90]
+        ["level disengaged" 88 32767]
       ];
     };
     services.pixiecore = {
