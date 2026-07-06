@@ -74,10 +74,18 @@ class TestControlPath(unittest.TestCase):
     def test_total_sensor_loss_fails_safe(self) -> None:
         d = fb.decide(mk(cpu_thm=None, tctl=None, frame_age=99.0), INIT)
         self.assertEqual(d.published_mc, fb.FAIL_SAFE_MC)
+        self.assertIs(d.state, INIT)   # fail-safe returns the incoming state unchanged
 
     def test_clamp_low(self) -> None:
         d = fb.decide(mk(cpu_thm=2.0, ac_online=False), INIT)  # 2 - 9 = -7 -> 0
         self.assertEqual(d.published_mc, 0)
+
+    def test_fallback_ignores_quiet_offset(self) -> None:
+        # SMU stale -> Tctl fallback publishes EMA(Tctl) with NO profile offset,
+        # even in quiet mode (design decision #3).
+        d = fb.decide(mk(cpu_thm=None, tctl=90.0, frame_age=99.0,
+                         ac_online=False), INIT)
+        self.assertEqual(d.published_mc, 90000)
 
 
 class TestSafetyOverride(unittest.TestCase):
@@ -94,10 +102,12 @@ class TestSafetyOverride(unittest.TestCase):
     def test_not_yet_sustained(self) -> None:
         d = self._hot(now=102.9, hot_since=100.0)  # 2.9s < 3s
         self.assertNotEqual(d.published_mc, int(fb.FORCE_MAX_C * 1000))
+        self.assertEqual(d.state.hot_since, 100.0)   # latch preserves the original start time
 
     def test_sustained_forces_max(self) -> None:
         d = self._hot(now=103.1, hot_since=100.0)  # 3.1s >= 3s
         self.assertEqual(d.published_mc, int(fb.FORCE_MAX_C * 1000))
+        self.assertIsNotNone(d.state.ema)   # EMA stays warm even when force-max fires
 
     def test_peak_also_trips(self) -> None:
         st = fb.State(ema=70.0, hot_since=100.0)
