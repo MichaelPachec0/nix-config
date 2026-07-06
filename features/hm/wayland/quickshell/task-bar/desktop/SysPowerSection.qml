@@ -183,5 +183,6 @@ ColumnLayout {
         font.family: root.theme.iconFont
         font.pixelSize: 10
         color: root.theme.textSecondary
+        elide: Text.ElideRight
     }
 }

@@ -17,6 +17,13 @@ ColumnLayout {
              : sev === "fair" ? theme.accentYellow : theme.accentRed;
     }
 
+    // Reserved widths for the PSI figures so a 1->2->3 digit percent never grows
+    // the row and shoves it past the column edge; swap is the flexible absorber.
+    readonly property real _wPsiMem: _mPsiMem.advanceWidth
+    readonly property real _wPsiCpu: _mPsiCpu.advanceWidth
+    TextMetrics { id: _mPsiMem; font.family: root.theme.iconFont; font.pixelSize: 10; text: "pressure  mem 100%" }
+    TextMetrics { id: _mPsiCpu; font.family: root.theme.iconFont; font.pixelSize: 10; text: "cpu 100%" }
+
     // Header: used / total (pct%)
     RowLayout {
         Layout.fillWidth: true
@@ -25,6 +32,8 @@ ColumnLayout {
                 + SysFmt.fmtKB(root.stats.mem.totalKB || 0) + "  (" + (root.stats.mem.usedPct || 0) + "%)"
             font.family: root.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
             color: root.sevColor(SysFmt.severity("mem", root.stats.mem.usedPct))
+            elide: Text.ElideRight
+            Layout.fillWidth: true
         }
     }
 
@@ -60,9 +69,11 @@ ColumnLayout {
             + "    free " + SysFmt.fmtKB(root.stats.mem.freeKB || 0)
         font.family: root.theme.iconFont; font.pixelSize: 10
         color: root.theme.textSecondary
+        elide: Text.ElideRight
     }
 
-    // Swap and pressure row
+    // Swap and pressure row. swap is the flexible absorber; the two PSI figures
+    // reserve max width and right-align so they never overflow the column.
     RowLayout {
         Layout.fillWidth: true
         spacing: 12
@@ -71,17 +82,24 @@ ColumnLayout {
                 + SysFmt.fmtKB(root.stats.swap.totalKB || 0)
             font.family: root.theme.iconFont; font.pixelSize: 10
             color: root.sevColor(SysFmt.severity("swap", root.stats.swap.pct))
+            elide: Text.ElideRight
+            Layout.fillWidth: true
         }
-        Item { Layout.fillWidth: true }
         Text {
             text: "pressure  mem " + (root.stats.psi.mem || 0) + "%"
             font.family: root.theme.iconFont; font.pixelSize: 10
             color: root.sevColor(SysFmt.severity("psi", root.stats.psi.mem))
+            horizontalAlignment: Text.AlignRight
+            Layout.minimumWidth: root._wPsiMem
+            Layout.preferredWidth: root._wPsiMem
         }
         Text {
             text: "cpu " + (root.stats.psi.cpu || 0) + "%"
             font.family: root.theme.iconFont; font.pixelSize: 10
             color: root.sevColor(SysFmt.severity("psi", root.stats.psi.cpu))
+            horizontalAlignment: Text.AlignRight
+            Layout.minimumWidth: root._wPsiCpu
+            Layout.preferredWidth: root._wPsiCpu
         }
     }
 

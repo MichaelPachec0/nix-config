@@ -19,7 +19,15 @@ ColumnLayout {
              : sev === "fair" ? theme.accentYellow : theme.accentRed;
     }
 
-    // Header: GPU util%, VRAM, temperature
+    // Reserved widths: GPU% and temperature reserve their max string so a growing
+    // digit never reflows the row; the VRAM field is the flexible absorber below.
+    readonly property real _wPct: _mPct.advanceWidth
+    readonly property real _wTemp: _mTemp.advanceWidth
+    TextMetrics { id: _mPct;  font.family: root.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold; text: "GPU 100%" }
+    TextMetrics { id: _mTemp; font.family: root.theme.iconFont; font.pixelSize: 11; text: "100 C" }
+
+    // Header: GPU util%, VRAM, temperature. VRAM elides under pressure so the
+    // right-aligned temperature stays inside the column instead of overflowing.
     RowLayout {
         Layout.fillWidth: true
         spacing: 12
@@ -27,18 +35,23 @@ ColumnLayout {
             text: "GPU " + Math.round(root.gpu.util) + "%"
             font.family: root.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
             color: root.sevColor(SysFmt.severity("cpu", root.gpu.util))
+            Layout.minimumWidth: root._wPct
         }
         Text {
             text: "VRAM " + SysFmt.fmtKB(root.gpu.vramUsed / 1024) + " / "
                 + SysFmt.fmtKB(root.gpu.vramTotal / 1024)
             font.family: root.theme.iconFont; font.pixelSize: 11
             color: root.theme.textSecondary
+            elide: Text.ElideRight
+            Layout.fillWidth: true
         }
-        Item { Layout.fillWidth: true }
         Text {
             text: Math.round(root.gpu.temp) + " C"
             font.family: root.theme.iconFont; font.pixelSize: 11
             color: root.sevColor(SysFmt.severity("temp", root.gpu.temp))
+            horizontalAlignment: Text.AlignRight
+            Layout.minimumWidth: root._wTemp
+            Layout.preferredWidth: root._wTemp
         }
     }
 

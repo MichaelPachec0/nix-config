@@ -25,6 +25,11 @@ ColumnLayout {
              : sev === "fair" ? theme.accentYellow : theme.accentRed;
     }
 
+    // Reserve room for a 3-digit temperature ("100 C") so a 2->3 digit change (or
+    // 65 C vs 100 C across rows) keeps every value's column aligned and stable.
+    readonly property real _wTemp: _mTemp.advanceWidth
+    TextMetrics { id: _mTemp; font.family: root.theme.iconFont; font.pixelSize: 10; text: "100 C" }
+
     Text {
         text: "Sensors"
         font.family: root.theme.iconFont
@@ -59,6 +64,9 @@ ColumnLayout {
                     font.family: root.theme.iconFont
                     font.pixelSize: 10
                     color: root.sevColor(SysFmt.severity("temp", modelData.temp))
+                    horizontalAlignment: Text.AlignRight
+                    Layout.minimumWidth: root._wTemp
+                    Layout.preferredWidth: root._wTemp
                 }
             }
         }

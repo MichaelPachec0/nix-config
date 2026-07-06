@@ -17,7 +17,18 @@ ColumnLayout {
              : sev === "fair" ? theme.accentYellow : theme.accentRed;
     }
 
-    // Header: CPU%, load averages, temperature
+    // Reserved widths: size the numeric fields to their widest string so a value
+    // growing a digit never reflows the row. Measured (not hard-coded px) so a
+    // font/DPI change stays correct even though JetBrainsMono is monospace.
+    readonly property real _wPct: _mPct.advanceWidth
+    readonly property real _wTemp: _mTemp.advanceWidth
+    TextMetrics { id: _mPct;  font.family: root.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold; text: "CPU 100%" }
+    TextMetrics { id: _mTemp; font.family: root.theme.iconFont; font.pixelSize: 11; text: "zen 100 C" }
+
+    // Header: CPU%, load averages, temperature.
+    // The load field is the flexible absorber (elides under pressure); CPU% and
+    // the temperature reserve their max width so a growing digit can never push
+    // the right-aligned temperature past the column edge into the next column.
     RowLayout {
         Layout.fillWidth: true
         spacing: 12
@@ -25,18 +36,23 @@ ColumnLayout {
             text: "CPU " + Math.round(root.stats.cpuPct) + "%"
             font.family: root.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
             color: root.sevColor(SysFmt.severity("cpu", root.stats.cpuPct))
+            Layout.minimumWidth: root._wPct
         }
         Text {
             text: "load " + (root.stats.load[0] || 0).toFixed(2) + " "
                 + (root.stats.load[1] || 0).toFixed(2) + " " + (root.stats.load[2] || 0).toFixed(2)
             font.family: root.theme.iconFont; font.pixelSize: 11
             color: root.theme.textSecondary
+            elide: Text.ElideRight
+            Layout.fillWidth: true
         }
-        Item { Layout.fillWidth: true }
         Text {
             text: "zen " + Math.round(root.stats.cpuTemp) + " C"
             font.family: root.theme.iconFont; font.pixelSize: 11
             color: root.sevColor(SysFmt.severity("temp", root.stats.cpuTemp))
+            horizontalAlignment: Text.AlignRight
+            Layout.minimumWidth: root._wTemp
+            Layout.preferredWidth: root._wTemp
         }
     }
 

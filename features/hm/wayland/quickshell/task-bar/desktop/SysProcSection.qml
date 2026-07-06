@@ -18,6 +18,13 @@ ColumnLayout {
              : sev === "fair" ? theme.accentYellow : theme.accentRed;
     }
 
+    // Reserve the numeric column so a process name never gets shoved right by a
+    // wider figure and bleeds from the left (memory) column into the right (CPU).
+    readonly property real _wMem: _mMem.advanceWidth
+    readonly property real _wCpu: _mCpu.advanceWidth
+    TextMetrics { id: _mMem; font.family: root.theme.iconFont; font.pixelSize: 10; text: "1023M" }
+    TextMetrics { id: _mCpu; font.family: root.theme.iconFont; font.pixelSize: 10; text: "100.0%" }
+
     // Two-column layout: Top memory | Top CPU
     RowLayout {
         Layout.fillWidth: true
@@ -28,6 +35,7 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.preferredWidth: 1
             spacing: 2
+            clip: true
 
             Text {
                 text: "Top memory"
@@ -71,6 +79,9 @@ ColumnLayout {
                             text: memDelegate.armed ? "end?" : SysFmt.fmtKB(modelData.rssKB)
                             font.family: root.theme.iconFont; font.pixelSize: 10
                             color: memDelegate.armed ? root.theme.accentRed : root.theme.textSecondary
+                            horizontalAlignment: Text.AlignRight
+                            Layout.minimumWidth: root._wMem
+                            Layout.preferredWidth: root._wMem
                         }
                     }
 
@@ -109,6 +120,7 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.preferredWidth: 1
             spacing: 2
+            clip: true
 
             Text {
                 text: "Top CPU"
@@ -152,6 +164,9 @@ ColumnLayout {
                             text: cpuDelegate.armed ? "end?" : (modelData.pcpu + "%")
                             font.family: root.theme.iconFont; font.pixelSize: 10
                             color: cpuDelegate.armed ? root.theme.accentRed : root.theme.textSecondary
+                            horizontalAlignment: Text.AlignRight
+                            Layout.minimumWidth: root._wCpu
+                            Layout.preferredWidth: root._wCpu
                         }
                     }
 
