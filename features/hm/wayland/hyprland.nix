@@ -408,6 +408,12 @@ in {
       ];
     };
 
+    # Re-arrange layer surfaces (wallpaper, bar) after a monitor is unplugged.
+    # Hyprland core migrates them to a surviving monitor but skips the arrange
+    # pass, stranding them at the dead monitor's origin -- the daemon
+    # (./hypr-monitor-arrange.nix) runs `hyprctl reload` on `monitorremoved`.
+    services.hyprMonitorArrange.enable = true;
+
     wayland = {
       windowManager.hyprland = {
         enable = true;
