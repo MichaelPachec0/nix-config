@@ -29,6 +29,8 @@ QtObject {
     property real gfxBusy: 0
     property real fclk: 0
     property real mclk: 0
+    // Per-core effective clock (MHz), indexed by core index; [] when absent.
+    property var perCoreFreq: []
 
     // Map a parsed influx frame onto the exposed properties.
     function _apply(m) {
@@ -66,8 +68,21 @@ QtObject {
     // reload() is more reliable than inode-based change watching.
     property FileView file: FileView {
         path: root.active ? "/run/ryzen-monitor/latest.influx" : ""
-        onLoaded: root._apply(Influx.parseFrame(file.text()))
-        onLoadFailed: root.available = false
+        onLoaded: {
+            var txt = file.text();
+            root._apply(Influx.parseFrame(txt));
+            var pc = Influx.parsePerCore(txt);
+            var arr = [];
+            for (var k in pc) {
+                if (typeof pc[k].core_frequency === "number")
+                    arr[Number(k)] = pc[k].core_frequency;
+            }
+            root.perCoreFreq = arr;
+        }
+        onLoadFailed: {
+            root.available = false;
+            root.perCoreFreq = [];
+        }
     }
 
     property Timer poll: Timer {
