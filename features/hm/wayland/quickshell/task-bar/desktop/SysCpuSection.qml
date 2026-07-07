@@ -11,10 +11,30 @@ ColumnLayout {
 
     required property QtObject theme
     required property var stats
+    property var smu: null
 
     function sevColor(sev) {
         return sev === "good" ? theme.accentGreen
              : sev === "fair" ? theme.accentYellow : theme.accentRed;
+    }
+
+    // Effective clock (GHz string) for a core: SMU per-core freq when available,
+    // else the max cpufreq of the core's threads, else "--".
+    function coreClockLabel(core) {
+        var mhz = 0;
+        if (root.smu && root.smu.available && root.smu.perCoreFreq
+            && typeof root.smu.perCoreFreq[core.coreId] === "number"
+            && root.smu.perCoreFreq[core.coreId] > 0) {
+            mhz = root.smu.perCoreFreq[core.coreId];
+        } else {
+            var f = root.stats.perThreadFreq || [];
+            for (var i = 0; i < core.threads.length; i++) {
+                var v = f[core.threads[i]] || 0;
+                if (v > mhz) mhz = v;
+            }
+        }
+        if (mhz <= 0) return "--";
+        return (mhz / 1000).toFixed(1);
     }
 
     // Reserved widths: size the numeric fields to their widest string so a value
@@ -24,6 +44,8 @@ ColumnLayout {
     readonly property real _wTemp: _mTemp.advanceWidth
     TextMetrics { id: _mPct;  font.family: root.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold; text: "CPU 100%" }
     TextMetrics { id: _mTemp; font.family: root.theme.iconFont; font.pixelSize: 11; text: "zen 100 C" }
+    readonly property real _wCcx: _mCcx.advanceWidth
+    TextMetrics { id: _mCcx; font.family: root.theme.iconFont; font.pixelSize: 10; font.weight: Font.DemiBold; text: "CCX0" }
 
     // Header: CPU%, load averages, temperature.
     // The load field is the flexible absorber (elides under pressure); CPU% and
@@ -56,26 +78,75 @@ ColumnLayout {
         }
     }
 
-    // Per-core mini bars
-    Row {
+    // Per-thread bars grouped by CCX -> core. Each core: its thread bars, a core
+    // id, and the core's effective clock beneath. Explicit ids avoid modelData
+    // shadowing across the nested repeaters.
+    Column {
         Layout.fillWidth: true
-        spacing: 2
+        spacing: 6
         Repeater {
-            model: root.stats.perCore
-            delegate: Rectangle {
-                required property int index
+            model: root.stats.cpuTopology
+            delegate: RowLayout {
+                id: ccxRow
                 required property var modelData
-                width: 6
-                height: 16
-                radius: 1
-                color: Qt.rgba(root.theme.textSecondary.r, root.theme.textSecondary.g,
-                               root.theme.textSecondary.b, 0.2)
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    width: parent.width
-                    height: Math.max(1, parent.height * modelData / 100)
-                    radius: 1
-                    color: root.sevColor(SysFmt.severity("cpu", modelData))
+                readonly property var ccx: modelData
+                width: parent.width
+                spacing: 8
+                Text {
+                    text: "CCX" + ccxRow.ccx.ccx
+                    font.family: root.theme.iconFont; font.pixelSize: 10; font.weight: Font.DemiBold
+                    color: root.theme.textSecondary
+                    Layout.minimumWidth: root._wCcx
+                    Layout.alignment: Qt.AlignVCenter
+                }
+                Row {
+                    spacing: 10
+                    Repeater {
+                        model: ccxRow.ccx.cores
+                        delegate: Column {
+                            id: coreCell
+                            required property var modelData
+                            readonly property var core: modelData
+                            spacing: 2
+                            Row {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                spacing: 2
+                                Repeater {
+                                    model: coreCell.core.threads
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        readonly property int logical: modelData
+                                        readonly property real util: (root.stats.perCore && root.stats.perCore[logical] !== undefined)
+                                            ? root.stats.perCore[logical] : 0
+                                        width: 6
+                                        height: 16
+                                        radius: 1
+                                        color: Qt.rgba(root.theme.textSecondary.r, root.theme.textSecondary.g,
+                                                       root.theme.textSecondary.b, 0.2)
+                                        Rectangle {
+                                            anchors.bottom: parent.bottom
+                                            width: parent.width
+                                            height: Math.max(1, parent.height * parent.util / 100)
+                                            radius: 1
+                                            color: root.sevColor(SysFmt.severity("cpu", parent.util))
+                                        }
+                                    }
+                                }
+                            }
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: "c" + coreCell.core.coreId
+                                font.family: root.theme.iconFont; font.pixelSize: 9
+                                color: root.theme.textSecondary
+                            }
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: root.coreClockLabel(coreCell.core)
+                                font.family: root.theme.iconFont; font.pixelSize: 9
+                                color: root.theme.textSecondary
+                            }
+                        }
+                    }
                 }
             }
         }
