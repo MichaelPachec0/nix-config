@@ -155,7 +155,7 @@ ColumnLayout {
     ColumnLayout {
         Layout.fillWidth: true
 
-        SysCpuSection  { Layout.fillWidth: true; visible: root.tab === 0; theme: root.theme; stats: root.stats }
+        SysCpuSection  { Layout.fillWidth: true; visible: root.tab === 0; theme: root.theme; stats: root.stats; smu: root.smu }
         SysMemSection  { Layout.fillWidth: true; visible: root.tab === 1; theme: root.theme; stats: root.stats }
         SysGpuSection  { Layout.fillWidth: true; visible: root.tab === 2 && root.gpu.available; theme: root.theme; gpu: root.gpu }
         SysDiskSection { Layout.fillWidth: true; visible: root.tab === 3 && root.disk.available; theme: root.theme; disk: root.disk }
