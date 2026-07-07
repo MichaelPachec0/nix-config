@@ -1,9 +1,11 @@
 import QtQuick
 
 // Reusable mini line graph for 0..100 percentage histories. Pass a `values`
-// array (newest last) and a `color`. Hover to TRACE: a vertical guide + a dot
-// snap to the nearest sample and a small label shows that sample's value
-// (`formatValue`, default "N%"). Used by the CPU/RAM/GPU section widgets.
+// array (newest last) and a `color`. Hover to TRACE: a vertical guide, a dot
+// that rides the line at the cursor's x, and a small label pinned to the dot
+// showing the value there (`formatValue`, default "N%"). Dot and label
+// interpolate along the drawn segments, so both glide with the cursor.
+// Used by the CPU/RAM/GPU section widgets.
 Item {
     id: root
 
@@ -16,13 +18,28 @@ Item {
     implicitWidth: 48
     implicitHeight: 22
 
-    property int traceIdx: -1 // hovered sample index, -1 = none
+    // Cursor x within the canvas while hovering, -1 = not hovering.
+    property real traceX: -1
+    readonly property bool tracing: root.traceX >= 0 && root.values.length >= 2
+    // Value on the line directly under the cursor, linearly interpolated between
+    // the two bracketing samples so it lands exactly on the drawn segment.
+    readonly property real traceVal: root.tracing ? root._valueAt(root.traceX) : 0
 
     function _xOf(i) {
         return root.values.length < 2 ? 0 : i / (root.values.length - 1) * canvas.width;
     }
     function _yOf(v) {
         return canvas.height * (1 - Math.max(0, Math.min(100, v)) / 100);
+    }
+    function _valueAt(px) {
+        var n = root.values.length;
+        if (n === 0)
+            return 0;
+        if (n === 1)
+            return root.values[0];
+        var pos = Math.max(0, Math.min(1, px / Math.max(1, canvas.width))) * (n - 1);
+        var i0 = Math.floor(pos), i1 = Math.min(n - 1, i0 + 1), f = pos - i0;
+        return root.values[i0] * (1 - f) + root.values[i1] * f;
     }
 
     Canvas {
@@ -48,9 +65,10 @@ Item {
                     ctx.lineTo(x, y);
             }
             ctx.stroke();
-            // trace marker
-            if (root.traceIdx >= 0 && root.traceIdx < vals.length) {
-                var tx = root._xOf(root.traceIdx), ty = root._yOf(vals[root.traceIdx]);
+            // Trace marker: vertical guide + dot riding the line at the cursor x.
+            if (root.tracing) {
+                var tx = Math.max(0, Math.min(width, root.traceX));
+                var ty = root._yOf(root.traceVal);
                 ctx.strokeStyle = Qt.rgba(1, 1, 1, 0.35);
                 ctx.lineWidth = 1;
                 ctx.beginPath();
@@ -59,14 +77,14 @@ Item {
                 ctx.stroke();
                 ctx.fillStyle = root.color.toString();
                 ctx.beginPath();
-                ctx.arc(tx, ty, 2.2, 0, 2 * Math.PI);
+                ctx.arc(tx, ty, 2.4, 0, 2 * Math.PI);
                 ctx.fill();
             }
         }
         Connections {
             target: root
             function onValuesChanged() { canvas.requestPaint(); }
-            function onTraceIdxChanged() { canvas.requestPaint(); }
+            function onTraceXChanged() { canvas.requestPaint(); }
             function onColorChanged() { canvas.requestPaint(); }
         }
         onWidthChanged: requestPaint()
@@ -77,29 +95,32 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         onPositionChanged: function (m) {
-            if (root.values.length < 2) {
-                root.traceIdx = -1;
-                return;
-            }
-            var i = Math.round(m.x / Math.max(1, width) * (root.values.length - 1));
-            root.traceIdx = Math.max(0, Math.min(root.values.length - 1, i));
+            root.traceX = (root.values.length < 2) ? -1
+                : Math.max(0, Math.min(width, m.x));
         }
-        onExited: root.traceIdx = -1
+        onExited: root.traceX = -1
     }
 
-    // Value label that follows the traced sample.
+    // Value label pinned to the dot: tracks the cursor x and the line's y, sitting
+    // just above the dot (flips below when the dot is near the top edge).
     Rectangle {
-        visible: root.traceIdx >= 0 && root.traceIdx < root.values.length
-        x: Math.max(0, Math.min(root.width - width, root._xOf(root.traceIdx) - width / 2))
-        y: 0
+        id: tag
+        visible: root.tracing
+        readonly property real dotX: Math.max(0, Math.min(root.width, root.traceX))
+        readonly property real dotY: root._yOf(root.traceVal)
         implicitWidth: lbl.implicitWidth + 6
         implicitHeight: lbl.implicitHeight + 2
+        x: Math.max(0, Math.min(root.width - width, dotX - width / 2))
+        y: {
+            var above = dotY - height - 3;
+            return above >= 0 ? above : Math.min(root.height - height, dotY + 4);
+        }
         radius: 2
         color: Qt.rgba(0, 0, 0, 0.78)
         Text {
             id: lbl
             anchors.centerIn: parent
-            text: (root.traceIdx >= 0 && root.traceIdx < root.values.length) ? root.formatValue(root.values[root.traceIdx]) : ""
+            text: root.tracing ? root.formatValue(root.traceVal) : ""
             color: "white"
             font.family: "monospace"
             font.pixelSize: 9

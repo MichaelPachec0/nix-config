@@ -17,6 +17,13 @@ ColumnLayout {
              : sev === "fair" ? theme.accentYellow : theme.accentRed;
     }
 
+    // Reserved widths for the PSI figures so a 1->2->3 digit percent keeps the
+    // mem/cpu columns aligned. Swap and pressure live on their own rows below.
+    readonly property real _wPsiMem: _mPsiMem.advanceWidth
+    readonly property real _wPsiCpu: _mPsiCpu.advanceWidth
+    TextMetrics { id: _mPsiMem; font.family: root.theme.iconFont; font.pixelSize: 10; text: "mem 100%" }
+    TextMetrics { id: _mPsiCpu; font.family: root.theme.iconFont; font.pixelSize: 10; text: "cpu 100%" }
+
     // Header: used / total (pct%)
     RowLayout {
         Layout.fillWidth: true
@@ -25,6 +32,8 @@ ColumnLayout {
                 + SysFmt.fmtKB(root.stats.mem.totalKB || 0) + "  (" + (root.stats.mem.usedPct || 0) + "%)"
             font.family: root.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
             color: root.sevColor(SysFmt.severity("mem", root.stats.mem.usedPct))
+            elide: Text.ElideRight
+            Layout.fillWidth: true
         }
     }
 
@@ -60,29 +69,44 @@ ColumnLayout {
             + "    free " + SysFmt.fmtKB(root.stats.mem.freeKB || 0)
         font.family: root.theme.iconFont; font.pixelSize: 10
         color: root.theme.textSecondary
+        elide: Text.ElideRight
     }
 
-    // Swap and pressure row
+    // Swap row (own line)
+    Text {
+        Layout.fillWidth: true
+        text: "swap " + SysFmt.fmtKB(root.stats.swap.usedKB || 0) + " / "
+            + SysFmt.fmtKB(root.stats.swap.totalKB || 0)
+        font.family: root.theme.iconFont; font.pixelSize: 10
+        color: root.sevColor(SysFmt.severity("swap", root.stats.swap.pct))
+        elide: Text.ElideRight
+    }
+
+    // Pressure row (own line so it can never collide with swap). mem/cpu reserve
+    // their width so the cpu figure stays put when mem crosses a digit.
     RowLayout {
         Layout.fillWidth: true
         spacing: 12
         Text {
-            text: "swap " + SysFmt.fmtKB(root.stats.swap.usedKB || 0) + " / "
-                + SysFmt.fmtKB(root.stats.swap.totalKB || 0)
+            text: "pressure"
             font.family: root.theme.iconFont; font.pixelSize: 10
-            color: root.sevColor(SysFmt.severity("swap", root.stats.swap.pct))
+            color: root.theme.textSecondary
         }
-        Item { Layout.fillWidth: true }
         Text {
-            text: "pressure  mem " + (root.stats.psi.mem || 0) + "%"
+            text: "mem " + (root.stats.psi.mem || 0) + "%"
             font.family: root.theme.iconFont; font.pixelSize: 10
             color: root.sevColor(SysFmt.severity("psi", root.stats.psi.mem))
+            Layout.minimumWidth: root._wPsiMem
+            Layout.preferredWidth: root._wPsiMem
         }
         Text {
             text: "cpu " + (root.stats.psi.cpu || 0) + "%"
             font.family: root.theme.iconFont; font.pixelSize: 10
             color: root.sevColor(SysFmt.severity("psi", root.stats.psi.cpu))
+            Layout.minimumWidth: root._wPsiCpu
+            Layout.preferredWidth: root._wPsiCpu
         }
+        Item { Layout.fillWidth: true }
     }
 
     // History sparkline

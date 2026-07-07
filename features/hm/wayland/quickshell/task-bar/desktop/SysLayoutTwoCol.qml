@@ -23,6 +23,10 @@ ColumnLayout {
             Layout.preferredWidth: 1
             Layout.alignment: Qt.AlignTop
             spacing: 8
+            // Hard stop: even if a row ever exceeds its half, clip keeps it from
+            // painting over the right column (the sections reserve widths so this
+            // should never actually trigger -- it is belt-and-suspenders).
+            clip: true
 
             SysCpuSection  { Layout.fillWidth: true; theme: root.theme; stats: root.stats }
             SysMemSection  { Layout.fillWidth: true; theme: root.theme; stats: root.stats }
@@ -35,6 +39,7 @@ ColumnLayout {
             Layout.preferredWidth: 1
             Layout.alignment: Qt.AlignTop
             spacing: 8
+            clip: true
 
             SysSensorSection { Layout.fillWidth: true; theme: root.theme; sensors: root.sensors; smu: root.smu }
             SysPowerSection  { Layout.fillWidth: true; theme: root.theme; smu: root.smu }

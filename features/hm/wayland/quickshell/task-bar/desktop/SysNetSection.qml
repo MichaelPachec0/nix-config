@@ -12,6 +12,11 @@ ColumnLayout {
     required property QtObject theme
     required property var net
 
+    // Reserve room for the widest rate string so a rate crossing a unit/digit
+    // boundary (e.g. 999 B/s -> 1.4 K/s) never widens the row and pushes it out.
+    readonly property real _wRate: _mRate.advanceWidth
+    TextMetrics { id: _mRate; font.family: root.theme.iconFont; font.pixelSize: 10; text: "dn 999.9 M/s   up 999.9 M/s" }
+
     // Header
     Text {
         text: "Network"
@@ -41,6 +46,9 @@ ColumnLayout {
                 text: "dn " + SysFmt.fmtRate(modelData.rx) + "   up " + SysFmt.fmtRate(modelData.tx)
                 font.family: root.theme.iconFont; font.pixelSize: 10
                 color: root.theme.textSecondary
+                horizontalAlignment: Text.AlignRight
+                Layout.minimumWidth: root._wRate
+                Layout.preferredWidth: root._wRate
             }
         }
     }

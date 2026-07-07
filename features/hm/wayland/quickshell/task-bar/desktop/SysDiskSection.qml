@@ -62,6 +62,7 @@ ColumnLayout {
                     + "  (" + modelData.pct + "%)"
                 font.family: root.theme.iconFont; font.pixelSize: 10
                 color: root.theme.textSecondary
+                elide: Text.ElideRight
                 Layout.fillWidth: true
             }
         }
@@ -73,5 +74,6 @@ ColumnLayout {
         text: "rd " + SysFmt.fmtRate(root.disk.readRate) + "   wr " + SysFmt.fmtRate(root.disk.writeRate)
         font.family: root.theme.iconFont; font.pixelSize: 10
         color: root.theme.textSecondary
+        elide: Text.ElideRight
     }
 }
