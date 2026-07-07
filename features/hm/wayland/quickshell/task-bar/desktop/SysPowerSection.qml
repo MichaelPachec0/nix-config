@@ -42,10 +42,11 @@ ColumnLayout {
             text: Math.round(root.smu.ppt) + " / " + Math.round(root.smu.pptLimit) + " W"
             font.family: root.theme.iconFont
             font.pixelSize: 10
-            color: root.theme.textPrimary
+            color: root.sevColor(SysFmt.severity("cpu", pptBar.fraction * 100))
             Layout.fillWidth: true
         }
         Rectangle {
+            id: pptBar
             implicitWidth: 70
             implicitHeight: 6
             radius: 2
@@ -79,10 +80,11 @@ ColumnLayout {
             text: Math.round(root.smu.stapm) + " / " + Math.round(root.smu.stapmLimit) + " W"
             font.family: root.theme.iconFont
             font.pixelSize: 10
-            color: root.theme.textPrimary
+            color: root.sevColor(SysFmt.severity("cpu", stapmBar.fraction * 100))
             Layout.fillWidth: true
         }
         Rectangle {
+            id: stapmBar
             implicitWidth: 70
             implicitHeight: 6
             radius: 2
@@ -115,10 +117,11 @@ ColumnLayout {
             text: Math.round(root.smu.tdc) + " / " + Math.round(root.smu.tdcLimit) + " A"
             font.family: root.theme.iconFont
             font.pixelSize: 10
-            color: root.theme.textPrimary
+            color: root.sevColor(SysFmt.severity("cpu", tdcBar.fraction * 100))
             Layout.fillWidth: true
         }
         Rectangle {
+            id: tdcBar
             implicitWidth: 70
             implicitHeight: 6
             radius: 2
@@ -151,10 +154,11 @@ ColumnLayout {
             text: Math.round(root.smu.edc) + " / " + Math.round(root.smu.edcLimit) + " A"
             font.family: root.theme.iconFont
             font.pixelSize: 10
-            color: root.theme.textPrimary
+            color: root.sevColor(SysFmt.severity("cpu", edcBar.fraction * 100))
             Layout.fillWidth: true
         }
         Rectangle {
+            id: edcBar
             implicitWidth: 70
             implicitHeight: 6
             radius: 2
