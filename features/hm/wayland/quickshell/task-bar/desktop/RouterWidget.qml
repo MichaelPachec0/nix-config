@@ -137,4 +137,12 @@ Item {
         interval: 250
         onTriggered: if (!hov.hovered && !pop.contentHovered) pop.hide()
     }
+    // Hide-bridge: leaving the popup surface directly (not back across the
+    // widget) must also re-arm the hide timer, else the popup hangs open.
+    Connections {
+        target: pop
+        function onContentHoveredChanged() {
+            if (!pop.contentHovered && !hov.hovered) hideTimer.restart();
+        }
+    }
 }
