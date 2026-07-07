@@ -1304,7 +1304,7 @@
         };
       };
     };
-    services.swww.enable = true;
+    services.awww.enable = true;
 
     services.hyprpaper = let
       # NOTE: test for now
