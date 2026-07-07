@@ -435,6 +435,15 @@ PanelWindow {
                             dock.stats.wantDetail = false;
                     }
                 }
+                // Hide-bridge: leaving the popup surface directly (not back across
+                // the stats widget) must also re-arm the hide timer.
+                Connections {
+                    target: sysPopup
+                    function onContentHoveredChanged() {
+                        if (!sysPopup.contentHovered && !statsHover.hovered)
+                            statsHideTimer.restart();
+                    }
+                }
                 SysPopup {
                     id: sysPopup
                     theme: dock.theme
@@ -561,6 +570,15 @@ PanelWindow {
                     id: clockHideTimer
                     interval: 250
                     onTriggered: if (!clockMouse.containsMouse && !clockPop.contentHovered) clockPop.hide()
+                }
+                // Hide-bridge: leaving the popup surface directly (not back across
+                // the clock widget) must also re-arm the hide timer.
+                Connections {
+                    target: clockPop
+                    function onContentHoveredChanged() {
+                        if (!clockPop.contentHovered && !clockMouse.containsMouse)
+                            clockHideTimer.restart();
+                    }
                 }
                 ClockPopup {
                     id: clockPop
