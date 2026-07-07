@@ -415,7 +415,7 @@ in {
       ghidra
       # TODO: cmake issues with stable
       # pkgs.master.imhex
-      ncspot
+      inputs.ncspot.packages.${pkgs.system}.ncspot
       # ((pkgs.ncspot.override {withCover = true;}).overrideAttrs
       #   (old: {
       #     # cargoBuildFlags = ["--features=cover"];

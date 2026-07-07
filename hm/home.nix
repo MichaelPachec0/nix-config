@@ -569,7 +569,7 @@ in {
   programs.ncspot = {
     enable = true;
     # package = null;
-    package = pkgs.emptyDirectory;
+    package = inputs.ncspot.packages.${pkgs.system}.ncspot;
     settings = {
       default_keybindings = true;
       # 1000MiB
