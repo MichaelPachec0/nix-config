@@ -41,3 +41,53 @@ function fmtRate(bps) {
     }
     return (i === 0 ? Math.round(v) : v.toFixed(1)) + " " + u[i] + "/s";
 }
+
+// Group CPU topology lines "<logical> <core_id> <l3_shared_list>" into
+// [ { ccx, cores: [ { coreId, threads:[logical...] } ] } ], ordered by CCX
+// first-appearance, then core_id, then thread. Cores sharing an L3 list are one
+// CCX; an empty L3 column collapses everything into a single CCX.
+function parseTopology(text) {
+    if (!text)
+        return [];
+    var lines = String(text).split("\n");
+    var order = [];      // l3 key in first-appearance order
+    var map = {};        // l3 key -> { ccx, coreMap, coreOrder }
+    for (var i = 0; i < lines.length; i++) {
+        var ln = lines[i].trim();
+        if (!ln)
+            continue;
+        var p = ln.split(/\s+/);
+        if (p.length < 2)
+            continue;
+        var logical = Number(p[0]);
+        var coreId = Number(p[1]);
+        if (isNaN(logical) || isNaN(coreId))
+            continue;
+        var key = (p.length >= 3 && p[2]) ? p[2] : "__single__";
+        if (!(key in map)) {
+            map[key] = { ccx: order.length, coreMap: {}, coreOrder: [] };
+            order.push(key);
+        }
+        var grp = map[key];
+        if (!(coreId in grp.coreMap)) {
+            grp.coreMap[coreId] = [];
+            grp.coreOrder.push(coreId);
+        }
+        grp.coreMap[coreId].push(logical);
+    }
+    var out = [];
+    for (var c = 0; c < order.length; c++) {
+        var g = map[order[c]];
+        g.coreOrder.sort(function (a, b) { return a - b; });
+        var cores = [];
+        for (var k = 0; k < g.coreOrder.length; k++) {
+            var cid = g.coreOrder[k];
+            cores.push({
+                coreId: cid,
+                threads: g.coreMap[cid].slice().sort(function (a, b) { return a - b; })
+            });
+        }
+        out.push({ ccx: g.ccx, cores: cores });
+    }
+    return out;
+}
