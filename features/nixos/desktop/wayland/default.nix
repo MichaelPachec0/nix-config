@@ -364,11 +364,6 @@ in {
       # info: https://github.com/mortie/swaylock-effects
       # swaylock-effects
       #swaylock-effects-pr
-      # fancy wallpaper manager
-      # info: https://github.com/Horus645/swww
-      # (nw.swww.override {inherit rustPlatform;})
-      # nw.swww
-      # swww
       # multiuse prompter, supports pinentry (accessed as pinentry-wayprompt),
       #   himitsu (himitsu-wayprompt) and generic prompt (wayprompt-cli)
       # nw.wayprompt

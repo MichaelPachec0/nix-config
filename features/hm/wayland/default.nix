@@ -16,6 +16,7 @@
     ./common.nix
     ./hyprland.nix
     ./hypr-window-keeper.nix
+    ./hypr-monitor-arrange.nix
     ./sway.nix
   ];
   config = {
@@ -1303,7 +1304,7 @@
         };
       };
     };
-    services.swww.enable = true;
+    services.awww.enable = true;
 
     services.hyprpaper = let
       # NOTE: test for now
