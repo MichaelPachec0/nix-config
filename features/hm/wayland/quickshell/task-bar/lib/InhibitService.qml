@@ -72,11 +72,6 @@ Scope {
         }
         return s;
     }
-    function toggleIndefinite(which) {
-        var s = svc._snapshot();
-        var on = !s[which].on;
-        svc._write(svc._setConcern(s, which, on, 0));
-    }
     function defaultMs(which) {
         return which === "idle" ? svc.idleDefaultMs : svc.sleepDefaultMs;
     }

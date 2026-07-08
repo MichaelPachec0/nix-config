@@ -62,6 +62,6 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.svc.toggleIndefinite("sleep")
+        onClicked: root.svc.toggle("sleep")
     }
 }
