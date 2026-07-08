@@ -18,9 +18,27 @@ ColumnLayout {
              : sev === "fair" ? theme.accentYellow : theme.accentRed;
     }
 
-    // Effective clock (GHz string) for a core: SMU per-core freq when available,
-    // else the max cpufreq of the core's threads, else "--".
+    // A core counts as asleep when its SMU C6 (deep-sleep) residency is >= 90%.
+    // Needs the SMU snapshot; on cpufreq fallback (no C-state data) never idle.
+    function coreIdle(core) {
+        return !!(root.smu && root.smu.available && root.smu.perCoreC6
+            && typeof root.smu.perCoreC6[core.coreId] === "number"
+            && root.smu.perCoreC6[core.coreId] >= 90);
+    }
+    // A CCX is asleep when every one of its cores is idle.
+    function ccxIdle(ccx) {
+        for (var i = 0; i < ccx.cores.length; i++)
+            if (!root.coreIdle(ccx.cores[i]))
+                return false;
+        return true;
+    }
+
+    // Effective clock (GHz string) for a core: "Zzz" when asleep, else the SMU
+    // per-core freq when available, else the max cpufreq of the core's threads,
+    // else "--".
     function coreClockLabel(core) {
+        if (root.coreIdle(core))
+            return "Zzz";
         var mhz = 0;
         if (root.smu && root.smu.available && root.smu.perCoreFreq
             && typeof root.smu.perCoreFreq[core.coreId] === "number"
@@ -100,6 +118,8 @@ ColumnLayout {
                     text: "CCX" + ccxRow.ccx.ccx
                     font.family: root.theme.iconFont; font.pixelSize: 10; font.weight: Font.DemiBold
                     color: root.theme.textSecondary
+                    // Whole-row dim when every core in the CCX is asleep.
+                    opacity: root.ccxIdle(ccxRow.ccx) ? 0.4 : 1.0
                     Layout.minimumWidth: root._wCcx
                     Layout.alignment: Qt.AlignVCenter
                 }
@@ -112,6 +132,8 @@ ColumnLayout {
                             id: coreCell
                             required property var modelData
                             readonly property var core: modelData
+                            // Dim the whole core cell (bars + id + clock) when asleep.
+                            opacity: root.coreIdle(coreCell.core) ? 0.4 : 1.0
                             Layout.fillWidth: true
                             Layout.minimumWidth: root._wClock
                             spacing: 2

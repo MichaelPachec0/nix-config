@@ -31,6 +31,9 @@ QtObject {
     property real mclk: 0
     // Per-core effective clock (MHz), indexed by core index; [] when absent.
     property var perCoreFreq: []
+    // Per-core C6 (deep-sleep) residency %, indexed by core index; [] when
+    // absent. Drives the system popup's idle/asleep core+CCX indication.
+    property var perCoreC6: []
 
     // Map a parsed influx frame onto the exposed properties.
     function _apply(m) {
@@ -73,15 +76,20 @@ QtObject {
             root._apply(Influx.parseFrame(txt));
             var pc = Influx.parsePerCore(txt);
             var arr = [];
+            var c6 = [];
             for (var k in pc) {
                 if (typeof pc[k].core_frequency === "number")
                     arr[Number(k)] = pc[k].core_frequency;
+                if (typeof pc[k].core_c6 === "number")
+                    c6[Number(k)] = pc[k].core_c6;
             }
             root.perCoreFreq = arr;
+            root.perCoreC6 = c6;
         }
         onLoadFailed: {
             root.available = false;
             root.perCoreFreq = [];
+            root.perCoreC6 = [];
         }
     }
 
