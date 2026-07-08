@@ -35,6 +35,14 @@ Rectangle {
 
     implicitWidth: row.implicitWidth + pad * 2
     implicitHeight: 30
+    // Dynamic-island-style morph: spring the capsule to its new width whenever
+    // its content changes size (an app icon opens/closes, a value gains a digit,
+    // a CA count changes, a workspace appears) so the bar fluidly reflows instead
+    // of snapping. Neighbouring pills glide because the parent RowLayouts read
+    // this animating implicitWidth.
+    Behavior on implicitWidth {
+        NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
+    }
     radius: height / 2
     color: pill.filled ? pill.theme.bgPill : "transparent"
     border.width: 1
