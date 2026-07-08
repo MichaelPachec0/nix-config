@@ -34,7 +34,7 @@ ColumnLayout {
             }
         }
         if (mhz <= 0) return "--";
-        return (mhz / 1000).toFixed(1);
+        return (mhz / 1000).toFixed(2) + " GHz";
     }
 
     // Reserved widths: size the numeric fields to their widest string so a value
@@ -46,6 +46,10 @@ ColumnLayout {
     TextMetrics { id: _mTemp; font.family: root.theme.iconFont; font.pixelSize: 11; text: "zen 100 C" }
     readonly property real _wCcx: _mCcx.advanceWidth
     TextMetrics { id: _mCcx; font.family: root.theme.iconFont; font.pixelSize: 10; font.weight: Font.DemiBold; text: "CCX0" }
+    // Per-core clock cell reserves the widest "x.xx GHz" so each core gets
+    // comfortable, uniform room and the two CCX rows' columns line up.
+    readonly property real _wClock: _mClock.advanceWidth
+    TextMetrics { id: _mClock; font.family: root.theme.iconFont; font.pixelSize: 9; text: "9.99 GHz" }
 
     // Header: CPU%, load averages, temperature.
     // The load field is the flexible absorber (elides under pressure); CPU% and
@@ -99,15 +103,17 @@ ColumnLayout {
                     Layout.minimumWidth: root._wCcx
                     Layout.alignment: Qt.AlignVCenter
                 }
-                Row {
+                RowLayout {
                     Layout.fillWidth: true
-                    spacing: 10
+                    spacing: 12
                     Repeater {
                         model: ccxRow.ccx.cores
                         delegate: Column {
                             id: coreCell
                             required property var modelData
                             readonly property var core: modelData
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: root._wClock
                             spacing: 2
                             Row {
                                 anchors.horizontalCenter: parent.horizontalCenter
