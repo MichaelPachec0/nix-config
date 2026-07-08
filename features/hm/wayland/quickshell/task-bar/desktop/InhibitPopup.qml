@@ -8,10 +8,11 @@ import "../lib/inhibitlogic.js" as InhibitLogic
 
 // Shared "stay awake" popup for the two inhibit icons. Anchored under the awake
 // pill (RouterPopup idiom). Reads/writes the shared InhibitService. Two switch
-// rows (label, toggle, countdown/infinity + expiry clock, +15m), a duration
-// preset row, a lock that couples the two (individual switches disable while
-// locked), then three context blocks: the idle-lock policy, power/drain, and
-// other active inhibitors.
+// rows (label, toggle, countdown/infinity + expiry clock, +15m), each with its
+// own duration preset row (left-click arms one-off, right-click sets that
+// inhibitor's default; indefinite shows as an icon-width infinity), a lock that
+// couples the two (individual switches disable while locked), then three context
+// blocks: the idle-lock policy, power/drain, and other active inhibitors.
 PopupWindow {
     id: pop
 
