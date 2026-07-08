@@ -50,7 +50,11 @@ Scope {
         };
     }
     function _write(s) {
-        // Assigning adapter props triggers onAdapterUpdated -> writeAdapter().
+        // Set every property, THEN persist once. Do NOT persist per property: an
+        // onAdapterUpdated: writeAdapter() hook fires writeAdapter mid-update,
+        // round-tripping a momentarily-inconsistent adapter and reverting the
+        // value just set (this stranded sleep at expiry 0 -- "infinity" -- on
+        // lock, when sleepExpiry transitions 0 -> the coupled timer in one write).
         adapter.idleOn = s.idle.on;
         adapter.idleExpiry = s.idle.expiry;
         adapter.sleepOn = s.sleep.on;
@@ -59,6 +63,7 @@ Scope {
         adapter.lastDurationMs = s.lastDurationMs;
         adapter.idleDefaultMs = s.idleDefaultMs;
         adapter.sleepDefaultMs = s.sleepDefaultMs;
+        file.writeAdapter(); // persist once, from a now-consistent adapter
     }
 
     // --- commands ---
@@ -80,6 +85,7 @@ Scope {
             adapter.idleDefaultMs = ms;
         else
             adapter.sleepDefaultMs = ms;
+        file.writeAdapter();
     }
     // Turn a concern on for its default duration (indefinite when default is 0),
     // or off. Used by the popup switch and the bar icons.
@@ -163,12 +169,15 @@ Scope {
     FileView {
         id: file
         path: svc._stateDir + "/inhibit-state.json"
-        watchChanges: true
-        onFileChanged: reload()
-        onAdapterUpdated: writeAdapter()
+        // Single-writer model: this instance owns the file. watchChanges is off
+        // so the FileView never re-ingests our own writes (which momentarily
+        // expose partial multi-property state on disk). Persistence is explicit
+        // via writeAdapter() in _write()/setDefault(); there is deliberately no
+        // onAdapterUpdated hook (per-property auto-persist reverted values).
+        watchChanges: false
         onLoaded: {
-            // Expire anything that elapsed while we were gone, and persist the
-            // corrected state back.
+            // On load, expire anything that elapsed while we were gone and
+            // persist the corrected state back.
             var s = InhibitLogic.reconcileOnLoad(svc._snapshot(), Date.now());
             svc._write(s);
         }
