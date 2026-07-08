@@ -100,6 +100,7 @@ ColumnLayout {
                     Layout.alignment: Qt.AlignVCenter
                 }
                 Row {
+                    Layout.fillWidth: true
                     spacing: 10
                     Repeater {
                         model: ccxRow.ccx.cores
