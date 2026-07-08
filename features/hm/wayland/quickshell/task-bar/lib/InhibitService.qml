@@ -22,6 +22,8 @@ Scope {
     property alias sleepExpiry: adapter.sleepExpiry
     property alias locked: adapter.locked
     property alias lastDurationMs: adapter.lastDurationMs
+    property alias idleDefaultMs: adapter.idleDefaultMs
+    property alias sleepDefaultMs: adapter.sleepDefaultMs
 
     property double now: Date.now()
 
@@ -42,7 +44,9 @@ Scope {
                 expiry: svc.sleepExpiry
             },
             locked: svc.locked,
-            lastDurationMs: svc.lastDurationMs
+            lastDurationMs: svc.lastDurationMs,
+            idleDefaultMs: svc.idleDefaultMs,
+            sleepDefaultMs: svc.sleepDefaultMs
         };
     }
     function _write(s) {
@@ -53,6 +57,8 @@ Scope {
         adapter.sleepExpiry = s.sleep.expiry;
         adapter.locked = s.locked;
         adapter.lastDurationMs = s.lastDurationMs;
+        adapter.idleDefaultMs = s.idleDefaultMs;
+        adapter.sleepDefaultMs = s.sleepDefaultMs;
     }
 
     // --- commands ---
@@ -70,6 +76,24 @@ Scope {
         var s = svc._snapshot();
         var on = !s[which].on;
         svc._write(svc._setConcern(s, which, on, 0));
+    }
+    function defaultMs(which) {
+        return which === "idle" ? svc.idleDefaultMs : svc.sleepDefaultMs;
+    }
+    function setDefault(which, ms) {
+        if (which === "idle")
+            adapter.idleDefaultMs = ms;
+        else
+            adapter.sleepDefaultMs = ms;
+    }
+    // Turn a concern on for its default duration (indefinite when default is 0),
+    // or off. Used by the popup switch and the bar icons.
+    function toggle(which) {
+        var on = which === "idle" ? svc.idleOn : svc.sleepOn;
+        if (on)
+            svc.disarm(which);
+        else
+            svc.arm(which, svc.defaultMs(which));
     }
     function arm(which, ms) {
         var s = svc._snapshot();
@@ -163,6 +187,8 @@ Scope {
             property real sleepExpiry: 0
             property bool locked: false
             property real lastDurationMs: 3600000
+            property real idleDefaultMs: 0
+            property real sleepDefaultMs: 0
         }
     }
 }
