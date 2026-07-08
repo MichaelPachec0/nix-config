@@ -69,3 +69,18 @@ Deno.test("applyLock couples both; applyUnlock just clears the flag", () => {
   assertEquals(s.idle, { on: true, expiry: 500 }); // unchanged on split
   assertEquals(s.sleep, { on: true, expiry: 500 });
 });
+
+Deno.test("defaultState exposes per-concern defaults", () => {
+  const d = defaultState();
+  assertEquals(d.idleDefaultMs, 0);
+  assertEquals(d.sleepDefaultMs, 0);
+});
+
+Deno.test("sanitizeState carries and coerces per-concern defaults", () => {
+  const s = sanitizeState({ idleDefaultMs: 3600000, sleepDefaultMs: "bad" });
+  assertEquals(s.idleDefaultMs, 3600000);   // valid kept
+  assertEquals(s.sleepDefaultMs, 0);        // invalid -> 0
+  const empty = sanitizeState({});
+  assertEquals(empty.idleDefaultMs, 0);     // missing -> 0
+  assertEquals(empty.sleepDefaultMs, 0);
+});

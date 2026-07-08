@@ -24,6 +24,8 @@ function defaultState() {
         sleep: { on: false, expiry: 0 },
         locked: false,
         lastDurationMs: 3600000,
+        idleDefaultMs: 0,
+        sleepDefaultMs: 0,
     };
 }
 
@@ -37,12 +39,16 @@ function _concern(raw) {
 function sanitizeState(raw) {
     var r = (raw && typeof raw === "object") ? raw : {};
     var d = defaultState();
+    function dur(v, dflt) {
+        return (v === 0 || Number(v) > 0) ? Number(v) : dflt;
+    }
     return {
         idle: _concern(r.idle),
         sleep: _concern(r.sleep),
         locked: r.locked === true,
-        lastDurationMs: (r.lastDurationMs === 0 || Number(r.lastDurationMs) > 0)
-            ? Number(r.lastDurationMs) : d.lastDurationMs,
+        lastDurationMs: dur(r.lastDurationMs, d.lastDurationMs),
+        idleDefaultMs: dur(r.idleDefaultMs, d.idleDefaultMs),
+        sleepDefaultMs: dur(r.sleepDefaultMs, d.sleepDefaultMs),
     };
 }
 
