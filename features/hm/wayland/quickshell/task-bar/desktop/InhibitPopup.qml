@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.UPower
 import "../lib" as Lib
+import "../lib/inhibitlogic.js" as InhibitLogic
 
 // Shared "stay awake" popup for the two inhibit icons. Anchored under the awake
 // pill (RouterPopup idiom). Reads/writes the shared InhibitService. Two switch
@@ -220,7 +221,7 @@ PopupWindow {
                                 anchors.fill: parent
                                 enabled: !pop.svc.locked
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: pop.svc.toggleIndefinite(switchRow.which)
+                                onClicked: pop.svc.toggle(switchRow.which)
                             }
                         }
                     }
@@ -270,57 +271,48 @@ PopupWindow {
                             }
                         }
                     }
-                }
-            }
 
-            // --- duration presets ---
-            Flow {
-                Layout.fillWidth: true
-                spacing: 6
-                Repeater {
-                    model: pop.svc.presets
-                    delegate: Rectangle {
-                        id: chip
-                        required property var modelData
-                        readonly property bool selected: pop.svc.lastDurationMs === chip.modelData
-                        implicitWidth: chipText.implicitWidth + 16
-                        implicitHeight: 24
-                        radius: 12
-                        color: chip.selected ? pop.theme.accent : (chipHover.containsMouse ? pop.theme.bgItemHover : pop.theme.bgItem)
-                        Lib.BarText {
-                            id: chipText
-                            anchors.centerIn: parent
-                            text: pop.fmtPreset(chip.modelData)
-                            color: chip.selected ? pop.theme.textOnAccent : pop.theme.textPrimary
-                            font.family: pop.theme.iconFont
-                            font.pixelSize: 11
-                        }
-                        MouseArea {
-                            id: chipHover
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            // Arm whichever concern(s) make sense: if locked, arm
-                            // both via either key; else arm any currently-on
-                            // concern, defaulting to idle so a preset always does
-                            // something visible.
-                            onClicked: {
-                                var ms = chip.modelData;
-                                if (pop.svc.locked) {
-                                    pop.svc.arm("idle", ms);
-                                    return;
+                    // Per-concern duration presets: left-click arms now (one-off);
+                    // right-click sets this concern's default (used by its toggle +
+                    // bar icon). The default preset is accent-highlighted. Always
+                    // shown; disabled while locked (edit a locked pair via the lock).
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Repeater {
+                            model: pop.svc.presets
+                            delegate: Rectangle {
+                                id: chip
+                                required property var modelData
+                                readonly property bool isInf: chip.modelData === 0
+                                readonly property bool selected: chip.modelData === pop.svc.defaultMs(switchRow.which)
+                                implicitWidth: chipText.implicitWidth + (chip.isInf ? 10 : 16)
+                                implicitHeight: 22
+                                radius: 11
+                                color: chip.selected ? pop.theme.accent
+                                    : (chipHover.containsMouse ? pop.theme.bgItemHover : pop.theme.bgItem)
+                                Lib.BarText {
+                                    id: chipText
+                                    anchors.centerIn: parent
+                                    text: chip.isInf ? InhibitLogic.infinityGlyph() : pop.fmtPreset(chip.modelData)
+                                    color: chip.selected ? pop.theme.textOnAccent : pop.theme.textPrimary
+                                    font.family: pop.theme.iconFont
+                                    font.pixelSize: chip.isInf ? 13 : 11
                                 }
-                                var any = false;
-                                if (pop.svc.idleOn) {
-                                    pop.svc.arm("idle", ms);
-                                    any = true;
+                                MouseArea {
+                                    id: chipHover
+                                    anchors.fill: parent
+                                    enabled: !pop.svc.locked
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                    onClicked: function (mouse) {
+                                        if (mouse.button === Qt.RightButton)
+                                            pop.svc.setDefault(switchRow.which, chip.modelData);
+                                        else
+                                            pop.svc.arm(switchRow.which, chip.modelData);
+                                    }
                                 }
-                                if (pop.svc.sleepOn) {
-                                    pop.svc.arm("sleep", ms);
-                                    any = true;
-                                }
-                                if (!any)
-                                    pop.svc.arm("idle", ms);
                             }
                         }
                     }
