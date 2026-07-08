@@ -47,15 +47,17 @@ Deno.test("reconcileOnLoad expires elapsed, keeps live + indefinite", () => {
   assertEquals(ind.idle.on, true); // indefinite never expires
 });
 
-Deno.test("coupledState: indefinite wins, else max live expiry", () => {
+Deno.test("coupledState: a running timer wins, else indefinite", () => {
   assertEquals(coupledState({ idle: { on: false, expiry: 0 }, sleep: { on: false, expiry: 0 } }),
-    { on: false, expiry: 0 });
+    { on: false, expiry: 0 });  // neither on
   assertEquals(coupledState({ idle: { on: true, expiry: 500 }, sleep: { on: true, expiry: 900 } }),
-    { on: true, expiry: 900 }); // max
+    { on: true, expiry: 900 }); // both timed -> later expiry
   assertEquals(coupledState({ idle: { on: true, expiry: 0 }, sleep: { on: true, expiry: 900 } }),
-    { on: true, expiry: 0 });   // indefinite wins
+    { on: true, expiry: 900 }); // a running timer wins over an indefinite concern
   assertEquals(coupledState({ idle: { on: false, expiry: 0 }, sleep: { on: true, expiry: 700 } }),
-    { on: true, expiry: 700 }); // only sleep on
+    { on: true, expiry: 700 }); // off other -> timer replicated
+  assertEquals(coupledState({ idle: { on: true, expiry: 0 }, sleep: { on: true, expiry: 0 } }),
+    { on: true, expiry: 0 });   // both indefinite -> indefinite
 });
 
 Deno.test("applyLock couples both; applyUnlock just clears the flag", () => {

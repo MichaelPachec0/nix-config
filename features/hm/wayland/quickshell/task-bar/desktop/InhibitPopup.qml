@@ -181,7 +181,6 @@ PopupWindow {
                     required property var modelData
                     Layout.fillWidth: true
                     spacing: 4
-                    opacity: pop.svc.locked ? 0.55 : 1.0 // disabled look while locked
 
                     readonly property string which: switchRow.modelData.which
                     readonly property bool on: switchRow.which === "idle" ? pop.svc.idleOn : pop.svc.sleepOn
@@ -220,7 +219,6 @@ PopupWindow {
                             }
                             MouseArea {
                                 anchors.fill: parent
-                                enabled: !pop.svc.locked
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: pop.svc.toggle(switchRow.which)
                             }
@@ -251,7 +249,7 @@ PopupWindow {
                             Layout.fillWidth: true
                         }
                         Rectangle {
-                            visible: switchRow.on && !pop.svc.isIndefinite(switchRow.which) && !pop.svc.locked
+                            visible: switchRow.on && !pop.svc.isIndefinite(switchRow.which)
                             implicitWidth: 40
                             implicitHeight: 20
                             radius: 10
@@ -275,8 +273,8 @@ PopupWindow {
 
                     // Per-concern duration presets: left-click arms now (one-off);
                     // right-click sets this concern's default (used by its toggle +
-                    // bar icon). The default preset is accent-highlighted. Always
-                    // shown; disabled while locked (edit a locked pair via the lock).
+                    // bar icon). The default preset is accent-highlighted. While
+                    // locked, arming here couples both concerns (arm() honors lock).
                     Flow {
                         Layout.fillWidth: true
                         spacing: 6
@@ -303,7 +301,6 @@ PopupWindow {
                                 MouseArea {
                                     id: chipHover
                                     anchors.fill: parent
-                                    enabled: !pop.svc.locked
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     acceptedButtons: Qt.LeftButton | Qt.RightButton
