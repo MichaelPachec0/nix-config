@@ -18,6 +18,7 @@ PanelWindow {
     property QtObject weatherState: null
     property QtObject bt: null
     property QtObject audio: null
+    property var submapSvc: null
     property var calState: null
     property var routerSvc: null
 
@@ -280,7 +281,13 @@ PanelWindow {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
         spacing: 8
-        // Intentionally empty -- future center-zone widgets go here.
+
+        // Hyprland submap indicator (resize/group modes); hidden in the default map.
+        ModePill {
+            theme: dock.theme
+            svc: dock.submapSvc
+            barWindow: dock
+        }
     }
 
     // Right: status widgets grouped into floating pills (per cluster). The 1px

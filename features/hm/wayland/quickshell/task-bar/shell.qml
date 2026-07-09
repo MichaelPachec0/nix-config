@@ -26,6 +26,11 @@ ShellRoot {
         id: audioSvc
     }
 
+    // Global Hyprland submap state (compositor-wide), shared by all screens.
+    Lib.HyprSubmapService {
+        id: submapSvc
+    }
+
     // Mirror Hyprland's screencast state into the notification service so toasts
     // are suppressed while screen sharing -- the QS-native replacement for the
     // swaync screencast inhibitor (see quickshell-notifications-cutover). The
@@ -94,6 +99,7 @@ ShellRoot {
                 weatherState: weatherState
                 bt: btSvc
                 audio: audioSvc
+                submapSvc: submapSvc
                 calState: calState
                 routerSvc: routerSvc
             }
