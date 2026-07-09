@@ -668,6 +668,13 @@ in {
           '';
           destination = "/etc/udev/rules.d/50-oryx-legacy.rules";
         })
+        (pkgs.writeTextFile {
+          name = "Disable Modem manager espressif pid";
+          text = ''
+            SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ENV{ID_MM_DEVICE_IGNORE}="1"
+          '';
+          destination = "/etc/udev/rules.d/99-espressif.rules";
+        })
         # These aren't needed since we are added to dialout
         # (pkgs.writeTextFile {
         #   name = "esp32 work";
