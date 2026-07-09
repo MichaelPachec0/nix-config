@@ -5,6 +5,8 @@ import "../lib" as Lib
 // Bar-center mode indicator: the active Hyprland submap's icon + label, hidden in
 // the default map. Hover opens a key-hints popup (hover-persist + hide-bridge, per
 // the bar idiom). Sits in centerRow and rides the layout; svc may be null-guarded.
+// Uses Lib.Pill so it shares the other clusters' floating layer (glass fill, drop
+// shadow, width spring, BarStyle) -- distinguished by an accent ring + accent text.
 Item {
     id: root
     required property QtObject theme
@@ -13,35 +15,31 @@ Item {
 
     visible: root.svc && root.svc.current !== ""
     implicitWidth: root.visible ? pill.implicitWidth : 0
-    implicitHeight: 24
+    implicitHeight: 30
 
-    Rectangle {
+    Lib.Pill {
         id: pill
         anchors.centerIn: parent
-        implicitWidth: rowLayout.implicitWidth + 20
-        implicitHeight: 22
-        radius: 11
-        color: root.theme.accent
+        theme: root.theme
+        ringColor: root.theme.accent
+        gap: 6
 
-        RowLayout {
-            id: rowLayout
-            anchors.centerIn: parent
-            spacing: 6
-            Lib.BarText {
-                visible: root.svc && root.svc.iconCp() !== ""
-                text: (root.svc && root.svc.iconCp() !== "")
-                    ? String.fromCharCode(parseInt(root.svc.iconCp(), 16)) : ""
-                font.family: root.theme.faFont
-                font.pixelSize: 12
-                color: root.theme.textOnAccent
-            }
-            Lib.BarText {
-                text: root.svc ? root.svc.label() : ""
-                font.family: root.theme.iconFont
-                font.pixelSize: 11
-                font.weight: Font.DemiBold
-                color: root.theme.textOnAccent
-            }
+        Lib.BarText {
+            Layout.alignment: Qt.AlignVCenter
+            visible: root.svc && root.svc.iconCp() !== ""
+            text: (root.svc && root.svc.iconCp() !== "")
+                ? String.fromCharCode(parseInt(root.svc.iconCp(), 16)) : ""
+            font.family: root.theme.faFont
+            font.pixelSize: 12
+            color: root.theme.accent
+        }
+        Lib.BarText {
+            Layout.alignment: Qt.AlignVCenter
+            text: root.svc ? root.svc.label() : ""
+            font.family: root.theme.iconFont
+            font.pixelSize: 11
+            font.weight: Font.DemiBold
+            color: root.theme.accent
         }
     }
 

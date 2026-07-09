@@ -26,6 +26,9 @@ Rectangle {
     required property QtObject theme
     property int pad: 10   // inner horizontal padding
     property int gap: 8    // spacing between content items
+    // Ring (border) colour; defaults to the shared hairline. Override to accent a
+    // specific pill (e.g. the mode pill) without changing any other call site.
+    property color ringColor: theme.border
 
     readonly property string style: BarStyle.current
     readonly property bool filled: pill.style !== "ghost"
@@ -46,7 +49,7 @@ Rectangle {
     radius: height / 2
     color: pill.filled ? pill.theme.bgPill : "transparent"
     border.width: 1
-    border.color: pill.theme.border
+    border.color: pill.ringColor
 
     // Outer pass: DROP shadow. frosted = soft straight-down elevation of the glass
     // capsule; ghost / ghost-glass = a tighter down-right drop for the text. Its
