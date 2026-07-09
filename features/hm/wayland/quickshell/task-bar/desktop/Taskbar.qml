@@ -18,7 +18,7 @@ PanelWindow {
     property QtObject weatherState: null
     property QtObject bt: null
     property QtObject audio: null
-    property var submapSvc: null
+    property var submap: null
     property var calState: null
     property var routerSvc: null
 

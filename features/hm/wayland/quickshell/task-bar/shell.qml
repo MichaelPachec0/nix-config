@@ -27,6 +27,12 @@ ShellRoot {
     }
 
     // Global Hyprland submap state (compositor-wide), shared by all screens.
+    // NB: this id (submapSvc) must differ from the name of the Taskbar property
+    // it feeds (submap), matching btSvc->bt / audioSvc->audio. A binding whose
+    // right-hand side matches the target property name (submapSvc: submapSvc)
+    // resolves to the Taskbar's own property (null), because an object's own
+    // property shadows an enclosing-component id in QML scope resolution -- so
+    // the pill would silently never receive the service.
     Lib.HyprSubmapService {
         id: submapSvc
     }
@@ -99,7 +105,7 @@ ShellRoot {
                 weatherState: weatherState
                 bt: btSvc
                 audio: audioSvc
-                submapSvc: submapSvc
+                submap: submapSvc
                 calState: calState
                 routerSvc: routerSvc
             }
