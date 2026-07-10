@@ -132,6 +132,32 @@ in {
       };
     };
 
+    # Custom XKB layout: us(basic) plus four spare function keycodes remapped to
+    # paren/brace at LEVEL 0 (unshifted). kmonad emits F13-F16 on space-cadet
+    # taps (see services.kmonad below); mapping them here to an unshifted
+    # parenleft/braceleft makes the cadet chord reach Hyprland WITHOUT a Shift
+    # modifier, so `Super+(` is distinct from the shifted `Super+Shift+9`.
+    # See docs/superpowers/specs/2026-07-10-cadet-paren-brace-wm-chords-design.md
+    services.xserver.xkb.extraLayouts.us_cadet = {
+      description = "US with cadet paren/brace on spare F13-F16 keycodes";
+      languages = ["eng"];
+      symbolsFile = pkgs.writeText "us_cadet" ''
+        default xkb_symbols "basic" {
+            include "us(basic)"
+            key <FK13> { [ parenleft  ] };
+            key <FK14> { [ parenright ] };
+            key <FK15> { [ braceleft  ] };
+            key <FK16> { [ braceright ] };
+        };
+      '';
+    };
+
+    # Make the same layout the console default so the cadet keys still type
+    # (){} in a bare TTY (kmonad runs as a system service, so it emits F13-F16
+    # there too). ckbcomp derives the console keymap from services.xserver.xkb.*.
+    console.useXkbConfig = true;
+    services.xserver.xkb.layout = "us_cadet";
+
     services.kmonad = {
       enable = true;
       keyboards = {
