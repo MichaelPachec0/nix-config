@@ -70,6 +70,16 @@
     # next to Super+g (toggletab) -- both are "g for group". `hl.dsp.submap` is a
     # native dispatcher (resolved at parse time), so no function() wrapper.
     {_args = ["SUPER + SHIFT + g" (mkLuaInline ''hl.dsp.submap("groupwith")'')];}
+
+    # Space-cadet paren/brace chords. kmonad emits F13-F16 on cadet taps and
+    # us_cadet (see nixos/thanatos/amd.nix) maps them to UNSHIFTED
+    # parenleft/parenright/braceleft/braceright -- so these are distinct from the
+    # generated Super+Shift+9/0 workspace-move binds (which carry Shift). Wired
+    # as no-ops (empty Lua fn registers + consumes the chord) to reserve them.
+    {_args = ["SUPER + parenleft" (mkLuaInline ''function() end'')];}
+    {_args = ["SUPER + parenright" (mkLuaInline ''function() end'')];}
+    {_args = ["SUPER + braceleft" (mkLuaInline ''function() end'')];}
+    {_args = ["SUPER + braceright" (mkLuaInline ''function() end'')];}
   ];
 
   # Mouse binds -- sway's `floating_modifier $mod` equivalent (a sway setting,
@@ -534,6 +544,11 @@ in {
             };
 
             input = {
+              # Custom XKB layout: maps the spare F13-F16 keycodes kmonad emits
+              # on space-cadet taps to unshifted paren/brace (see
+              # nixos/thanatos/amd.nix services.xserver.xkb.extraLayouts.us_cadet)
+              # so Super+( is distinct from the shifted Super+Shift+9.
+              kb_layout = "us_cadet";
               # ~200ms delay (mac InitialKeyRepeat 15), rate 45Hz.
               repeat_rate = 45;
               repeat_delay = 200;
