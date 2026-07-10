@@ -196,8 +196,8 @@ in {
               ;; hel
               ;; simple cadet keys, would like in the future to be able make this a tap dance
               ;; more expansive cadet keys, when tapped once its a ( or ), double tapped { or } held shift, held for 200ms and then released shift.
-              lcdt (tap-next  \(  lsft )
-              rcdt (tap-next  \)  rsft )
+              lcdt (tap-hold-next 200 (tap-next f13 f15) lsft )
+              rcdt (tap-hold-next 200 (tap-next f14 f16) rsft )
               acrtl ( tap-next a lctl )
               smet ( tap-next s lmet )
               dalt ( tap-next d lalt )
@@ -205,8 +205,6 @@ in {
 
               jshift (tap-next f rsft )
               ;; kalt (tap-next )
-              ;; lcdt (tap-hold-next 200 (tap-next \( { ) lsft )
-              ;; rcdt (tap-hold-next 200 (tap-next \) } ) rsft )
 
             )
           '';
@@ -257,8 +255,8 @@ in {
               ;; hel
               ;; simple cadet keys, would like in the future to be able make this a tap dance
               ;; more expansive cadet keys, when tapped once its a ( or ), double tapped { or } held shift, held for 200ms and then released shift.
-              lcdt (tap-hold-next 200 (tap-next \( { ) lsft )
-              rcdt (tap-hold-next 200 (tap-next \) } ) rsft )
+              lcdt (tap-hold-next 200 (tap-next f13 f15) lsft )
+              rcdt (tap-hold-next 200 (tap-next f14 f16) rsft )
 
             )
           '';
@@ -303,8 +301,8 @@ in {
               ;; hel
               ;; simple cadet keys, would like in the future to be able make this a tap dance
               ;; more expansive cadet keys, when tapped once its a ( or ), double tapped { or } held shift, held for 200ms and then released shift.
-              lcdt (tap-hold-next 200 (tap-next \( { ) lsft )
-              rcdt (tap-hold-next 200 (tap-next \) } ) rsft )
+              lcdt (tap-hold-next 200 (tap-next f13 f15) lsft )
+              rcdt (tap-hold-next 200 (tap-next f14 f16) rsft )
 
             )
           '';
