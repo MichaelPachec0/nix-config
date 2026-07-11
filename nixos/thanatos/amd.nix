@@ -78,6 +78,12 @@
     cp ${cadetXkbSymbols} "$out/share/X11/xkb/symbols/cadet"
     cat ${cadetXkbRule} >> "$out/share/X11/xkb/rules/evdev"
   '';
+
+  # Cadet double-tap window (ms): how long a single ( / ) waits to see whether a
+  # second tap turns it into { / }. Lower = snappier ( / ); too low makes the
+  # { / } double-tap hard to trigger. One knob for both cadet keys on both
+  # keyboards (the kanata `tap-dance` timeout in services.kanata below).
+  cadetDoubleTapMs = 150;
 in {
   imports = [
     ./tlp.nix
@@ -208,8 +214,8 @@ in {
           )
           (defalias
             cen  (tap-hold 200 200 esc lctl)
-            lcdt (tap-hold-release 200 200 (tap-dance 200 (f13 f15)) lsft)
-            rcdt (tap-hold-release 200 200 (tap-dance 200 (f14 f16)) rsft)
+            lcdt (tap-hold-release 200 200 (tap-dance ${toString cadetDoubleTapMs} (f13 f15)) lsft)
+            rcdt (tap-hold-release 200 200 (tap-dance ${toString cadetDoubleTapMs} (f14 f16)) rsft)
           )
         '';
       };
@@ -243,8 +249,8 @@ in {
           )
           (defalias
             cenr (tap-hold 200 200 (tap-dance 200 (esc (macro esc S-;))) lctl)
-            lcdt (tap-hold-release 200 200 (tap-dance 200 (f13 f15)) lsft)
-            rcdt (tap-hold-release 200 200 (tap-dance 200 (f14 f16)) rsft)
+            lcdt (tap-hold-release 200 200 (tap-dance ${toString cadetDoubleTapMs} (f13 f15)) lsft)
+            rcdt (tap-hold-release 200 200 (tap-dance ${toString cadetDoubleTapMs} (f14 f16)) rsft)
           )
         '';
       };
