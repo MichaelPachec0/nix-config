@@ -544,11 +544,13 @@ in {
             };
 
             input = {
-              # Custom XKB layout: maps the spare F13-F16 keycodes kmonad emits
-              # on space-cadet taps to unshifted paren/brace (see
-              # nixos/thanatos/amd.nix services.xserver.xkb.extraLayouts.us_cadet)
-              # so Super+( is distinct from the shifted Super+Shift+9.
-              kb_layout = "us_cadet";
+              # Cadet paren/brace: kmonad emits F13-16 on the space-cadet taps and
+              # the cadet:parens XKB option (nixos/thanatos/amd.nix cadetXkbDir)
+              # maps them to UNSHIFTED paren/brace, so Super+( is distinct from
+              # Super+Shift+9. Must be an option, not a layout -- inet(evdev)
+              # claims FK13-24 in the layout slot and would clobber it.
+              kb_layout = "us";
+              kb_options = "cadet:parens";
               # ~200ms delay (mac InitialKeyRepeat 15), rate 45Hz.
               repeat_rate = 45;
               repeat_delay = 200;

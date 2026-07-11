@@ -47,6 +47,37 @@
       echo "fan-mode: ''${mode} (clears on AC state change)"
     '';
   };
+
+  # Custom XKB data dir: base xkeyboard-config plus a `cadet:parens` OPTION that
+  # remaps the spare F13-F16 keycodes (emitted by the space-cadet keys in
+  # services.kmonad below) to UNSHIFTED paren/brace. It MUST be an option, not a
+  # layout: the evdev rules merge symbols as `pc+us+inet(evdev)+<options>`, and
+  # inet(evdev) claims FK13-FK24 -- so only the trailing option slot can override
+  # them (a layout-slot override loses to inet, which is why the earlier
+  # us_cadet layout compiled but produced XF86Tools on those keys). This single
+  # dir feeds BOTH Hyprland (XKB_CONFIG_ROOT) and the TTY console (ckbcomp) via
+  # services.xserver.xkb.dir below. Verified with `xkbcli compile-keymap`.
+  # See docs/superpowers/specs/2026-07-10-cadet-paren-brace-wm-chords-design.md
+  cadetXkbSymbols = pkgs.writeText "xkb-cadet-symbols" ''
+    partial xkb_symbols "parens" {
+        key <FK13> { [ parenleft  ] };
+        key <FK14> { [ parenright ] };
+        key <FK15> { [ braceleft  ] };
+        key <FK16> { [ braceright ] };
+    };
+  '';
+  cadetXkbRule = pkgs.writeText "xkb-cadet-rule" ''
+
+    ! option = symbols
+      cadet:parens = +cadet(parens)
+  '';
+  cadetXkbDir = pkgs.runCommand "xkb-cadet" {} ''
+    mkdir -p "$out/share/X11/xkb"
+    cp -rL ${pkgs.xkeyboard_config}/share/X11/xkb/. "$out/share/X11/xkb/"
+    chmod -R u+w "$out/share/X11/xkb"
+    cp ${cadetXkbSymbols} "$out/share/X11/xkb/symbols/cadet"
+    cat ${cadetXkbRule} >> "$out/share/X11/xkb/rules/evdev"
+  '';
 in {
   imports = [
     ./tlp.nix
@@ -132,31 +163,18 @@ in {
       };
     };
 
-    # Custom XKB layout: us(basic) plus four spare function keycodes remapped to
-    # paren/brace at LEVEL 0 (unshifted). kmonad emits F13-F16 on space-cadet
-    # taps (see services.kmonad below); mapping them here to an unshifted
-    # parenleft/braceleft makes the cadet chord reach Hyprland WITHOUT a Shift
-    # modifier, so `Super+(` is distinct from the shifted `Super+Shift+9`.
-    # See docs/superpowers/specs/2026-07-10-cadet-paren-brace-wm-chords-design.md
-    services.xserver.xkb.extraLayouts.us_cadet = {
-      description = "US with cadet paren/brace on spare F13-F16 keycodes";
-      languages = ["eng"];
-      symbolsFile = pkgs.writeText "us_cadet" ''
-        default xkb_symbols "basic" {
-            include "us(basic)"
-            key <FK13> { [ parenleft  ] };
-            key <FK14> { [ parenright ] };
-            key <FK15> { [ braceleft  ] };
-            key <FK16> { [ braceright ] };
-        };
-      '';
-    };
-
-    # Make the same layout the console default so the cadet keys still type
-    # (){} in a bare TTY (kmonad runs as a system service, so it emits F13-F16
-    # there too). ckbcomp derives the console keymap from services.xserver.xkb.*.
+    # Point the whole system at the patched xkb dir (cadetXkbDir, defined in the
+    # let block above) and enable the cadet:parens option. The layout stays plain
+    # `us`; the option adds the FK13-16 -> unshifted paren/brace mapping on top,
+    # merged after inet(evdev) so it actually wins. xkb.dir feeds ckbcomp (TTY
+    # console) and XKB_CONFIG_ROOT feeds Hyprland's libxkbcommon (both must point
+    # at the patched dir or the option is "unrecognized"). NOTE: XKB_CONFIG_ROOT
+    # is a session variable -- a running session must re-login to pick it up.
+    services.xserver.xkb.dir = "${cadetXkbDir}/share/X11/xkb";
+    environment.sessionVariables.XKB_CONFIG_ROOT = "${cadetXkbDir}/share/X11/xkb";
+    services.xserver.xkb.layout = "us";
+    services.xserver.xkb.options = "cadet:parens";
     console.useXkbConfig = true;
-    services.xserver.xkb.layout = "us_cadet";
 
     services.kmonad = {
       enable = true;
