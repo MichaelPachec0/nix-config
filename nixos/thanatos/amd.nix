@@ -176,155 +176,42 @@ in {
     services.xserver.xkb.options = "cadet:parens";
     console.useXkbConfig = true;
 
-    services.kmonad = {
+    services.kanata = {
       enable = true;
-      keyboards = {
-        laptop-internal = {
-          # TODO: change path
-          device = "/dev/input/by-path/platform-i8042-serio-0-event-kbd";
-          defcfg = {
-            enable = true;
-            fallthrough = true;
-          };
-          config = ''
-            (defsrc ;; Default keymap for laptop
-              esc   f1   f2   f3   f4   f5   f6   f7   f8   f9   f10  f11  f12  prnt  ins  del
-              `     1    2    3    4    5    6    7    8    9    0    -    =    bspc
-              tab   q    w    e    r    t    y    u    i    o    p    [    ]    \
-              caps  a    s    d    f    g    h    j    k    l    ;    '    ret
-              lsft  z    x    c    v    b    n    m    ,    .    /    rsft up
-              lctl  lmet lalt           spc            ralt rctl left down right
-            )
-            (deflayer qwerty ;; Default layer, just switched caps for esc, lctl for caps, and esc for lctl
-              caps   f1   f2   f3   f4   f5   f6   f7   f8   f9   f10  f11  f12  prnt  ins  del
-              `     1    2    3    4    5    6    7    8    9    0    -    =    bspc
-              tab   q    w    e    r    t    y    u    i    o    p    [    ]    \
-              @cen  a    s    d    f    g    h    j    k    l    ;    '    ret
-              @lcdt z    x    c    v    b    n    m    ,    .    /    @rcdt up
-              esc  lalt lmet           spc            ralt rctl left down right
-            )
-            (defalias
-              ;; cen (tap-next esc lctl)
-              ;; tap = esc
-              ;; double tap = esc + : (for neovim to enter command mode)
-              ;; held + key = ctrl + key
-              ;; held > 200ms = ctrl
-              ;; cen (tap-hold-next 200 (tap-next esc (tap-macro-release esc : :delay 2)) lctl)
-              cen (tap-next esc lctl)
-              ;; hel
-              ;; simple cadet keys, would like in the future to be able make this a tap dance
-              ;; more expansive cadet keys, when tapped once its a ( or ), double tapped { or } held shift, held for 200ms and then released shift.
-              lcdt (tap-hold-next 200 (tap-next f13 f15) lsft )
-              rcdt (tap-hold-next 200 (tap-next f14 f16) rsft )
-              acrtl ( tap-next a lctl )
-              smet ( tap-next s lmet )
-              dalt ( tap-next d lalt )
-              fshift (tap-next f lsft )
-
-              jshift (tap-next f rsft )
-              ;; kalt (tap-next )
-
-            )
-          '';
-        };
-        rzr-blkwd-te-bad = {
-          # WARN: Was not able to debug why i need to use if01 instead of the actual event kdb, this means
-          # that ripple effects wont work.
-          # NOTE: even with extraGroups, for some reason this does not work reliably. This is probably explained by
-          # openrazer sometimes not working in some cases.
-          # TODO: (low prio) Investigate the problem, or workaround by disabling openrazer.
-          device = "/dev/input/by-id/usb-Razer_Razer_BlackWidow_Tournament_Edition_Chroma-event-kbd";
-          #"/dev/input/by-id/usb-Razer_Razer_BlackWidow_Tournament_Edition_Chroma-if01-event-kbd";
-          defcfg = {
-            enable = true;
-            fallthrough = true;
-          };
-          # This is to deal with openrazer taking over the keyboard.
-          extraGroups = ["openrazer"];
-          config = ''
-            (defsrc ;; the sys is also a prnt scr key
-              esc       f1   f2   f3   f4    f5   f6   f7   f8   f9   f10  f11  f12    sys  slck pause
-              grv  1    2    3    4    5    6    7    8    9    0    -    =    bspc    ins  home pgup
-              tab  q    w    e    r    t    y    u    i    o    p    [    ]    \       del  end  pgdn
-              caps a    s    d    f    g    h    j    k    l    ;    '    ret
-              lsft z    x    c    v    b    n    m    ,    .    /    rsft                    up
-              lctl lmet lalt           spc            ralt      cmp  rctl              left down rght
-            )
-
-            (deflayer qwerty ;; the sys is also a prnt scr key
-              caps      f1   f2   f3   f4    f5   f6   f7   f8   f9   f10  f11  f12    sys  slck pause
-              grv  1    2    3    4    5    6    7    8    9    0    -    =    bspc    ins  home pgup
-              tab  q    w    e    r    t    y    u    i    o    p    [    ]    \       del  end  pgdn
-              @cen a    s    d    f    g    h    j    k    l    ;    '    ret
-              @lcdt z    x    c    v    b    n    m    ,    .    /   @rcdt                    up
-              esc  lmet lalt           spc            ralt      cmp  rctl              left down rght
-            )
-            ;; (double_tap_hold single_tap )
-
-            (defalias
-              ;; cen (tap-next esc lctl)
-              ;; tap = esc
-              ;; double tap = esc + : (for neovim to enter command mode)
-              ;; held + key = ctrl + key
-              ;; held > 200ms = ctrl
-              cen (tap-hold-next 200 (tap-next esc (tap-macro esc :)) lctl)
-              ;;cen (multi-tap 170 lctl esc)
-              ;;cen (multi-tap 200 a 200 b 200 c d)
-              ;; hel
-              ;; simple cadet keys, would like in the future to be able make this a tap dance
-              ;; more expansive cadet keys, when tapped once its a ( or ), double tapped { or } held shift, held for 200ms and then released shift.
-              lcdt (tap-hold-next 200 (tap-next f13 f15) lsft )
-              rcdt (tap-hold-next 200 (tap-next f14 f16) rsft )
-
-            )
-          '';
-        };
-        rzr-blkwd-te = {
-          # NOTE: See the previous comments rzr-blkwd entry.
-          device =
-            #"/dev/input/by-id/usb-Razer_Razer_BlackWidow_Tournament_Edition_Chroma-event-kbd";
-            "/dev/input/by-id/usb-Razer_Razer_BlackWidow_Tournament_Edition_Chroma-if01-event-kbd";
-          defcfg = {
-            enable = true;
-            fallthrough = true;
-          };
-          # This is to deal with openrazer taking over the keyboard.
-          extraGroups = ["openrazer"];
-          config = ''
-            (defsrc ;; the sys is also a prnt scr key
-              esc       f1   f2   f3   f4    f5   f6   f7   f8   f9   f10  f11  f12    sys  slck pause
-              grv  1    2    3    4    5    6    7    8    9    0    -    =    bspc    ins  home pgup
-              tab  q    w    e    r    t    y    u    i    o    p    [    ]    \       del  end  pgdn
-              caps a    s    d    f    g    h    j    k    l    ;    '    ret
-              lsft z    x    c    v    b    n    m    ,    .    /    rsft                    up
-              lctl lmet lalt           spc            ralt      cmp  rctl              left down rght
-            )
-            (deflayer qwerty ;; the sys is also a prnt scr key
-              caps      f1   f2   f3   f4    f5   f6   f7   f8   f9   f10  f11  f12    sys  slck pause
-              grv  1    2    3    4    5    6    7    8    9    0    -    =    bspc    ins  home pgup
-              tab  q    w    e    r    t    y    u    i    o    p    [    ]    \       del  end  pgdn
-              @cen a    s    d    f    g    h    j    k    l    ;    '    ret
-              @lcdt z    x    c    v    b    n    m    ,    .    /   @rcdt                    up
-              esc  lmet lalt           spc            ralt      cmp  rctl              left down rght
-            )
-            (defalias
-              ;; cen (tap-next esc lctl)
-              ;; tap = esc
-              ;; double tap = esc + : (for neovim to enter command mode)
-              ;; held + key = ctrl + key
-              ;; held > 200ms = ctrl
-              cen (tap-hold-next 200 (tap-next esc (tap-macro esc :)) lctl)
-              ;;cen (multi-tap 170 lctl esc)
-              ;;cen (multi-tap 200 a 200 b 200 c d)
-              ;; hel
-              ;; simple cadet keys, would like in the future to be able make this a tap dance
-              ;; more expansive cadet keys, when tapped once its a ( or ), double tapped { or } held shift, held for 200ms and then released shift.
-              lcdt (tap-hold-next 200 (tap-next f13 f15) lsft )
-              rcdt (tap-hold-next 200 (tap-next f14 f16) rsft )
-
-            )
-          '';
-        };
+      keyboards.laptop = {
+        devices = ["/dev/input/by-path/platform-i8042-serio-0-event-kbd"];
+        # = kmonad fallthrough = true. The module wraps this in (defcfg ...)
+        # and appends linux-dev + linux-continue-if-no-devs-found itself, so
+        # `config` below is defsrc/deflayer/defalias ONLY (no defcfg).
+        extraDefCfg = "process-unmapped-keys yes";
+        # Full keyboard map: unchanged keys map to themselves so you can read
+        # off what is/isn't remapped. Remaps: esc->caps, caps->@cen (tap=esc/
+        # hold=ctrl), lctl->esc, lsft/rsft->cadet, lmet<->lalt swap. Cadet:
+        # tap=(/) , double-tap={/} (f13-16 -> paren/brace via the cadet:parens
+        # XKB option), hold=Shift.
+        config = ''
+          (defsrc
+            esc  f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12  prnt ins del
+            grv  1 2 3 4 5 6 7 8 9 0 - =  bspc
+            tab  q w e r t y u i o p [ ] \
+            caps a s d f g h j k l ; ' ret
+            lsft z x c v b n m , . / rsft up
+            lctl lmet lalt           spc            ralt rctl left down rght
+          )
+          (deflayer base
+            caps  f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12  prnt ins del
+            grv  1 2 3 4 5 6 7 8 9 0 - =  bspc
+            tab  q w e r t y u i o p [ ] \
+            @cen a s d f g h j k l ; ' ret
+            @lcdt z x c v b n m , . / @rcdt up
+            esc  lalt lmet           spc            ralt rctl left down rght
+          )
+          (defalias
+            cen  (tap-hold 200 200 esc lctl)
+            lcdt (tap-hold-release 200 200 (tap-dance 200 (f13 f15)) lsft)
+            rcdt (tap-hold-release 200 200 (tap-dance 200 (f14 f16)) rsft)
+          )
+        '';
       };
     };
     services.fwupd.extraRemotes = ["lvfs-testing"];
