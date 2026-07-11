@@ -213,7 +213,48 @@ in {
           )
         '';
       };
+      keyboards.razer = {
+        # Both interfaces of the same board (mirrors the two kmonad blocks).
+        # If the Razer double-types, drop the first (event-kbd) path and keep
+        # if01-event-kbd (the one the kmonad comments preferred).
+        devices = [
+          "/dev/input/by-id/usb-Razer_Razer_BlackWidow_Tournament_Edition_Chroma-event-kbd"
+          "/dev/input/by-id/usb-Razer_Razer_BlackWidow_Tournament_Edition_Chroma-if01-event-kbd"
+        ];
+        extraDefCfg = "process-unmapped-keys yes";
+        # Same remaps as laptop EXCEPT: no lmet/lalt swap, and cen also does
+        # double-tap = esc + ':' (neovim command mode). S-; = ':'.
+        config = ''
+          (defsrc
+            esc       f1 f2 f3 f4  f5 f6 f7 f8  f9 f10 f11 f12   sys  slck pause
+            grv  1 2 3 4 5 6 7 8 9 0 - =  bspc                   ins  home pgup
+            tab  q w e r t y u i o p [ ] \                        del  end  pgdn
+            caps a s d f g h j k l ; ' ret
+            lsft z x c v b n m , . / rsft                              up
+            lctl lmet lalt          spc            ralt cmp rctl       left down rght
+          )
+          (deflayer base
+            caps      f1 f2 f3 f4  f5 f6 f7 f8  f9 f10 f11 f12   sys  slck pause
+            grv  1 2 3 4 5 6 7 8 9 0 - =  bspc                   ins  home pgup
+            tab  q w e r t y u i o p [ ] \                        del  end  pgdn
+            @cenr a s d f g h j k l ; ' ret
+            @lcdt z x c v b n m , . / @rcdt                           up
+            esc  lmet lalt          spc            ralt cmp rctl       left down rght
+          )
+          (defalias
+            cenr (tap-hold 200 200 (tap-dance 200 (esc (macro esc S-;))) lctl)
+            lcdt (tap-hold-release 200 200 (tap-dance 200 (f13 f15)) lsft)
+            rcdt (tap-hold-release 200 200 (tap-dance 200 (f14 f16)) rsft)
+          )
+        '';
+      };
     };
+    # kanata-razer needs the openrazer group to read the Razer device (openrazer
+    # grabs it); keep the module's input/uinput groups too. Harmless if the
+    # openrazer group is absent (systemd just warns). Drop if the Razer works
+    # without it.
+    systemd.services.kanata-razer.serviceConfig.SupplementaryGroups =
+      lib.mkForce ["input" "uinput" "openrazer"];
     services.fwupd.extraRemotes = ["lvfs-testing"];
     services.fprintd.enable = true;
     services.thinkfan = {
