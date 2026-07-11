@@ -50,7 +50,7 @@
 
   # Custom XKB data dir: base xkeyboard-config plus a `cadet:parens` OPTION that
   # remaps the spare F13-F16 keycodes (emitted by the space-cadet keys in
-  # services.kmonad below) to UNSHIFTED paren/brace. It MUST be an option, not a
+  # services.kanata below) to UNSHIFTED paren/brace. It MUST be an option, not a
   # layout: the evdev rules merge symbols as `pc+us+inet(evdev)+<options>`, and
   # inet(evdev) claims FK13-FK24 -- so only the trailing option slot can override
   # them (a layout-slot override loses to inet, which is why the earlier
@@ -255,12 +255,6 @@ in {
         '';
       };
     };
-    # kanata-razer needs the openrazer group to read the Razer device (openrazer
-    # grabs it); keep the module's input/uinput groups too. Harmless if the
-    # openrazer group is absent (systemd just warns). Drop if the Razer works
-    # without it.
-    systemd.services.kanata-razer.serviceConfig.SupplementaryGroups =
-      lib.mkForce ["input" "uinput" "openrazer"];
     services.fwupd.extraRemotes = ["lvfs-testing"];
     services.fprintd.enable = true;
     services.thinkfan = {
