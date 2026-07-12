@@ -1787,11 +1787,11 @@
         "rust-overlay": "rust-overlay_2"
       },
       "locked": {
-        "lastModified": 1782737968,
-        "narHash": "sha256-NGZPIDUbU6ge7XamDrjnGwuwnrDJy10KUpsWqUvE6jg=",
+        "lastModified": 1783746189,
+        "narHash": "sha256-+cJYQBz6bKZ5QvB6Bq5gYTO6Wluzy/ks5S9PH0TNPAE=",
         "owner": "MichaelPachec0",
         "repo": "ncspot",
-        "rev": "68799a4fffc7d5378cfdb2224bec789dd88ddd90",
+        "rev": "3b1498958c0e44275116c049d185e7c82db34502",
         "type": "github"
       },
       "original": {
