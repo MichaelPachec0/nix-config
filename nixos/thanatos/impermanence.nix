@@ -16,12 +16,16 @@
     before = [ "sysroot.mount" ];
     unitConfig.DefaultDependencies = "no";
     serviceConfig.Type = "oneshot";
+    serviceConfig.RemainAfterExit = true;
     script = ''
       mkdir -p /mnt
       mount -t btrfs -o subvol=/ /dev/mapper/cryptsystem /mnt
-      # Delete nested subvolumes created under root at runtime (e.g. a
-      # btrfs-backed /var/lib/docker) before deleting root itself.
-      btrfs subvolume list -o /mnt/root | cut -f9 -d' ' \
+      # Delete any subvolumes nested under root, deepest first: a reverse
+      # lexical sort orders a descendant (whose path extends its parent's)
+      # before its ancestor, so no parent is deleted before its children.
+      # Handles arbitrarily nested subvols; a no-op when there are none.
+      # cut+sort only (coreutils, in the systemd initrd) -- no awk.
+      btrfs subvolume list -o /mnt/root | cut -f9 -d' ' | sort -r \
         | while read -r sub; do btrfs subvolume delete "/mnt/$sub"; done
       btrfs subvolume delete /mnt/root
       btrfs subvolume snapshot /mnt/root-blank /mnt/root
