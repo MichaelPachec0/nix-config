@@ -85,8 +85,15 @@ def _ssh(cmd):
     Host keys are verified (TOFU): the first connect pins the router's key into
     the persistent known_hosts; later mismatches (rejected key OR a factory
     reset's new host key) make ssh exit 255, which we surface as auth_error so
-    the widget can prompt re-authentication (re-add the key + clear known_hosts)."""
-    args = ["ssh", "-i", SSH_KEY, "-o", "BatchMode=yes",
+    the widget can prompt re-authentication (re-add the key + clear known_hosts).
+
+    -F /dev/null makes ssh ignore the system /etc/ssh/ssh_config. NixOS's gpg-agent
+    SSH support installs a `Match host * exec "gpg-connect-agent ..."` hook there,
+    which openssh runs via the calling user's login shell. e5800poll's shell is
+    nologin, so without this every connect would spawn nologin and spam the journal
+    ("Attempted login by UNKNOWN (UID: 980)"). We pass every option we need via -o,
+    so ignoring the system config loses nothing."""
+    args = ["ssh", "-F", "/dev/null", "-i", SSH_KEY, "-o", "BatchMode=yes",
             "-o", "StrictHostKeyChecking=accept-new",
             "-o", "UserKnownHostsFile={}/known_hosts".format(STATE),
             "-o", "ConnectTimeout=5",
