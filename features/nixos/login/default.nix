@@ -140,11 +140,6 @@ in {
     # It is here for the dbus commands usage.
     environment.systemPackages = with pkgs; [
       dbus
-      (catppuccin-gtk.override {
-        accents = ["mauve"];
-        size = "compact";
-        variant = "mocha";
-      })
       (pkgs.gruvbox-gtk-theme.override {
         themeVariants = ["all"];
         tweakVariants = ["macos"];
