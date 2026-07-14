@@ -81,4 +81,16 @@
 
   fileSystems."/persist".neededForBoot = true;
   fileSystems."/var/log".neededForBoot = true;
+
+  # Read the sops age key straight from /persist rather than the bind-mount
+  # aliases /etc/ssh and /var/lib/sops-nix that the shared nyx config points at.
+  # sops decrypts `michael-password` (neededForUsers) in a pre-users activation
+  # script that has no ordering dependency on any mount, so it runs BEFORE
+  # impermanence establishes those binds -- and inside the nixos-install chroot
+  # the binds never exist at all. /persist is neededForBoot (mounted in the
+  # initrd), so these real paths are always populated when sops needs them.
+  # Without this, decrypting the login password races the mounts and fails,
+  # aborting activation (switch-to-configuration exit 4).
+  sops.age.sshKeyPaths = lib.mkForce [ "/persist/etc/ssh/ssh_host_ed25519_key" ];
+  sops.age.keyFile = lib.mkForce "/persist/var/lib/sops-nix/key.txt";
 }
