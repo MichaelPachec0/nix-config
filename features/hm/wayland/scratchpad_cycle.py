@@ -27,6 +27,7 @@ scratchpad_cycle_test.py; the rest is Hyprland I/O.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import subprocess
@@ -41,6 +42,11 @@ STATE_FILE = os.path.join(_RT, "hypr-scratchpad-shown")
 # find members that are currently OUT even when the single state pointer above
 # doesn't track them (multiple out, stale pointer, etc.).
 MEMBERS_FILE = os.path.join(_RT, "hypr-scratchpad-members")
+# Debug trace: append-only, timestamped log of every cycle/reset decision. Off by
+# default; enable with SCRATCHPAD_DEBUG=1 (any non-"0" value), then follow it with:
+#   tail -f "$XDG_RUNTIME_DIR/hypr-scratchpad.log"
+LOG_FILE = os.path.join(_RT, "hypr-scratchpad.log")
+LOG_ENABLED = os.environ.get("SCRATCHPAD_DEBUG", "0") != "0"
 
 
 # ---------------------------------------------------------------------------
@@ -105,17 +111,52 @@ def notify(msg):
         pass
 
 
+def log(msg):
+    """Append a timestamped debug line. No-op if SCRATCHPAD_DEBUG=0 or on error."""
+    if not LOG_ENABLED:
+        return
+    try:
+        ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        with open(LOG_FILE, "a", encoding="utf-8") as fh:
+            fh.write(f"{ts} {msg}\n")
+    except OSError:
+        pass
+
+
+def _desc(by_addr, addr):
+    """Short human description of a window address for the debug log:
+    '0xdeadbeef [firefox] ws=4', or '<none>' / '<closed>' for missing ones."""
+    if not addr:
+        return "<none>"
+    win = by_addr.get(addr)
+    if win is None:
+        return f"{addr[:10]} <closed>"
+    cls = win.get("class") or win.get("initialClass") or "?"
+    ws = (win.get("workspace") or {}).get("name") or "?"
+    return f"{addr[:10]} [{cls}] ws={ws}"
+
+
 def read_state():
+    """Return (addr, show_ws): the pulled-out member and the workspace id it was
+    shown on. show_ws lets cycle() tell a still-shown window from one the user
+    moved off (extracted). Old single-field state files read as (addr, None)."""
     try:
         with open(STATE_FILE, encoding="utf-8") as fh:
-            return fh.read().strip() or None
+            raw = fh.read().strip()
     except OSError:
-        return None
+        return (None, None)
+    if not raw:
+        return (None, None)
+    parts = raw.split("\t")
+    addr = parts[0] or None
+    ws = parts[1] if len(parts) > 1 and parts[1] not in ("", "None") else None
+    return (addr, ws)
 
 
-def write_state(addr):
+def write_state(addr, ws=None):
+    line = "" if not addr else (addr if ws is None else f"{addr}\t{ws}")
     with open(STATE_FILE, "w", encoding="utf-8") as fh:
-        fh.write(addr or "")
+        fh.write(line)
 
 
 def read_members():
@@ -135,39 +176,89 @@ def workspace_name(win):
     return (win.get("workspace") or {}).get("name")
 
 
+def workspace_id(win):
+    return (win.get("workspace") or {}).get("id")
+
+
+def released_by_move(cur_ws_name, cur_ws_id, show_ws):
+    """True if a shown window was moved off its show-workspace by the user -- it
+    has been extracted from the pad and must be forgotten (not re-hidden).
+
+    cur_ws_name / cur_ws_id : the window's CURRENT workspace (name + id).
+    show_ws                 : the workspace id (as str) the cycler showed it on.
+
+    Returns False when we can't tell (no recorded show_ws / no current ws) or the
+    stale check already covers it (window is back in the special ws). Pure;
+    unit-tested in scratchpad_cycle_test.py."""
+    if show_ws is None or cur_ws_name is None:
+        return False
+    if cur_ws_name == SPECIAL_WS:
+        return False
+    return str(cur_ws_id) != str(show_ws)
+
+
 def cycle():
     clients = hyprctl_json("clients") or []
     by_addr = {c["address"]: c for c in clients}
 
     hidden = [c["address"] for c in clients if workspace_name(c) == SPECIAL_WS]
 
-    shown = read_state()
+    shown, shown_ws = read_state()
+    prior_members = read_members()
+    log("=== cycle ===")
+    log(f"  read  shown={_desc(by_addr, shown)} show_ws={shown_ws}")
+    log(f"  file  members={[_desc(by_addr, a) for a in prior_members]}")
+    log(f"  live  hidden(in {SPECIAL_WS})={[_desc(by_addr, a) for a in hidden]}")
+    released = None
     # Drop a stale pointer: window closed, or already back in the special ws.
     if shown and (shown not in by_addr or workspace_name(by_addr[shown]) == SPECIAL_WS):
+        log(f"  drop stale shown={_desc(by_addr, shown)} (closed or already in pad)")
+        shown = None
+    # Release: the user moved the shown window off its show-workspace -> it has
+    # been extracted; forget it so plan() won't re-hide it and reset won't grab
+    # it. This is the fix for "moved to ws N but it won't stick".
+    elif shown and released_by_move(workspace_name(by_addr[shown]),
+                                    workspace_id(by_addr[shown]), shown_ws):
+        log(f"  release shown={_desc(by_addr, shown)} (moved off show-ws {shown_ws}; extracted)")
+        released = shown
         shown = None
 
+    # A released window must also leave the membership set, else update_members
+    # re-adds it (it's live) and reset would recapture it.
+    if released:
+        prior_members = [a for a in prior_members if a != released]
+
     # Keep the membership set fresh so `reset` can find every out member.
-    write_members(update_members(read_members(), hidden, shown, by_addr))
+    fresh = update_members(prior_members, hidden, shown, by_addr)
+    write_members(fresh)
+    log(f"  keep  members={[_desc(by_addr, a) for a in fresh]}")
 
     to_hide, to_show, new_state = plan(hidden, shown)
+    log(f"  plan  to_hide={_desc(by_addr, to_hide)}  to_show={_desc(by_addr, to_show)}"
+        f"  new_state={_desc(by_addr, new_state)}")
 
     if to_hide is None and to_show is None and new_state is None and not hidden and not shown:
         notify("empty")
         write_state(None)
+        log("  act   empty; nothing to do")
         return
 
     if to_hide:
         # follow = false -> silent move (movetoworkspacesilent). Without it the
         # move FOLLOWS the window and surfaces the special pane on the monitor,
         # leaving the "hidden" window on screen.
+        log(f"  act   HIDE {_desc(by_addr, to_hide)} -> {SPECIAL_WS}")
         dispatch(f'hl.dsp.window.move({{ workspace = "{SPECIAL_WS}", '
                  f'follow = false, window = "address:{to_hide}" }})')
+    show_ws = None
     if to_show:
-        ws = str((hyprctl_json("activeworkspace") or {}).get("id"))
-        dispatch(f'hl.dsp.window.move({{ workspace = "{ws}", window = "address:{to_show}" }})')
+        show_ws = str((hyprctl_json("activeworkspace") or {}).get("id"))
+        log(f"  act   SHOW {_desc(by_addr, to_show)} -> ws {show_ws}")
+        dispatch(f'hl.dsp.window.move({{ workspace = "{show_ws}", window = "address:{to_show}" }})')
         dispatch(f'hl.dsp.focus({{ window = "address:{to_show}" }})')
 
-    write_state(new_state)
+    write_state(new_state, show_ws)
+    log(f"  wrote shown={new_state[:10] if new_state else '<none>'} show_ws={show_ws}")
 
 
 def reset():
@@ -182,13 +273,17 @@ def reset():
     clients = hyprctl_json("clients") or []
     by_addr = {c["address"]: c for c in clients}
 
-    shown = read_state()
+    shown, _ = read_state()
     candidates = set(read_members())
     if shown:
         candidates.add(shown)
 
+    log("=== reset ===")
+    log(f"  candidates={[_desc(by_addr, a) for a in sorted(candidates)]}")
+
     out = [a for a in candidates
            if a in by_addr and workspace_name(by_addr[a]) != SPECIAL_WS]
+    log(f"  out(stash back)={[_desc(by_addr, a) for a in sorted(out)]}")
     for addr in sorted(out):
         # follow = false -> silent move; otherwise the special pane surfaces and
         # the window stays visible instead of being stashed out of sight.
@@ -199,6 +294,7 @@ def reset():
     write_members(a for a in candidates if a in by_addr)
     write_state(None)
     notify(f"stashed {len(out)}" if out else "nothing out")
+    log(f"  stashed {len(out)}; wrote shown=<none>")
 
 
 def main(argv):

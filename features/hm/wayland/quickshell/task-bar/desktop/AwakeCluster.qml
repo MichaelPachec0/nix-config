@@ -14,6 +14,12 @@ RowLayout {
     required property QtObject theme
     required property var barWindow
 
+    // True when both concerns are on with the same expiry: the two icons then
+    // share a single timer (pushed right of both) instead of one timer each.
+    // Lock produces an identical expiry, so a locked pair always consolidates.
+    readonly property bool consolidated: svc.idleOn && svc.sleepOn
+        && svc.idleExpiry === svc.sleepExpiry
+
     spacing: 8
 
     Lib.InhibitService {
@@ -26,17 +32,38 @@ RowLayout {
         enabled: svc.idleOn
     }
 
+    // Idle icon, then sleep icon, each with a countdown slot. The per-icon slots
+    // hide and a single shared slot (after both icons) shows when consolidated;
+    // otherwise each on-concern shows its own timer, so cancelling one leaves the
+    // timer beside the still-inhibited icon.
     InhibitWidget {
         Layout.alignment: Qt.AlignVCenter
         theme: cluster.theme
-        barWindow: cluster.barWindow
         svc: svc
+    }
+    AwakeTimerSlot {
+        Layout.alignment: Qt.AlignVCenter
+        visible: svc.idleOn && !cluster.consolidated
+        theme: cluster.theme
+        label: svc.countdownText("idle")
     }
     SleepInhibitWidget {
         Layout.alignment: Qt.AlignVCenter
         theme: cluster.theme
-        barWindow: cluster.barWindow
         svc: svc
+    }
+    AwakeTimerSlot {
+        Layout.alignment: Qt.AlignVCenter
+        visible: svc.sleepOn && !cluster.consolidated
+        theme: cluster.theme
+        label: svc.countdownText("sleep")
+    }
+    AwakeTimerSlot {
+        Layout.alignment: Qt.AlignVCenter
+        Layout.leftMargin: 2
+        visible: cluster.consolidated
+        theme: cluster.theme
+        label: svc.countdownText("idle") // both equal when consolidated
     }
 
     HoverHandler {

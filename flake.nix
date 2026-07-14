@@ -202,7 +202,7 @@
       # inputs.nixpkgs.follows = "nixpkgs";
       # inputs.flake-utils.follows = "flake-utils";
     };
-    claude-code.url = "github:numtide/llm-agents.nix";
+    llm-agents.url = "github:numtide/llm-agents.nix";
     # hy3 = {
     #   url = "github:outfoxxed/hy3/2a89da65adeb5ae4c8782b64eaaa281003109d9f";
     #   # inputs.hyprland.follows = "nixpkgs";
@@ -233,6 +233,35 @@
     # Single source of truth for per-user HM module lists, shared with the
     # integrated NixOS path (features/nixos/home). See docs/hm-nixos-integration.md.
     homeModules = import ./helpers/home.nix {inherit inputs;};
+    thanatosSharedModules =
+      overlays.unstable.nixosDesktop
+      ++ [
+        inputs.hardware.nixosModules.lenovo-thinkpad-p14s-amd-gen1
+        inputs.lanzaboote.nixosModules.lanzaboote
+        inputs.sops-nix.nixosModules.sops
+        inputs.jlink.nixosModule
+        inputs.flake-playground.nixosModules.default
+        ./nixos/nyx/boot.nix
+        ./nixos/nyx/configuration.nix
+        ./nixos/thanatos/amd.nix
+        ./nixos/thanatos/hardware-configuration.nix
+        inputs.disko.nixosModules.disko
+        ./nixos/thanatos/e5800.nix
+        ./features/nixos/common/nix-access-tokens.nix
+        {
+          services.e5800 = {
+            enable = true;
+            cycleResetDay = 1;
+          };
+          local.nixAccessTokens.enable = true;
+        }
+      ];
+    mkThanatos = extraModules:
+      nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs = {inherit inputs outputs;};
+        modules = thanatosSharedModules ++ extraModules;
+      };
   in {
     # overlays = import ./overlays {inherit inputs;};
     nixosConfigurations = {
@@ -262,43 +291,14 @@
               ./nixos/nyx/extras.nix
             ];
         };
-      thanatos = let
-        system = "x86_64-linux";
-      in
-        nixpkgs.lib.nixosSystem {
-          inherit system;
-
-          specialArgs = {inherit inputs outputs;};
-          # NOTE: include the stable module since this is going to run unstable.
-          modules =
-            overlays.unstable.nixosDesktop
-            ++ [
-              inputs.hardware.nixosModules.lenovo-thinkpad-p14s-amd-gen1
-              # secure boot
-              inputs.lanzaboote.nixosModules.lanzaboote
-              inputs.sops-nix.nixosModules.sops
-              inputs.jlink.nixosModule
-              inputs.flake-playground.nixosModules.default
-              # shared laptop config
-              # TODO: move away from here
-              ./nixos/nyx/boot.nix
-              ./nixos/nyx/configuration.nix
-              ./nixos/thanatos/amd.nix
-              ./nixos/thanatos/hardware-configuration.nix
-              inputs.disko.nixosModules.disko
-              ./nixos/thanatos/disk-config.nix
-              ./nixos/thanatos/e5800.nix
-              ./features/nixos/common/nix-access-tokens.nix
-              {
-                services.e5800 = {
-                  enable = true;
-                  cycleResetDay = 1;
-                };
-                local.nixAccessTokens.enable = true;
-              }
-              # ./nixos/thanatos/extras.nix
-            ];
-        };
+      thanatos = mkThanatos [
+        ./nixos/thanatos/disk-config.nix
+        inputs.impermanence.nixosModules.impermanence
+        ./nixos/thanatos/impermanence.nix
+      ];
+      thanatos-legacy = mkThanatos [
+        ./nixos/thanatos/disk-config.ext4-legacy.nix
+      ];
       aphrodite = let
         system = "x86_64-linux";
       in

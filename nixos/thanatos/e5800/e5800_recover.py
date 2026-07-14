@@ -33,7 +33,9 @@ RECOVER_CMDS = {
 
 
 def _ssh(cmd):
-    args = ["ssh", "-i", SSH_KEY, "-o", "BatchMode=yes",
+    # -F /dev/null: ignore the system ssh_config (see e5800_poll._ssh) so the
+    # gpg-agent `Match host * exec` hook is not run via e5800poll's nologin shell.
+    args = ["ssh", "-F", "/dev/null", "-i", SSH_KEY, "-o", "BatchMode=yes",
             "-o", "StrictHostKeyChecking=accept-new",
             "-o", "UserKnownHostsFile={}/known_hosts".format(STATE),
             "-o", "ConnectTimeout=5",

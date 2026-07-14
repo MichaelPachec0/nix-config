@@ -303,6 +303,8 @@ in {
     services.colord.enable = true;
 
     environment.systemPackages = with pkgs; [
+      inputs.joshuto.packages.${pkgs.system}.default
+
       pkgs.nw.swayfx
       # TODO: make icc profile declarative
       colord-gtk
@@ -330,7 +332,7 @@ in {
       wluma
       # master.waybar
       # drm devices utility
-      nw.drm_info
+      drm_info
       # rdp client for wayland
       nw.freerdp3
       # render glsl shaders as wallpaper
@@ -453,7 +455,6 @@ in {
       slack
       slack-term
       neovide
-      joshuto
     ];
     # systemd.user.units."dunst" = {wantedBy = ["hyprland-session.target"];};
     systemd.services = {

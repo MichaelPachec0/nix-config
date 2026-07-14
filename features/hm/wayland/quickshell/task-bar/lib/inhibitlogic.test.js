@@ -47,15 +47,17 @@ Deno.test("reconcileOnLoad expires elapsed, keeps live + indefinite", () => {
   assertEquals(ind.idle.on, true); // indefinite never expires
 });
 
-Deno.test("coupledState: indefinite wins, else max live expiry", () => {
+Deno.test("coupledState: a running timer wins, else indefinite", () => {
   assertEquals(coupledState({ idle: { on: false, expiry: 0 }, sleep: { on: false, expiry: 0 } }),
-    { on: false, expiry: 0 });
+    { on: false, expiry: 0 });  // neither on
   assertEquals(coupledState({ idle: { on: true, expiry: 500 }, sleep: { on: true, expiry: 900 } }),
-    { on: true, expiry: 900 }); // max
+    { on: true, expiry: 900 }); // both timed -> later expiry
   assertEquals(coupledState({ idle: { on: true, expiry: 0 }, sleep: { on: true, expiry: 900 } }),
-    { on: true, expiry: 0 });   // indefinite wins
+    { on: true, expiry: 900 }); // a running timer wins over an indefinite concern
   assertEquals(coupledState({ idle: { on: false, expiry: 0 }, sleep: { on: true, expiry: 700 } }),
-    { on: true, expiry: 700 }); // only sleep on
+    { on: true, expiry: 700 }); // off other -> timer replicated
+  assertEquals(coupledState({ idle: { on: true, expiry: 0 }, sleep: { on: true, expiry: 0 } }),
+    { on: true, expiry: 0 });   // both indefinite -> indefinite
 });
 
 Deno.test("applyLock couples both; applyUnlock just clears the flag", () => {
@@ -68,4 +70,19 @@ Deno.test("applyLock couples both; applyUnlock just clears the flag", () => {
   assertEquals(s.locked, false);
   assertEquals(s.idle, { on: true, expiry: 500 }); // unchanged on split
   assertEquals(s.sleep, { on: true, expiry: 500 });
+});
+
+Deno.test("defaultState exposes per-concern defaults", () => {
+  const d = defaultState();
+  assertEquals(d.idleDefaultMs, 0);
+  assertEquals(d.sleepDefaultMs, 0);
+});
+
+Deno.test("sanitizeState carries and coerces per-concern defaults", () => {
+  const s = sanitizeState({ idleDefaultMs: 3600000, sleepDefaultMs: "bad" });
+  assertEquals(s.idleDefaultMs, 3600000);   // valid kept
+  assertEquals(s.sleepDefaultMs, 0);        // invalid -> 0
+  const empty = sanitizeState({});
+  assertEquals(empty.idleDefaultMs, 0);     // missing -> 0
+  assertEquals(empty.sleepDefaultMs, 0);
 });

@@ -18,6 +18,7 @@ PanelWindow {
     property QtObject weatherState: null
     property QtObject bt: null
     property QtObject audio: null
+    property var submap: null
     property var calState: null
     property var routerSvc: null
 
@@ -280,7 +281,6 @@ PanelWindow {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
         spacing: 8
-        // Intentionally empty -- future center-zone widgets go here.
     }
 
     // Right: status widgets grouped into floating pills (per cluster). The 1px
@@ -291,6 +291,15 @@ PanelWindow {
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
         spacing: 4 // gap between pills
+
+        // Hyprland submap indicator (resize/group modes); hidden in the default
+        // map. Heads the right cluster, just left of the sound (mpris/volume) pill.
+        ModePill {
+            Layout.alignment: Qt.AlignVCenter
+            theme: dock.theme
+            svc: dock.submap
+            barWindow: dock
+        }
 
         // sound: media + audio
         Lib.Pill {

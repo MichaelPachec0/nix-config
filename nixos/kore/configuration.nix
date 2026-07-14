@@ -248,6 +248,24 @@ in {
   # Configure keymap in X11
   # services.xserver.layout = "us";
   # services.xserver.xkbOptions = "eurosign:e,caps:escape";
+  # These aren't needed since we are added to dialout
+  # (pkgs.writeTextFile {
+  #   name = "esp32 work";
+  #   text = ''
+  #     # Espressif USB JTAG/serial debug units
+  #     ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", MODE="660", GROUP="plugdev", TAG+="uaccess"
+  #     ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1002", MODE="660", GROUP="plugdev", TAG+="uaccess"
+  #   '';
+  #   destination = "/etc/udev/rules.d/50-esp32-serial.rules";
+  # })
+  # (pkgs.writeTextFile {
+  #   name = "serial-udev-rules";
+  #   text = ''
+  #     KERNEL=="ttyACM[0-9]*",MODE:="0666"
+  #     KERNEL=="ttyUSB[0-9]*",MODE:="0666"
+  #   '';
+  #   destination = "/etc/udev/rules.d/99-global-serial.rules";
+  # })
 
   # Enable CUPS to print documents.
   # services.printing.enable = true;

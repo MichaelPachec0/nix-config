@@ -15,7 +15,7 @@ ColumnLayout {
     property var sensors
     property var smu
 
-    SysCpuSection  { Layout.fillWidth: true; theme: root.theme; stats: root.stats }
+    SysCpuSection  { Layout.fillWidth: true; theme: root.theme; stats: root.stats; smu: root.smu }
 
     Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: root.theme.border }
 

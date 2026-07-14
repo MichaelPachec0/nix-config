@@ -70,6 +70,16 @@
     # next to Super+g (toggletab) -- both are "g for group". `hl.dsp.submap` is a
     # native dispatcher (resolved at parse time), so no function() wrapper.
     {_args = ["SUPER + SHIFT + g" (mkLuaInline ''hl.dsp.submap("groupwith")'')];}
+
+    # Space-cadet paren/brace chords. kmonad emits F13-F16 on cadet taps and
+    # us_cadet (see nixos/thanatos/amd.nix) maps them to UNSHIFTED
+    # parenleft/parenright/braceleft/braceright -- so these are distinct from the
+    # generated Super+Shift+9/0 workspace-move binds (which carry Shift). Wired
+    # as no-ops (empty Lua fn registers + consumes the chord) to reserve them.
+    {_args = ["SUPER + parenleft" (mkLuaInline ''function() end'')];}
+    {_args = ["SUPER + parenright" (mkLuaInline ''function() end'')];}
+    {_args = ["SUPER + braceleft" (mkLuaInline ''function() end'')];}
+    {_args = ["SUPER + braceright" (mkLuaInline ''function() end'')];}
   ];
 
   # Mouse binds -- sway's `floating_modifier $mod` equivalent (a sway setting,
@@ -285,17 +295,11 @@
       (chRow "Super+Shift+=" "Equalize workspace splits")
       (chRow "Super+Shift+Ctrl+hjkl" "Move past neighbour (once)")
       ""
-      "-- group_with submap (Super+Shift+g) --"
-      (chRow "  hjkl" "Group w/ neighbour -> vertical")
-      (chRow "  Shift+hjkl" "Group w/ neighbour -> tabbed")
-      (chRow "  Ctrl+hjkl" "Group w/ neighbour -> horizontal")
-      (chRow "  Esc / Return" "Cancel")
-      ""
-      "-- resize submap (Super+r) --"
-      (chRow "  hjkl" "Resize")
-      (chRow "  Shift+hjkl" "Nudge / move")
-      (chRow "  r" "Equalize workspace")
-      (chRow "  Esc / Return" "Exit")
+    ]
+    ++ (submapCheatRows "group_with submap (Super+Shift+g)" "groupwith")
+    ++ [ "" ]
+    ++ (submapCheatRows "resize submap (Super+r)" "resize")
+    ++ [
       ""
       "-- help --"
       (chRow "Super+/" "This cheatsheet")
@@ -307,6 +311,38 @@
     exec rofi -dmenu -i -no-custom -p "keybinds" -mesg "Esc to close" < ${cheatFile}
   '';
   cheatBind = {_args = ["SUPER + slash" (mkLuaInline ''hl.dsp.exec_cmd("${cheatsheetScript}/bin/keybind-cheatsheet")'')];};
+
+  # Submap hint data -- SINGLE SOURCE for both the mode pill's hover popup
+  # (emitted as JSON below, read by lib/HyprSubmapService.qml) and the Super+/
+  # cheatsheet's submap rows (derived via submapCheatRows). icon is a FontAwesome
+  # codepoint as a hex string so this source stays ASCII; the bar renders it with
+  # String.fromCharCode(parseInt(icon, 16)).
+  submapHints = {
+    resize = {
+      icon = "f424"; # fa up-right-and-down-left-from-center
+      label = "RESIZE";
+      keys = [
+        { k = "hjkl"; d = "Resize"; }
+        { k = "Shift+hjkl"; d = "Nudge / move"; }
+        { k = "r"; d = "Equalize workspace"; }
+        { k = "Esc / Return"; d = "Exit"; }
+      ];
+    };
+    groupwith = {
+      icon = "f247"; # fa object-group
+      label = "GROUP";
+      keys = [
+        { k = "hjkl"; d = "Group w/ neighbour -> vertical"; }
+        { k = "Shift+hjkl"; d = "Group w/ neighbour -> tabbed"; }
+        { k = "Ctrl+hjkl"; d = "Group w/ neighbour -> horizontal"; }
+        { k = "Esc / Return"; d = "Cancel"; }
+      ];
+    };
+  };
+  # Cheatsheet rows for a submap, derived from submapHints (no drift with the pill).
+  submapCheatRows = header: name:
+    [ "-- ${header} --" ]
+    ++ map (e: chRow "  ${e.k}" e.d) submapHints.${name}.keys;
 
   # ---- hy3-project: open a project layout on the active workspace ----------
   # Builds T[H[a,{T[b],T[c]}]] -- two kitty shells (cwd=PATH) + a browser; a
@@ -391,6 +427,10 @@ in {
     # `keybind-cheatsheet` on PATH so it's runnable from a terminal too (the
     # Super+/ bind invokes it by store path regardless).
     home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript scratchpadCycleScript];
+
+    # Submap hint data for the bar's mode pill. Emitted OUTSIDE ~/.config/quickshell
+    # (that dir is a repo symlink); read by lib/HyprSubmapService.qml via FileView.
+    xdg.configFile."quickshell-modes/hints.json".text = builtins.toJSON submapHints;
 
     # Keep floating windows that drift on resize pinned in place. Windscribe
     # (Qt, empty app_id) shoves its own window up when the Locations panel
@@ -504,6 +544,13 @@ in {
             };
 
             input = {
+              # Cadet paren/brace: kmonad emits F13-16 on the space-cadet taps and
+              # the cadet:parens XKB option (nixos/thanatos/amd.nix cadetXkbDir)
+              # maps them to UNSHIFTED paren/brace, so Super+( is distinct from
+              # Super+Shift+9. Must be an option, not a layout -- inet(evdev)
+              # claims FK13-24 in the layout slot and would clobber it.
+              kb_layout = "us";
+              kb_options = "cadet:parens";
               # ~200ms delay (mac InitialKeyRepeat 15), rate 45Hz.
               repeat_rate = 45;
               repeat_delay = 200;

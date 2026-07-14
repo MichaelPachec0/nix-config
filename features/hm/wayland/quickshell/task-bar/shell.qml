@@ -26,6 +26,17 @@ ShellRoot {
         id: audioSvc
     }
 
+    // Global Hyprland submap state (compositor-wide), shared by all screens.
+    // NB: this id (submapSvc) must differ from the name of the Taskbar property
+    // it feeds (submap), matching btSvc->bt / audioSvc->audio. A binding whose
+    // right-hand side matches the target property name (submapSvc: submapSvc)
+    // resolves to the Taskbar's own property (null), because an object's own
+    // property shadows an enclosing-component id in QML scope resolution -- so
+    // the pill would silently never receive the service.
+    Lib.HyprSubmapService {
+        id: submapSvc
+    }
+
     // Mirror Hyprland's screencast state into the notification service so toasts
     // are suppressed while screen sharing -- the QS-native replacement for the
     // swaync screencast inhibitor (see quickshell-notifications-cutover). The
@@ -94,6 +105,7 @@ ShellRoot {
                 weatherState: weatherState
                 bt: btSvc
                 audio: audioSvc
+                submap: submapSvc
                 calState: calState
                 routerSvc: routerSvc
             }

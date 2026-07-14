@@ -1,4 +1,5 @@
 import QtQuick
+import "sysfmt.js" as SysFmt
 
 // Shared CPU%/RAM% poller, read by both the bar (Taskbar) and the hub Header.
 // Instantiated once per monitor in shell.qml so /proc is polled in one place.
@@ -76,6 +77,8 @@ QtObject {
     // --- Detailed stats for the system popup; polled only while it is open. ---
     property bool wantDetail: false
     property var perCore: []
+    property var cpuTopology: []
+    property var perThreadFreq: []
     property var load: [0, 0, 0]
     property real cpuTemp: 0
     property real uptime: 0
@@ -86,34 +89,70 @@ QtObject {
     property var topCpu: []
     property var _prevCore: null
 
-    // Per-core busy fraction (needs a previous sample for the delta).
+    // Per-thread busy fraction (delta over the previous sample) + per-thread
+    // cpufreq (point-in-time). The @F tag splits /proc/stat util lines from the
+    // scaling_cur_freq lines; the freq loop is numeric-ordered to match logical
+    // CPU indices. perThreadFreq is the fallback clock when SMU is unavailable.
     property CommandPoll corePoll: CommandPoll {
         interval: 2000
         running: root.active && root.wantDetail
-        command: ["bash", "-lc", "grep '^cpu[0-9]' /proc/stat"]
+        command: ["bash", "-lc",
+            "grep '^cpu[0-9]' /proc/stat; echo @F; " +
+            "for c in /sys/devices/system/cpu/cpu[0-9]*; do n=${c##*/cpu}; " +
+            "printf '%s %s\\n' \"$n\" \"$(cat \"$c/cpufreq/scaling_cur_freq\" 2>/dev/null)\"; " +
+            "done | sort -n"]
         parse: function (o) {
-            return String(o).trim().split("\n").map(function (ln) {
-                var n = ln.trim().split(/\s+/).slice(1).map(Number);
-                var idle = (n[3] || 0) + (n[4] || 0);
-                var total = n.reduce(function (a, b) {
-                    return a + (b || 0);
-                }, 0);
-                return { total: total, idle: idle };
-            });
+            var lines = String(o).split("\n");
+            var cpus = [];
+            var freq = [];
+            var inFreq = false;
+            for (var i = 0; i < lines.length; i++) {
+                var ln = lines[i];
+                if (ln.charAt(0) === "@") { inFreq = true; continue; }
+                if (!ln.trim()) continue;
+                if (!inFreq) {
+                    var n = ln.trim().split(/\s+/).slice(1).map(Number);
+                    var idle = (n[3] || 0) + (n[4] || 0);
+                    var total = n.reduce(function (a, b) { return a + (b || 0); }, 0);
+                    cpus.push({ total: total, idle: idle });
+                } else {
+                    var p = ln.trim().split(/\s+/);
+                    var li = Number(p[0]);
+                    var khz = Number(p[1]);
+                    if (!isNaN(li))
+                        freq[li] = isNaN(khz) ? 0 : Math.round(khz / 1000);
+                }
+            }
+            return { cpus: cpus, freq: freq };
         }
         onUpdated: {
             var cur = value;
-            if (root._prevCore && root._prevCore.length === cur.length) {
+            if (root._prevCore && root._prevCore.length === cur.cpus.length) {
                 var out = [];
-                for (var i = 0; i < cur.length; i++) {
-                    var dt = cur[i].total - root._prevCore[i].total;
-                    var di = cur[i].idle - root._prevCore[i].idle;
+                for (var i = 0; i < cur.cpus.length; i++) {
+                    var dt = cur.cpus[i].total - root._prevCore[i].total;
+                    var di = cur.cpus[i].idle - root._prevCore[i].idle;
                     out.push(dt > 0 ? Math.max(0, Math.min(100, Math.round(100 * (1 - di / dt)))) : 0);
                 }
                 root.perCore = out;
             }
-            root._prevCore = cur;
+            root._prevCore = cur.cpus;
+            root.perThreadFreq = cur.freq;
         }
+    }
+
+    // CPU topology (static): logical -> core (core_id) -> CCX (shared L3).
+    // Self-disabling: runs once (CommandPoll fires on start) then stops when
+    // cpuTopology is populated. Numeric loop avoids the lexical cpu* glob order.
+    property CommandPoll topoPoll: CommandPoll {
+        interval: 60000
+        running: root.active && root.wantDetail && root.cpuTopology.length === 0
+        command: ["bash", "-lc",
+            "for c in /sys/devices/system/cpu/cpu[0-9]*; do n=${c##*/cpu}; " +
+            "printf '%s %s %s\\n' \"$n\" \"$(cat \"$c/topology/core_id\" 2>/dev/null)\" " +
+            "\"$(cat \"$c/cache/index3/shared_cpu_list\" 2>/dev/null)\"; done | sort -n"]
+        parse: function (o) { return SysFmt.parseTopology(String(o)); }
+        onUpdated: root.cpuTopology = value
     }
 
     // Everything else in one bash call (all point-in-time -- no delta needed).

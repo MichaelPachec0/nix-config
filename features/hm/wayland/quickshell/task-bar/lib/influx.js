@@ -37,3 +37,42 @@ function parseFrame(text) {
     }
     return result;
 }
+
+// Parse per-core lines (tagged name=CoreN) into { <coreIndex>: { key: number } }.
+// The aggregate "name=Cores" line has no digit after "Core" so it is excluded.
+// Field parsing mirrors parseFrame (numeric only, trailing "i" stripped).
+function parsePerCore(text) {
+    var result = {};
+    if (!text)
+        return result;
+    var lines = text.split("\n");
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (!line)
+            continue;
+        var sp = line.indexOf(" ");
+        if (sp < 0)
+            continue;
+        var m = line.slice(0, sp).match(/name=Core(\d+)/);
+        if (!m)
+            continue;
+        var idx = Number(m[1]);
+        var obj = {};
+        var pairs = line.slice(sp + 1).split(",");
+        for (var j = 0; j < pairs.length; j++) {
+            var eq = pairs[j].indexOf("=");
+            if (eq < 0)
+                continue;
+            var key = pairs[j].slice(0, eq);
+            var raw = pairs[j].slice(eq + 1);
+            if (raw.charAt(raw.length - 1) === "i")
+                raw = raw.slice(0, raw.length - 1);
+            var num = Number(raw);
+            if (isNaN(num))
+                continue;
+            obj[key] = num;
+        }
+        result[idx] = obj;
+    }
+    return result;
+}

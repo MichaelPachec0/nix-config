@@ -62,5 +62,30 @@ class UpdateMembers(unittest.TestCase):
         self.assertEqual(sc.update_members(["a"], [], None, ["a", "b"]), ["a"])
 
 
+class ReleasedByMove(unittest.TestCase):
+    def test_still_on_show_ws_not_released(self):
+        # shown on ws 1, still on ws 1 -> normal rotation, not extracted
+        self.assertFalse(sc.released_by_move("1", 1, "1"))
+
+    def test_moved_to_other_ws_released(self):
+        # shown on ws 1, user moved it to ws 4 -> extracted
+        self.assertTrue(sc.released_by_move("4", 4, "1"))
+
+    def test_back_in_special_not_released(self):
+        # already back in the pad -> the stale check owns this, not release
+        self.assertFalse(sc.released_by_move(sc.SPECIAL_WS, -98, "1"))
+
+    def test_no_recorded_show_ws_not_released(self):
+        # old-format state (no show_ws) -> can't tell, don't release
+        self.assertFalse(sc.released_by_move("4", 4, None))
+
+    def test_no_current_ws_not_released(self):
+        self.assertFalse(sc.released_by_move(None, None, "1"))
+
+    def test_id_str_int_equivalence(self):
+        # show_ws persisted as str "2", current id is int 2 -> same ws
+        self.assertFalse(sc.released_by_move("2", 2, "2"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -26,6 +26,9 @@ Rectangle {
     required property QtObject theme
     property int pad: 10   // inner horizontal padding
     property int gap: 8    // spacing between content items
+    // Ring (border) colour; defaults to the shared hairline. Override to accent a
+    // specific pill (e.g. the mode pill) without changing any other call site.
+    property color ringColor: theme.border
 
     readonly property string style: BarStyle.current
     readonly property bool filled: pill.style !== "ghost"
@@ -35,10 +38,18 @@ Rectangle {
 
     implicitWidth: row.implicitWidth + pad * 2
     implicitHeight: 30
+    // Dynamic-island-style morph: spring the capsule to its new width whenever
+    // its content changes size (an app icon opens/closes, a value gains a digit,
+    // a CA count changes, a workspace appears) so the bar fluidly reflows instead
+    // of snapping. Neighbouring pills glide because the parent RowLayouts read
+    // this animating implicitWidth.
+    Behavior on implicitWidth {
+        NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
+    }
     radius: height / 2
     color: pill.filled ? pill.theme.bgPill : "transparent"
     border.width: 1
-    border.color: pill.theme.border
+    border.color: pill.ringColor
 
     // Outer pass: DROP shadow. frosted = soft straight-down elevation of the glass
     // capsule; ghost / ghost-glass = a tighter down-right drop for the text. Its

@@ -668,24 +668,13 @@ in {
           '';
           destination = "/etc/udev/rules.d/50-oryx-legacy.rules";
         })
-        # These aren't needed since we are added to dialout
-        # (pkgs.writeTextFile {
-        #   name = "esp32 work";
-        #   text = ''
-        #     # Espressif USB JTAG/serial debug units
-        #     ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", MODE="660", GROUP="plugdev", TAG+="uaccess"
-        #     ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1002", MODE="660", GROUP="plugdev", TAG+="uaccess"
-        #   '';
-        #   destination = "/etc/udev/rules.d/50-esp32-serial.rules";
-        # })
-        # (pkgs.writeTextFile {
-        #   name = "serial-udev-rules";
-        #   text = ''
-        #     KERNEL=="ttyACM[0-9]*",MODE:="0666"
-        #     KERNEL=="ttyUSB[0-9]*",MODE:="0666"
-        #   '';
-        #   destination = "/etc/udev/rules.d/99-global-serial.rules";
-        # })
+        (pkgs.writeTextFile {
+          name = "Disable Modem manager espressif pid";
+          text = ''
+            SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ENV{ID_MM_DEVICE_IGNORE}="1"
+          '';
+          destination = "/etc/udev/rules.d/99-espressif.rules";
+        })
       ];
       extraRules = '''';
     };
@@ -1344,7 +1333,7 @@ in {
       HandlePowerKeyLongPress = "poweroff";
     };
     services.input-remapper = {
-      enable = true;
+      enable = false;
       enableUdevRules = true;
     };
     hardware.cynthion.enable = true;
@@ -1386,8 +1375,6 @@ in {
     ];
     nix.settings.extra-platforms = config.boot.binfmt.emulatedSystems;
 
-    # 2026-06-29: WARN: bypassing issue with xanmod  not building a bzimage by default
-    system.boot.loader.kernelFile = "vmlinuz";
     services.windscribe.addUsersToGroup = ["michael"];
 
     # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion

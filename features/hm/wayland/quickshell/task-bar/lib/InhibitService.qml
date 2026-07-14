@@ -22,6 +22,8 @@ Scope {
     property alias sleepExpiry: adapter.sleepExpiry
     property alias locked: adapter.locked
     property alias lastDurationMs: adapter.lastDurationMs
+    property alias idleDefaultMs: adapter.idleDefaultMs
+    property alias sleepDefaultMs: adapter.sleepDefaultMs
 
     property double now: Date.now()
 
@@ -42,17 +44,26 @@ Scope {
                 expiry: svc.sleepExpiry
             },
             locked: svc.locked,
-            lastDurationMs: svc.lastDurationMs
+            lastDurationMs: svc.lastDurationMs,
+            idleDefaultMs: svc.idleDefaultMs,
+            sleepDefaultMs: svc.sleepDefaultMs
         };
     }
     function _write(s) {
-        // Assigning adapter props triggers onAdapterUpdated -> writeAdapter().
+        // Set every property, THEN persist once. Do NOT persist per property: an
+        // onAdapterUpdated: writeAdapter() hook fires writeAdapter mid-update,
+        // round-tripping a momentarily-inconsistent adapter and reverting the
+        // value just set (this stranded sleep at expiry 0 -- "infinity" -- on
+        // lock, when sleepExpiry transitions 0 -> the coupled timer in one write).
         adapter.idleOn = s.idle.on;
         adapter.idleExpiry = s.idle.expiry;
         adapter.sleepOn = s.sleep.on;
         adapter.sleepExpiry = s.sleep.expiry;
         adapter.locked = s.locked;
         adapter.lastDurationMs = s.lastDurationMs;
+        adapter.idleDefaultMs = s.idleDefaultMs;
+        adapter.sleepDefaultMs = s.sleepDefaultMs;
+        file.writeAdapter(); // persist once, from a now-consistent adapter
     }
 
     // --- commands ---
@@ -66,10 +77,24 @@ Scope {
         }
         return s;
     }
-    function toggleIndefinite(which) {
-        var s = svc._snapshot();
-        var on = !s[which].on;
-        svc._write(svc._setConcern(s, which, on, 0));
+    function defaultMs(which) {
+        return which === "idle" ? svc.idleDefaultMs : svc.sleepDefaultMs;
+    }
+    function setDefault(which, ms) {
+        if (which === "idle")
+            adapter.idleDefaultMs = ms;
+        else
+            adapter.sleepDefaultMs = ms;
+        file.writeAdapter();
+    }
+    // Turn a concern on for its default duration (indefinite when default is 0),
+    // or off. Used by the popup switch and the bar icons.
+    function toggle(which) {
+        var on = which === "idle" ? svc.idleOn : svc.sleepOn;
+        if (on)
+            svc.disarm(which);
+        else
+            svc.arm(which, svc.defaultMs(which));
     }
     function arm(which, ms) {
         var s = svc._snapshot();
@@ -144,12 +169,15 @@ Scope {
     FileView {
         id: file
         path: svc._stateDir + "/inhibit-state.json"
-        watchChanges: true
-        onFileChanged: reload()
-        onAdapterUpdated: writeAdapter()
+        // Single-writer model: this instance owns the file. watchChanges is off
+        // so the FileView never re-ingests our own writes (which momentarily
+        // expose partial multi-property state on disk). Persistence is explicit
+        // via writeAdapter() in _write()/setDefault(); there is deliberately no
+        // onAdapterUpdated hook (per-property auto-persist reverted values).
+        watchChanges: false
         onLoaded: {
-            // Expire anything that elapsed while we were gone, and persist the
-            // corrected state back.
+            // On load, expire anything that elapsed while we were gone and
+            // persist the corrected state back.
             var s = InhibitLogic.reconcileOnLoad(svc._snapshot(), Date.now());
             svc._write(s);
         }
@@ -163,6 +191,8 @@ Scope {
             property real sleepExpiry: 0
             property bool locked: false
             property real lastDurationMs: 3600000
+            property real idleDefaultMs: 0
+            property real sleepDefaultMs: 0
         }
     }
 }

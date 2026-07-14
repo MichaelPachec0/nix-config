@@ -28,7 +28,7 @@ ColumnLayout {
             // should never actually trigger -- it is belt-and-suspenders).
             clip: true
 
-            SysCpuSection  { Layout.fillWidth: true; theme: root.theme; stats: root.stats }
+            SysCpuSection  { Layout.fillWidth: true; theme: root.theme; stats: root.stats; smu: root.smu }
             SysMemSection  { Layout.fillWidth: true; theme: root.theme; stats: root.stats }
             SysGpuSection  { Layout.fillWidth: true; theme: root.theme; gpu: root.gpu }
             SysDiskSection { Layout.fillWidth: true; theme: root.theme; disk: root.disk }

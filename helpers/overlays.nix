@@ -336,7 +336,7 @@
             patches =
               (old.patches or [])
               ++ [
-                ../overlays/afdko-otfautohint-high-ghost-assert.patch
+                # ../overlays/afdko-otfautohint-high-ghost-assert.patch
               ];
           });
         };
@@ -435,7 +435,7 @@
     wayland
     figma-linux
     ncspot
-    fastanime
+    # fastanime
     fonts
     # NOTE: still need to migrate from using this, as sg has now moved from using an overlay.
     # inputs.sg.overlays.default
@@ -452,7 +452,6 @@
     overlays;
   base = [
     channels
-    inputs.joshuto.overlays.default
     inputs.flake-playground.overlays.default
     # (
     #   final: prev: {
@@ -482,7 +481,7 @@ in {
     hmIntegrationOverlays =
       vimPluginsOverlayList
       ++ lspServers
-      ++ [inputs.claude-code.overlays.default];
+      ++ [inputs.llm-agents.overlays.shared-nixpkgs];
     # base =
     # mkOverlayModules base
     # ++ inputs.sops-nix.nixosModules.sops;
@@ -534,7 +533,7 @@ in {
     hmIntegrationOverlays =
       vimPluginsOverlayList
       ++ lspServers
-      ++ [inputs.claude-code.overlays.default];
+      ++ [inputs.llm-agents.overlays.shared-nixpkgs];
     nixosServer = mkOverlayModules (base
       ++ [
         powertop-unstable

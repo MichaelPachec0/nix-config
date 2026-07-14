@@ -279,7 +279,7 @@ in {
   # Only applied for standalone HM; when integrated (useGlobalPkgs) the system pkgs
   # already carry this overlay via helpers/overlays.nix hmIntegrationOverlays.
   nixpkgs.overlays = lib.mkIf standalone [
-    inputs.claude-code.overlays.default
+    inputs.llm-agents.overlays.shared-nixpkgs
   ];
   # The system owns nix config when integrated as a NixOS module.
   nix = lib.mkIf standalone {
@@ -308,7 +308,7 @@ in {
     # });
   in
     with pkgs; [
-      fastanime
+      #fastanime
       claude-code
       # fluffychat
       playground.workstyle

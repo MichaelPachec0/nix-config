@@ -24,6 +24,8 @@ function defaultState() {
         sleep: { on: false, expiry: 0 },
         locked: false,
         lastDurationMs: 3600000,
+        idleDefaultMs: 0,
+        sleepDefaultMs: 0,
     };
 }
 
@@ -37,12 +39,16 @@ function _concern(raw) {
 function sanitizeState(raw) {
     var r = (raw && typeof raw === "object") ? raw : {};
     var d = defaultState();
+    function dur(v, dflt) {
+        return (v === 0 || Number(v) > 0) ? Number(v) : dflt;
+    }
     return {
         idle: _concern(r.idle),
         sleep: _concern(r.sleep),
         locked: r.locked === true,
-        lastDurationMs: (r.lastDurationMs === 0 || Number(r.lastDurationMs) > 0)
-            ? Number(r.lastDurationMs) : d.lastDurationMs,
+        lastDurationMs: dur(r.lastDurationMs, d.lastDurationMs),
+        idleDefaultMs: dur(r.idleDefaultMs, d.idleDefaultMs),
+        sleepDefaultMs: dur(r.sleepDefaultMs, d.sleepDefaultMs),
     };
 }
 
@@ -60,16 +66,16 @@ function reconcileOnLoad(state, nowMs) {
 }
 
 // The single on/expiry both concerns share when locked: off if neither is on;
-// indefinite if either on-concern is indefinite; otherwise the later expiry so
-// locking never shortens a running timer.
+// otherwise a running timer wins -- the latest timed expiry is replicated onto
+// both, even over an off or on-indefinite concern (so locking propagates a set
+// timer to the "non-initialized" side). Both go indefinite (expiry 0) only when
+// no on-concern is timed.
 function coupledState(state) {
     var idle = state.idle, sleep = state.sleep;
     if (!idle.on && !sleep.on) return { on: false, expiry: 0 };
-    if ((idle.on && idle.expiry === 0) || (sleep.on && sleep.expiry === 0))
-        return { on: true, expiry: 0 };
     var e = 0;
-    if (idle.on) e = Math.max(e, idle.expiry);
-    if (sleep.on) e = Math.max(e, sleep.expiry);
+    if (idle.on && idle.expiry > 0) e = Math.max(e, idle.expiry);
+    if (sleep.on && sleep.expiry > 0) e = Math.max(e, sleep.expiry);
     return { on: true, expiry: e };
 }
 

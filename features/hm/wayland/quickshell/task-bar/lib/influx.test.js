@@ -41,3 +41,22 @@ Deno.test("parseFrame empty input", () => {
 Deno.test("parseFrame garbage input", () => {
   assertEquals(Object.keys(parseFrame("no equals here")).length, 0);
 });
+
+Deno.test("parsePerCore keys by core index", () => {
+  const frame =
+    `ryzen_monitor_ng,host=thanatos,name=Core0 core_state="Active",core_frequency=578i,core_temperature=56.39,core_power=0.678,core_c6=76.9\n` +
+    `ryzen_monitor_ng,host=thanatos,name=Core1 core_state="Active",core_frequency=3426i,core_temperature=58.98,core_power=0.511,core_c6=9.5\n` +
+    `ryzen_monitor_ng,host=thanatos,name=Cores cores_maxtemperature=82.00,cores_totalpower=15.000\n` +
+    `ryzen_monitor_ng,host=thanatos,name=Package cpu_thm=80.00`;
+  const pc = parsePerCore(frame);
+  assertEquals(Object.keys(pc).sort(), ["0", "1"]);      // "Cores"/"Package" excluded
+  assertEquals(pc[0].core_frequency, 578);
+  assertEquals(pc[1].core_frequency, 3426);
+  assertEquals(pc[0].core_temperature, 56.39);
+  assertEquals(pc[0].core_c6, 76.9);                     // C-state residency (idle indicator)
+  assertEquals(pc[0].core_state, undefined);             // string field skipped
+});
+
+Deno.test("parsePerCore empty input", () => {
+  assertEquals(Object.keys(parsePerCore("")).length, 0);
+});
