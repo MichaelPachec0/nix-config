@@ -1333,7 +1333,7 @@ in {
       HandlePowerKeyLongPress = "poweroff";
     };
     services.input-remapper = {
-      enable = true;
+      enable = false;
       enableUdevRules = true;
     };
     hardware.cynthion.enable = true;
@@ -1375,8 +1375,6 @@ in {
     ];
     nix.settings.extra-platforms = config.boot.binfmt.emulatedSystems;
 
-    # 2026-06-29: WARN: bypassing issue with xanmod  not building a bzimage by default
-    system.boot.loader.kernelFile = "vmlinuz";
     services.windscribe.addUsersToGroup = ["michael"];
 
     # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
