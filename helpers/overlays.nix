@@ -452,7 +452,6 @@
     overlays;
   base = [
     channels
-    inputs.joshuto.overlays.default
     inputs.flake-playground.overlays.default
     # (
     #   final: prev: {
