@@ -87,6 +87,7 @@
 in {
   imports = [
     ./tlp.nix
+    ./gaming.nix
   ];
   config = {
     nixpkgs.overlays = [
