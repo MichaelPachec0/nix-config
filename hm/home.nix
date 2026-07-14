@@ -308,7 +308,7 @@ in {
     # });
   in
     with pkgs; [
-      fastanime
+      #fastanime
       claude-code
       # fluffychat
       playground.workstyle

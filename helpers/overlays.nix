@@ -336,7 +336,7 @@
             patches =
               (old.patches or [])
               ++ [
-                ../overlays/afdko-otfautohint-high-ghost-assert.patch
+                # ../overlays/afdko-otfautohint-high-ghost-assert.patch
               ];
           });
         };
@@ -435,7 +435,7 @@
     wayland
     figma-linux
     ncspot
-    fastanime
+    # fastanime
     fonts
     # NOTE: still need to migrate from using this, as sg has now moved from using an overlay.
     # inputs.sg.overlays.default
