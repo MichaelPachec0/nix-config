@@ -13,7 +13,7 @@ MARKER_DIR="${GAME_TDP_MARKER_DIR:-/run/gamemode}"
 AC_ONLINE="${GAME_TDP_AC:-/sys/class/power_supply/AC/online}"
 FAN_MODE="${GAME_TDP_FAN:-/run/thinkfan/mode}"
 OVERRIDE_FILE="${GAME_TDP_OVERRIDE:-/run/gamemode/override}"
-BOOST_W="${GAME_TDP_BOOST_W:-45000}"
+BOOST_W="${GAME_TDP_BOOST_W:-35000}"
 DEFAULT_W="${GAME_TDP_DEFAULT_W:-28000}"
 # Battery: game-tdp does NOT drive ryzenadj on battery; it only knocks the limit
 # down ONCE on the AC->battery transition (so a prior boost never persists), then
@@ -54,10 +54,17 @@ decide() {
 ac_online() { cat "$AC_ONLINE" 2>/dev/null || echo 0; }
 
 as_user() {
-  local uid
+  # Run "$@" as the gaming user against their session bus. Uses setpriv, NOT
+  # runuser: runuser opens a PAM session, so at the poll interval it floods the
+  # journal with pam_unix(runuser:session) open/close pairs (two per poll).
+  # setpriv drops privileges with plain setuid/setgid syscalls -- no PAM, no
+  # session, nothing logged. D-Bus still authenticates us as the user via
+  # SO_PEERCRED (the kernel-verified peer uid), so the query is unchanged.
+  local uid gid
   uid="$(id -u "$GAME_USER" 2>/dev/null || echo 0)"
-  runuser -u "$GAME_USER" -- env \
-    XDG_RUNTIME_DIR="/run/user/$uid" \
+  gid="$(id -g "$GAME_USER" 2>/dev/null || echo 0)"
+  setpriv --reuid "$uid" --regid "$gid" --init-groups \
+    env XDG_RUNTIME_DIR="/run/user/$uid" \
     DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" "$@"
 }
 
