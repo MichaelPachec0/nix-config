@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ lib, config, ... }:
 {
   # Ephemeral root ("erase your darlings") for the new two-btrfs layout.
   # Imported ONLY by the `thanatos` (new drive) flake output.
@@ -69,7 +69,13 @@
       "/var/lib/syncthing"
       "/var/lib/waydroid"
       "/etc/windscribe"         # windscribe config/creds (WS_POSIX_CONFIG_DIR)
-    ];
+      # display state
+      "/var/lib/colord"         # ICC device/profile assignments (until ICC is declarative)
+    ]
+    # Only persisted once the corresponding service is enabled; both default
+    # to false, so these no-op until then (upower is planned for thanatos).
+    ++ lib.optional config.services.hardware.bolt.enable "/var/lib/boltd"  # Thunderbolt (boltd) device authorizations
+    ++ lib.optional config.services.upower.enable "/var/lib/upower";       # battery/power-usage history
     files = [
       "/etc/machine-id"
       "/etc/ssh/ssh_host_ed25519_key"
