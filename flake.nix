@@ -202,7 +202,7 @@
       # inputs.nixpkgs.follows = "nixpkgs";
       # inputs.flake-utils.follows = "flake-utils";
     };
-    claude-code.url = "github:numtide/llm-agents.nix";
+    llm-agents.url = "github:numtide/llm-agents.nix";
     # hy3 = {
     #   url = "github:outfoxxed/hy3/2a89da65adeb5ae4c8782b64eaaa281003109d9f";
     #   # inputs.hyprland.follows = "nixpkgs";

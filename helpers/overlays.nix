@@ -482,7 +482,7 @@ in {
     hmIntegrationOverlays =
       vimPluginsOverlayList
       ++ lspServers
-      ++ [inputs.claude-code.overlays.default];
+      ++ [inputs.llm-agents.overlays.shared-nixpkgs];
     # base =
     # mkOverlayModules base
     # ++ inputs.sops-nix.nixosModules.sops;
@@ -534,7 +534,7 @@ in {
     hmIntegrationOverlays =
       vimPluginsOverlayList
       ++ lspServers
-      ++ [inputs.claude-code.overlays.default];
+      ++ [inputs.llm-agents.overlays.shared-nixpkgs];
     nixosServer = mkOverlayModules (base
       ++ [
         powertop-unstable
