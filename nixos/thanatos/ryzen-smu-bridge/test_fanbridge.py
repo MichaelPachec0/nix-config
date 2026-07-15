@@ -39,6 +39,28 @@ class TestResolveMode(unittest.TestCase):
         self.assertEqual(fb.resolve_mode("bogus", True), "perf")
 
 
+class TestNextResolved(unittest.TestCase):
+    def test_first_call_reports_changed(self) -> None:
+        mode, changed = fb.next_resolved(None, True, None)
+        self.assertEqual(mode, "perf")
+        self.assertTrue(changed)
+
+    def test_stable_reports_unchanged(self) -> None:
+        mode, changed = fb.next_resolved(None, True, "perf")
+        self.assertEqual(mode, "perf")
+        self.assertFalse(changed)
+
+    def test_override_transition_reports_changed(self) -> None:
+        mode, changed = fb.next_resolved("quiet", True, "perf")
+        self.assertEqual(mode, "quiet")
+        self.assertTrue(changed)
+
+    def test_ac_unplug_flips_in_auto(self) -> None:
+        mode, changed = fb.next_resolved(None, False, "perf")
+        self.assertEqual(mode, "quiet")
+        self.assertTrue(changed)
+
+
 INIT = fb.State(ema=None, hot_since=None)
 
 
