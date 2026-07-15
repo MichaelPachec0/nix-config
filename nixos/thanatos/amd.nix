@@ -95,6 +95,22 @@
   in builtins.all (k: (builtins.elemAt lows k) < (builtins.elemAt highs (k - 1))) idxs;
   quietYaml = mkThinkfanYaml "thinkfan-quiet.yaml" quietLevels;
   perfYaml = mkThinkfanYaml "thinkfan-perf.yaml" perfLevels;
+  fanCurveApply = pkgs.writeShellApplication {
+    name = "fan-curve-apply";
+    runtimeInputs = [ pkgs.coreutils pkgs.systemd ];
+    text = ''
+      mode="$(cat /run/thinkfan/mode-resolved 2>/dev/null || echo quiet)"
+      case "$mode" in
+        perf) src=${perfYaml} ;;
+        *)    src=${quietYaml} ;;
+      esac
+      tmp="$(mktemp /run/thinkfan/active.yaml.XXXXXX)"
+      cp "$src" "$tmp"
+      mv -f "$tmp" /run/thinkfan/active.yaml
+      # thinkfan may not be up yet during boot races; ignore a failed reload.
+      systemctl reload thinkfan.service || true
+    '';
+  };
 
   # Custom XKB data dir: base xkeyboard-config plus a `cadet:parens` OPTION that
   # remaps the spare F13-F16 keycodes (emitted by the space-cadet keys in
@@ -210,6 +226,20 @@ in {
       serviceConfig.ExecStartPre = [
         "${pkgs.bash}/bin/bash -c 'test -f /run/thinkfan/active.yaml || ${pkgs.coreutils}/bin/cp ${quietYaml} /run/thinkfan/active.yaml'"
       ];
+    };
+    systemd.services.fan-curve = {
+      description = "Apply the thinkfan curve for the current resolved fan mode";
+      after = ["ryzen-smu-bridge.service"];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = lib.getExe fanCurveApply;
+      };
+    };
+    systemd.paths.fan-curve = {
+      description = "Watch resolved fan mode; swap thinkfan curve on change";
+      wantedBy = ["multi-user.target"];
+      after = ["ryzen-smu-bridge.service"];
+      pathConfig.PathModified = "/run/thinkfan/mode-resolved";
     };
     networking.hostName = "thanatos";
     nix.gc = {
