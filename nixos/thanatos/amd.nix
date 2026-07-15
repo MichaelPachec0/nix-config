@@ -48,6 +48,54 @@
     '';
   };
 
+  # thinkfan curves. quietLevels = today's curve (fed control = ema - 9 by the
+  # bridge, so quiet is unchanged). perfLevels = aggressive curve on the real
+  # cpu_thm scale (bridge offset 0); disengage at 78. Each row is [level low high];
+  # thinkfan needs low_k < high_{k-1} (validCurve enforces this at build time).
+  quietLevels = [
+    [ 0 0 55 ]
+    [ 2 48 66 ]
+    [ 4 60 76 ]
+    [ 5 70 84 ]
+    [ 7 78 90 ]
+    [ "level disengaged" 88 32767 ]
+  ];
+  perfLevels = [
+    [ 0 0 50 ]
+    [ 2 44 55 ]
+    [ 3 49 60 ]
+    [ 4 54 64 ]
+    [ 5 58 68 ]
+    [ 6 62 73 ]
+    [ 7 67 78 ]
+    [ "level disengaged" 76 32767 ]
+  ];
+  mkThinkfanYaml = name: levels: let
+    fmtLevel = l: let
+      lvl = builtins.elemAt l 0;
+      lvlStr = if builtins.isInt lvl then builtins.toString lvl else lvl;
+      lo = builtins.toString (builtins.elemAt l 1);
+      hi = builtins.toString (builtins.elemAt l 2);
+    in "- - ${lvlStr}\n  - ${lo}\n  - ${hi}";
+    body = lib.concatStringsSep "\n" (map fmtLevel levels);
+  in pkgs.writeText name ''
+    fans:
+    - tpacpi: /proc/acpi/ibm/fan
+    sensors:
+    - hwmon: /run/thinkfan/temp
+    levels:
+    ${body}
+  '';
+  # low_k < high_{k-1} for every adjacent pair.
+  validCurve = levels: let
+    lows = map (l: builtins.elemAt l 1) levels;
+    highs = map (l: builtins.elemAt l 2) levels;
+    n = builtins.length levels;
+    idxs = builtins.genList (i: i + 1) (n - 1);
+  in builtins.all (k: (builtins.elemAt lows k) < (builtins.elemAt highs (k - 1))) idxs;
+  quietYaml = mkThinkfanYaml "thinkfan-quiet.yaml" quietLevels;
+  perfYaml = mkThinkfanYaml "thinkfan-perf.yaml" perfLevels;
+
   # Custom XKB data dir: base xkeyboard-config plus a `cadet:parens` OPTION that
   # remaps the spare F13-F16 keycodes (emitted by the space-cadet keys in
   # services.kanata below) to UNSHIFTED paren/brace. It MUST be an option, not a
@@ -90,6 +138,16 @@ in {
     ./gaming.nix
   ];
   config = {
+    assertions = [
+      {
+        assertion = validCurve quietLevels;
+        message = "thinkfan quietLevels: each level low must be below the previous level high";
+      }
+      {
+        assertion = validCurve perfLevels;
+        message = "thinkfan perfLevels: each level low must be below the previous level high";
+      }
+    ];
     nixpkgs.overlays = [
       # TODO: make sure to change this!
       (self: super: {
