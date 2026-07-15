@@ -63,6 +63,21 @@ def read_override(path: str = "/run/thinkfan/mode") -> str | None:
     return val if val in fb.VALID_MODES else None
 
 
+def emit_resolved(override: str | None, ac_online: bool, last: str | None,
+                  path: str = "/run/thinkfan/mode-resolved") -> str | None:
+    """Write the resolved fan mode to `path` when it changes; return the value
+    to remember as `last`. Updated only on a successful write so a failed write
+    retries on the next tick."""
+    resolved, changed = fb.next_resolved(override, ac_online, last)
+    if not changed:
+        return last
+    try:
+        atomic_write(path, resolved + "\n", 0o644)
+    except OSError:
+        return last
+    return resolved
+
+
 def atomic_write(path: str, text: str, mode: int = 0o644) -> None:
     d = os.path.dirname(path)
     fd, tmp = tempfile.mkstemp(dir=d)
@@ -84,6 +99,7 @@ FIFO = os.path.join(RUN_RYZEN, "pm.fifo")
 INFLUX_OUT = os.path.join(RUN_RYZEN, "latest.influx")
 THINKFAN_TEMP = "/run/thinkfan/temp"
 MODE_PATH = "/run/thinkfan/mode"
+MODE_RESOLVED = "/run/thinkfan/mode-resolved"
 FRAME_TERMINATOR = "package_totalcorepower"
 
 
@@ -172,6 +188,7 @@ def main() -> int:
     tctl_path = resolve_tctl_path()
     state = fb.State(ema=None, hot_since=None)
     last_ac: bool | None = None
+    last_resolved: str | None = None
 
     sd_notify("READY=1")
     try:
@@ -192,11 +209,13 @@ def main() -> int:
                 except OSError:
                     pass
             last_ac = ac
+            override = read_override(MODE_PATH)
+            last_resolved = emit_resolved(override, ac, last_resolved, MODE_RESOLVED)
             try:
                 inp = fb.Inputs(
                     cpu_thm=cpu_thm, peak=peak, tctl=read_millideg(tctl_path),
                     frame_age=frame_age, ac_online=ac,
-                    override=read_override(MODE_PATH), now=now)
+                    override=override, now=now)
                 dec = fb.decide(inp, state)
                 state = dec.state
                 atomic_write(THINKFAN_TEMP, f"{dec.published_mc}\n", 0o644)

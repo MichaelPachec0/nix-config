@@ -198,5 +198,30 @@ class TestDriverHelpers(unittest.TestCase):
                 self.assertEqual(f.read(), "84000\n")
 
 
+class TestEmitResolved(unittest.TestCase):
+    def test_writes_on_change_and_returns_new_last(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "mode-resolved")
+            last = drv.emit_resolved(None, True, None, p)  # first call -> perf
+            self.assertEqual(last, "perf")
+            with open(p) as f:
+                self.assertEqual(f.read().strip(), "perf")
+
+    def test_no_write_when_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "mode-resolved")
+            last = drv.emit_resolved(None, True, "perf", p)  # unchanged
+            self.assertEqual(last, "perf")
+            self.assertFalse(os.path.exists(p))  # never written
+
+    def test_writes_quiet_on_battery(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "mode-resolved")
+            last = drv.emit_resolved(None, False, "perf", p)  # ac->battery
+            self.assertEqual(last, "quiet")
+            with open(p) as f:
+                self.assertEqual(f.read().strip(), "quiet")
+
+
 if __name__ == "__main__":
     unittest.main()
