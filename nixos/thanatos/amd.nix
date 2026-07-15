@@ -202,6 +202,14 @@ in {
     systemd.services.thinkfan = {
       after = ["ryzen-smu-bridge.service"];
       requires = ["ryzen-smu-bridge.service"];
+      # Read a mutable curve that the fan-curve unit swaps at runtime, instead of
+      # the immutable store path the module sets. Seed quiet-if-missing so thinkfan
+      # always starts with a valid curve (a live perf curve survives a thinkfan-only
+      # restart because active.yaml persists in the bridge's RuntimeDirectory).
+      environment.THINKFAN_ARGS = lib.mkForce "-c /run/thinkfan/active.yaml -b0 -s2";
+      serviceConfig.ExecStartPre = [
+        "${pkgs.bash}/bin/bash -c 'test -f /run/thinkfan/active.yaml || ${pkgs.coreutils}/bin/cp ${quietYaml} /run/thinkfan/active.yaml'"
+      ];
     };
     networking.hostName = "thanatos";
     nix.gc = {
