@@ -190,6 +190,11 @@ def main() -> int:
     last_ac: bool | None = None
     last_resolved: str | None = None
 
+    # Publish the initial resolved mode before READY so the boot-time
+    # fan-curve unit (ordered after this service becomes active) always
+    # sees a populated mode-resolved and applies the correct curve.
+    last_resolved = emit_resolved(read_override(MODE_PATH), read_ac_online(),
+                                  last_resolved, MODE_RESOLVED)
     sd_notify("READY=1")
     try:
         while True:

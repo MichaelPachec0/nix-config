@@ -229,7 +229,9 @@ in {
     };
     systemd.services.fan-curve = {
       description = "Apply the thinkfan curve for the current resolved fan mode";
+      wantedBy = ["multi-user.target"];
       after = ["ryzen-smu-bridge.service"];
+      requires = ["ryzen-smu-bridge.service"];
       serviceConfig = {
         Type = "oneshot";
         ExecStart = lib.getExe fanCurveApply;
@@ -376,14 +378,9 @@ in {
       # ~6C hysteresis in the working range; the top disengage step is a
       # deliberate tight 2C safety band. Quiet profile is the same curve minus
       # the bridge's QUIET_OFFSET.
-      levels = [
-        [0 0 55]
-        [2 48 66]
-        [4 60 76]
-        [5 70 84]
-        [7 78 90]
-        ["level disengaged" 88 32767]
-      ];
+      # This block feeds only the module's generated (unused) config -- the
+      # live curve comes from the mkForce'd THINKFAN_ARGS + active.yaml below.
+      levels = quietLevels;
     };
     services.pixiecore = {
       enable = true;
