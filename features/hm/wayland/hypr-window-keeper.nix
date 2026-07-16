@@ -19,10 +19,15 @@
 
   # runtimeInputs puts python3 + hyprctl on PATH; the daemon shells out to
   # `hyprctl` for clients/monitors/dispatch.
+  hyprIpc = import ./hypr-ipc-py.nix {inherit pkgs;};
+
   daemon = pkgs.writeShellApplication {
     name = "hypr-window-keeper";
     runtimeInputs = [pkgs.python3 pkgs.latest.hyprland];
-    text = ''exec python3 ${./hypr_window_keeper.py} ${configJson} "$@"'';
+    text = ''
+      export PYTHONPATH=${hyprIpc}''${PYTHONPATH:+:$PYTHONPATH}
+      exec python3 ${./hypr_window_keeper.py} ${configJson} "$@"
+    '';
   };
 in {
   options.services.hyprWindowKeeper = {

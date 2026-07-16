@@ -31,10 +31,11 @@ import json
 import os
 import re
 import select
-import socket
 import subprocess
 import sys
 import time
+
+from hypr_ipc import connect_socket2, find_instance
 
 # Move only when off-target by more than this (px) -- avoids fighting the
 # move animation with redundant commands.
@@ -138,26 +139,6 @@ def compute_target(pos, size, mon):
 # ---------------------------------------------------------------------------
 # Hyprland I/O
 # ---------------------------------------------------------------------------
-def find_instance():
-    """(signature, socket2_path) for the running Hyprland, or (None, None)."""
-    runtime = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    base = os.path.join(runtime, "hypr")
-    sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
-    if sig and os.path.exists(os.path.join(base, sig, ".socket2.sock")):
-        return sig, os.path.join(base, sig, ".socket2.sock")
-    if not os.path.isdir(base):
-        return None, None
-    found = []
-    for name in os.listdir(base):
-        sock = os.path.join(base, name, ".socket2.sock")
-        if os.path.exists(sock):
-            found.append((os.path.getmtime(os.path.join(base, name)), name, sock))
-    if not found:
-        return None, None
-    found.sort()
-    return found[-1][1], found[-1][2]
-
-
 def hyprctl_json(sig, *args):
     env = {**os.environ, "HYPRLAND_INSTANCE_SIGNATURE": sig}
     out = subprocess.run(
@@ -205,12 +186,6 @@ def reconcile(sig, rules):
                         f'window = "address:{win["address"]}" }})')
             break  # first matching rule wins
     return present
-
-
-def connect_socket2(path):
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.connect(path)
-    return sock
 
 
 def run(rules):
