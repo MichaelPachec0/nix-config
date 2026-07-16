@@ -91,6 +91,31 @@ def update_members(existing, hidden, shown, live):
     return sorted(members & set(live))
 
 
+def normalize_addr(addr):
+    """Return addr as a lowercase 0x-prefixed hex string.
+
+    socket2 events emit window addresses without the 0x prefix
+    (`593cb426c700`); `hyprctl clients` uses `0x593cb426c700`. Reconcile the two
+    so membership comparisons match. None / empty / whitespace -> None.
+    """
+    if not addr:
+        return None
+    a = addr.strip().lower()
+    if not a:
+        return None
+    return a if a.startswith("0x") else "0x" + a
+
+
+def forget(addr, members, shown):
+    """Pure decision for dropping a window from the pad.
+
+    Returns (new_members, clear_shown): members with addr removed, and whether
+    the shown pointer should be cleared (it pointed at addr). addr not present
+    -> members unchanged, clear_shown False. Shared by `pull` and `evict`.
+    """
+    return ([a for a in members if a != addr], shown == addr)
+
+
 # ---------------------------------------------------------------------------
 # Hyprland I/O
 # ---------------------------------------------------------------------------
