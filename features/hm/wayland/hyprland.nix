@@ -454,6 +454,11 @@ in {
     # (./hypr-monitor-arrange.nix) runs `hyprctl reload` on `monitorremoved`.
     services.hyprMonitorArrange.enable = true;
 
+    # Keep the scratchpad (special:magic) float-only: evict a member that is
+    # un-floated, and float a tiled window moved into the pad. Daemon:
+    # ./hypr-scratchpad-guard.nix. Pairs with the float-forcing send/pull binds.
+    services.hyprScratchpadGuard.enable = true;
+
     wayland = {
       windowManager.hyprland = {
         enable = true;
