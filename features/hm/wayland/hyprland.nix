@@ -301,6 +301,9 @@
     ++ (submapCheatRows "resize submap (Super+r)" "resize")
     ++ [
       ""
+      "-- scratchpad --"
+      (chRow "Super+=" "Pull scratchpad window here")
+      ""
       "-- help --"
       (chRow "Super+/" "This cheatsheet")
     ]
@@ -742,12 +745,16 @@ in {
           # Super+Shift+- ("move scratchpad" -> special:magic) stays generated.
           # Super+Ctrl+- resets: send the pulled-out member back to the pad.
           bind =
-            (builtins.filter (b: (builtins.elemAt b._args 0) != "SUPER + minus") generatedLuaBinds)
+            (builtins.filter (b: let k = builtins.elemAt b._args 0;
+                              in k != "SUPER + minus" && k != "SUPER + SHIFT + minus")
+              generatedLuaBinds)
             ++ hy3ExtraBinds
             ++ mouseBinds
             ++ [
               {_args = ["SUPER + minus" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle")'')];}
+              {_args = ["SUPER + SHIFT + minus" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle send")'')];}
               {_args = ["SUPER + CONTROL + minus" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle reset")'')];}
+              {_args = ["SUPER + equal" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle pull")'')];}
               cheatBind
               hy3ProjectBind
               hubBind
