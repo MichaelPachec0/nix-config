@@ -15,9 +15,10 @@ outputs at once coalesces into a single reload). `hyprctl reload` is a
 subcommand, so it works under the Lua config parser (unlike `hyprctl dispatch`
 / `keyword`, which the non-legacy parser rejects).
 
-The socket2 discovery / reconnect / hyprctl glue is shared with
-hypr_window_keeper.py. The pure helpers (parse_event / is_trigger_event /
-Debouncer) are covered by hypr_monitor_arrange_test.py; the rest is I/O glue.
+The socket2 discovery / reconnect glue (find_instance / connect_socket2 /
+parse_event) now lives in the shared hypr_ipc module. The local pure helpers
+(is_trigger_event / Debouncer) are covered by hypr_monitor_arrange_test.py; the
+rest is I/O glue.
 """
 from __future__ import annotations
 

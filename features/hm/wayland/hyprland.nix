@@ -417,8 +417,9 @@
 
   # scratchpad-cycle: sway-style cycling scratchpad (special:magic). Super+-
   # (rebound below) reveals the next parked window and hides the previous, one
-  # at a time; Super+Shift+- (generated "move scratchpad") parks the focused
-  # window. stdlib Python; hyprctl for IPC, notify-send for the empty toast.
+  # at a time; Super+Shift+- (rebound below) runs `send` (force-float + park the
+  # focused window); Super+= runs `pull`. stdlib Python; hyprctl for IPC,
+  # notify-send for the empty toast.
   # Pure rotation logic covered by scratchpad_cycle_test.py.
   scratchpadCycleScript = pkgs.writeShellApplication {
     name = "scratchpad-cycle";
@@ -742,8 +743,10 @@ in {
           # + the Super+/ cheatsheet bind.
           # Super+- normally maps (via toLua) to toggle_special("magic"); drop
           # that generated bind and rebind Super+- to the cycling scratchpad.
-          # Super+Shift+- ("move scratchpad" -> special:magic) stays generated.
-          # Super+Ctrl+- resets: send the pulled-out member back to the pad.
+          # Super+Shift+- is likewise filtered out of the generated binds and
+          # rebound to `send` (force-float + park). Super+Ctrl+- resets (send the
+          # pulled-out member back to the pad); Super+= runs `pull` (extract the
+          # focused member onto the current workspace).
           bind =
             (builtins.filter (b: let k = builtins.elemAt b._args 0;
                               in k != "SUPER + minus" && k != "SUPER + SHIFT + minus")
