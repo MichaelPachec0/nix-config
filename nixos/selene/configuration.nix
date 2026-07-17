@@ -399,6 +399,7 @@ in {
         PORT = "4000";
       };
     };
+    programs.neovim.package = lib.mkForce pkgs.neovim-unwrapped;
 
     sops.defaultSopsFile = ../../secrets/default.yaml;
     sops.defaultSopsFormat = "yaml";
