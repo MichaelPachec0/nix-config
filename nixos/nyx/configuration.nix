@@ -1288,13 +1288,13 @@ in {
     # This block is for autotimezone setup
     services.localtimed.enable = true;
     # ssssh v2
-    services.geoclue2 = let
-      # Arch linux gmaps key 🩵
-      gkey = "AIzaSyDwr302FpOSkGRpLlUpPThNTDPbXcIn_FM";
-    in {
+    services.geoclue2 = {
       enable = true;
       enableWifi = true;
-      geoProviderUrl = "https://www.googleapis.com/geolocation/v1/geolocate?key=${gkey}";
+      # Real key is injected at runtime from sops via the geoclue.conf template
+      # below; only this placeholder lands in the world-readable /nix/store.
+      geoProviderUrl =
+        "https://www.googleapis.com/geolocation/v1/geolocate?key=${config.sops.placeholder."geoclue/gmaps-key"}";
       appConfig = let
         mkConfig = {users ? []}: {
           inherit users;
@@ -1306,6 +1306,18 @@ in {
         general = mkConfig {};
       };
     };
+
+    # geoclue bakes geoProviderUrl into a world-readable /etc/geoclue/geoclue.conf
+    # and supports no !include, so re-render the module's own generated conf
+    # through sops (real key substituted at activation) and swap the file in.
+    sops.secrets."geoclue/gmaps-key" = { };
+    sops.templates."geoclue.conf" = {
+      content = config.environment.etc."geoclue/geoclue.conf".text;
+      owner = "geoclue";
+      mode = "0400";
+    };
+    environment.etc."geoclue/geoclue.conf".source =
+      lib.mkForce config.sops.templates."geoclue.conf".path;
     services.avahi = {
       enable = true;
     };

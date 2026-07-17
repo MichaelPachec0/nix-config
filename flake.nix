@@ -6,7 +6,7 @@
     # IF LOGIN FAILS REMOVE THIS, this is also used because cross compilation of arm64 UEFI does not work on current stable.
     nixpkgs-oldstable = {url = "nixpkgs/nixos-23.05";};
     # nixpkgs-stable = {url = "nixpkgs/nixos-25.05";};
-    nixpkgs-stable = {url = "nixpkgs/nixos-25.11";};
+    nixpkgs-stable = {url = "nixpkgs/nixos-26.05";};
     # nixpkgs-stable = {url = "nixpkgs/nixos-23.11";};
     # NixOS/nixpkgs/2057814051972fa1453ddfb0d98badbea9b83c06
     nixpkgs = {url = "nixpkgs/nixos-unstable";};
