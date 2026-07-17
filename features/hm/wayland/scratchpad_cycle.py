@@ -427,6 +427,27 @@ def float_fix(addr):
         dispatch(f'hl.dsp.window.float({{ action = "toggle", window = "address:{addr}" }})')
 
 
+def toggle_float():
+    """Super+Shift+f: toggle the focused window's floating; evict if un-floated.
+
+    Hyprland (0.55.4) emits NO socket2 event on a float change, so eviction
+    cannot be event-driven -- the guard never sees an un-float. Instead the
+    float-toggle keybind runs this: toggle floating exactly as the plain bind
+    did, then -- if the window WAS floating (so it is now tiled) -- evict it when
+    it is a pad member (evict self-filters non-members). Floating a tiled window
+    or toggling a non-member just gets the plain toggle, unchanged.
+    """
+    active = hyprctl_json("activewindow") or {}
+    addr = active.get("address")
+    was_floating = active.get("floating")
+    if addr:
+        dispatch(f'hl.dsp.window.float({{ action = "toggle", window = "address:{addr}" }})')
+    else:
+        dispatch('hl.dsp.window.float({ action = "toggle" })')
+    if addr and was_floating:
+        evict(addr)
+
+
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else "cycle"
     arg = argv[2] if len(argv) > 2 else None
@@ -440,6 +461,8 @@ def main(argv):
         evict(arg)
     elif cmd == "float-fix":
         float_fix(arg)
+    elif cmd == "toggle-float":
+        toggle_float()
     else:
         cycle()
     return 0

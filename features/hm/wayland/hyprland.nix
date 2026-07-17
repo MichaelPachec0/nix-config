@@ -749,7 +749,8 @@ in {
           # focused member onto the current workspace).
           bind =
             (builtins.filter (b: let k = builtins.elemAt b._args 0;
-                              in k != "SUPER + minus" && k != "SUPER + SHIFT + minus")
+                              in k != "SUPER + minus" && k != "SUPER + SHIFT + minus"
+                                 && k != "SUPER + SHIFT + f")
               generatedLuaBinds)
             ++ hy3ExtraBinds
             ++ mouseBinds
@@ -758,6 +759,11 @@ in {
               {_args = ["SUPER + SHIFT + minus" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle send")'')];}
               {_args = ["SUPER + CONTROL + minus" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle reset")'')];}
               {_args = ["SUPER + equal" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle pull")'')];}
+              # Super+Shift+f: "floating toggle" is filtered out above and rebound
+              # here to `toggle-float` -- it toggles floating like before AND, when
+              # that un-floats a pad member, evicts it. Hyprland emits no socket2
+              # event on float changes, so the guard cannot do this; the keybind must.
+              {_args = ["SUPER + SHIFT + f" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle toggle-float")'')];}
               cheatBind
               hy3ProjectBind
               hubBind

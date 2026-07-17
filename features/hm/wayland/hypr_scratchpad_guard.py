@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
-"""hypr-scratchpad-guard: keep the Hyprland scratchpad (special:magic) float-only.
+"""hypr-scratchpad-guard: self-heal the Hyprland scratchpad (special:magic) float-only.
 
-Two behaviors, both driven by the Hyprland event socket (socket2):
+When a *tiled* window is moved into special:magic
+(movewindowv2>>ADDR,WSID,special:magic) it is floated in place, so the pad can
+never hold a tiled window (which strands it hidden). This covers windows that
+reach the pad by any move path -- window rules, manual `movetoworkspace`, etc.
 
-  * Eviction -- when a scratchpad member's floating attribute is turned OFF
-    (changefloatingmode>>ADDR,0), the member is removed from the pad. sway-style:
-    a tiled window does not belong in the scratchpad.
-  * Self-heal -- when a *tiled* window is moved into special:magic
-    (movewindowv2>>ADDR,WSID,special:magic), it is floated in place, so the pad
-    can never hold a tiled window (which strands it hidden).
+Eviction (dropping a member that gets un-floated) is NOT handled here: Hyprland
+0.55.4 emits NO socket2 event on a float-state change (verified -- toggling
+floating produces zero events), so an un-float is invisible to this daemon.
+Eviction is driven from the float-toggle keybind instead: Super+Shift+f runs
+`scratchpad-cycle toggle-float`, which toggles floating and evicts a member that
+became tiled.
 
 `openwindow` is intentionally NOT watched: a rule-parked app (keepassxc,
 windscribe) fires openwindow before its float=true rule is guaranteed applied,
 so a float-fix in that gap could toggle a correctly-floating window tiled.
 
 All state and hyprctl dispatch live in scratchpad_cycle.py; this daemon only
-translates events into `scratchpad-cycle evict <addr>` / `float-fix <addr>`
-calls. socket2 emits addresses WITHOUT the 0x prefix; the subcommands normalize.
-The socket2 glue (find_instance/connect_socket2/parse_event) is imported from
-hypr_ipc; the pure decision (classify) is covered by hypr_scratchpad_guard_test.py.
+translates events into `scratchpad-cycle float-fix <addr>` calls. socket2 emits
+addresses WITHOUT the 0x prefix; the subcommand normalizes. The socket2 glue
+(find_instance/connect_socket2/parse_event) is imported from hypr_ipc; the pure
+decision (classify) is covered by hypr_scratchpad_guard_test.py.
 """
 from __future__ import annotations
 
@@ -37,23 +40,18 @@ SPECIAL_WS = "special:magic"
 def classify(name, data):
     """Map a socket2 event to (action, addr), or (None, None) when irrelevant.
 
-      changefloatingmode>>ADDR,FLOATING  -> ("evict", ADDR)      if FLOATING == "0"
-      movewindowv2>>ADDR,WSID,WSNAME     -> ("float-fix", ADDR)  if WSNAME == special:magic
+      movewindowv2>>ADDR,WSID,WSNAME  -> ("float-fix", ADDR)  if WSNAME == special:magic
 
-    addr is returned verbatim (no 0x prefix, as socket2 emits it); the
-    scratchpad-cycle subcommands normalize it.
+    Only moves INTO the pad are watched (self-heal). Float-state changes are not:
+    Hyprland emits no socket2 event for them, so eviction is keybind-driven (see
+    the module docstring). addr is returned verbatim (no 0x prefix, as socket2
+    emits it); the scratchpad-cycle subcommand normalizes it.
     """
-    if name == "changefloatingmode":
-        parts = data.split(",")
-        if len(parts) >= 2 and parts[1].strip() == "0":
-            return ("evict", parts[0])
-        return (None, None)
     if name == "movewindowv2":
         # ADDR,WSID,WSNAME -- WSNAME is the remainder (may itself contain commas).
         parts = data.split(",", 2)
         if len(parts) == 3 and parts[2] == SPECIAL_WS:
             return ("float-fix", parts[0])
-        return (None, None)
     return (None, None)
 
 
