@@ -32,8 +32,10 @@
     # pinning the Hyprland flake to a tag and compiling it from source. See
     # helpers/overlays.nix (latest.hyprland / latest.hy3).
     swayfx = {
-      url = "github:WillPower3309/swayfx?submodules=1";
-      inputs.nixpkgs.follows = "nixpkgs";
+      url = "github:WillPower3309/swayfx";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+      };
       # 2025-11-19: flake.nix for swayfx is month old
       # inputs.scenefx.follows = "scenefx";
     };
