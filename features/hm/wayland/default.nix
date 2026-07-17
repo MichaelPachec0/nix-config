@@ -17,6 +17,7 @@
     ./hyprland.nix
     ./hypr-window-keeper.nix
     ./hypr-monitor-arrange.nix
+    ./hypr-scratchpad-guard.nix
     ./sway.nix
   ];
   config = {

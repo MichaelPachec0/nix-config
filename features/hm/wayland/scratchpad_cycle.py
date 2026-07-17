@@ -91,6 +91,31 @@ def update_members(existing, hidden, shown, live):
     return sorted(members & set(live))
 
 
+def normalize_addr(addr):
+    """Return addr as a lowercase 0x-prefixed hex string.
+
+    socket2 events emit window addresses without the 0x prefix
+    (`593cb426c700`); `hyprctl clients` uses `0x593cb426c700`. Reconcile the two
+    so membership comparisons match. None / empty / whitespace -> None.
+    """
+    if not addr:
+        return None
+    a = addr.strip().lower()
+    if not a:
+        return None
+    return a if a.startswith("0x") else "0x" + a
+
+
+def forget(addr, members, shown):
+    """Pure decision for dropping a window from the pad.
+
+    Returns (new_members, clear_shown): members with addr removed, and whether
+    the shown pointer should be cleared (it pointed at addr). addr not present
+    -> members unchanged, clear_shown False. Shared by `pull` and `evict`.
+    """
+    return ([a for a in members if a != addr], shown == addr)
+
+
 # ---------------------------------------------------------------------------
 # Hyprland I/O
 # ---------------------------------------------------------------------------
@@ -297,10 +322,147 @@ def reset():
     log(f"  stashed {len(out)}; wrote shown=<none>")
 
 
+def send():
+    """Super+Shift+minus: park the focused window in the pad, forced floating.
+
+    Ensures the window is floating (toggle only if tiled), silent-moves it into
+    special:magic, and records it as a member so `reset` sees it immediately. If
+    it was the shown member, clear that pointer (it is back in the pad).
+    """
+    active = hyprctl_json("activewindow") or {}
+    addr = active.get("address")
+    if not addr:
+        notify("no active window")
+        return
+    if not active.get("floating"):
+        dispatch(f'hl.dsp.window.float({{ action = "toggle", window = "address:{addr}" }})')
+    dispatch(f'hl.dsp.window.move({{ workspace = "{SPECIAL_WS}", '
+             f'follow = false, window = "address:{addr}" }})')
+    members = read_members()
+    if addr not in members:
+        members.append(addr)
+    write_members(members)
+    shown, _ = read_state()
+    if shown == addr:
+        write_state(None)
+    notify("sent to scratchpad")
+
+
+def pull():
+    """Super+=: extract the focused pad member onto the current workspace.
+
+    Focused-only: acts only when the focused window is a pad member that is
+    revealed on a normal workspace. Keeps it floating (defensive toggle if
+    somehow tiled), drops it from the pad, and leaves it where it is. No-op with
+    a notify otherwise (not a member, or still hidden in the pad).
+    """
+    active = hyprctl_json("activewindow") or {}
+    addr = active.get("address")
+    if not addr:
+        notify("no active window")
+        return
+    members = read_members()
+    if addr not in members:
+        notify("not a scratchpad window")
+        return
+    if workspace_name(active) == SPECIAL_WS:
+        notify("reveal it first")
+        return
+    if not active.get("floating"):
+        dispatch(f'hl.dsp.window.float({{ action = "toggle", window = "address:{addr}" }})')
+    shown, _ = read_state()
+    new_members, clear_shown = forget(addr, members, shown)
+    write_members(new_members)
+    if clear_shown:
+        write_state(None)
+    notify("kept on this workspace")
+
+
+def evict(addr):
+    """Remove a window from the pad (called by the guard on float -> tiled).
+
+    Self-filtering: no-op if addr is not a pad member. Drops it from members and
+    clears the shown pointer if it matched. If the window is still hidden inside
+    special:magic, pull it out to the active workspace so an un-floated hidden
+    member cannot get stranded. Does NOT re-float it: the user deliberately
+    tiled it.
+    """
+    addr = normalize_addr(addr)
+    if not addr:
+        return
+    members = read_members()
+    if addr not in members:
+        return
+    clients = hyprctl_json("clients") or []
+    by_addr = {c["address"]: c for c in clients}
+    shown, _ = read_state()
+    new_members, clear_shown = forget(addr, members, shown)
+    write_members(new_members)
+    if clear_shown:
+        write_state(None)
+    win = by_addr.get(addr)
+    if win and workspace_name(win) == SPECIAL_WS:
+        ws = str((hyprctl_json("activeworkspace") or {}).get("id"))
+        dispatch(f'hl.dsp.window.move({{ workspace = "{ws}", window = "address:{addr}" }})')
+    notify("removed from scratchpad")
+
+
+def float_fix(addr):
+    """Self-heal: float a tiled window that has landed inside the pad.
+
+    Called by the guard on a move into special:magic. Only toggles when the
+    window is actually in the pad AND tiled; otherwise a no-op (so it never
+    un-floats a correctly-floating window).
+    """
+    addr = normalize_addr(addr)
+    if not addr:
+        return
+    clients = hyprctl_json("clients") or []
+    win = {c["address"]: c for c in clients}.get(addr)
+    if not win:
+        return
+    if workspace_name(win) != SPECIAL_WS:
+        return
+    if not win.get("floating"):
+        dispatch(f'hl.dsp.window.float({{ action = "toggle", window = "address:{addr}" }})')
+
+
+def toggle_float():
+    """Super+Shift+f: toggle the focused window's floating; evict if un-floated.
+
+    Hyprland (0.55.4) emits NO socket2 event on a float change, so eviction
+    cannot be event-driven -- the guard never sees an un-float. Instead the
+    float-toggle keybind runs this: toggle floating exactly as the plain bind
+    did, then -- if the window WAS floating (so it is now tiled) -- evict it when
+    it is a pad member (evict self-filters non-members). Floating a tiled window
+    or toggling a non-member just gets the plain toggle, unchanged.
+    """
+    active = hyprctl_json("activewindow") or {}
+    addr = active.get("address")
+    was_floating = active.get("floating")
+    if addr:
+        dispatch(f'hl.dsp.window.float({{ action = "toggle", window = "address:{addr}" }})')
+    else:
+        dispatch('hl.dsp.window.float({ action = "toggle" })')
+    if addr and was_floating:
+        evict(addr)
+
+
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else "cycle"
+    arg = argv[2] if len(argv) > 2 else None
     if cmd == "reset":
         reset()
+    elif cmd == "send":
+        send()
+    elif cmd == "pull":
+        pull()
+    elif cmd == "evict":
+        evict(arg)
+    elif cmd == "float-fix":
+        float_fix(arg)
+    elif cmd == "toggle-float":
+        toggle_float()
     else:
         cycle()
     return 0

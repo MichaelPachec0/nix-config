@@ -87,5 +87,42 @@ class ReleasedByMove(unittest.TestCase):
         self.assertFalse(sc.released_by_move("2", 2, "2"))
 
 
+class NormalizeAddr(unittest.TestCase):
+    def test_adds_0x_prefix(self):
+        self.assertEqual(sc.normalize_addr("593cb426c700"), "0x593cb426c700")
+
+    def test_keeps_existing_prefix(self):
+        self.assertEqual(sc.normalize_addr("0x593cb426c700"), "0x593cb426c700")
+
+    def test_lowercases(self):
+        self.assertEqual(sc.normalize_addr("0x593CB426C700"), "0x593cb426c700")
+
+    def test_lowercases_unprefixed(self):
+        self.assertEqual(sc.normalize_addr("593CB426C700"), "0x593cb426c700")
+
+    def test_none_is_none(self):
+        self.assertIsNone(sc.normalize_addr(None))
+
+    def test_empty_is_none(self):
+        self.assertIsNone(sc.normalize_addr(""))
+
+    def test_whitespace_is_none(self):
+        self.assertIsNone(sc.normalize_addr("   "))
+
+
+class Forget(unittest.TestCase):
+    def test_drops_member_and_clears_shown(self):
+        self.assertEqual(sc.forget("0xa", ["0xa", "0xb"], "0xa"), (["0xb"], True))
+
+    def test_drops_member_keeps_other_shown(self):
+        self.assertEqual(sc.forget("0xa", ["0xa", "0xb"], "0xb"), (["0xb"], False))
+
+    def test_not_a_member_is_noop(self):
+        self.assertEqual(sc.forget("0xz", ["0xa", "0xb"], "0xa"), (["0xa", "0xb"], False))
+
+    def test_no_shown(self):
+        self.assertEqual(sc.forget("0xa", ["0xa", "0xb"], None), (["0xb"], False))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -15,18 +15,20 @@ outputs at once coalesces into a single reload). `hyprctl reload` is a
 subcommand, so it works under the Lua config parser (unlike `hyprctl dispatch`
 / `keyword`, which the non-legacy parser rejects).
 
-The socket2 discovery / reconnect / hyprctl glue is shared with
-hypr_window_keeper.py. The pure helpers (parse_event / is_trigger_event /
-Debouncer) are covered by hypr_monitor_arrange_test.py; the rest is I/O glue.
+The socket2 discovery / reconnect glue (find_instance / connect_socket2 /
+parse_event) now lives in the shared hypr_ipc module. The local pure helpers
+(is_trigger_event / Debouncer) are covered by hypr_monitor_arrange_test.py; the
+rest is I/O glue.
 """
 from __future__ import annotations
 
 import os
 import select
-import socket
 import subprocess
 import sys
 import time
+
+from hypr_ipc import connect_socket2, find_instance, parse_event
 
 # Coalesce a burst of monitor removals (e.g. undocking a multi-head dock) into a
 # single reload: fire only after this many ms of quiet.
@@ -40,12 +42,6 @@ TRIGGER_PREFIX = "monitorremoved"
 # ---------------------------------------------------------------------------
 # Pure helpers (unit-tested)
 # ---------------------------------------------------------------------------
-def parse_event(line):
-    """Split a socket2 line `EVENT>>DATA` into (name, data). data may be ''."""
-    name, sep, data = line.partition(">>")
-    return name, data if sep else ""
-
-
 def is_trigger_event(name):
     """True for the monitor-removed event(s) that warrant a re-arrange."""
     return name.startswith(TRIGGER_PREFIX)
@@ -87,35 +83,9 @@ class Debouncer:
 # ---------------------------------------------------------------------------
 # Hyprland I/O (shared shape with hypr_window_keeper.py)
 # ---------------------------------------------------------------------------
-def find_instance():
-    """(signature, socket2_path) for the running Hyprland, or (None, None)."""
-    runtime = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    base = os.path.join(runtime, "hypr")
-    sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
-    if sig and os.path.exists(os.path.join(base, sig, ".socket2.sock")):
-        return sig, os.path.join(base, sig, ".socket2.sock")
-    if not os.path.isdir(base):
-        return None, None
-    found = []
-    for name in os.listdir(base):
-        sock = os.path.join(base, name, ".socket2.sock")
-        if os.path.exists(sock):
-            found.append((os.path.getmtime(os.path.join(base, name)), name, sock))
-    if not found:
-        return None, None
-    found.sort()
-    return found[-1][1], found[-1][2]
-
-
 def hyprctl(sig, *args):
     env = {**os.environ, "HYPRLAND_INSTANCE_SIGNATURE": sig}
     subprocess.run(["hyprctl", *args], capture_output=True, env=env, check=False)
-
-
-def connect_socket2(path):
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.connect(path)
-    return sock
 
 
 def run(delay_s):

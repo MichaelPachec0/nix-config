@@ -301,6 +301,9 @@
     ++ (submapCheatRows "resize submap (Super+r)" "resize")
     ++ [
       ""
+      "-- scratchpad --"
+      (chRow "Super+=" "Pull scratchpad window here")
+      ""
       "-- help --"
       (chRow "Super+/" "This cheatsheet")
     ]
@@ -414,8 +417,9 @@
 
   # scratchpad-cycle: sway-style cycling scratchpad (special:magic). Super+-
   # (rebound below) reveals the next parked window and hides the previous, one
-  # at a time; Super+Shift+- (generated "move scratchpad") parks the focused
-  # window. stdlib Python; hyprctl for IPC, notify-send for the empty toast.
+  # at a time; Super+Shift+- (rebound below) runs `send` (force-float + park the
+  # focused window); Super+= runs `pull`. stdlib Python; hyprctl for IPC,
+  # notify-send for the empty toast.
   # Pure rotation logic covered by scratchpad_cycle_test.py.
   scratchpadCycleScript = pkgs.writeShellApplication {
     name = "scratchpad-cycle";
@@ -453,6 +457,11 @@ in {
     # pass, stranding them at the dead monitor's origin -- the daemon
     # (./hypr-monitor-arrange.nix) runs `hyprctl reload` on `monitorremoved`.
     services.hyprMonitorArrange.enable = true;
+
+    # Keep the scratchpad (special:magic) float-only: evict a member that is
+    # un-floated, and float a tiled window moved into the pad. Daemon:
+    # ./hypr-scratchpad-guard.nix. Pairs with the float-forcing send/pull binds.
+    services.hyprScratchpadGuard.enable = true;
 
     wayland = {
       windowManager.hyprland = {
@@ -734,15 +743,27 @@ in {
           # + the Super+/ cheatsheet bind.
           # Super+- normally maps (via toLua) to toggle_special("magic"); drop
           # that generated bind and rebind Super+- to the cycling scratchpad.
-          # Super+Shift+- ("move scratchpad" -> special:magic) stays generated.
-          # Super+Ctrl+- resets: send the pulled-out member back to the pad.
+          # Super+Shift+- is likewise filtered out of the generated binds and
+          # rebound to `send` (force-float + park). Super+Ctrl+- resets (send the
+          # pulled-out member back to the pad); Super+= runs `pull` (extract the
+          # focused member onto the current workspace).
           bind =
-            (builtins.filter (b: (builtins.elemAt b._args 0) != "SUPER + minus") generatedLuaBinds)
+            (builtins.filter (b: let k = builtins.elemAt b._args 0;
+                              in k != "SUPER + minus" && k != "SUPER + SHIFT + minus"
+                                 && k != "SUPER + SHIFT + f")
+              generatedLuaBinds)
             ++ hy3ExtraBinds
             ++ mouseBinds
             ++ [
               {_args = ["SUPER + minus" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle")'')];}
+              {_args = ["SUPER + SHIFT + minus" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle send")'')];}
               {_args = ["SUPER + CONTROL + minus" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle reset")'')];}
+              {_args = ["SUPER + equal" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle pull")'')];}
+              # Super+Shift+f: "floating toggle" is filtered out above and rebound
+              # here to `toggle-float` -- it toggles floating like before AND, when
+              # that un-floats a pad member, evicts it. Hyprland emits no socket2
+              # event on float changes, so the guard cannot do this; the keybind must.
+              {_args = ["SUPER + SHIFT + f" (mkLuaInline ''hl.dsp.exec_cmd("${scratchpadCycleScript}/bin/scratchpad-cycle toggle-float")'')];}
               cheatBind
               hy3ProjectBind
               hubBind
