@@ -77,6 +77,14 @@ def resolve_mode(override: str | None, ac_online: bool) -> str:
     return "perf" if ac_online else "quiet"
 
 
+def next_resolved(override: str | None, ac_online: bool,
+                  last: str | None) -> tuple[str, bool]:
+    """Resolve the active mode and report whether it changed from `last`.
+    `last` is None on the first call, which always reports changed."""
+    mode = resolve_mode(override, ac_online)
+    return mode, mode != last
+
+
 def _clamp(c: float) -> float:
     return max(CLAMP_MIN_C, min(CLAMP_MAX_C, c))
 
