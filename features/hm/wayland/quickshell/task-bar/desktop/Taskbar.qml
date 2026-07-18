@@ -474,9 +474,14 @@ PanelWindow {
         Lib.Pill {
             Layout.alignment: Qt.AlignVCenter
             theme: dock.theme
+            // Notable weather (heat/rain) washes the whole capsule with the alert
+            // hue; the pill owns the pulse so the colour fills it uniformly.
+            pulseColor: weatherWidget.alertColor
+            pulseActive: weatherWidget.visible && weatherWidget.alert !== ""
 
             // Weather: current condition glyph + temperature; hover for details.
             WeatherWidget {
+                id: weatherWidget
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock

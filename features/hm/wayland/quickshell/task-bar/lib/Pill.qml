@@ -29,6 +29,12 @@ Rectangle {
     // Ring (border) colour; defaults to the shared hairline. Override to accent a
     // specific pill (e.g. the mode pill) without changing any other call site.
     property color ringColor: theme.border
+    // Optional alert pulse. When pulseActive is true the WHOLE capsule washes
+    // pulseColor with a repeating fade -- because it lives on the pill it fills
+    // the entire capsule (full width incl. pad, matching radius) uniformly,
+    // instead of a smaller rectangle behind a single widget's content.
+    property color pulseColor: "transparent"
+    property bool pulseActive: false
 
     readonly property string style: BarStyle.current
     readonly property bool filled: pill.style !== "ghost"
@@ -63,6 +69,53 @@ Rectangle {
         blurMax: pill.frostedText ? 14 : 10
         shadowVerticalOffset: pill.frostedText ? 4 : 2
         shadowHorizontalOffset: pill.frostedText ? 0 : 2
+    }
+
+    // Alert pulse fill: a capsule-shaped wash that fades in/out while pulseActive.
+    // Sized to the pill (inset by the ring, radius kept concentric) so the colour
+    // covers the whole capsule uniformly. Declared before the content so it sits
+    // above the pill fill but behind the glyphs.
+    Rectangle {
+        id: pulse
+        anchors.fill: parent
+        anchors.margins: pill.border.width
+        radius: pill.radius - pill.border.width
+        color: pill.pulseColor
+        opacity: 0
+        visible: pill.pulseActive || opacity > 0
+
+        SequentialAnimation {
+            id: pulseAnim
+            running: pill.pulseActive
+            loops: Animation.Infinite
+            NumberAnimation {
+                target: pulse
+                property: "opacity"
+                from: 0
+                to: 0.55
+                duration: 220
+                easing.type: Easing.OutQuad
+            }
+            NumberAnimation {
+                target: pulse
+                property: "opacity"
+                to: 0
+                duration: 480
+                easing.type: Easing.InQuad
+            }
+            // Idle gap so the total cycle stays ~5s (220 + 480 + 4300).
+            PauseAnimation {
+                duration: 4300
+            }
+        }
+        // Reset when the alert clears mid-flash so no colour is left stranded.
+        Connections {
+            target: pill
+            function onPulseActiveChanged() {
+                if (!pill.pulseActive)
+                    pulse.opacity = 0;
+            }
+        }
     }
 
     // Inner pass: a per-glyph shadow on the content. frosted = a directional
