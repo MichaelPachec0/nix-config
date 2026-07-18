@@ -54,10 +54,13 @@ in {
     kernelModules = ["igb"];
     #preLVMCommands = lib.mkOrder 400 "sleep 1";
     # TODO: (high prio) (research) check if it is possible to work into zerotier into initrd.
+    # NOTE: 26.05 makes systemd stage-1 the initrd default
+    # (boot.initrd.systemd.enable defaults to true). The scripted-only options
+    # `network.flushBeforeStage2` and `network.udhcpc.enable` are unsupported
+    # under systemd stage-1 and trip an assertion; DHCP for the initrd is now
+    # handled by systemd-networkd via `systemd.network` below.
     network = {
       enable = true;
-      flushBeforeStage2 = true;
-      udhcpc.enable = true;
       ssh = {
         enable = true;
         port = 2222;
@@ -71,6 +74,17 @@ in {
         #   # NOTE: yubi based key
         #   "/etc/secrets/initrd/ssh_host_ed25519_key"
         # ];
+      };
+    };
+    # systemd stage-1 networking: bring the physical NIC up via DHCP so the
+    # initrd SSH remote-unlock (port 2222) is reachable, replacing the old
+    # scripted udhcpc. Match Type=ether (there is no br-vm bridge this early in
+    # boot) so it stays correct even if the NIC is renamed.
+    systemd.network = {
+      enable = true;
+      networks."10-uplink" = {
+        matchConfig.Type = "ether";
+        networkConfig.DHCP = "yes";
       };
     };
   };
