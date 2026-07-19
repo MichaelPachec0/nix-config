@@ -528,7 +528,9 @@ for provider in "${PROVIDERS[@]}"; do
 done
 
 if [ -n "$out" ]; then
-  printf '%s\n' "$out" >"$CACHE_FILE"
+  # Atomic: write a temp then rename, so a concurrent reader (the bar's FileView)
+  # never sees a half-written cache.
+  printf '%s\n' "$out" >"$CACHE_FILE.tmp" && mv -f "$CACHE_FILE.tmp" "$CACHE_FILE"
   printf '%s\n' "$out"
 elif [ -f "$CACHE_FILE" ]; then
   cat "$CACHE_FILE" # stale, but better than nothing
