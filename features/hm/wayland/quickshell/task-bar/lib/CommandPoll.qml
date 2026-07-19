@@ -39,6 +39,7 @@ QtObject {
         if (!command || command.length === 0)
             return;
         root.busy = true;
+        root.watchdog.restart(); // arm: a hung child gets killed at interval*3
         proc.exec(command);
     }
 
@@ -48,8 +49,9 @@ QtObject {
         }
         onExited: function (code, status) {
             root.busy = false;
+            root.watchdog.stop(); // completed in time -> disarm
             if (code !== 0)
-                return; // failed poll -> keep last-good value/text
+                return; // failed poll (incl. watchdog kill) -> keep last-good value/text
             var out = stdoutCollector.text ?? "";
             if (root._primed && out === root.text)
                 return; // unchanged output -> nothing to re-emit
@@ -66,5 +68,15 @@ QtObject {
         running: root.running
         triggeredOnStart: true
         onTriggered: root.poll()
+    }
+
+    // Watchdog: if a child overruns interval*3 without exiting (a hung nmcli/ip
+    // or a wedged script), terminate it so busy clears via onExited and polling
+    // resumes -- otherwise busy stays true forever and the poller freezes.
+    // Armed on each poll() start, disarmed on exit.
+    property Timer watchdog: Timer {
+        interval: Math.max(1000, root.interval * 3)
+        repeat: false
+        onTriggered: if (root.busy) root.proc.running = false
     }
 }
