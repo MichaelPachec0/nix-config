@@ -264,11 +264,17 @@ PopupWindow {
             }
 
             // --- Clients ---
-            RouterClients {
-                visible: pop.svc.reachable
+            // Only build the client ListView while the popup is open: svc.clients
+            // is refreshed every 2s by the bar poll, so an always-live ListView
+            // here would rebuild all its delegates every tick even while the popup
+            // is hidden. The Loader collapses to zero height when inactive.
+            Loader {
                 Layout.fillWidth: true
-                theme: pop.theme
-                clients: pop.svc.clients.list || []
+                active: pop.visible && pop.svc.reachable
+                sourceComponent: RouterClients {
+                    theme: pop.theme
+                    clients: pop.svc.clients.list || []
+                }
             }
 
             // --- Recovery buttons ---
