@@ -107,7 +107,7 @@ ColumnLayout {
                         acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                         onClicked: function (m) {
                             if (m.button === Qt.MiddleButton) {
-                                Quickshell.execDetached(["bash", "-lc",
+                                Quickshell.execDetached(["bash", "-c",
                                     "printf '%s' \"$1\" | wl-copy", "_",
                                     modelData.pid + " " + modelData.name]);
                                 return;
@@ -180,7 +180,7 @@ ColumnLayout {
                         acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                         onClicked: function (m) {
                             if (m.button === Qt.MiddleButton) {
-                                Quickshell.execDetached(["bash", "-lc",
+                                Quickshell.execDetached(["bash", "-c",
                                     "printf '%s' \"$1\" | wl-copy", "_",
                                     modelData.pid + " " + modelData.name]);
                                 return;

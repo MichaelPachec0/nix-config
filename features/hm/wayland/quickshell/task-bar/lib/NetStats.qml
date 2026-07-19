@@ -14,7 +14,7 @@ QtObject {
     property CommandPoll poll: CommandPoll {
         interval: 2000
         running: root.active
-        command: ["bash", "-lc",
+        command: ["bash", "-c",
             "for i in /sys/class/net/*; do n=${i##*/}; [ \"$n\" = lo ] && continue; " +
             "[ \"$(cat $i/carrier 2>/dev/null)\" = 1 ] || continue; " +
             "echo \"$n $(cat $i/statistics/rx_bytes 2>/dev/null) $(cat $i/statistics/tx_bytes 2>/dev/null)\"; done; " +

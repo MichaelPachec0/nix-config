@@ -61,7 +61,7 @@ Item {
             break;
         }
         if (cmd !== "")
-            Quickshell.execDetached(["bash", "-lc", cmd]);
+            Quickshell.execDetached(["bash", "-c", cmd]);
         root.closeRequested();
     }
 
@@ -70,7 +70,7 @@ Item {
     Timer {
         id: snapTimer
         interval: 320
-        onTriggered: Quickshell.execDetached(["bash", "-lc", "grim -t png -g \"$(slurp)\" ~/Pictures/scrn-$(date +%Y-%m-%dT%H:%M:%S%:z).png"])
+        onTriggered: Quickshell.execDetached(["bash", "-c", "grim -t png -g \"$(slurp)\" ~/Pictures/scrn-$(date +%Y-%m-%dT%H:%M:%S%:z).png"])
     }
 
     ColumnLayout {

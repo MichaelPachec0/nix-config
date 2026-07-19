@@ -14,7 +14,7 @@ QtObject {
     property CommandPoll poll: CommandPoll {
         interval: 2000
         running: root.active
-        command: ["bash", "-lc", "sensors -j 2>/dev/null"]
+        command: ["sensors", "-j"]
         parse: function (o) {
             var out = [];
             try {

@@ -97,7 +97,7 @@ PopupWindow {
     Lib.CommandPoll {
         interval: 2000
         running: pop.visible
-        command: ["bash", "-lc", "upower -i \"$(upower -e | grep -Ei 'battery_BAT' | head -1)\" 2>/dev/null"]
+        command: ["bash", "-c", "upower -i \"$(upower -e | grep -Ei 'battery_BAT' | head -1)\" 2>/dev/null"]
         parse: function (out) {
             var m = {};
             String(out || "").split("\n").forEach(function (line) {

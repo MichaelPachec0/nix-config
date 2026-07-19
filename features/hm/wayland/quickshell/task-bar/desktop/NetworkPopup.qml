@@ -83,7 +83,7 @@ PopupWindow {
         return "'" + String(s).replace(/'/g, "'\\''") + "'";
     }
     function det(cmd) {
-        Quickshell.execDetached(["bash", "-lc", cmd]);
+        Quickshell.execDetached(["bash", "-c", cmd]);
     }
     function netGlyph(signal) {
         if (signal <= 25)
@@ -198,7 +198,7 @@ PopupWindow {
         id: scan
         interval: 6000
         running: pop.visible && pop.net.wifiRadio && pop.selectedTab === "wifi"
-        command: ["bash", "-lc", `
+        command: ["bash", "-c", `
 nmcli -t -f IN-USE,SIGNAL,SECURITY,CHAN,FREQ,RATE,BANDWIDTH,MODE,RSN-FLAGS,BSSID,SSID dev wifi list 2>/dev/null
 IFACE=$(nmcli -t -f DEVICE,TYPE dev 2>/dev/null | awk -F: '$2=="wifi"{print $1; exit}')
 WPAIF=$(busctl --system call fi.w1.wpa_supplicant1 /fi/w1/wpa_supplicant1 fi.w1.wpa_supplicant1 GetInterface s "$IFACE" 2>/dev/null | awk '{print $2}' | tr -d '"')
@@ -294,7 +294,7 @@ fi
     Lib.CommandPoll {
         interval: 10000
         running: pop.visible && pop.net.wifiRadio && pop.selectedTab === "wifi"
-        command: ["bash", "-lc", "nmcli -t -f NAME,TYPE connection show 2>/dev/null | awk -F: '$2==\"802-11-wireless\"{print $1}'"]
+        command: ["bash", "-c", "nmcli -t -f NAME,TYPE connection show 2>/dev/null | awk -F: '$2==\"802-11-wireless\"{print $1}'"]
         parse: function (o) {
             var set = {};
             String(o).split(/\r?\n/).forEach(function (l) {

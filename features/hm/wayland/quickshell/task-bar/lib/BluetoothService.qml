@@ -12,6 +12,12 @@ import Quickshell.Bluetooth
 QtObject {
     id: svc
 
+    // Absolute path to the pbpctrl/PipeWire helper, exec'd directly (argv) for
+    // the fixed-token subcommands. The pbp read/write queue still goes through
+    // `bash -c` because its job strings carry space-joined value lists that rely
+    // on shell word-splitting.
+    readonly property string _btinfo: Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/btinfo.sh"
+
     readonly property var adapter: Bluetooth.defaultAdapter
     readonly property bool available: svc.adapter !== null
     readonly property bool enabled: svc.available && svc.adapter.enabled
@@ -78,7 +84,7 @@ QtObject {
     property CommandPoll pwPoll: CommandPoll {
         interval: 4000
         running: svc.audioWanted && svc.audioMac !== ""
-        command: ["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/btinfo.sh pw " + svc.audioMac]
+        command: [svc._btinfo, "pw", svc.audioMac]
         parse: function (out) {
             return svc.parseKV(out);
         }
@@ -105,13 +111,13 @@ QtObject {
         var j = svc.pbpJobs[0];
         svc.pbpJobs = svc.pbpJobs.slice(1);
         svc.pbpCurRead = j.r;
-        svc.pbpProc.exec(["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/btinfo.sh " + j.a]);
+        svc.pbpProc.exec(["bash", "-c", "$HOME/.config/quickshell/task-bar/lib/btinfo.sh " + j.a]);
     }
     // Switch the A2DP codec (PipeWire card profile -- fast, no pbpctrl/RFCOMM).
     function codecSet(prof) {
         if (svc.audioMac === "" || !prof)
             return;
-        Quickshell.execDetached(["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/btinfo.sh codec " + svc.audioMac + " " + prof]);
+        Quickshell.execDetached([svc._btinfo, "codec", svc.audioMac, prof]);
     }
 
     // setting: e.g. "anc"; vals: space-joined values e.g. "active" or "1 0 -1 2 0".

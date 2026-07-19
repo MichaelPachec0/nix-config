@@ -18,7 +18,7 @@ QtObject {
     property CommandPoll poll: CommandPoll {
         interval: 2000
         running: root.active
-        command: ["bash", "-lc",
+        command: ["bash", "-c",
             "c=''; for d in /sys/class/drm/card*/device/gpu_busy_percent; do [ -e \"$d\" ] && c=\"${d%/gpu_busy_percent}\" && break; done; " +
             "if [ -n \"$c\" ]; then " +
             "  echo util=$(cat \"$c/gpu_busy_percent\" 2>/dev/null); " +

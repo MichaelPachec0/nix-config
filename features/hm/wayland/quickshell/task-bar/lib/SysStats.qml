@@ -25,7 +25,7 @@ QtObject {
     property CommandPoll cpuPoll: CommandPoll {
         interval: 2000
         running: root.active
-        command: ["bash", "-lc", "head -1 /proc/stat"]
+        command: ["head", "-1", "/proc/stat"]
         parse: function (o) {
             var n = String(o).trim().split(/\s+/).slice(1).map(Number);
             var idle = (n[3] || 0) + (n[4] || 0);
@@ -53,7 +53,7 @@ QtObject {
     property CommandPoll ramPoll: CommandPoll {
         interval: 2000
         running: root.active
-        command: ["bash", "-lc", "cat /proc/meminfo"]
+        command: ["cat", "/proc/meminfo"]
         parse: function (o) {
             // Return a fresh object every tick so CommandPoll's change-detection
             // always fires updated() -- otherwise a steady ram% would suppress it
@@ -96,7 +96,7 @@ QtObject {
     property CommandPoll corePoll: CommandPoll {
         interval: 2000
         running: root.active && root.wantDetail
-        command: ["bash", "-lc",
+        command: ["bash", "-c",
             "grep '^cpu[0-9]' /proc/stat; echo @F; " +
             "for c in /sys/devices/system/cpu/cpu[0-9]*; do n=${c##*/cpu}; " +
             "printf '%s %s\\n' \"$n\" \"$(cat \"$c/cpufreq/scaling_cur_freq\" 2>/dev/null)\"; " +
@@ -147,7 +147,7 @@ QtObject {
     property CommandPoll topoPoll: CommandPoll {
         interval: 60000
         running: root.active && root.wantDetail && root.cpuTopology.length === 0
-        command: ["bash", "-lc",
+        command: ["bash", "-c",
             "for c in /sys/devices/system/cpu/cpu[0-9]*; do n=${c##*/cpu}; " +
             "printf '%s %s %s\\n' \"$n\" \"$(cat \"$c/topology/core_id\" 2>/dev/null)\" " +
             "\"$(cat \"$c/cache/index3/shared_cpu_list\" 2>/dev/null)\"; done | sort -n"]
@@ -159,7 +159,7 @@ QtObject {
     property CommandPoll detailPoll: CommandPoll {
         interval: 2000
         running: root.active && root.wantDetail
-        command: ["bash", "-lc",
+        command: ["bash", "-c",
             "echo @L; cat /proc/loadavg; " +
             "echo @M; cat /proc/meminfo; " +
             "echo @P; head -1 /proc/pressure/cpu; head -1 /proc/pressure/memory; " +

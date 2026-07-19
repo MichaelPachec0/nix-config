@@ -61,7 +61,7 @@ Item {
     Lib.CommandPoll {
         interval: 60000
         running: root.active
-        command: ["bash", "-lc", "uptime -p | sed -e 's/^up //'"]
+        command: ["bash", "-c", "uptime -p | sed -e 's/^up //'"]
         parse: function (o) {
             return String(o).trim();
         }

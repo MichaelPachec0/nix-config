@@ -25,8 +25,15 @@ QtObject {
     property var queue: []     // [{trackid,title,artist,length,art,current,played}]
     property var playlists: [] // [{path,name,icon,active}]
 
+    // Absolute path to the busctl helper, exec'd directly (argv) so the D-Bus
+    // bus name and playlist/track ids ride as opaque tokens instead of through
+    // single-quoted shell fragments.
+    readonly property string _script: Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/mpris-extra.sh"
     function _sh(mode, extra) {
-        return ["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/mpris-extra.sh " + mode + " '" + ex.bus + "'" + (extra ? " '" + extra + "'" : "")];
+        var argv = [ex._script, mode, String(ex.bus)];
+        if (extra)
+            argv.push(String(extra));
+        return argv;
     }
     function _json(out, fallback) {
         try {

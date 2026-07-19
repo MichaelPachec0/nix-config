@@ -108,7 +108,7 @@ PopupWindow {
         id: pwrPoll
         interval: 5000
         running: pop.visible && pop._hasBattery && pop._onBattery
-        command: ["bash", "-lc", "upower -i \"$(upower -e | grep -Ei 'battery_BAT' | head -1)\" 2>/dev/null | sed -n 's/.*time to empty:[[:space:]]*//p'"]
+        command: ["bash", "-c", "upower -i \"$(upower -e | grep -Ei 'battery_BAT' | head -1)\" 2>/dev/null | sed -n 's/.*time to empty:[[:space:]]*//p'"]
     }
 
     // --- other active inhibitors (logind, structured via busctl JSON) ---

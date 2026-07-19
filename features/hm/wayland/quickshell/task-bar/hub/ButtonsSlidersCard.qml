@@ -26,7 +26,7 @@ Lib.Card {
         id: briPoll
         interval: 1500
         running: root.active
-        command: ["bash", "-lc", "brightnessctl -m 2>/dev/null | cut -d, -f4 | tr -d '% ' || true"]
+        command: ["bash", "-c", "brightnessctl -m 2>/dev/null | cut -d, -f4 | tr -d '% ' || true"]
         parse: function (o) {
             var n = Number(String(o).trim());
             return isFinite(n) ? n : 50;
@@ -38,7 +38,7 @@ Lib.Card {
         id: wifiOn
         interval: 2500
         running: root.active
-        command: ["bash", "-lc", "nmcli -t -f WIFI g 2>/dev/null | head -n1 || true"]
+        command: ["bash", "-c", "nmcli -t -f WIFI g 2>/dev/null | head -n1 || true"]
         parse: function (o) {
             return String(o).trim() === "enabled";
         }
@@ -47,7 +47,7 @@ Lib.Card {
         id: wifiSSID
         interval: 5000
         running: root.active
-        command: ["bash", "-lc", "nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null | awk -F: '$1==\"yes\"{print $2; exit}' || true"]
+        command: ["bash", "-c", "nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null | awk -F: '$1==\"yes\"{print $2; exit}' || true"]
         parse: function (o) {
             var s = String(o).trim() || "WiFi";
             return s.length > 10 ? s.slice(0, 10) : s;
@@ -57,13 +57,13 @@ Lib.Card {
         id: btOn
         interval: 3000
         running: root.active
-        command: ["bash", "-lc", "bluetoothctl show 2>/dev/null | grep -q 'Powered: yes' && echo on || echo off"]
+        command: ["bash", "-c", "bluetoothctl show 2>/dev/null | grep -q 'Powered: yes' && echo on || echo off"]
         parse: function (o) {
             return String(o).trim() === "on";
         }
     }
     function det(cmd) {
-        Quickshell.execDetached(["bash", "-lc", cmd]);
+        Quickshell.execDetached(["bash", "-c", cmd]);
     }
 
     RowLayout {

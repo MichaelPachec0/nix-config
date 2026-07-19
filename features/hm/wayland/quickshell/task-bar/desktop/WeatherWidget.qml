@@ -53,7 +53,7 @@ Item {
     Lib.CommandPoll {
         id: poll
         interval: 1800000 // 30 min; weather.sh caches the same window
-        command: ["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/weather.sh " + Locations.argsFor(root.loc)]
+        command: ["bash", "-c", "$HOME/.config/quickshell/task-bar/lib/weather.sh " + Locations.argsFor(root.loc)]
         parse: function (out) {
             try {
                 var d = JSON.parse(String(out));
