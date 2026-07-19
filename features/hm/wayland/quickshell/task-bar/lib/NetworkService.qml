@@ -35,11 +35,29 @@ QtObject {
         }
         return r;
     }
-    readonly property bool vpnActive: {
+    // Instantaneous "any VPN/WireGuard profile up" from the latest poll.
+    readonly property bool vpnUpRaw: {
         for (var i = 0; i < svc.vpns.length; ++i)
             if (svc.vpns[i].active)
                 return true;
         return false;
+    }
+    // Latched VPN state driving the bar shield. Going UP is immediate; going DOWN
+    // is held ~6s (survives one missed 4s poll) so a WireGuard/VPN rekey -- which
+    // momentarily reports the profile down -- doesn't blink the shield off/on.
+    property bool vpnActive: false
+    onVpnUpRawChanged: {
+        if (svc.vpnUpRaw) {
+            svc.vpnActive = true;
+            svc._vpnLatch.stop();
+        } else {
+            svc._vpnLatch.restart();
+        }
+    }
+    property Timer _vpnLatch: Timer {
+        interval: 6000
+        repeat: false
+        onTriggered: svc.vpnActive = svc.vpnUpRaw
     }
     readonly property var ethernetConns: {
         var r = [];
@@ -177,7 +195,10 @@ QtObject {
     property CommandPoll statusPoll: CommandPoll {
         interval: 4000
         command: ["bash", "-c", `
-WIFI=$(nmcli -g WIFI radio 2>/dev/null || echo unknown); echo "WIFI:$WIFI"
+# Health probe: if NetworkManager is momentarily unreachable this tick, exit
+# nonzero so CommandPoll keeps the last-good reading instead of blanking the bar
+# to Off/Disconnected for a cycle. (Doubles as the WIFI radio read.)
+WIFI=$(nmcli -g WIFI radio 2>/dev/null) || exit 1; echo "WIFI:$WIFI"
 case "$WIFI" in enabled | disabled) echo "HASWIFI:1" ;; *) echo "HASWIFI:0" ;; esac
 echo "CONNECTIVITY:$(nmcli -g CONNECTIVITY general status 2>/dev/null)"
 PDEV=$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="dev"){print $(i+1);exit}}')
