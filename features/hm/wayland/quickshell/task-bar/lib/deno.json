@@ -1,0 +1,9 @@
+{
+  "//": "Test runner for the pure-JS helpers (influx/sysfmt/routerfmt/... .test.js). Run: `deno task test`. The import map pins the deno.land/std version so the assert API can't drift under the tests (they were previously on an unpinned `std/` = latest).",
+  "imports": {
+    "https://deno.land/std/assert/mod.ts": "https://deno.land/std@0.224.0/assert/mod.ts"
+  },
+  "tasks": {
+    "test": "deno test --allow-read"
+  }
+}
