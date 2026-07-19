@@ -118,22 +118,12 @@ Rectangle {
         }
     }
 
-    // Inner pass: a per-glyph shadow on the content. frosted = a directional
-    // down-right drop (depth/texture on the glass); ghost / ghost-glass = a
-    // centered full-black halo hugging each glyph for legibility.
+    // Content row. The per-glyph shadow that used to be a SECOND offscreen
+    // layer+MultiEffect pass over the content now lives inline on BarText via
+    // Text.style, so the pill needs only the single outer capsule-shadow pass.
     Item {
         id: contentWrap
         anchors.fill: parent
-        layer.enabled: true
-        layer.effect: MultiEffect {
-            autoPaddingEnabled: true
-            shadowEnabled: true
-            shadowColor: pill.frostedText ? Qt.rgba(0, 0, 0, 0.85) : Qt.rgba(0, 0, 0, 1.0)
-            shadowBlur: 0.4
-            blurMax: 6
-            shadowVerticalOffset: pill.frostedText ? 2 : 0
-            shadowHorizontalOffset: pill.frostedText ? 2 : 0
-        }
 
         RowLayout {
             id: row
