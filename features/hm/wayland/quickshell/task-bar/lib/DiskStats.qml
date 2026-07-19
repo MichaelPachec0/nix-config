@@ -12,6 +12,10 @@ QtObject {
     property real writeRate: 0    // bytes/s
     property var _prev: null      // { t, rd, wr }
 
+    // Drop the last sample when the popup closes (poll stops) so the first rate
+    // after reopen is a fresh 0, not a rate smeared over the whole closed gap.
+    onActiveChanged: if (!root.active) root._prev = null;
+
     property CommandPoll poll: CommandPoll {
         interval: 2000
         running: root.active
