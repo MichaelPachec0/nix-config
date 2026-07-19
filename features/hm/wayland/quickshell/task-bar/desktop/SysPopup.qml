@@ -55,11 +55,15 @@ PopupWindow {
         JsonAdapter { id: uiAdapter; property int layout: 0 }
     }
 
-    Lib.GpuStats      { id: gpu;     active: pop.visible }
-    Lib.DiskStats     { id: disk;    active: pop.visible }
-    Lib.NetStats      { id: net;     active: pop.visible }
-    Lib.SensorStats   { id: sensors; active: pop.visible }
-    Lib.RyzenSmuStats { id: smu;     active: pop.visible }
+    // Distinct ids (not gpu/disk/... ) so the inline-Component layout bindings
+    // below can reference them unambiguously: a `gpu: gpu` self-binds to the
+    // layout's OWN required property (null) inside a Component scope, so the
+    // enclosing provider must carry a different name.
+    Lib.GpuStats      { id: gpuSvc;     active: pop.visible }
+    Lib.DiskStats     { id: diskSvc;    active: pop.visible }
+    Lib.NetStats      { id: netSvc;     active: pop.visible }
+    Lib.SensorStats   { id: sensorsSvc; active: pop.visible }
+    Lib.RyzenSmuStats { id: smuSvc;     active: pop.visible }
 
     Rectangle {
         id: card
@@ -113,14 +117,26 @@ PopupWindow {
             }
 
             // --- Layout switcher body ---
-            // Only the active layout is visible, so the card sizes to IT (a
-            // StackLayout reserves the tallest layout's height -> dead space in
-            // the compact modes; a Loader floods the log with construction-order
-            // "undefined provider" transients). All three instantiate once at
-            // load; the ColumnLayout collapses the two hidden ones.
-            SysLayoutTall   { Layout.fillWidth: true; visible: uiAdapter.layout === 0; theme: pop.theme; stats: pop.stats; gpu: gpu; disk: disk; net: net; sensors: sensors; smu: smu }
-            SysLayoutTabs   { Layout.fillWidth: true; visible: uiAdapter.layout === 1; theme: pop.theme; stats: pop.stats; gpu: gpu; disk: disk; net: net; sensors: sensors; smu: smu }
-            SysLayoutTwoCol { Layout.fillWidth: true; visible: uiAdapter.layout === 2; theme: pop.theme; stats: pop.stats; gpu: gpu; disk: disk; net: net; sensors: sensors; smu: smu }
+            // Only the ACTIVE layout exists: the Loader builds just the selected
+            // one (tall/tabs/grid), so the two inactive section/sparkline trees
+            // are neither instantiated nor rebinding on every poll tick (the old
+            // form kept all three live and only toggled `visible`, paying ~3x the
+            // binding cost). The layouts are INLINE Components so their provider
+            // bindings (theme/stats/gpu/disk/net/sensors/smu) resolve against the
+            // ids in this scope -- all constructed above -- which sidesteps the
+            // construction-order "undefined provider" transients a URL-sourced
+            // Loader produced. Card width still keys off uiAdapter.layout (~l.67),
+            // so grid mode keeps its wider column. Cost: switching layout rebuilds
+            // the incoming tree, but sparkline history lives in the shared stats
+            // services above, so nothing user-visible is lost on the swap.
+            Loader {
+                Layout.fillWidth: true
+                sourceComponent: uiAdapter.layout === 1 ? cTabs
+                    : uiAdapter.layout === 2 ? cTwoCol : cTall
+            }
+            Component { id: cTall;   SysLayoutTall   { Layout.fillWidth: true; theme: pop.theme; stats: pop.stats; gpu: gpuSvc; disk: diskSvc; net: netSvc; sensors: sensorsSvc; smu: smuSvc } }
+            Component { id: cTabs;   SysLayoutTabs   { Layout.fillWidth: true; theme: pop.theme; stats: pop.stats; gpu: gpuSvc; disk: diskSvc; net: netSvc; sensors: sensorsSvc; smu: smuSvc } }
+            Component { id: cTwoCol; SysLayoutTwoCol { Layout.fillWidth: true; theme: pop.theme; stats: pop.stats; gpu: gpuSvc; disk: diskSvc; net: netSvc; sensors: sensorsSvc; smu: smuSvc } }
         }
     }
 }
