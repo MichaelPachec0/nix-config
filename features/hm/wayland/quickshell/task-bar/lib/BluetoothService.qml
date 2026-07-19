@@ -58,7 +58,20 @@ QtObject {
     // device; pbpctrl settings for Pixel Buds. Centralized here so pbpctrl is
     // driven by ONE serial owner -- it cannot run concurrently and a call killed
     // mid-RFCOMM wedges the channel, so we never overlap and never kill.
-    readonly property var primaryAudio: svc.connectedDevices.length > 0 ? svc.connectedDevices[0] : null
+    // Prefer a connected AUDIO device (headset/headphones/speaker) over whatever
+    // is first: connectedDevices[0] could be a mouse or keyboard, which would
+    // mis-target the pw/pbp polls below. Falls back to the first connected device
+    // when none look like audio. (Same icon test as typeGlyph's audio branch.)
+    readonly property var primaryAudio: {
+        var cs = svc.connectedDevices;
+        for (var i = 0; i < cs.length; i++) {
+            var ic = String(cs[i].icon || "");
+            if (ic.indexOf("headset") !== -1 || ic.indexOf("headphone") !== -1
+                || ic.indexOf("speaker") !== -1 || ic === "audio-card")
+                return cs[i];
+        }
+        return cs.length > 0 ? cs[0] : null;
+    }
     readonly property string audioMac: svc.primaryAudio ? String(svc.primaryAudio.address) : ""
     readonly property bool audioIsBuds: svc.primaryAudio ? /pixel buds/i.test(String(svc.primaryAudio.deviceName || svc.primaryAudio.name || "")) : false
     // Panels set these while visible; we only poll while something wants the data.
