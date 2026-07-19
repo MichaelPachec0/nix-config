@@ -42,16 +42,23 @@ QtObject {
             } catch (e) {
                 out = [];
             }
-            // Many chips mirror the same physical temperature (the CPU reports via
-            // thinkpad / acpitz / zenpower Tdie / Tctl, a few degrees apart);
-            // collapse readings within 3 C of one already kept, first label wins.
+            // The CPU reports its temperature through several chips a few degrees
+            // apart (k10temp / zenpower Tctl / Tdie, coretemp, acpitz, thinkpad);
+            // collapse those mirrors to one, first label wins. Scope the dedup to
+            // CPU-family labels so an unrelated sensor that merely sits within 3 C
+            // (e.g. an NVMe drive near the CPU temp) is never dropped.
+            var isCpu = function (lbl) {
+                return /k10temp|zenpower|coretemp|acpitz|thinkpad|tctl|tdie|package|\bcpu\b/i.test(lbl);
+            };
             var kept = [];
             for (var i = 0; i < out.length; i++) {
                 var dup = false;
-                for (var k = 0; k < kept.length; k++) {
-                    if (Math.abs(out[i].temp - kept[k].temp) <= 3) {
-                        dup = true;
-                        break;
+                if (isCpu(out[i].label)) {
+                    for (var k = 0; k < kept.length; k++) {
+                        if (isCpu(kept[k].label) && Math.abs(out[i].temp - kept[k].temp) <= 3) {
+                            dup = true;
+                            break;
+                        }
                     }
                 }
                 if (!dup)
