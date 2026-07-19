@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import "../lib" as Lib
 import "../lib/weathericons.js" as WeatherIcons
 import "../lib/locations.js" as Locations
@@ -40,7 +41,7 @@ Rectangle {
         id: weather
         running: root.active && root.visible
         interval: 1800000 // 30 min; weather.sh caches for the same window
-        command: ["bash", "-c", "$HOME/.config/quickshell/task-bar/lib/weather.sh " + Locations.argsFor(root.loc)]
+        command: [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/weather.sh"].concat(Locations.argsArrayFor(root.loc))
         parse: function (out) {
             try {
                 var d = JSON.parse(String(out));
