@@ -13,6 +13,26 @@ ColumnLayout {
     required property QtObject theme
     required property var stats
 
+    // Two-click kill arm state lives on the SECTION, keyed by pid, not on the row
+    // delegate. The top-N model is reassigned every poll (ps output changes each
+    // tick), which recreates the delegates and would reset any per-delegate flag
+    // before the confirming second click. Keying by pid survives that churn and
+    // retargets to the right process automatically.
+    property int armedPid: -1
+    property Timer disarmTimer: Timer {
+        interval: 3000
+        onTriggered: root.armedPid = -1
+    }
+    function armOrKill(pid) {
+        if (root.armedPid !== pid) {
+            root.armedPid = pid;
+            root.disarmTimer.restart();
+        } else {
+            Quickshell.execDetached(["kill", "-TERM", String(pid)]);
+            root.armedPid = -1;
+        }
+    }
+
     function sevColor(sev) {
         return sev === "good" ? theme.accentGreen
              : sev === "fair" ? theme.accentYellow : theme.accentRed;
@@ -51,13 +71,7 @@ ColumnLayout {
                     Layout.fillWidth: true
                     implicitHeight: memRow.implicitHeight
 
-                    property bool armed: false
-
-                    Timer {
-                        id: memDisarm
-                        interval: 3000
-                        onTriggered: memDelegate.armed = false
-                    }
+                    readonly property bool armed: memDelegate.modelData.pid === root.armedPid
 
                     Rectangle {
                         anchors.fill: parent
@@ -102,13 +116,7 @@ ColumnLayout {
                                 Quickshell.execDetached(["kill", "-KILL", String(modelData.pid)]);
                                 return;
                             }
-                            if (!memDelegate.armed) {
-                                memDelegate.armed = true;
-                                memDisarm.restart();
-                            } else {
-                                Quickshell.execDetached(["kill", "-TERM", String(modelData.pid)]);
-                                memDelegate.armed = false;
-                            }
+                            root.armOrKill(modelData.pid);
                         }
                     }
                 }
@@ -136,13 +144,7 @@ ColumnLayout {
                     Layout.fillWidth: true
                     implicitHeight: cpuRow.implicitHeight
 
-                    property bool armed: false
-
-                    Timer {
-                        id: cpuDisarm
-                        interval: 3000
-                        onTriggered: cpuDelegate.armed = false
-                    }
+                    readonly property bool armed: cpuDelegate.modelData.pid === root.armedPid
 
                     Rectangle {
                         anchors.fill: parent
@@ -187,13 +189,7 @@ ColumnLayout {
                                 Quickshell.execDetached(["kill", "-KILL", String(modelData.pid)]);
                                 return;
                             }
-                            if (!cpuDelegate.armed) {
-                                cpuDelegate.armed = true;
-                                cpuDisarm.restart();
-                            } else {
-                                Quickshell.execDetached(["kill", "-TERM", String(modelData.pid)]);
-                                cpuDelegate.armed = false;
-                            }
+                            root.armOrKill(modelData.pid);
                         }
                     }
                 }
