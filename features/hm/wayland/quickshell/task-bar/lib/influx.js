@@ -19,6 +19,12 @@ function parseFrame(text) {
         if (sp < 0)
             continue;
         var fields = line.slice(sp + 1);
+        // Line protocol is "<measurement,tags> <fields> [timestamp]". Field
+        // values carry no unescaped spaces, so a trailing space-separated integer
+        // is the timestamp -- drop it, else the last field absorbs it -> NaN.
+        var ts = fields.lastIndexOf(" ");
+        if (ts >= 0 && /^\d+$/.test(fields.slice(ts + 1)))
+            fields = fields.slice(0, ts);
         var pairs = fields.split(",");
         for (var j = 0; j < pairs.length; j++) {
             var eq = pairs[j].indexOf("=");
@@ -58,7 +64,11 @@ function parsePerCore(text) {
             continue;
         var idx = Number(m[1]);
         var obj = {};
-        var pairs = line.slice(sp + 1).split(",");
+        var fields = line.slice(sp + 1);
+        var ts = fields.lastIndexOf(" ");
+        if (ts >= 0 && /^\d+$/.test(fields.slice(ts + 1)))
+            fields = fields.slice(0, ts);
+        var pairs = fields.split(",");
         for (var j = 0; j < pairs.length; j++) {
             var eq = pairs[j].indexOf("=");
             if (eq < 0)

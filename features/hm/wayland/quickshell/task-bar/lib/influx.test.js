@@ -42,6 +42,14 @@ Deno.test("parseFrame garbage input", () => {
   assertEquals(Object.keys(parseFrame("no equals here")).length, 0);
 });
 
+Deno.test("parseFrame keeps the last field when a timestamp is present", () => {
+  // Line protocol: "<measurement,tags> <fields> <timestamp>". The trailing
+  // integer timestamp must not be absorbed into the last field value.
+  const f = parseFrame("m,host=x cpu_ppt=15.000,cpu_edc=30.000 1699999999000000000");
+  assertEquals(f.cpu_ppt, 15);
+  assertEquals(f.cpu_edc, 30); // regression: was dropped (Number("30.000 <ts>") -> NaN)
+});
+
 Deno.test("parsePerCore keys by core index", () => {
   const frame =
     `ryzen_monitor_ng,host=thanatos,name=Core0 core_state="Active",core_frequency=578i,core_temperature=56.39,core_power=0.678,core_c6=76.9\n` +
@@ -59,4 +67,10 @@ Deno.test("parsePerCore keys by core index", () => {
 
 Deno.test("parsePerCore empty input", () => {
   assertEquals(Object.keys(parsePerCore("")).length, 0);
+});
+
+Deno.test("parsePerCore keeps the last field when a timestamp is present", () => {
+  const pc = parsePerCore("m,host=x,name=Core0 core_frequency=578i,core_c6=76.9 1699999999000000000");
+  assertEquals(pc[0].core_frequency, 578);
+  assertEquals(pc[0].core_c6, 76.9); // regression: was dropped
 });
