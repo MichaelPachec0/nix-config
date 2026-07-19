@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell.Io
 import "sysfmt.js" as SysFmt
 
 // Shared CPU%/RAM% poller, read by both the bar (Taskbar) and the hub Header.
@@ -22,23 +23,21 @@ QtObject {
     }
     property var _prevCpu: null
 
-    property CommandPoll cpuPoll: CommandPoll {
-        interval: 2000
-        running: root.active
-        command: ["head", "-1", "/proc/stat"]
-        parse: function (o) {
-            var n = String(o).trim().split(/\s+/).slice(1).map(Number);
+    // CPU busy% from successive /proc/stat first-line samples. Read via FileView
+    // (Quickshell's native file idiom) + a reload timer instead of forking
+    // head/cat every 2s. reload() is async, so parsing happens in onLoaded, which
+    // fires on every reload -> the sparkline advances each tick regardless of
+    // whether the value changed.
+    property FileView cpuFile: FileView {
+        path: root.active ? "/proc/stat" : ""
+        onLoaded: {
+            var line = (cpuFile.text() || "").split("\n")[0] || "";
+            var n = line.trim().split(/\s+/).slice(1).map(Number);
             var idle = (n[3] || 0) + (n[4] || 0);
             var total = n.reduce(function (a, b) {
                 return a + (b || 0);
             }, 0);
-            return {
-                total: total,
-                idle: idle
-            };
-        }
-        onUpdated: {
-            var cur = value;
+            var cur = { total: total, idle: idle };
             if (root._prevCpu) {
                 var dt = cur.total - root._prevCpu.total;
                 var di = cur.idle - root._prevCpu.idle;
@@ -49,29 +48,37 @@ QtObject {
             root.cpuHist = root._pushHist(root.cpuHist, root.cpuPct);
         }
     }
-
-    property CommandPoll ramPoll: CommandPoll {
+    property Timer cpuTimer: Timer {
         interval: 2000
         running: root.active
-        command: ["cat", "/proc/meminfo"]
-        parse: function (o) {
-            // Return a fresh object every tick so CommandPoll's change-detection
-            // always fires updated() -- otherwise a steady ram% would suppress it
-            // and ramHist (the sparkline) would never advance.
-            var t = String(o).match(/MemTotal:\s+(\d+)/);
-            var a = String(o).match(/MemAvailable:\s+(\d+)/);
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.cpuFile.reload()
+    }
+
+    // RAM used% from /proc/meminfo (MemTotal/MemAvailable). FileView + timer.
+    property FileView ramFile: FileView {
+        path: root.active ? "/proc/meminfo" : ""
+        onLoaded: {
+            var o = ramFile.text() || "";
+            var t = o.match(/MemTotal:\s+(\d+)/);
+            var a = o.match(/MemAvailable:\s+(\d+)/);
             var pct = 0;
             if (t && a) {
                 var total = Number(t[1]);
                 var avail = Number(a[1]);
                 pct = total > 0 ? Math.round(100 * (total - avail) / total) : 0;
             }
-            return { pct: pct };
-        }
-        onUpdated: {
-            root.ramPct = value.pct;
+            root.ramPct = pct;
             root.ramHist = root._pushHist(root.ramHist, root.ramPct);
         }
+    }
+    property Timer ramTimer: Timer {
+        interval: 2000
+        running: root.active
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.ramFile.reload()
     }
 
     // --- Detailed stats for the system popup; polled only while it is open. ---
