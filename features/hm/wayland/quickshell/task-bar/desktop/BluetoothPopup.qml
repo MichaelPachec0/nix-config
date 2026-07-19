@@ -72,10 +72,18 @@ PopupWindow {
         pop.openAt(x - pop.listW / 2); // center the LIST under the icon
     }
     function close() {
-        if (!pop.visible)
-            return;
-        pop.bt.setDiscovering(false); // never leave the radio scanning
-        pop.visible = false;
+        pop.visible = false; // cleanup runs in onVisibleChanged below
+    }
+    // Cleanup on ANY dismissal -- including the grabFocus click-outside path,
+    // which sets visible=false directly and never calls close(). Without this the
+    // radio would keep scanning after the menu is dismissed by clicking away.
+    onVisibleChanged: if (!pop.visible) {
+        if (pop.bt)
+            pop.bt.setDiscovering(false); // never leave the radio scanning
+        pop.hoverDev = null;
+        pop.showInfo = false;
+        pop.listHover = false;
+        pop.panelHover = false;
     }
     property string actionError: ""
     property Timer errorTimer: Timer {
