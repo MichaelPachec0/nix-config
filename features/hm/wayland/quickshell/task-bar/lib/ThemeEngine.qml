@@ -12,7 +12,14 @@ Scope {
         path: Quickshell.env("HOME") + "/.config/theme/colors.json"
         watchChanges: true
         onFileChanged: reload()
-        onLoaded: root.data = JSON.parse(themeFile.text())
+        onLoaded: {
+            // A watched file can be read mid-write (the theme tool is not
+            // guaranteed atomic), yielding truncated JSON. Keep the last-good
+            // palette on a parse failure instead of throwing and blanking colours.
+            try {
+                root.data = JSON.parse(themeFile.text());
+            } catch (e) {}
+        }
     }
 
     // mode -> isDarkMode (consumers still read this; JSON carries "gruvbox-dark")
