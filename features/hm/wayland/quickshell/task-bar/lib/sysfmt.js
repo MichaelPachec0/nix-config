@@ -2,13 +2,17 @@
 // QML JS resource (import "../lib/sysfmt.js" as SysFmt) and readable by the Deno
 // test via indirect eval. Do NOT add `.pragma library`.
 
+// Severity band thresholds per metric ([fair, poor] cutoffs). Module-level so the
+// table is built once, not rebuilt on every severity() call.
+var SEVERITY_BANDS = {
+    cpu: [70, 88], mem: [70, 88], swap: [10, 50], temp: [70, 85], psi: [5, 20]
+};
+
 // Severity band for a metric value -> "good"|"fair"|"poor" (spec coloring table).
 function severity(metric, value) {
     if (value === null || value === undefined || isNaN(value))
         return "good";
-    var b = {
-        cpu: [70, 88], mem: [70, 88], swap: [10, 50], temp: [70, 85], psi: [5, 20]
-    }[metric];
+    var b = SEVERITY_BANDS[metric];
     if (!b)
         return "good";
     if (value < b[0])
