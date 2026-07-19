@@ -504,8 +504,18 @@ if [ "${2:-geo}" = "geo" ]; then
   }
 else
   LAT="$2"
-  LON="$3"
+  LON="${3:-}"
   PLACE="${4:-}"
+  # A lat with no lon (half-specified point) would abort here under `set -u` at
+  # the old unguarded LON="$3"; fall back to geo resolution instead of querying
+  # a bogus coordinate.
+  if [ -z "$LON" ]; then
+    resolve_geo || {
+      LAT="$DEFAULT_LAT"
+      LON="$DEFAULT_LON"
+      PLACE=""
+    }
+  fi
 fi
 
 # --- refresh: walk the provider chain, first success wins ---------------------
