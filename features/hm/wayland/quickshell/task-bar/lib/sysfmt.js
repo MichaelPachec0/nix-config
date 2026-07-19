@@ -18,6 +18,14 @@ function severity(metric, value) {
     return "poor";
 }
 
+// Map a severity band ("good"|"fair"|"poor") to a theme accent colour. Shared by
+// every Sys*Section (and the dock) so the band->colour mapping lives in one
+// place; pass the section's `theme` explicitly.
+function sevColor(theme, sev) {
+    return sev === "good" ? theme.accentGreen
+         : sev === "fair" ? theme.accentYellow : theme.accentRed;
+}
+
 // Kilobytes (as reported by /proc/meminfo and ps rss) -> human string.
 function fmtKB(kb) {
     var v = Number(kb) || 0;

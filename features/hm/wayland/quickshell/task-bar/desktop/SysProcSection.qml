@@ -33,11 +33,6 @@ ColumnLayout {
         }
     }
 
-    function sevColor(sev) {
-        return sev === "good" ? theme.accentGreen
-             : sev === "fair" ? theme.accentYellow : theme.accentRed;
-    }
-
     // Reserve the numeric column so a process name never gets shoved right by a
     // wider figure and bleeds from the left (memory) column into the right (CPU).
     readonly property real _wMem: _mMem.advanceWidth

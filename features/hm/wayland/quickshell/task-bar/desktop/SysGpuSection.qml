@@ -14,11 +14,6 @@ ColumnLayout {
     required property QtObject theme
     required property var gpu
 
-    function sevColor(sev) {
-        return sev === "good" ? theme.accentGreen
-             : sev === "fair" ? theme.accentYellow : theme.accentRed;
-    }
-
     // Reserved widths: GPU% and temperature reserve their max string so a growing
     // digit never reflows the row; the VRAM field is the flexible absorber below.
     readonly property real _wPct: _mPct.advanceWidth
@@ -34,7 +29,7 @@ ColumnLayout {
         Text {
             text: "GPU " + Math.round(root.gpu.util) + "%"
             font.family: root.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
-            color: root.sevColor(SysFmt.severity("cpu", root.gpu.util))
+            color: SysFmt.sevColor(root.theme,SysFmt.severity("cpu", root.gpu.util))
             Layout.minimumWidth: root._wPct
         }
         Text {
@@ -48,7 +43,7 @@ ColumnLayout {
         Text {
             text: Math.round(root.gpu.temp) + " C"
             font.family: root.theme.iconFont; font.pixelSize: 11
-            color: root.sevColor(SysFmt.severity("temp", root.gpu.temp))
+            color: SysFmt.sevColor(root.theme,SysFmt.severity("temp", root.gpu.temp))
             horizontalAlignment: Text.AlignRight
             Layout.minimumWidth: root._wTemp
             Layout.preferredWidth: root._wTemp

@@ -14,11 +14,6 @@ ColumnLayout {
     required property QtObject theme
     property var smu
 
-    function sevColor(sev) {
-        return sev === "good" ? theme.accentGreen
-             : sev === "fair" ? theme.accentYellow : theme.accentRed;
-    }
-
     Text {
         text: "Power"
         font.family: root.theme.iconFont
@@ -42,7 +37,7 @@ ColumnLayout {
             text: Math.round(root.smu.ppt) + " / " + Math.round(root.smu.pptLimit) + " W"
             font.family: root.theme.iconFont
             font.pixelSize: 10
-            color: root.sevColor(SysFmt.severity("cpu", pptBar.fraction * 100))
+            color: SysFmt.sevColor(root.theme,SysFmt.severity("cpu", pptBar.fraction * 100))
             Layout.fillWidth: true
         }
         Rectangle {
@@ -59,7 +54,7 @@ ColumnLayout {
                 anchors.bottom: parent.bottom
                 width: parent.width * parent.fraction
                 radius: parent.radius
-                color: root.sevColor(SysFmt.severity("cpu", parent.fraction * 100))
+                color: SysFmt.sevColor(root.theme,SysFmt.severity("cpu", parent.fraction * 100))
             }
         }
     }
@@ -80,7 +75,7 @@ ColumnLayout {
             text: Math.round(root.smu.stapm) + " / " + Math.round(root.smu.stapmLimit) + " W"
             font.family: root.theme.iconFont
             font.pixelSize: 10
-            color: root.sevColor(SysFmt.severity("cpu", stapmBar.fraction * 100))
+            color: SysFmt.sevColor(root.theme,SysFmt.severity("cpu", stapmBar.fraction * 100))
             Layout.fillWidth: true
         }
         Rectangle {
@@ -97,7 +92,7 @@ ColumnLayout {
                 anchors.bottom: parent.bottom
                 width: parent.width * parent.fraction
                 radius: parent.radius
-                color: root.sevColor(SysFmt.severity("cpu", parent.fraction * 100))
+                color: SysFmt.sevColor(root.theme,SysFmt.severity("cpu", parent.fraction * 100))
             }
         }
     }
@@ -117,7 +112,7 @@ ColumnLayout {
             text: Math.round(root.smu.tdc) + " / " + Math.round(root.smu.tdcLimit) + " A"
             font.family: root.theme.iconFont
             font.pixelSize: 10
-            color: root.sevColor(SysFmt.severity("cpu", tdcBar.fraction * 100))
+            color: SysFmt.sevColor(root.theme,SysFmt.severity("cpu", tdcBar.fraction * 100))
             Layout.fillWidth: true
         }
         Rectangle {
@@ -134,7 +129,7 @@ ColumnLayout {
                 anchors.bottom: parent.bottom
                 width: parent.width * parent.fraction
                 radius: parent.radius
-                color: root.sevColor(SysFmt.severity("cpu", parent.fraction * 100))
+                color: SysFmt.sevColor(root.theme,SysFmt.severity("cpu", parent.fraction * 100))
             }
         }
     }
@@ -154,7 +149,7 @@ ColumnLayout {
             text: Math.round(root.smu.edc) + " / " + Math.round(root.smu.edcLimit) + " A"
             font.family: root.theme.iconFont
             font.pixelSize: 10
-            color: root.sevColor(SysFmt.severity("cpu", edcBar.fraction * 100))
+            color: SysFmt.sevColor(root.theme,SysFmt.severity("cpu", edcBar.fraction * 100))
             Layout.fillWidth: true
         }
         Rectangle {
@@ -171,7 +166,7 @@ ColumnLayout {
                 anchors.bottom: parent.bottom
                 width: parent.width * parent.fraction
                 radius: parent.radius
-                color: root.sevColor(SysFmt.severity("cpu", parent.fraction * 100))
+                color: SysFmt.sevColor(root.theme,SysFmt.severity("cpu", parent.fraction * 100))
             }
         }
     }

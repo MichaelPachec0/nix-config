@@ -127,10 +127,6 @@ PanelWindow {
     }
 
     // Severity -> accent color for the inline CPU/RAM readouts (matches SysPopup).
-    function sevColor(sev) {
-        return sev === "good" ? dock.theme.accentGreen
-             : sev === "fair" ? dock.theme.accentYellow : dock.theme.accentRed;
-    }
 
     // --- Clock helpers (12/24h toggle; world clocks live in ClockPopup) ---
     property bool h12: false
@@ -398,7 +394,7 @@ PanelWindow {
                     }
                     Lib.BarText {
                         text: Math.round(dock.stats ? dock.stats.cpuPct : 0) + "%"
-                        color: dock.sevColor(SysFmt.severity("cpu", dock.stats ? dock.stats.cpuPct : 0))
+                        color: SysFmt.sevColor(dock.theme,SysFmt.severity("cpu", dock.stats ? dock.stats.cpuPct : 0))
                         font.family: dock.theme.iconFont
                         font.pixelSize: 11
                         Layout.preferredWidth: Math.ceil(pctMetrics.advanceWidth)
@@ -415,7 +411,7 @@ PanelWindow {
                     }
                     Lib.BarText {
                         text: Math.round(dock.stats ? dock.stats.ramPct : 0) + "%"
-                        color: dock.sevColor(SysFmt.severity("mem", dock.stats ? dock.stats.ramPct : 0))
+                        color: SysFmt.sevColor(dock.theme,SysFmt.severity("mem", dock.stats ? dock.stats.ramPct : 0))
                         font.family: dock.theme.iconFont
                         font.pixelSize: 11
                         Layout.preferredWidth: Math.ceil(pctMetrics.advanceWidth)

@@ -13,11 +13,6 @@ ColumnLayout {
     required property var stats
     property var smu: null
 
-    function sevColor(sev) {
-        return sev === "good" ? theme.accentGreen
-             : sev === "fair" ? theme.accentYellow : theme.accentRed;
-    }
-
     // A core counts as asleep when its SMU C6 (deep-sleep) residency is >= 90%.
     // Needs the SMU snapshot; on cpufreq fallback (no C-state data) never idle.
     function coreIdle(core) {
@@ -79,7 +74,7 @@ ColumnLayout {
         Text {
             text: "CPU " + Math.round(root.stats.cpuPct) + "%"
             font.family: root.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
-            color: root.sevColor(SysFmt.severity("cpu", root.stats.cpuPct))
+            color: SysFmt.sevColor(root.theme,SysFmt.severity("cpu", root.stats.cpuPct))
             Layout.minimumWidth: root._wPct
         }
         Text {
@@ -93,7 +88,7 @@ ColumnLayout {
         Text {
             text: "zen " + Math.round(root.stats.cpuTemp) + " C"
             font.family: root.theme.iconFont; font.pixelSize: 11
-            color: root.sevColor(SysFmt.severity("temp", root.stats.cpuTemp))
+            color: SysFmt.sevColor(root.theme,SysFmt.severity("temp", root.stats.cpuTemp))
             horizontalAlignment: Text.AlignRight
             Layout.minimumWidth: root._wTemp
             Layout.preferredWidth: root._wTemp
@@ -157,7 +152,7 @@ ColumnLayout {
                                             width: parent.width
                                             height: Math.max(1, parent.height * parent.util / 100)
                                             radius: 1
-                                            color: root.sevColor(SysFmt.severity("cpu", parent.util))
+                                            color: SysFmt.sevColor(root.theme,SysFmt.severity("cpu", parent.util))
                                         }
                                     }
                                 }

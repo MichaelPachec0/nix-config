@@ -20,11 +20,6 @@ ColumnLayout {
     // the provider through. The merge below already treats a null smu as absent.
     property var smu
 
-    function sevColor(sev) {
-        return sev === "good" ? theme.accentGreen
-             : sev === "fair" ? theme.accentYellow : theme.accentRed;
-    }
-
     // Reserve room for a 3-digit temperature ("100 C") so a 2->3 digit change (or
     // 65 C vs 100 C across rows) keeps every value's column aligned and stable.
     readonly property real _wTemp: _mTemp.advanceWidth
@@ -63,7 +58,7 @@ ColumnLayout {
                     text: modelData.temp + " C"
                     font.family: root.theme.iconFont
                     font.pixelSize: 10
-                    color: root.sevColor(SysFmt.severity("temp", modelData.temp))
+                    color: SysFmt.sevColor(root.theme,SysFmt.severity("temp", modelData.temp))
                     horizontalAlignment: Text.AlignRight
                     Layout.minimumWidth: root._wTemp
                     Layout.preferredWidth: root._wTemp
