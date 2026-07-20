@@ -60,60 +60,12 @@ ColumnLayout {
 
             Repeater {
                 model: root.stats.topMem
-                delegate: Item {
-                    id: memDelegate
-                    required property var modelData
-                    Layout.fillWidth: true
-                    implicitHeight: memRow.implicitHeight
-
-                    readonly property bool armed: memDelegate.modelData.pid === root.armedPid
-
-                    Rectangle {
-                        anchors.fill: parent
-                        color: memArea.containsMouse ? root.theme.bgItemHover : "transparent"
-                        radius: 2
-                    }
-
-                    RowLayout {
-                        id: memRow
-                        anchors { left: parent.left; right: parent.right }
-                        Text {
-                            text: modelData.name
-                            font.family: root.theme.iconFont; font.pixelSize: 10
-                            color: root.theme.textPrimary
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
-                        Text {
-                            text: memDelegate.armed ? "end?" : SysFmt.fmtKB(modelData.rssKB)
-                            font.family: root.theme.iconFont; font.pixelSize: 10
-                            color: memDelegate.armed ? root.theme.accentRed : root.theme.textSecondary
-                            horizontalAlignment: Text.AlignRight
-                            Layout.minimumWidth: root._wMem
-                            Layout.preferredWidth: root._wMem
-                        }
-                    }
-
-                    MouseArea {
-                        id: memArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        acceptedButtons: Qt.LeftButton | Qt.MiddleButton
-                        onClicked: function (m) {
-                            if (m.button === Qt.MiddleButton) {
-                                Quickshell.execDetached(["bash", "-c",
-                                    "printf '%s' \"$1\" | wl-copy", "_",
-                                    modelData.pid + " " + modelData.name]);
-                                return;
-                            }
-                            if (m.modifiers & Qt.ShiftModifier) {
-                                Quickshell.execDetached(["kill", "-KILL", String(modelData.pid)]);
-                                return;
-                            }
-                            root.armOrKill(modelData.pid);
-                        }
-                    }
+                delegate: ProcRow {
+                    theme: root.theme
+                    armedPid: root.armedPid
+                    valueText: SysFmt.fmtKB(modelData.rssKB)
+                    valueWidth: root._wMem
+                    onArmOrKill: pid => root.armOrKill(pid)
                 }
             }
         }
@@ -133,60 +85,12 @@ ColumnLayout {
 
             Repeater {
                 model: root.stats.topCpu
-                delegate: Item {
-                    id: cpuDelegate
-                    required property var modelData
-                    Layout.fillWidth: true
-                    implicitHeight: cpuRow.implicitHeight
-
-                    readonly property bool armed: cpuDelegate.modelData.pid === root.armedPid
-
-                    Rectangle {
-                        anchors.fill: parent
-                        color: cpuArea.containsMouse ? root.theme.bgItemHover : "transparent"
-                        radius: 2
-                    }
-
-                    RowLayout {
-                        id: cpuRow
-                        anchors { left: parent.left; right: parent.right }
-                        Text {
-                            text: modelData.name
-                            font.family: root.theme.iconFont; font.pixelSize: 10
-                            color: root.theme.textPrimary
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
-                        Text {
-                            text: cpuDelegate.armed ? "end?" : (modelData.pcpu + "%")
-                            font.family: root.theme.iconFont; font.pixelSize: 10
-                            color: cpuDelegate.armed ? root.theme.accentRed : root.theme.textSecondary
-                            horizontalAlignment: Text.AlignRight
-                            Layout.minimumWidth: root._wCpu
-                            Layout.preferredWidth: root._wCpu
-                        }
-                    }
-
-                    MouseArea {
-                        id: cpuArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        acceptedButtons: Qt.LeftButton | Qt.MiddleButton
-                        onClicked: function (m) {
-                            if (m.button === Qt.MiddleButton) {
-                                Quickshell.execDetached(["bash", "-c",
-                                    "printf '%s' \"$1\" | wl-copy", "_",
-                                    modelData.pid + " " + modelData.name]);
-                                return;
-                            }
-                            if (m.modifiers & Qt.ShiftModifier) {
-                                Quickshell.execDetached(["kill", "-KILL", String(modelData.pid)]);
-                                return;
-                            }
-                            root.armOrKill(modelData.pid);
-                        }
-                    }
+                delegate: ProcRow {
+                    theme: root.theme
+                    armedPid: root.armedPid
+                    valueText: modelData.pcpu + "%"
+                    valueWidth: root._wCpu
+                    onArmOrKill: pid => root.armOrKill(pid)
                 }
             }
         }
