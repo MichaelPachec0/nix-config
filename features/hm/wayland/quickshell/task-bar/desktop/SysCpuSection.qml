@@ -13,12 +13,44 @@ ColumnLayout {
     required property var stats
     property var smu: null
 
+    // Map sysfs core_id -> SMU per-core array index. ryzen_monitor_ng numbers its
+    // CoreN entries densely (0..N-1) over the ACTIVE cores in ascending order, but
+    // sysfs core_id can be sparse on parts with fused-off cores, so indexing the
+    // SMU arrays by core_id directly misattributes per-core clock / C6 there.
+    // Build the map by ranking the topology's cores by core_id.
+    // GUARDED: if the SMU active-core count does not match the topology core count
+    // (an APU whose numbering we cannot infer), fall back to identity -- the
+    // previous behaviour of indexing the SMU arrays by core_id.
+    readonly property var _coreIdToSmu: {
+        var ids = [];
+        var topo = root.stats.cpuTopology || [];
+        for (var c = 0; c < topo.length; c++)
+            for (var k = 0; k < topo[c].cores.length; k++)
+                ids.push(topo[c].cores[k].coreId);
+        ids.sort(function (a, b) { return a - b; });
+        var pf = (root.smu && root.smu.perCoreFreq) ? root.smu.perCoreFreq : [];
+        var smuN = 0;
+        for (var i = 0; i < pf.length; i++)
+            if (typeof pf[i] === "number")
+                smuN++;
+        var dense = ids.length > 0 && smuN === ids.length; // else: identity fallback
+        var map = {};
+        for (var r = 0; r < ids.length; r++)
+            map[ids[r]] = dense ? r : ids[r];
+        return map;
+    }
+    function smuIndex(core) {
+        var m = root._coreIdToSmu;
+        return (m && m[core.coreId] !== undefined) ? m[core.coreId] : core.coreId;
+    }
+
     // A core counts as asleep when its SMU C6 (deep-sleep) residency is >= 90%.
     // Needs the SMU snapshot; on cpufreq fallback (no C-state data) never idle.
     function coreIdle(core) {
+        var si = root.smuIndex(core);
         return !!(root.smu && root.smu.available && root.smu.perCoreC6
-            && typeof root.smu.perCoreC6[core.coreId] === "number"
-            && root.smu.perCoreC6[core.coreId] >= 90);
+            && typeof root.smu.perCoreC6[si] === "number"
+            && root.smu.perCoreC6[si] >= 90);
     }
     // A CCX is asleep when every one of its cores is idle.
     function ccxIdle(ccx) {
@@ -35,10 +67,11 @@ ColumnLayout {
         if (root.coreIdle(core))
             return "Zzz";
         var mhz = 0;
+        var si = root.smuIndex(core);
         if (root.smu && root.smu.available && root.smu.perCoreFreq
-            && typeof root.smu.perCoreFreq[core.coreId] === "number"
-            && root.smu.perCoreFreq[core.coreId] > 0) {
-            mhz = root.smu.perCoreFreq[core.coreId];
+            && typeof root.smu.perCoreFreq[si] === "number"
+            && root.smu.perCoreFreq[si] > 0) {
+            mhz = root.smu.perCoreFreq[si];
         } else {
             var f = root.stats.perThreadFreq || [];
             for (var i = 0; i < core.threads.length; i++) {
