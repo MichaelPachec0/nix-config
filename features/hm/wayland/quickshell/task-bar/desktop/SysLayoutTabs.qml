@@ -85,63 +85,44 @@ ColumnLayout {
         Item { Layout.fillWidth: true }
     }
 
-    // Tab bar -- six fixed slots; GPU/Disk/Net hidden when provider unavailable
+    // Slot -> provider gate. GPU/Disk/Net/Temps/Power hide when unavailable; the
+    // rest are always shown. Read reactively by each chip's `visible`.
+    function tabVisible(tab) {
+        switch (tab) {
+        case 2: return root.gpu.available;
+        case 3: return root.disk.available;
+        case 4: return root.net.available;
+        case 6: return root.sensors.available || root.smu.available;
+        case 7: return root.smu.available;
+        default: return true;
+        }
+    }
+
+    // Tab bar -- fixed slots, one chip each (was eight hand-numbered copies).
     RowLayout {
         Layout.fillWidth: true
         spacing: 4
 
-        Rectangle {
-            implicitWidth: _t0.implicitWidth + 10; implicitHeight: 16; radius: 3
-            color: root.tab === 0 ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, 0.15) : "transparent"
-            Text { id: _t0; anchors.centerIn: parent; text: "CPU"; font.family: root.theme.iconFont; font.pixelSize: 10; color: root.tab === 0 ? root.theme.accent : root.theme.textSecondary }
-            MouseArea { anchors.fill: parent; onClicked: root.tab = 0 }
-        }
-        Rectangle {
-            implicitWidth: _t1.implicitWidth + 10; implicitHeight: 16; radius: 3
-            color: root.tab === 1 ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, 0.15) : "transparent"
-            Text { id: _t1; anchors.centerIn: parent; text: "Mem"; font.family: root.theme.iconFont; font.pixelSize: 10; color: root.tab === 1 ? root.theme.accent : root.theme.textSecondary }
-            MouseArea { anchors.fill: parent; onClicked: root.tab = 1 }
-        }
-        Rectangle {
-            visible: root.gpu.available
-            implicitWidth: _t2.implicitWidth + 10; implicitHeight: 16; radius: 3
-            color: root.tab === 2 ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, 0.15) : "transparent"
-            Text { id: _t2; anchors.centerIn: parent; text: "GPU"; font.family: root.theme.iconFont; font.pixelSize: 10; color: root.tab === 2 ? root.theme.accent : root.theme.textSecondary }
-            MouseArea { anchors.fill: parent; onClicked: root.tab = 2 }
-        }
-        Rectangle {
-            visible: root.disk.available
-            implicitWidth: _t3.implicitWidth + 10; implicitHeight: 16; radius: 3
-            color: root.tab === 3 ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, 0.15) : "transparent"
-            Text { id: _t3; anchors.centerIn: parent; text: "Disk"; font.family: root.theme.iconFont; font.pixelSize: 10; color: root.tab === 3 ? root.theme.accent : root.theme.textSecondary }
-            MouseArea { anchors.fill: parent; onClicked: root.tab = 3 }
-        }
-        Rectangle {
-            visible: root.net.available
-            implicitWidth: _t4.implicitWidth + 10; implicitHeight: 16; radius: 3
-            color: root.tab === 4 ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, 0.15) : "transparent"
-            Text { id: _t4; anchors.centerIn: parent; text: "Net"; font.family: root.theme.iconFont; font.pixelSize: 10; color: root.tab === 4 ? root.theme.accent : root.theme.textSecondary }
-            MouseArea { anchors.fill: parent; onClicked: root.tab = 4 }
-        }
-        Rectangle {
-            implicitWidth: _t5.implicitWidth + 10; implicitHeight: 16; radius: 3
-            color: root.tab === 5 ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, 0.15) : "transparent"
-            Text { id: _t5; anchors.centerIn: parent; text: "Proc"; font.family: root.theme.iconFont; font.pixelSize: 10; color: root.tab === 5 ? root.theme.accent : root.theme.textSecondary }
-            MouseArea { anchors.fill: parent; onClicked: root.tab = 5 }
-        }
-        Rectangle {
-            visible: root.sensors.available || root.smu.available
-            implicitWidth: _t6.implicitWidth + 10; implicitHeight: 16; radius: 3
-            color: root.tab === 6 ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, 0.15) : "transparent"
-            Text { id: _t6; anchors.centerIn: parent; text: "Temps"; font.family: root.theme.iconFont; font.pixelSize: 10; color: root.tab === 6 ? root.theme.accent : root.theme.textSecondary }
-            MouseArea { anchors.fill: parent; onClicked: root.tab = 6 }
-        }
-        Rectangle {
-            visible: root.smu.available
-            implicitWidth: _t7.implicitWidth + 10; implicitHeight: 16; radius: 3
-            color: root.tab === 7 ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, 0.15) : "transparent"
-            Text { id: _t7; anchors.centerIn: parent; text: "Power"; font.family: root.theme.iconFont; font.pixelSize: 10; color: root.tab === 7 ? root.theme.accent : root.theme.textSecondary }
-            MouseArea { anchors.fill: parent; onClicked: root.tab = 7 }
+        Repeater {
+            model: [
+                { label: "CPU", tab: 0 },
+                { label: "Mem", tab: 1 },
+                { label: "GPU", tab: 2 },
+                { label: "Disk", tab: 3 },
+                { label: "Net", tab: 4 },
+                { label: "Proc", tab: 5 },
+                { label: "Temps", tab: 6 },
+                { label: "Power", tab: 7 }
+            ]
+            delegate: Rectangle {
+                required property var modelData
+                readonly property bool sel: root.tab === modelData.tab
+                visible: root.tabVisible(modelData.tab)
+                implicitWidth: _lbl.implicitWidth + 10; implicitHeight: 16; radius: 3
+                color: sel ? Qt.rgba(root.theme.accent.r, root.theme.accent.g, root.theme.accent.b, 0.15) : "transparent"
+                Text { id: _lbl; anchors.centerIn: parent; text: modelData.label; font.family: root.theme.iconFont; font.pixelSize: 10; color: sel ? root.theme.accent : root.theme.textSecondary }
+                MouseArea { anchors.fill: parent; onClicked: root.tab = modelData.tab }
+            }
         }
 
         Item { Layout.fillWidth: true }

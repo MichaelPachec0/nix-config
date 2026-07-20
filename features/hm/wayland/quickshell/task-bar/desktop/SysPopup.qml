@@ -95,24 +95,21 @@ PopupWindow {
                     font.family: pop.theme.iconFont; font.pixelSize: 11
                     color: pop.theme.textSecondary
                 }
-                // Layout switcher: tall / tabs / grid
-                Rectangle {
-                    implicitWidth: _sw0.implicitWidth + 8; implicitHeight: 14; radius: 3
-                    color: uiAdapter.layout === 0 ? pop.theme.accent : "transparent"
-                    Text { id: _sw0; anchors.centerIn: parent; text: "tall"; font.family: pop.theme.iconFont; font.pixelSize: 9; color: uiAdapter.layout === 0 ? pop.theme.bgCard : pop.theme.textSecondary }
-                    MouseArea { anchors.fill: parent; onClicked: uiAdapter.layout = 0 }
-                }
-                Rectangle {
-                    implicitWidth: _sw1.implicitWidth + 8; implicitHeight: 14; radius: 3
-                    color: uiAdapter.layout === 1 ? pop.theme.accent : "transparent"
-                    Text { id: _sw1; anchors.centerIn: parent; text: "tabs"; font.family: pop.theme.iconFont; font.pixelSize: 9; color: uiAdapter.layout === 1 ? pop.theme.bgCard : pop.theme.textSecondary }
-                    MouseArea { anchors.fill: parent; onClicked: uiAdapter.layout = 1 }
-                }
-                Rectangle {
-                    implicitWidth: _sw2.implicitWidth + 8; implicitHeight: 14; radius: 3
-                    color: uiAdapter.layout === 2 ? pop.theme.accent : "transparent"
-                    Text { id: _sw2; anchors.centerIn: parent; text: "grid"; font.family: pop.theme.iconFont; font.pixelSize: 9; color: uiAdapter.layout === 2 ? pop.theme.bgCard : pop.theme.textSecondary }
-                    MouseArea { anchors.fill: parent; onClicked: uiAdapter.layout = 2 }
+                // Layout switcher: tall / tabs / grid (was three hand-numbered chips)
+                Repeater {
+                    model: [
+                        { label: "tall", v: 0 },
+                        { label: "tabs", v: 1 },
+                        { label: "grid", v: 2 }
+                    ]
+                    delegate: Rectangle {
+                        required property var modelData
+                        readonly property bool sel: uiAdapter.layout === modelData.v
+                        implicitWidth: _sw.implicitWidth + 8; implicitHeight: 14; radius: 3
+                        color: sel ? pop.theme.accent : "transparent"
+                        Text { id: _sw; anchors.centerIn: parent; text: modelData.label; font.family: pop.theme.iconFont; font.pixelSize: 9; color: sel ? pop.theme.bgCard : pop.theme.textSecondary }
+                        MouseArea { anchors.fill: parent; onClicked: uiAdapter.layout = modelData.v }
+                    }
                 }
             }
 
