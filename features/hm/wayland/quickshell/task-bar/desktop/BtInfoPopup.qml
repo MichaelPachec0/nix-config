@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import "../lib" as Lib
 
 // Bar hover panel for the connected device, centered under the bar icon. Shows
 // the same read-only info as the menu detail panel (battery / codec / profile /
@@ -334,8 +335,9 @@ PopupWindow {
                         font.family: tip.theme.textFont
                         font.pixelSize: 10
                     }
-                    MiniSlider {
+                    Lib.MiniSlider {
                         id: balS
+                        theme: tip.theme
                         Layout.fillWidth: true
                         from: -100
                         to: 100
@@ -533,60 +535,6 @@ PopupWindow {
         }
     }
 
-    component MiniSlider: Item {
-        id: sl
-        property real from: 0
-        property real to: 100
-        property real value: 0
-        property bool snap: true
-        property bool dragging: false
-        signal committed(real v)
-        implicitHeight: 16
-        Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.left: parent.left
-            anchors.right: parent.right
-            height: 4
-            radius: 2
-            color: tip.theme.bgItem
-        }
-        Rectangle {
-            visible: sl.from < 0
-            anchors.verticalCenter: parent.verticalCenter
-            width: 2
-            height: 8
-            radius: 1
-            color: tip.theme.textSecondary
-            x: (0 - sl.from) / (sl.to - sl.from) * (sl.width - 12) + 5
-        }
-        Rectangle {
-            width: 12
-            height: 12
-            radius: 6
-            anchors.verticalCenter: parent.verticalCenter
-            color: tip.theme.accent
-            x: Math.max(0, Math.min(sl.width - 12, (sl.value - sl.from) / (sl.to - sl.from) * (sl.width - 12)))
-        }
-        MouseArea {
-            anchors.fill: parent
-            function apply(mx) {
-                var t = Math.max(0, Math.min(1, (mx - 6) / (sl.width - 12)));
-                var v = sl.from + t * (sl.to - sl.from);
-                sl.value = sl.snap ? Math.round(v) : v;
-            }
-            onPressed: {
-                sl.dragging = true;
-                apply(mouseX);
-            }
-            onPositionChanged: if (pressed)
-                apply(mouseX)
-            onReleased: {
-                sl.dragging = false;
-                sl.committed(sl.value);
-            }
-        }
-    }
-
     component EqRow: RowLayout {
         id: er
         property int band: 0
@@ -600,8 +548,9 @@ PopupWindow {
             font.family: tip.theme.textFont
             font.pixelSize: 10
         }
-        MiniSlider {
+        Lib.MiniSlider {
             id: eqSlider
+            theme: tip.theme
             Layout.fillWidth: true
             from: -6
             to: 6
