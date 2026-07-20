@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Quickshell.Io
 import "sysfmt.js" as SysFmt
 
@@ -7,6 +8,8 @@ import "sysfmt.js" as SysFmt
 // CPU% = busy fraction from successive /proc/stat samples; RAM% = used/total.
 QtObject {
     id: root
+
+    readonly property string _libDir: Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib"
 
     property bool active: true
     property real cpuPct: 0
@@ -103,11 +106,7 @@ QtObject {
     property CommandPoll corePoll: CommandPoll {
         interval: 2000
         running: root.active && root.wantDetail
-        command: ["bash", "-c",
-            "grep '^cpu[0-9]' /proc/stat; echo @F; " +
-            "for c in /sys/devices/system/cpu/cpu[0-9]*; do n=${c##*/cpu}; " +
-            "printf '%s %s\\n' \"$n\" \"$(cat \"$c/cpufreq/scaling_cur_freq\" 2>/dev/null)\"; " +
-            "done | sort -n"]
+        command: [root._libDir + "/sys-percore.sh"]
         parse: function (o) {
             var lines = String(o).split("\n");
             var cpus = [];
@@ -154,10 +153,7 @@ QtObject {
     property CommandPoll topoPoll: CommandPoll {
         interval: 60000
         running: root.active && root.wantDetail && root.cpuTopology.length === 0
-        command: ["bash", "-c",
-            "for c in /sys/devices/system/cpu/cpu[0-9]*; do n=${c##*/cpu}; " +
-            "printf '%s %s %s\\n' \"$n\" \"$(cat \"$c/topology/core_id\" 2>/dev/null)\" " +
-            "\"$(cat \"$c/cache/index3/shared_cpu_list\" 2>/dev/null)\"; done | sort -n"]
+        command: [root._libDir + "/sys-topo.sh"]
         parse: function (o) { return SysFmt.parseTopology(String(o)); }
         onUpdated: root.cpuTopology = value
     }
@@ -166,14 +162,7 @@ QtObject {
     property CommandPoll detailPoll: CommandPoll {
         interval: 2000
         running: root.active && root.wantDetail
-        command: ["bash", "-c",
-            "echo @L; cat /proc/loadavg; " +
-            "echo @M; cat /proc/meminfo; " +
-            "echo @P; head -1 /proc/pressure/cpu; head -1 /proc/pressure/memory; " +
-            "echo @U; cat /proc/uptime; " +
-            "echo @T; for h in /sys/class/hwmon/hwmon*; do [ \"$(cat $h/name 2>/dev/null)\" = zenpower ] && cat $h/temp1_input 2>/dev/null && break; done; " +
-            "echo @TM; ps -eo pid,rss,pmem,comm --sort=-rss | head -6; " +
-            "echo @TC; ps -eo pid,pcpu,comm --sort=-pcpu | head -6"]
+        command: [root._libDir + "/sys-detail.sh"]
         parse: function (o) {
             var out = { load: [0, 0, 0], mem: {}, swap: {}, psi: { cpu: 0, mem: 0 },
                         uptime: 0, cpuTemp: 0, topMem: [], topCpu: [] };

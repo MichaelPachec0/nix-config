@@ -124,7 +124,10 @@ QtObject {
         var j = svc.pbpJobs[0];
         svc.pbpJobs = svc.pbpJobs.slice(1);
         svc.pbpCurRead = j.r;
-        svc.pbpProc.exec(["bash", "-c", "$HOME/.config/quickshell/task-bar/lib/btinfo.sh " + j.a]);
+        // argv (not bash -c): the job string is space-joined mode+mac+values, so
+        // split it into positional args -- btinfo.sh reads $1=mode $2=mac $3...
+        // No shell means no word-split/quoting surprises if a value ever changes.
+        svc.pbpProc.exec([svc._btinfo].concat(j.a.trim().split(/\s+/)));
     }
     // Switch the A2DP codec (PipeWire card profile -- fast, no pbpctrl/RFCOMM).
     function codecSet(prof) {

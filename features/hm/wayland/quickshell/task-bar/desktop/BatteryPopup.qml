@@ -97,7 +97,7 @@ PopupWindow {
     Lib.CommandPoll {
         interval: 2000
         running: pop.visible
-        command: ["bash", "-c", "upower -i \"$(upower -e | grep -Ei 'battery_BAT' | head -1)\" 2>/dev/null"]
+        command: [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/battery-info.sh"]
         parse: function (out) {
             var m = {};
             String(out || "").split("\n").forEach(function (line) {

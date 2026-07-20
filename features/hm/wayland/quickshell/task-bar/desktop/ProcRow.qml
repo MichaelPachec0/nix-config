@@ -58,8 +58,7 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton
         onClicked: function (m) {
             if (m.button === Qt.MiddleButton) {
-                Quickshell.execDetached(["bash", "-c",
-                    "printf '%s' \"$1\" | wl-copy", "_",
+                Quickshell.execDetached([Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/clip-copy.sh",
                     rowRoot.modelData.pid + " " + rowRoot.modelData.name]);
                 return;
             }

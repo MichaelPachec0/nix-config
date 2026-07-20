@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 
 // Per-interface rx/tx rates for every active (carrier=1, non-lo) interface,
 // from /sys/class/net statistics deltas. carrier=1 (not operstate=up) so bridges
@@ -18,11 +19,7 @@ QtObject {
     property CommandPoll poll: CommandPoll {
         interval: 2000
         running: root.active
-        command: ["bash", "-c",
-            "for i in /sys/class/net/*; do n=${i##*/}; [ \"$n\" = lo ] && continue; " +
-            "[ \"$(cat $i/carrier 2>/dev/null)\" = 1 ] || continue; " +
-            "echo \"$n $(cat $i/statistics/rx_bytes 2>/dev/null) $(cat $i/statistics/tx_bytes 2>/dev/null)\"; done; " +
-            "echo @NOW $(date +%s%3N)"]
+        command: [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/net-io.sh"]
         parse: function (o) {
             var out = { map: {}, order: [], now: 0 };
             String(o).split("\n").forEach(function (ln) {

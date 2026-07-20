@@ -108,7 +108,7 @@ PopupWindow {
         id: pwrPoll
         interval: 5000
         running: pop.visible && pop._hasBattery && pop._onBattery
-        command: ["bash", "-c", "upower -i \"$(upower -e | grep -Ei 'battery_BAT' | head -1)\" 2>/dev/null | sed -n 's/.*time to empty:[[:space:]]*//p'"]
+        command: [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/battery-info.sh", "tte"]
     }
 
     // --- other active inhibitors (logind, structured via busctl JSON) ---

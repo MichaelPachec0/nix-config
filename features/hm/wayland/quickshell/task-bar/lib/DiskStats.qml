@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 
 // Filesystem usage (df, real mounts only) + aggregate disk I/O rate from
 // /proc/diskstats deltas (sectors*512). Hover-gated via `active`. Instantiated +
@@ -19,10 +20,7 @@ QtObject {
     property CommandPoll poll: CommandPoll {
         interval: 2000
         running: root.active
-        command: ["bash", "-c",
-            "echo @D; df -B1024 --output=target,used,size,pcent -x tmpfs -x devtmpfs -x efivarfs -x squashfs -x overlay 2>/dev/null | tail -n +2; " +
-            "echo @IO; awk '$3 ~ /^(nvme[0-9]+n[0-9]+|sd[a-z]|vd[a-z]|mmcblk[0-9]+)$/ {r+=$6; w+=$10} END {print r, w}' /proc/diskstats; " +
-            "echo @NOW; date +%s%3N"]
+        command: [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/disk-stats.sh"]
         parse: function (o) {
             var out = { mounts: [], rd: 0, wr: 0, now: 0 };
             var tag = "";

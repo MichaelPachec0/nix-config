@@ -36,32 +36,33 @@ Item {
         root.expanded = !root.expanded;
     }
 
-    // Map a power action to a shell command and fire it, then close the hub.
+    // Map a power action to an argv and fire it, then close the hub. Single
+    // commands run directly (no shell); logout needs the UWSM-vs-Hyprland
+    // conditional, so it goes through session-exit.sh.
     function runPowerAction(action) {
-        var cmd = "";
+        var argv = null;
         switch (action) {
         case "lock":
-            cmd = "loginctl lock-session";
+            argv = ["loginctl", "lock-session"];
             break;
         case "suspend":
-            cmd = "systemctl suspend";
+            argv = ["systemctl", "suspend"];
             break;
         case "logout":
-            // UWSM-managed: graceful `uwsm stop`, else exit Hyprland directly.
-            cmd = "if command -v uwsm >/dev/null 2>&1; then uwsm stop || hyprctl dispatch exit; else hyprctl dispatch exit; fi";
+            argv = [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/session-exit.sh"];
             break;
         case "hibernate":
-            cmd = "systemctl hibernate";
+            argv = ["systemctl", "hibernate"];
             break;
         case "reboot":
-            cmd = "systemctl reboot";
+            argv = ["systemctl", "reboot"];
             break;
         case "shutdown":
-            cmd = "systemctl poweroff";
+            argv = ["systemctl", "poweroff"];
             break;
         }
-        if (cmd !== "")
-            Quickshell.execDetached(["bash", "-c", cmd]);
+        if (argv)
+            Quickshell.execDetached(argv);
         root.closeRequested();
     }
 
@@ -70,7 +71,7 @@ Item {
     Timer {
         id: snapTimer
         interval: 320
-        onTriggered: Quickshell.execDetached(["bash", "-c", "grim -t png -g \"$(slurp)\" ~/Pictures/scrn-$(date +%Y-%m-%dT%H:%M:%S%:z).png"])
+        onTriggered: Quickshell.execDetached([Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/screenshot-region.sh"])
     }
 
     ColumnLayout {

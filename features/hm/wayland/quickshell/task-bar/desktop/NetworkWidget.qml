@@ -186,7 +186,7 @@ Item {
                 var v = root.shownValue();
                 if (v) {
                     // stdin pipe so a value starting with '-' isn't parsed as a flag
-                    Quickshell.execDetached(["bash", "-c", "printf '%s' \"$1\" | wl-copy", "_", v]);
+                    Quickshell.execDetached([Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/clip-copy.sh", v]);
                     root.copiedFlash = true;
                     copiedTimer.restart();
                 }
