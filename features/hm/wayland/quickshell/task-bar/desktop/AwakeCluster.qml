@@ -1,18 +1,21 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell.Wayland
-import "../lib" as Lib
 
-// Single content item of the "awake" pill. Owns the shared InhibitService, the
-// two thin icon widgets, the window-bound Wayland idle inhibitor, and the shared
-// hover popup. Hovering anywhere on the cluster opens the popup (RouterPopup
-// hide-bridge so the pointer can travel into it); clicking an icon quick-toggles
-// its concern.
+// Single content item of the "awake" pill. Receives the shared InhibitService by
+// reference (hoisted to ShellRoot), owns the two thin icon widgets, the
+// window-bound Wayland idle inhibitor, and the shared hover popup. Hovering
+// anywhere on the cluster opens the popup (RouterPopup hide-bridge so the pointer
+// can travel into it); clicking an icon quick-toggles its concern.
 RowLayout {
     id: cluster
 
     required property QtObject theme
     required property var barWindow
+    // Shared InhibitService, hoisted to ShellRoot and passed in by reference.
+    // Forward it into child widgets/popup as `cluster.svc` -- an unqualified
+    // `svc: svc` would resolve to the child's own null `svc` property.
+    required property var svc
 
     // True when both concerns are on with the same expiry: the two icons then
     // share a single timer (pushed right of both) instead of one timer each.
@@ -22,14 +25,10 @@ RowLayout {
 
     spacing: 8
 
-    Lib.InhibitService {
-        id: svc
-    }
-
     // Wayland idle-inhibit for the "idle" concern (needs the bar surface).
     IdleInhibitor {
         window: cluster.barWindow
-        enabled: svc.idleOn
+        enabled: cluster.svc.idleOn
     }
 
     // Idle icon, then sleep icon, each with a countdown slot. The per-icon slots
@@ -39,7 +38,7 @@ RowLayout {
     InhibitWidget {
         Layout.alignment: Qt.AlignVCenter
         theme: cluster.theme
-        svc: svc
+        svc: cluster.svc
     }
     AwakeTimerSlot {
         Layout.alignment: Qt.AlignVCenter
@@ -50,7 +49,7 @@ RowLayout {
     SleepInhibitWidget {
         Layout.alignment: Qt.AlignVCenter
         theme: cluster.theme
-        svc: svc
+        svc: cluster.svc
     }
     AwakeTimerSlot {
         Layout.alignment: Qt.AlignVCenter
@@ -88,6 +87,6 @@ RowLayout {
         theme: cluster.theme
         barWindow: cluster.barWindow
         anchorItem: cluster
-        svc: svc
+        svc: cluster.svc
     }
 }

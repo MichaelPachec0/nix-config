@@ -21,6 +21,8 @@ PanelWindow {
     property var submap: null
     property var calState: null
     property var routerSvc: null
+    property var net: null      // shared NetworkService (hoisted to ShellRoot)
+    property var inhibit: null  // shared InhibitService (hoisted to ShellRoot)
 
     anchors {
         top: true
@@ -329,6 +331,7 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
+                net: dock.net
             }
 
             // Bluetooth: state glyph + connected device, click for the device menu.
@@ -359,6 +362,7 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
+                svc: dock.inhibit
             }
         }
 

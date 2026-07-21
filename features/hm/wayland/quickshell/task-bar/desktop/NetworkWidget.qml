@@ -13,16 +13,17 @@ Item {
 
     required property QtObject theme
     required property var barWindow
+    // Shared NetworkService, hoisted to ShellRoot (one nmcli poll for all
+    // screens) and passed in by reference. Bindings that forward it into child
+    // popups must use `root.net` -- an unqualified `net: net` would resolve to
+    // the child's own null `net` property (own-property shadows enclosing).
+    required property var net
 
     implicitWidth: row.implicitWidth
     implicitHeight: 24
 
     property int displayMode: 0
     property bool copiedFlash: false
-
-    Lib.NetworkService {
-        id: net
-    }
 
     // Cycle modes per connection type (BSSID is Wi-Fi only).
     function modes() {
@@ -208,7 +209,7 @@ Item {
         theme: root.theme
         anchorItem: root
         barWindow: root.barWindow
-        net: net
+        net: root.net
     }
 
     NetworkInfoPopup {
@@ -216,7 +217,7 @@ Item {
         theme: root.theme
         anchorItem: root
         barWindow: root.barWindow
-        net: net
+        net: root.net
         title: root.label()
     }
 }
