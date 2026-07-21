@@ -192,6 +192,7 @@ PanelWindow {
                         MediaCard {
                             Layout.fillWidth: true
                             theme: win.theme
+                            active: win.visible && win.mode === "full"
                             onCloseRequested: win.close()
                         }
                         ButtonsSlidersCard {

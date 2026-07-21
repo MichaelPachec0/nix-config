@@ -14,6 +14,12 @@ Rectangle {
 
     required property QtObject theme
 
+    // True while the hub overlay is actually shown (fed from HubWindow, like the
+    // sibling cards). Gates the poll timers -- root.visible can't, since it stays
+    // true whenever a player exists, so the timers would run per monitor with the
+    // hub closed.
+    property bool active: true
+
     signal closeRequested
 
     // --- player selection: prefer a playing one, else paused, else first ---
@@ -43,7 +49,7 @@ Rectangle {
     Timer {
         interval: 5000
         repeat: true
-        running: (root.players || []).length > 0
+        running: root.active && (root.players || []).length > 0
         onTriggered: root._repick++
     }
 
@@ -67,7 +73,7 @@ Rectangle {
     Timer {
         interval: 1000
         repeat: true
-        running: root.visible && root.hasPlayer
+        running: root.active && root.hasPlayer
         triggeredOnStart: true
         onTriggered: root.posSec = root.player ? root.player.position : 0
     }
