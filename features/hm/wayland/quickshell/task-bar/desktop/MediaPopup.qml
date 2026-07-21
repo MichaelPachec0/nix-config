@@ -47,10 +47,14 @@ PopupWindow {
     readonly property var playingOthers: pop.allPlayers.filter(function (p) {
         return p !== pop.player && p.playbackState === MprisPlaybackState.Playing;
     })
+    // Only while the popup is open: the auto-switch drops a stale pick you are
+    // LOOKING at, not one you set and closed. Without the visible gate it fires
+    // with the popup closed and silently overrides a pinned player, breaking the
+    // "userPicked STAYS across opens/closes" contract (see the userPicked docs).
     Timer {
         interval: pop.autoSwitchMs
         repeat: true
-        running: !pop.selectedPlaying && pop.playingOthers.length > 0
+        running: pop.visible && !pop.selectedPlaying && pop.playingOthers.length > 0
         onTriggered: {
             pop.player = pop.playingOthers[0];
             pop.userPicked = false;
