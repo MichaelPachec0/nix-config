@@ -330,75 +330,122 @@ PopupWindow {
                     visible: ex.queue.length > 0
                     clip: true
                     spacing: 2
-                    model: ex.queue
+                    model: queueModel
 
-                    // Center the view on the current track whenever the queue view
-                    // is entered (tab switch or popup reopen -- queueWants goes true)
-                    // or the song changes, including a click, which makes the clicked
-                    // track current. Routine polls don't re-center, so scrolling back
-                    // through history isn't yanked away. centerArmed guarantees one
-                    // forced center per entry even if the first poll hasn't returned
-                    // the queue yet.
-                    property string anchoredId: ""
-                    property bool centerArmed: false
-                    function syncToCurrent() {
-                        var idx = -1;
-                        var cid = "";
-                        for (var i = 0; i < ex.queue.length; ++i)
-                            if (ex.queue[i].current) {
-                                idx = i;
-                                cid = ex.queue[i].trackid;
-                                break;
+                    // A stable ListModel updated IN PLACE from ex.queue. ncspot's radio
+                    // rewrites ex.queue every couple of seconds; binding the ListView
+                    // straight to that plain array made every rewrite a full model reset
+                    // that snapped contentY to 0, so any centring fought a constant reset
+                    // (the click-time jitter). Updating a persistent model by index
+                    // (set/append/remove) preserves the scroll, so we only ever scroll on
+                    // an explicit event: entering the view, the track changing, or a click.
+                    ListModel { id: queueModel }
+                    property string anchoredId: ""    // current track id we last centred on
+                    property bool centerArmed: false  // force one centre once the queue loads
+                    property bool userScrolled: false // suppress auto-follow while browsing
+                    onMovementStarted: queueList.userScrolled = true
+
+                    function syncQueueModel() {
+                        var q = ex.queue;
+                        var n = q.length;
+                        for (var i = 0; i < n; ++i) {
+                            var t = q[i];
+                            var row = {
+                                trackid: t.trackid || "",
+                                title: t.title || "",
+                                artist: t.artist || "",
+                                art: t.art || "",
+                                current: !!t.current,
+                                played: !!t.played
+                            };
+                            if (i < queueModel.count) {
+                                var m = queueModel.get(i);
+                                if (m.trackid !== row.trackid || m.current !== row.current
+                                    || m.played !== row.played || m.title !== row.title
+                                    || m.artist !== row.artist || m.art !== row.art)
+                                    queueModel.set(i, row);
+                            } else {
+                                queueModel.append(row);
                             }
-                        if (idx < 0)
-                            return;
-                        if (queueList.centerArmed || cid !== queueList.anchoredId) {
-                            queueList.anchoredId = cid;
-                            queueList.centerArmed = false;
-                            queueList.centerOnIndex(idx);
                         }
+                        while (queueModel.count > n)
+                            queueModel.remove(queueModel.count - 1);
                     }
-                    // Deterministic centering: rows are a fixed 40px + spacing, so
-                    // compute contentY directly. positionViewAtIndex mis-positions
-                    // when called right after a model change (onQueueChanged) --
-                    // the delegates aren't realized and content metrics aren't
-                    // settled yet, so it lands off-centre intermittently.
+                    function currentIdx() {
+                        for (var i = 0; i < ex.queue.length; ++i)
+                            if (ex.queue[i].current)
+                                return i;
+                        return -1;
+                    }
+                    function currentId() {
+                        var i = queueList.currentIdx();
+                        return i >= 0 ? ex.queue[i].trackid : "";
+                    }
+                    // Scroll so row idx sits at the vertical centre. Fixed 40px rows +
+                    // spacing, so compute contentY directly (deterministic).
                     function centerOnIndex(idx) {
                         var rowH = 40 + queueList.spacing;
-                        var n = ex.queue.length;
-                        var contentH = n * rowH - queueList.spacing;
+                        var contentH = ex.queue.length * rowH - queueList.spacing;
                         var viewH = queueList.height;
                         if (viewH <= 0 || contentH <= viewH)
-                            return; // everything fits: nothing to scroll/centre
+                            return; // everything fits: nothing to scroll
                         var target = idx * rowH - (viewH - 40) / 2;
                         queueList.contentY = Math.max(0, Math.min(target, contentH - viewH));
                     }
+                    // After each in-place sync: entry forces a centre; otherwise only a
+                    // track change re-centres, and only when the user isn't browsing.
+                    function afterSync(forceCenter) {
+                        var idx = queueList.currentIdx();
+                        if (idx < 0)
+                            return; // no current track yet; keep centerArmed for later
+                        var cid = ex.queue[idx].trackid;
+                        if (forceCenter) {
+                            queueList.centerArmed = false;
+                            queueList.userScrolled = false;
+                            queueList.anchoredId = cid;
+                            queueList.centerOnIndex(idx);
+                        } else if (cid !== queueList.anchoredId) {
+                            queueList.anchoredId = cid;
+                            if (!queueList.userScrolled)
+                                queueList.centerOnIndex(idx);
+                        }
+                    }
+                    Component.onCompleted: {
+                        queueList.syncQueueModel();
+                        queueList.afterSync(true);
+                    }
                     Connections {
                         target: ex
-                        // Entering the queue view: arm a one-shot forced center, try
-                        // now (data may already be present) and again on the next
-                        // queue update (in case the poll hadn't returned yet).
                         function onQueueWantsChanged() {
                             if (ex.queueWants) {
                                 queueList.centerArmed = true;
-                                Qt.callLater(queueList.syncToCurrent);
+                                queueList.userScrolled = false;
+                                queueList.syncQueueModel();
+                                queueList.afterSync(true);
                             }
                         }
                         function onQueueChanged() {
-                            Qt.callLater(queueList.syncToCurrent);
+                            queueList.syncQueueModel();
+                            queueList.afterSync(queueList.centerArmed);
                         }
                     }
 
                     delegate: Rectangle {
                         id: qrow
-                        required property var modelData
+                        required property int index
+                        required property string trackid
+                        required property string title
+                        required property string artist
+                        required property string art
+                        required property bool current
+                        required property bool played
                         width: queueList.width
                         height: 40
                         radius: 6
-                        color: qHover.hovered ? pop.theme.bgItemHover : (qrow.modelData.current ? Qt.rgba(pop.theme.accent.r, pop.theme.accent.g, pop.theme.accent.b, 0.16) : "transparent")
+                        color: qHover.hovered ? pop.theme.bgItemHover : (qrow.current ? Qt.rgba(pop.theme.accent.r, pop.theme.accent.g, pop.theme.accent.b, 0.16) : "transparent")
                         // Played tracks render dimmed; hovering one restores full
                         // opacity so it reads as clickable (jump back / remove).
-                        opacity: (qrow.modelData.played && !qHover.hovered) ? 0.45 : 1
+                        opacity: (qrow.played && !qHover.hovered) ? 0.45 : 1
 
                         RowLayout {
                             anchors.fill: parent
@@ -414,7 +461,7 @@ PopupWindow {
                                 clip: true
                                 Image {
                                     anchors.fill: parent
-                                    source: qrow.modelData.art || ""
+                                    source: qrow.art || ""
                                     fillMode: Image.PreserveAspectCrop
                                     asynchronous: true
                                     cache: true
@@ -427,16 +474,16 @@ PopupWindow {
                                 spacing: 0
                                 Text {
                                     Layout.fillWidth: true
-                                    text: qrow.modelData.title || "Unknown"
-                                    color: qrow.modelData.current ? pop.theme.accent : pop.theme.textPrimary
+                                    text: qrow.title || "Unknown"
+                                    color: qrow.current ? pop.theme.accent : pop.theme.textPrimary
                                     font.family: pop.theme.textFont
                                     font.pixelSize: 12
-                                    font.weight: qrow.modelData.current ? Font.DemiBold : Font.Normal
+                                    font.weight: qrow.current ? Font.DemiBold : Font.Normal
                                     elide: Text.ElideRight
                                 }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: qrow.modelData.artist || ""
+                                    text: qrow.artist || ""
                                     color: pop.theme.textSecondary
                                     font.family: pop.theme.textFont
                                     font.pixelSize: 10
@@ -453,7 +500,7 @@ PopupWindow {
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: ex.remove(qrow.modelData.trackid)
+                                    onClicked: ex.remove(qrow.trackid)
                                 }
                             }
                         }
@@ -462,7 +509,16 @@ PopupWindow {
                             cursorShape: Qt.PointingHandCursor
                         }
                         TapHandler {
-                            onTapped: ex.goTo(qrow.modelData.trackid)
+                            onTapped: {
+                                // Centre on the clicked row; anchoredId stays the CURRENT
+                                // track so a queue mutation during the ~2s switch window
+                                // doesn't re-centre off it, and the stable model keeps the
+                                // view here until this row starts playing.
+                                queueList.userScrolled = false;
+                                queueList.anchoredId = queueList.currentId();
+                                queueList.centerOnIndex(qrow.index);
+                                ex.goTo(qrow.trackid);
+                            }
                         }
                     }
                 }
