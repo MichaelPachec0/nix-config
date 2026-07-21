@@ -505,11 +505,35 @@ PopupWindow {
                             anchors.leftMargin: 8
                             anchors.rightMargin: 8
                             spacing: 8
-                            Text {
-                                text: String.fromCodePoint(0xF0279) // format-list-bulleted (playlist)
-                                color: prow.modelData.active ? pop.theme.accent : pop.theme.textSecondary
-                                font.family: pop.theme.iconFont
-                                font.pixelSize: 14
+                            // Real playlist icon (ncspot now serves Spotify art
+                            // URLs in the Playlists interface); fall back to the
+                            // generic playlist glyph while it loads or if absent.
+                            Rectangle {
+                                Layout.alignment: Qt.AlignVCenter
+                                width: 26
+                                height: 26
+                                radius: 5
+                                color: pop.theme.bgItem
+                                clip: true
+                                Image {
+                                    id: plIcon
+                                    anchors.fill: parent
+                                    source: prow.modelData.icon || ""
+                                    fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                    cache: true
+                                    sourceSize.width: 52
+                                    sourceSize.height: 52
+                                    visible: plIcon.status === Image.Ready
+                                }
+                                Text {
+                                    anchors.centerIn: parent
+                                    visible: plIcon.status !== Image.Ready
+                                    text: String.fromCodePoint(0xF0279) // format-list-bulleted
+                                    color: prow.modelData.active ? pop.theme.accent : pop.theme.textSecondary
+                                    font.family: pop.theme.iconFont
+                                    font.pixelSize: 14
+                                }
                             }
                             Text {
                                 Layout.fillWidth: true
