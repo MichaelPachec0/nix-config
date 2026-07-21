@@ -355,8 +355,23 @@ PopupWindow {
                         if (queueList.centerArmed || cid !== queueList.anchoredId) {
                             queueList.anchoredId = cid;
                             queueList.centerArmed = false;
-                            queueList.positionViewAtIndex(idx, ListView.Center);
+                            queueList.centerOnIndex(idx);
                         }
+                    }
+                    // Deterministic centering: rows are a fixed 40px + spacing, so
+                    // compute contentY directly. positionViewAtIndex mis-positions
+                    // when called right after a model change (onQueueChanged) --
+                    // the delegates aren't realized and content metrics aren't
+                    // settled yet, so it lands off-centre intermittently.
+                    function centerOnIndex(idx) {
+                        var rowH = 40 + queueList.spacing;
+                        var n = ex.queue.length;
+                        var contentH = n * rowH - queueList.spacing;
+                        var viewH = queueList.height;
+                        if (viewH <= 0 || contentH <= viewH)
+                            return; // everything fits: nothing to scroll/centre
+                        var target = idx * rowH - (viewH - 40) / 2;
+                        queueList.contentY = Math.max(0, Math.min(target, contentH - viewH));
                     }
                     Connections {
                         target: ex
