@@ -79,12 +79,6 @@ PopupWindow {
         pop.visible = true;
     }
 
-    function shellQuote(s) {
-        return "'" + String(s).replace(/'/g, "'\\''") + "'";
-    }
-    function det(cmd) {
-        Quickshell.execDetached(["bash", "-lc", cmd]);
-    }
     function netGlyph(signal) {
         if (signal <= 25)
             return String.fromCodePoint(0xF091F);
@@ -109,13 +103,13 @@ PopupWindow {
 
     function onNetClicked(net) {
         if (net.inuse) {
-            pop.det("nmcli -w 10 connection down id " + pop.shellQuote(net.ssid));
+            Quickshell.execDetached(["nmcli", "-w", "10", "connection", "down", "id", net.ssid]);
             pop.visible = false;
         } else if (!net.secured) {
-            pop.det("nmcli -w 10 dev wifi connect " + pop.shellQuote(net.ssid));
+            Quickshell.execDetached(["nmcli", "-w", "10", "dev", "wifi", "connect", net.ssid]);
             pop.visible = false;
         } else if (pop.savedSet[net.ssid]) {
-            pop.det("nmcli -w 15 dev wifi connect " + pop.shellQuote(net.ssid));
+            Quickshell.execDetached(["nmcli", "-w", "15", "dev", "wifi", "connect", net.ssid]);
             pop.visible = false;
         } else {
             pop.pwSsid = net.ssid; // -> password view
@@ -124,7 +118,7 @@ PopupWindow {
     function connectWithPassword(pw) {
         if (!pw || pw.length === 0)
             return;
-        pop.det("nmcli -w 20 dev wifi connect " + pop.shellQuote(pop.pwSsid) + " password " + pop.shellQuote(pw));
+        Quickshell.execDetached(["nmcli", "-w", "20", "dev", "wifi", "connect", pop.pwSsid, "password", pw]);
         pop.pwSsid = "";
         pop.visible = false;
     }
@@ -198,24 +192,7 @@ PopupWindow {
         id: scan
         interval: 6000
         running: pop.visible && pop.net.wifiRadio && pop.selectedTab === "wifi"
-        command: ["bash", "-lc", `
-nmcli -t -f IN-USE,SIGNAL,SECURITY,CHAN,FREQ,RATE,BANDWIDTH,MODE,RSN-FLAGS,BSSID,SSID dev wifi list 2>/dev/null
-IFACE=$(nmcli -t -f DEVICE,TYPE dev 2>/dev/null | awk -F: '$2=="wifi"{print $1; exit}')
-WPAIF=$(busctl --system call fi.w1.wpa_supplicant1 /fi/w1/wpa_supplicant1 fi.w1.wpa_supplicant1 GetInterface s "$IFACE" 2>/dev/null | awk '{print $2}' | tr -d '"')
-if [ -n "$WPAIF" ]; then
-  BSSES=$(busctl --system get-property fi.w1.wpa_supplicant1 "$WPAIF" fi.w1.wpa_supplicant1.Interface BSSs 2>/dev/null | grep -oE '/fi/w1/wpa_supplicant1/[^" ]*/BSSs/[0-9]+')
-  for b in $BSSES; do busctl --system call fi.w1.wpa_supplicant1 "$b" org.freedesktop.DBus.Properties GetAll s fi.w1.wpa_supplicant1.BSS 2>/dev/null; done | awk '
-{
-  bssid=""; sig=""; age="";
-  for(i=1;i<=NF;i++){
-    if($i ~ /^"BSSID"$/){ cnt=$(i+2); s=""; for(j=1;j<=cnt;j++){ s=s sprintf("%s%02X",(j>1?":":""),$(i+2+j)); } bssid=s; }
-    else if($i ~ /^"Signal"$/){ sig=$(i+2); }
-    else if($i ~ /^"Age"$/){ age=$(i+2); }
-  }
-  if(bssid!="") print "WBSS:" bssid ":" sig ":" age;
-}'
-fi
-`]
+        command: [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/net-scan.sh"]
         parse: function (o) {
             var seen = {};
             var nets = [];
@@ -294,7 +271,7 @@ fi
     Lib.CommandPoll {
         interval: 10000
         running: pop.visible && pop.net.wifiRadio && pop.selectedTab === "wifi"
-        command: ["bash", "-lc", "nmcli -t -f NAME,TYPE connection show 2>/dev/null | awk -F: '$2==\"802-11-wireless\"{print $1}'"]
+        command: [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/net-saved-wifi.sh"]
         parse: function (o) {
             var set = {};
             String(o).split(/\r?\n/).forEach(function (l) {
@@ -407,7 +384,7 @@ fi
                         cursorShape: Qt.PointingHandCursor
                     }
                     TapHandler {
-                        onTapped: pop.det("nmcli dev wifi rescan")
+                        onTapped: Quickshell.execDetached(["nmcli", "dev", "wifi", "rescan"])
                     }
                 }
                 // On/off toggle pill
@@ -438,7 +415,7 @@ fi
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: pop.det("nmcli radio wifi " + (pop.net.wifiRadio ? "off" : "on"))
+                        onClicked: Quickshell.execDetached(["nmcli", "radio", "wifi", pop.net.wifiRadio ? "off" : "on"])
                     }
                 }
             }
@@ -664,7 +641,7 @@ fi
         saved: pop.hoverSaved
         onForget: {
             if (pop.hoverAp)
-                pop.det("nmcli connection delete id " + pop.shellQuote(pop.hoverAp.ssid));
+                Quickshell.execDetached(["nmcli", "connection", "delete", "id", pop.hoverAp.ssid]);
             pop.hoverAp = null;
         }
 

@@ -16,6 +16,8 @@ Lib.Card {
     property var notif: null // Lib.NotifService (for the DND toggle)
     signal closeRequested
 
+    readonly property string _libDir: Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib"
+
     // Keep the default sink tracked so its audio.volume/muted stay live.
     PwObjectTracker {
         objects: [Pipewire.defaultAudioSink]
@@ -26,7 +28,7 @@ Lib.Card {
         id: briPoll
         interval: 1500
         running: root.active
-        command: ["bash", "-lc", "brightnessctl -m 2>/dev/null | cut -d, -f4 | tr -d '% ' || true"]
+        command: [root._libDir + "/brightness-get.sh"]
         parse: function (o) {
             var n = Number(String(o).trim());
             return isFinite(n) ? n : 50;
@@ -38,7 +40,7 @@ Lib.Card {
         id: wifiOn
         interval: 2500
         running: root.active
-        command: ["bash", "-lc", "nmcli -t -f WIFI g 2>/dev/null | head -n1 || true"]
+        command: [root._libDir + "/wifi-enabled.sh"]
         parse: function (o) {
             return String(o).trim() === "enabled";
         }
@@ -47,7 +49,7 @@ Lib.Card {
         id: wifiSSID
         interval: 5000
         running: root.active
-        command: ["bash", "-lc", "nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null | awk -F: '$1==\"yes\"{print $2; exit}' || true"]
+        command: [root._libDir + "/wifi-active-ssid.sh"]
         parse: function (o) {
             var s = String(o).trim() || "WiFi";
             return s.length > 10 ? s.slice(0, 10) : s;
@@ -57,13 +59,10 @@ Lib.Card {
         id: btOn
         interval: 3000
         running: root.active
-        command: ["bash", "-lc", "bluetoothctl show 2>/dev/null | grep -q 'Powered: yes' && echo on || echo off"]
+        command: [root._libDir + "/bt-powered.sh"]
         parse: function (o) {
             return String(o).trim() === "on";
         }
-    }
-    function det(cmd) {
-        Quickshell.execDetached(["bash", "-lc", cmd]);
     }
 
     RowLayout {
@@ -85,10 +84,10 @@ Lib.Card {
                  : String.fromCodePoint(0xF05AA) // wifi-off
                 label: String(wifiSSID.value || "WiFi")
                 active: Boolean(wifiOn.value)
-                onClicked: root.det("nmcli radio wifi " + (wifiOn.value ? "off" : "on"))
+                onClicked: Quickshell.execDetached(["nmcli", "radio", "wifi", wifiOn.value ? "off" : "on"])
                 onRightClicked: {
                     root.closeRequested();
-                    root.det("nm-connection-editor >/dev/null 2>&1 &");
+                    Quickshell.execDetached(["nm-connection-editor"]);
                 }
             }
             Lib.ExpressiveButton {
@@ -98,10 +97,10 @@ Lib.Card {
                  : String.fromCodePoint(0xF00B2) // bluetooth-off
                 label: btOn.value ? "On" : "Off"
                 active: Boolean(btOn.value)
-                onClicked: root.det("bluetoothctl power " + (btOn.value ? "off" : "on"))
+                onClicked: Quickshell.execDetached(["bluetoothctl", "power", btOn.value ? "off" : "on"])
                 onRightClicked: {
                     root.closeRequested();
-                    root.det("blueman-manager >/dev/null 2>&1 &");
+                    Quickshell.execDetached(["blueman-manager"]);
                 }
             }
             Lib.ExpressiveButton {
@@ -134,7 +133,7 @@ Lib.Card {
                 from: 0
                 to: 100
                 value: 50
-                onUserChanged: v => root.det("brightnessctl set " + Math.round(v) + "%")
+                onUserChanged: v => Quickshell.execDetached(["brightnessctl", "set", Math.round(v) + "%"])
             }
 
             // Volume (native PipeWire default sink)

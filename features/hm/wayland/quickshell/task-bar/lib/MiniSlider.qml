@@ -18,6 +18,15 @@ Item {
 
     implicitHeight: 16
 
+    // Common track for the fill AND the knob so they can never disagree: the knob
+    // is 12px wide, so its centre travels [6, width-6] as its left edge (_knobX)
+    // goes [0, width-12]. The fill reaches the knob CENTRE (_knobX + 6). `_span`
+    // guards a zero-width range (to == from) that would divide to NaN/Infinity.
+    readonly property real _span: Math.max(1e-6, sl.to - sl.from)
+    readonly property real _frac: Math.max(0, Math.min(1, (sl.value - sl.from) / sl._span))
+    readonly property real _knobRange: Math.max(0, sl.width - 12)
+    readonly property real _knobX: sl._frac * sl._knobRange
+
     Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         anchors.left: parent.left
@@ -33,7 +42,7 @@ Item {
         anchors.left: parent.left
         height: 4
         radius: 2
-        width: Math.max(0, Math.min(sl.width, (sl.value - sl.from) / (sl.to - sl.from) * sl.width))
+        width: sl._knobX + 6   // reach the knob centre, so fill + knob stay aligned
         color: sl.theme.accent
     }
     // Center tick for bipolar ranges (e.g. balance).
@@ -44,7 +53,7 @@ Item {
         height: 8
         radius: 1
         color: sl.theme.textSecondary
-        x: (0 - sl.from) / (sl.to - sl.from) * (sl.width - 12) + 5
+        x: (0 - sl.from) / sl._span * sl._knobRange + 5
     }
     Rectangle {
         width: 12
@@ -52,13 +61,13 @@ Item {
         radius: 6
         anchors.verticalCenter: parent.verticalCenter
         color: sl.theme.accent
-        x: Math.max(0, Math.min(sl.width - 12, (sl.value - sl.from) / (sl.to - sl.from) * (sl.width - 12)))
+        x: sl._knobX
     }
     MouseArea {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
         function apply(mx) {
-            var t = Math.max(0, Math.min(1, (mx - 6) / (sl.width - 12)));
+            var t = Math.max(0, Math.min(1, (mx - 6) / Math.max(1e-6, sl._knobRange)));
             var v = sl.from + t * (sl.to - sl.from);
             sl.value = sl.snap ? Math.round(v) : v;
             sl.moved(sl.value);

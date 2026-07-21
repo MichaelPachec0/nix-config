@@ -17,6 +17,11 @@ import Quickshell.Services.Pipewire
 QtObject {
     id: svc
 
+    // Absolute path to the routing helper -- exec'd directly (argv), so a sink
+    // name with spaces/quotes rides as one opaque token instead of through a
+    // shell-quoted fragment.
+    readonly property string _audioctl: Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/audioctl.sh"
+
     readonly property var sink: Pipewire.defaultAudioSink
     readonly property var source: Pipewire.defaultAudioSource
     readonly property var defaultSink: svc.sink
@@ -85,7 +90,7 @@ QtObject {
     property CommandPoll targetsPoll: CommandPoll {
         interval: 2000
         running: svc.routeWants && svc.ready
-        command: ["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/audioctl.sh targets"]
+        command: [svc._audioctl, "targets"]
         parse: function (out) {
             var m = {};
             String(out || "").trim().split("\n").forEach(function (line) {
@@ -118,14 +123,14 @@ QtObject {
         if (!streamNode || !sinkNode)
             return;
         svc._setTarget(streamNode.id, String(sinkNode.name));
-        Quickshell.execDetached(["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/audioctl.sh route " + streamNode.id + " '" + String(sinkNode.name) + "'"]);
+        Quickshell.execDetached([svc._audioctl, "route", String(streamNode.id), String(sinkNode.name)]);
     }
     // Clear a stream's target so it follows the global default sink (auto).
     function routeStreamAuto(streamNode) {
         if (!streamNode)
             return;
         svc._setTarget(streamNode.id, "auto");
-        Quickshell.execDetached(["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/audioctl.sh auto " + streamNode.id]);
+        Quickshell.execDetached([svc._audioctl, "auto", String(streamNode.id)]);
     }
 
     // --- Display helpers ----------------------------------------------------

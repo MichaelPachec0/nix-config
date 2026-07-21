@@ -14,11 +14,6 @@ ColumnLayout {
     required property QtObject theme
     property var smu
 
-    function sevColor(sev) {
-        return sev === "good" ? theme.accentGreen
-             : sev === "fair" ? theme.accentYellow : theme.accentRed;
-    }
-
     Text {
         text: "Power"
         font.family: root.theme.iconFont
@@ -27,154 +22,11 @@ ColumnLayout {
         color: root.theme.textSecondary
     }
 
-    // PPT row
-    RowLayout {
-        Layout.fillWidth: true
-        spacing: 6
-        Text {
-            text: "PPT"
-            font.family: root.theme.iconFont
-            font.pixelSize: 10
-            color: root.theme.textPrimary
-            Layout.preferredWidth: 40
-        }
-        Text {
-            text: Math.round(root.smu.ppt) + " / " + Math.round(root.smu.pptLimit) + " W"
-            font.family: root.theme.iconFont
-            font.pixelSize: 10
-            color: root.sevColor(SysFmt.severity("cpu", pptBar.fraction * 100))
-            Layout.fillWidth: true
-        }
-        Rectangle {
-            id: pptBar
-            implicitWidth: 70
-            implicitHeight: 6
-            radius: 2
-            color: root.theme.subtleFill
-            readonly property real fraction: root.smu.pptLimit > 0
-                ? Math.min(1, Math.max(0, root.smu.ppt / root.smu.pptLimit)) : 0
-            Rectangle {
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: parent.width * parent.fraction
-                radius: parent.radius
-                color: root.sevColor(SysFmt.severity("cpu", parent.fraction * 100))
-            }
-        }
-    }
-
-    // STAPM row (APU sustained limit; absent on non-APU parts)
-    RowLayout {
-        Layout.fillWidth: true
-        spacing: 6
-        visible: root.smu.stapmLimit > 0
-        Text {
-            text: "STAPM"
-            font.family: root.theme.iconFont
-            font.pixelSize: 10
-            color: root.theme.textPrimary
-            Layout.preferredWidth: 40
-        }
-        Text {
-            text: Math.round(root.smu.stapm) + " / " + Math.round(root.smu.stapmLimit) + " W"
-            font.family: root.theme.iconFont
-            font.pixelSize: 10
-            color: root.sevColor(SysFmt.severity("cpu", stapmBar.fraction * 100))
-            Layout.fillWidth: true
-        }
-        Rectangle {
-            id: stapmBar
-            implicitWidth: 70
-            implicitHeight: 6
-            radius: 2
-            color: root.theme.subtleFill
-            readonly property real fraction: root.smu.stapmLimit > 0
-                ? Math.min(1, Math.max(0, root.smu.stapm / root.smu.stapmLimit)) : 0
-            Rectangle {
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: parent.width * parent.fraction
-                radius: parent.radius
-                color: root.sevColor(SysFmt.severity("cpu", parent.fraction * 100))
-            }
-        }
-    }
-
-    // TDC row
-    RowLayout {
-        Layout.fillWidth: true
-        spacing: 6
-        Text {
-            text: "TDC"
-            font.family: root.theme.iconFont
-            font.pixelSize: 10
-            color: root.theme.textPrimary
-            Layout.preferredWidth: 40
-        }
-        Text {
-            text: Math.round(root.smu.tdc) + " / " + Math.round(root.smu.tdcLimit) + " A"
-            font.family: root.theme.iconFont
-            font.pixelSize: 10
-            color: root.sevColor(SysFmt.severity("cpu", tdcBar.fraction * 100))
-            Layout.fillWidth: true
-        }
-        Rectangle {
-            id: tdcBar
-            implicitWidth: 70
-            implicitHeight: 6
-            radius: 2
-            color: root.theme.subtleFill
-            readonly property real fraction: root.smu.tdcLimit > 0
-                ? Math.min(1, Math.max(0, root.smu.tdc / root.smu.tdcLimit)) : 0
-            Rectangle {
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: parent.width * parent.fraction
-                radius: parent.radius
-                color: root.sevColor(SysFmt.severity("cpu", parent.fraction * 100))
-            }
-        }
-    }
-
-    // EDC row
-    RowLayout {
-        Layout.fillWidth: true
-        spacing: 6
-        Text {
-            text: "EDC"
-            font.family: root.theme.iconFont
-            font.pixelSize: 10
-            color: root.theme.textPrimary
-            Layout.preferredWidth: 40
-        }
-        Text {
-            text: Math.round(root.smu.edc) + " / " + Math.round(root.smu.edcLimit) + " A"
-            font.family: root.theme.iconFont
-            font.pixelSize: 10
-            color: root.sevColor(SysFmt.severity("cpu", edcBar.fraction * 100))
-            Layout.fillWidth: true
-        }
-        Rectangle {
-            id: edcBar
-            implicitWidth: 70
-            implicitHeight: 6
-            radius: 2
-            color: root.theme.subtleFill
-            readonly property real fraction: root.smu.edcLimit > 0
-                ? Math.min(1, Math.max(0, root.smu.edc / root.smu.edcLimit)) : 0
-            Rectangle {
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: parent.width * parent.fraction
-                radius: parent.radius
-                color: root.sevColor(SysFmt.severity("cpu", parent.fraction * 100))
-            }
-        }
-    }
+    // PPT/STAPM/TDC/EDC utilisation rows. STAPM is APU-only (hidden when absent).
+    PowerBar { theme: root.theme; label: "PPT";   value: root.smu.ppt;   limit: root.smu.pptLimit;   unit: "W" }
+    PowerBar { theme: root.theme; label: "STAPM"; value: root.smu.stapm; limit: root.smu.stapmLimit; unit: "W"; visible: root.smu.stapmLimit > 0 }
+    PowerBar { theme: root.theme; label: "TDC";   value: root.smu.tdc;   limit: root.smu.tdcLimit;   unit: "A" }
+    PowerBar { theme: root.theme; label: "EDC";   value: root.smu.edc;   limit: root.smu.edcLimit;   unit: "A" }
 
     // Clocks and GFX busy summary line
     Text {

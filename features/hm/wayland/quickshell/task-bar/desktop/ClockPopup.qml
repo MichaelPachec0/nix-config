@@ -49,16 +49,19 @@ PopupWindow {
         }
         return pop.pad(h) + ":" + pop.pad(m) + ":" + pop.pad(s);
     }
-    // US DST: 2nd Sun Mar .. 1st Sun Nov (boundary approximated at 07:00 UTC).
+    // US DST: 2nd Sun Mar (02:00 EST = 07:00 UTC) .. 1st Sun Nov (02:00 EDT =
+    // 06:00 UTC). The two transitions fall on DIFFERENT UTC hours because the
+    // clock is already on a different offset at each one -- approximating both at
+    // 07:00 left the first Sunday of Nov an hour ahead until 07:00 UTC.
     function nycIsDst(d) {
         var y = d.getUTCFullYear();
-        function nthSun(month, n) {
-            var first = new Date(Date.UTC(y, month, 1, 7, 0, 0));
+        function nthSun(month, n, utcHour) {
+            var first = new Date(Date.UTC(y, month, 1, 0, 0, 0));
             var firstSun = 1 + ((7 - first.getUTCDay()) % 7);
-            return Date.UTC(y, month, firstSun + (n - 1) * 7, 7, 0, 0);
+            return Date.UTC(y, month, firstSun + (n - 1) * 7, utcHour, 0, 0);
         }
         var t = d.getTime();
-        return t >= nthSun(2, 2) && t < nthSun(10, 1);
+        return t >= nthSun(2, 2, 7) && t < nthSun(10, 1, 6);
     }
     function localStr(d) { return pop.fmtHMS(d.getHours(), d.getMinutes(), d.getSeconds()); }
     function utcStr(d) { return pop.fmtHMS(d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()); }
@@ -68,8 +71,10 @@ PopupWindow {
         return pop.fmtHMS(h, d.getUTCMinutes(), d.getUTCSeconds());
     }
     function dayOfYear(d) {
-        var start = new Date(d.getFullYear(), 0, 0);
-        return Math.floor((d - start) / 86400000);
+        // UTC-anchored (matches datemath.isoWeek). The old local-time subtraction
+        // was off by one across a DST boundary, where a 23h/25h day floors wrong.
+        var start = Date.UTC(d.getUTCFullYear(), 0, 0);
+        return Math.floor((d.getTime() - start) / 86400000);
     }
 
     Rectangle {

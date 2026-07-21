@@ -12,7 +12,7 @@
 # fires the channel is already stuck, and we un-wedge by reconnecting the device
 # (the only reliable userspace reset of an in-use RFCOMM channel; codec/PipeWire
 # is unaffected). A cooldown stops reconnect storms.
-set -u
+set -uo pipefail
 mode="${1:-}"
 mac="${2:-}"
 [ -z "$mac" ] && exit 0
@@ -145,7 +145,7 @@ speech=${speech}
 balance=${balv}
 eq=${eqv}
 firmware=${fw}"
-    if [ -n "${bl}${br}${anc}" ]; then echo "$out" > "$cache"; fi
+    if [ -n "${bl}${br}${anc}" ]; then printf '%s\n' "$out" > "$cache.tmp" && mv -f "$cache.tmp" "$cache"; fi
     echo "$out"
     exit 0
 fi

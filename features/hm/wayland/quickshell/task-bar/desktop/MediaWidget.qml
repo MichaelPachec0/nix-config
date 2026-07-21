@@ -24,29 +24,29 @@ Item {
     // The EFFECTIVE player the bar shows is the popup's selection, so a chip
     // choice in the popup is reflected here too (and falls back to the auto-pick
     // when the user hasn't chosen one).
-    property MprisPlayer autoPlayer: null
-    readonly property MprisPlayer player: popup.player
-
-    function pickPlayer() {
+    //
+    // Reactive binding: QML re-evaluates it whenever the players list changes or
+    // the currently-picked player's playback state changes, so no polling is
+    // needed. _repick is bumped by the slow presence-gated backstop below purely
+    // as a safety net if an MPRIS NOTIFY is ever dropped.
+    property int _repick: 0
+    readonly property MprisPlayer autoPlayer: {
+        root._repick; // dependency: lets the backstop force a periodic re-eval
         var ps = root.players || [];
         for (var i = 0; i < ps.length; i++)
-            if (ps[i] && ps[i].isPlaying) {
-                root.autoPlayer = ps[i];
-                return;
-            }
+            if (ps[i] && ps[i].isPlaying)
+                return ps[i];
         for (var j = 0; j < ps.length; j++)
-            if (ps[j] && ps[j].playbackState === MprisPlaybackState.Paused) {
-                root.autoPlayer = ps[j];
-                return;
-            }
-        root.autoPlayer = ps.length ? ps[0] : null;
+            if (ps[j] && ps[j].playbackState === MprisPlaybackState.Paused)
+                return ps[j];
+        return ps.length ? ps[0] : null;
     }
+    readonly property MprisPlayer player: popup.player
     Timer {
-        interval: 1500
+        interval: 5000
         repeat: true
-        running: true
-        triggeredOnStart: true
-        onTriggered: root.pickPlayer()
+        running: (root.players || []).length > 0
+        onTriggered: root._repick++
     }
 
     readonly property bool hasPlayer: root.player !== null

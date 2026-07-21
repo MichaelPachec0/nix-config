@@ -21,28 +21,30 @@ Rectangle {
     readonly property var players: (Mpris.players.values || []).filter(function (p) {
         return p && (p.dbusName || "").indexOf("playerctld") < 0;
     })
-    property MprisPlayer player: null
-
-    function pickPlayer() {
+    // Auto-pick as a reactive binding: QML re-evaluates it whenever the players
+    // list changes or the currently-picked player's playback state changes, so
+    // no polling is needed. Dependency tracking follows the priority order -- it
+    // subscribes to each player's isPlaying only until the first match, and
+    // re-picks when that player later stops. _repick is bumped by the slow
+    // presence-gated backstop below purely as a safety net if an MPRIS NOTIFY is
+    // ever dropped.
+    property int _repick: 0
+    readonly property MprisPlayer player: {
+        root._repick; // dependency: lets the backstop force a periodic re-eval
         var ps = root.players || [];
         for (var i = 0; i < ps.length; i++)
-            if (ps[i] && ps[i].isPlaying) {
-                root.player = ps[i];
-                return;
-            }
+            if (ps[i] && ps[i].isPlaying)
+                return ps[i];
         for (var j = 0; j < ps.length; j++)
-            if (ps[j] && ps[j].playbackState === MprisPlaybackState.Paused) {
-                root.player = ps[j];
-                return;
-            }
-        root.player = ps.length ? ps[0] : null;
+            if (ps[j] && ps[j].playbackState === MprisPlaybackState.Paused)
+                return ps[j];
+        return ps.length ? ps[0] : null;
     }
     Timer {
-        interval: 1500
+        interval: 5000
         repeat: true
-        running: true
-        triggeredOnStart: true
-        onTriggered: root.pickPlayer()
+        running: (root.players || []).length > 0
+        onTriggered: root._repick++
     }
 
     readonly property bool hasPlayer: root.player !== null

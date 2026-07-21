@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import "../lib" as Lib
 import "../lib/weathericons.js" as WeatherIcons
 import "../lib/locations.js" as Locations
@@ -53,7 +54,7 @@ Item {
     Lib.CommandPoll {
         id: poll
         interval: 1800000 // 30 min; weather.sh caches the same window
-        command: ["bash", "-lc", "$HOME/.config/quickshell/task-bar/lib/weather.sh " + Locations.argsFor(root.loc)]
+        command: [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/weather.sh"].concat(Locations.argsArrayFor(root.loc))
         parse: function (out) {
             try {
                 var d = JSON.parse(String(out));
@@ -76,41 +77,9 @@ Item {
         }
     }
 
-    // Pulsing alert glow behind the content (every 5s while an alert is active).
-    Rectangle {
-        id: flashBg
-        anchors.fill: parent
-        anchors.margins: -3
-        radius: 6
-        z: -1
-        color: root.alertColor
-        opacity: 0
-    }
-    SequentialAnimation {
-        id: flashAnim
-        NumberAnimation {
-            target: flashBg
-            property: "opacity"
-            from: 0
-            to: 0.55
-            duration: 220
-            easing.type: Easing.OutQuad
-        }
-        NumberAnimation {
-            target: flashBg
-            property: "opacity"
-            to: 0
-            duration: 480
-            easing.type: Easing.InQuad
-        }
-    }
-    Timer {
-        interval: 5000
-        running: root.alert !== "" && root.visible
-        repeat: true
-        triggeredOnStart: true
-        onTriggered: flashAnim.start()
-    }
+    // The alert pulse itself is rendered by the enclosing Lib.Pill (bound to
+    // root.alert / root.alertColor in the taskbar) so the colour fills the whole
+    // capsule uniformly instead of a rectangle behind just this content.
 
     RowLayout {
         id: row

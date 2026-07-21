@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 
 // Filesystem usage (df, real mounts only) + aggregate disk I/O rate from
 // /proc/diskstats deltas (sectors*512). Hover-gated via `active`. Instantiated +
@@ -12,13 +13,14 @@ QtObject {
     property real writeRate: 0    // bytes/s
     property var _prev: null      // { t, rd, wr }
 
+    // Drop the last sample when the popup closes (poll stops) so the first rate
+    // after reopen is a fresh 0, not a rate smeared over the whole closed gap.
+    onActiveChanged: if (!root.active) root._prev = null;
+
     property CommandPoll poll: CommandPoll {
         interval: 2000
         running: root.active
-        command: ["bash", "-lc",
-            "echo @D; df -B1024 --output=target,used,size,pcent -x tmpfs -x devtmpfs -x efivarfs -x squashfs -x overlay 2>/dev/null | tail -n +2; " +
-            "echo @IO; awk '$3 ~ /^(nvme[0-9]+n[0-9]+|sd[a-z]|vd[a-z]|mmcblk[0-9]+)$/ {r+=$6; w+=$10} END {print r, w}' /proc/diskstats; " +
-            "echo @NOW; date +%s%3N"]
+        command: [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/disk-stats.sh"]
         parse: function (o) {
             var out = { mounts: [], rd: 0, wr: 0, now: 0 };
             var tag = "";
@@ -30,9 +32,18 @@ QtObject {
                 if (!ln.trim())
                     return;
                 if (tag === "D") {
+                    // Fields are: target used size pcent. The target is first and
+                    // may contain spaces (e.g. "/mnt/My Drive"), so take the
+                    // numeric trio from the RIGHT and join everything before it as
+                    // the target -- a positional p[0..3] split mis-parses spaces.
                     var p = ln.trim().split(/\s+/);
-                    var pct = Number(String(p[3]).replace("%", "")) || 0;
-                    out.mounts.push({ target: p[0], usedKB: Number(p[1]), sizeKB: Number(p[2]), pct: pct });
+                    if (p.length < 4)
+                        return;
+                    var pct = Number(String(p[p.length - 1]).replace("%", "")) || 0;
+                    var sizeKB = Number(p[p.length - 2]);
+                    var usedKB = Number(p[p.length - 3]);
+                    var target = p.slice(0, p.length - 3).join(" ");
+                    out.mounts.push({ target: target, usedKB: usedKB, sizeKB: sizeKB, pct: pct });
                 } else if (tag === "IO") {
                     var q = ln.trim().split(/\s+/);
                     out.rd = Number(q[0]) || 0;

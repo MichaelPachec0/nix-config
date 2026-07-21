@@ -126,7 +126,10 @@ Rectangle {
                 }
 
                 Repeater {
-                    model: group.list
+                    // Only the visible branch builds delegates; the hidden branch
+                    // gets an empty model so it doesn't instantiate a second full
+                    // set of NotifItems (each with its own async images).
+                    model: group.useDeck ? group.list : []
                     NotifItem {
                         id: stackCard
                         required property var modelData
@@ -156,7 +159,7 @@ Rectangle {
                 anchors.right: parent.right
                 spacing: 6
                 Repeater {
-                    model: group.list
+                    model: group.useDeck ? [] : group.list
                     NotifItem {
                         id: listCard
                         required property var modelData

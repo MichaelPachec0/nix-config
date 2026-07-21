@@ -1,4 +1,5 @@
 import Quickshell
+import QtQml
 import QtQuick
 import QtQuick.Layouts
 
@@ -7,10 +8,20 @@ import QtQuick.Layouts
 // needs QApplication mode and ignores our theme.) One reused instance per dock.
 //
 // Submenus drill down in place via a "Back" row rather than flying out: a
-// QsMenuEntry is itself a QsMenuHandle, so pushing one onto `stack` and
-// rebinding the opener re-renders that submenu on the same focus-grabbed
-// surface -- which avoids the nested-popup focus-grab problem. Flyout submenus
-// are a later polish.
+// QsMenuEntry is itself a QsMenuHandle, so pushing one onto `stack` deepens the
+// navigation chain and re-renders that submenu on the same focus-grabbed surface
+// -- which avoids the nested-popup focus-grab problem. Flyout submenus are a
+// later polish.
+//
+// Crucially we keep one QsMenuOpener alive PER level of the chain (root + each
+// pushed submenu), not a single opener that rebinds. Rebinding one opener from a
+// parent handle to its child drops the opener's only reference to the parent;
+// Quickshell then CLOSES the parent menu and destroys its child entries --
+// including the very submenu handle just navigated into -- so the submenu loads
+// for a single frame and then collapses (its handle going null). Holding an
+// opener on every ancestor keeps the whole chain open; the deepest opener feeds
+// the visible rows. (This is why udiskie's "Managed devices" couldn't be
+// entered.)
 PopupWindow {
     id: root
 
@@ -19,17 +30,27 @@ PopupWindow {
 
     // Submenu navigation stack; empty => showing rootHandle.
     property var stack: []
-    readonly property var currentHandle: stack.length > 0 ? stack[stack.length - 1] : rootHandle
+    // Full open chain, root -> current submenu. One opener per entry (below) keeps
+    // every ancestor materialised so a child handle is never torn down mid-nav.
+    readonly property var handleChain: root.rootHandle ? [root.rootHandle].concat(root.stack) : []
 
     // Rendered snapshot of the current menu's entries. We cache this rather than
-    // binding the view straight to opener.children because live menus (e.g.
+    // binding the view straight to the opener's children because live menus (e.g.
     // nm-applet re-emits its layout on every Wi-Fi scan) momentarily reset the
     // opener to zero children; rendering those transient empties would collapse
     // the popup. So we only adopt a NON-empty child list, and clear on navigation.
     property var view: []
     property bool opened: false
 
-    onCurrentHandleChanged: root.view = []
+    // Navigating in or out: clear the stale view, then reseed from the (now)
+    // deepest opener. On BACK-nav that ancestor opener is still open and already
+    // has its children, so the view repopulates immediately; on a fresh drill-in
+    // the new level's opener is still loading, so refreshView is a no-op here and
+    // the view fills once that opener emits childrenChanged.
+    onHandleChainChanged: {
+        root.view = [];
+        root.refreshView();
+    }
 
     // grabFocus (or any hide) tears the menu down to a clean state. We keep
     // rootHandle so a same-item reopen can reseed from the still-bound opener.
@@ -60,15 +81,35 @@ PopupWindow {
     anchor.rect.x: Math.max(4, root.anchorRight - root.implicitWidth)
     anchor.rect.y: root.anchorTop
 
-    QsMenuOpener {
-        id: opener
-        menu: root.currentHandle
-        onChildrenChanged: {
-            var v = opener.children.values;
-            if (v.length > 0)
-                root.view = v;
-            root.reveal();
+    // One opener per navigation level. The model is a CONSTANT count, so these
+    // delegates are created once and never recreated -- only each `menu` binding
+    // re-evaluates. Opener i binds to handleChain[i] (null once past the current
+    // depth), so opener 0 stays pinned to the root menu for the whole session and
+    // every active ancestor stays open. A changing-array model would instead reset
+    // every delegate on each drill, briefly closing the parent and reintroducing
+    // the handle-destruction bug. Depth 8 far exceeds any real tray menu's nesting.
+    Instantiator {
+        id: openerChain
+        model: 8
+        delegate: QsMenuOpener {
+            menu: index < root.handleChain.length ? root.handleChain[index] : null
+            onChildrenChanged: root.refreshView()
         }
+    }
+
+    // Adopt the deepest active level's entries as the visible view. Only NON-empty
+    // lists are adopted (see the `view` note above re: transient empties).
+    function refreshView() {
+        var depth = root.handleChain.length;
+        if (depth === 0)
+            return;
+        var op = openerChain.objectAt(depth - 1);
+        if (!op)
+            return;
+        var v = op.children.values;
+        if (v.length > 0)
+            root.view = v;
+        root.reveal();
     }
 
     function openAt(parentWin, rightX, topY, handle) {
@@ -76,12 +117,12 @@ PopupWindow {
         root.anchorRight = rightX;
         root.anchorTop = topY;
         root.opened = true;
-        // Reopening the SAME item: currentHandle won't change, so the opener
-        // keeps its loaded children and won't re-emit childrenChanged -- reseed
-        // the view from it directly. A different item changes currentHandle,
-        // which reloads the opener; wait for childrenChanged then.
+        // Reopening the SAME item at root: handleChain doesn't change (no
+        // childrenChanged, no onHandleChainChanged), so reseed the view directly
+        // from the still-open root opener. A different item changes rootHandle,
+        // which rebuilds the chain; onHandleChainChanged then reseeds.
         if (handle === root.rootHandle && root.stack.length === 0) {
-            root.view = opener.children.values;
+            root.refreshView();
         } else {
             root.stack = [];
             root.view = [];

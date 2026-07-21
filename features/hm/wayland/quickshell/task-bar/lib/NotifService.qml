@@ -123,6 +123,7 @@ QtObject {
         svc.toasts = svc.toasts.filter(function (n) {
             return svc.keyOf(n) !== app;
         });
+        svc._pruneToastExpiry();
     }
 
     property NotificationServer server: NotificationServer {
@@ -153,6 +154,16 @@ QtObject {
         svc.items = svc.items.filter(function (x) {
             return x !== n;
         });
+        // Drop expand state for apps that no longer have any notifications, so the
+        // map cannot grow without bound and a returning app is not stale-expanded.
+        var present = {};
+        for (var i = 0; i < svc.items.length; i++)
+            present[svc.keyOf(svc.items[i])] = true;
+        var m = {};
+        for (var k in svc.expandedApps)
+            if (present[k])
+                m[k] = svc.expandedApps[k];
+        svc.expandedApps = m;
     }
     function pushToast(n) {
         var t = svc.toasts.slice();
@@ -167,6 +178,19 @@ QtObject {
         svc.toasts = svc.toasts.filter(function (x) {
             return x !== n;
         });
+        svc._pruneToastExpiry();
+    }
+    // Keep toastExpiry to only the ids still present in `toasts` -- otherwise the
+    // map accumulates one entry per notification ever shown.
+    function _pruneToastExpiry() {
+        var live = {};
+        for (var i = 0; i < svc.toasts.length; i++)
+            live[svc.toasts[i].id] = true;
+        var e = {};
+        for (var k in svc.toastExpiry)
+            if (live[k])
+                e[k] = svc.toastExpiry[k];
+        svc.toastExpiry = e;
     }
     function dismissAll() {
         var l = svc.items.slice();

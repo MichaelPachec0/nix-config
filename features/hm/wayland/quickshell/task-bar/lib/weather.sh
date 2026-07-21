@@ -504,8 +504,18 @@ if [ "${2:-geo}" = "geo" ]; then
   }
 else
   LAT="$2"
-  LON="$3"
+  LON="${3:-}"
   PLACE="${4:-}"
+  # A lat with no lon (half-specified point) would abort here under `set -u` at
+  # the old unguarded LON="$3"; fall back to geo resolution instead of querying
+  # a bogus coordinate.
+  if [ -z "$LON" ]; then
+    resolve_geo || {
+      LAT="$DEFAULT_LAT"
+      LON="$DEFAULT_LON"
+      PLACE=""
+    }
+  fi
 fi
 
 # --- refresh: walk the provider chain, first success wins ---------------------
@@ -518,7 +528,9 @@ for provider in "${PROVIDERS[@]}"; do
 done
 
 if [ -n "$out" ]; then
-  printf '%s\n' "$out" >"$CACHE_FILE"
+  # Atomic: write a temp then rename, so a concurrent reader (the bar's FileView)
+  # never sees a half-written cache.
+  printf '%s\n' "$out" >"$CACHE_FILE.tmp" && mv -f "$CACHE_FILE.tmp" "$CACHE_FILE"
   printf '%s\n' "$out"
 elif [ -f "$CACHE_FILE" ]; then
   cat "$CACHE_FILE" # stale, but better than nothing

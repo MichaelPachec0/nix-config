@@ -37,6 +37,22 @@ ShellRoot {
         id: submapSvc
     }
 
+    // Global network state: one NetworkManager status poll for all screens
+    // (previously each NetworkWidget spawned its own ~20-process nmcli poll every
+    // 4s, multiplied by the monitor count). Named netSvc (not `net`) to differ
+    // from the Taskbar `net` property it feeds -- see the submapSvc note above.
+    Lib.NetworkService {
+        id: netSvc
+    }
+
+    // Global keep-awake state: one logind sleep inhibitor + one state-file writer
+    // for all screens. Per-monitor instances each held their own inhibitor and,
+    // with watchChanges off, diverged on toggle. Window-free -- the per-screen
+    // Wayland IdleInhibitor stays in AwakeCluster.
+    Lib.InhibitService {
+        id: inhibitSvc
+    }
+
     // Mirror Hyprland's screencast state into the notification service so toasts
     // are suppressed while screen sharing -- the QS-native replacement for the
     // swaync screencast inhibitor (see quickshell-notifications-cutover). The
@@ -108,6 +124,8 @@ ShellRoot {
                 submap: submapSvc
                 calState: calState
                 routerSvc: routerSvc
+                net: netSvc
+                inhibit: inhibitSvc
             }
 
             // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a

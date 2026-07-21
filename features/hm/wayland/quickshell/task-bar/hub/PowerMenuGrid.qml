@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import "../lib" as Lib
 
 // Hub inline power menu (Phase 2d, step 4): an uptime line + a 3-column grid of
@@ -61,7 +62,7 @@ Item {
     Lib.CommandPoll {
         interval: 60000
         running: root.active
-        command: ["bash", "-lc", "uptime -p | sed -e 's/^up //'"]
+        command: [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/uptime-pretty.sh"]
         parse: function (o) {
             return String(o).trim();
         }

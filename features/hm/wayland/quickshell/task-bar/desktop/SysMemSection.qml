@@ -12,11 +12,6 @@ ColumnLayout {
     required property QtObject theme
     required property var stats
 
-    function sevColor(sev) {
-        return sev === "good" ? theme.accentGreen
-             : sev === "fair" ? theme.accentYellow : theme.accentRed;
-    }
-
     // Reserved widths for the PSI figures so a 1->2->3 digit percent keeps the
     // mem/cpu columns aligned. Swap and pressure live on their own rows below.
     readonly property real _wPsiMem: _mPsiMem.advanceWidth
@@ -31,7 +26,7 @@ ColumnLayout {
             text: "Memory  " + SysFmt.fmtKB(root.stats.mem.usedKB || 0) + " / "
                 + SysFmt.fmtKB(root.stats.mem.totalKB || 0) + "  (" + (root.stats.mem.usedPct || 0) + "%)"
             font.family: root.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
-            color: root.sevColor(SysFmt.severity("mem", root.stats.mem.usedPct))
+            color: SysFmt.sevColor(root.theme,SysFmt.severity("mem", root.stats.mem.usedPct))
             elide: Text.ElideRight
             Layout.fillWidth: true
         }
@@ -50,7 +45,7 @@ ColumnLayout {
             Rectangle {
                 width: parent.width * (root.stats.mem.usedKB || 0) / parent.parent.total
                 height: parent.height
-                color: root.sevColor(SysFmt.severity("mem", root.stats.mem.usedPct))
+                color: SysFmt.sevColor(root.theme,SysFmt.severity("mem", root.stats.mem.usedPct))
             }
             Rectangle {
                 width: parent.width * (root.stats.mem.cachedKB || 0) / parent.parent.total
@@ -78,7 +73,7 @@ ColumnLayout {
         text: "swap " + SysFmt.fmtKB(root.stats.swap.usedKB || 0) + " / "
             + SysFmt.fmtKB(root.stats.swap.totalKB || 0)
         font.family: root.theme.iconFont; font.pixelSize: 10
-        color: root.sevColor(SysFmt.severity("swap", root.stats.swap.pct))
+        color: SysFmt.sevColor(root.theme,SysFmt.severity("swap", root.stats.swap.pct))
         elide: Text.ElideRight
     }
 
@@ -95,14 +90,14 @@ ColumnLayout {
         Text {
             text: "mem " + (root.stats.psi.mem || 0) + "%"
             font.family: root.theme.iconFont; font.pixelSize: 10
-            color: root.sevColor(SysFmt.severity("psi", root.stats.psi.mem))
+            color: SysFmt.sevColor(root.theme,SysFmt.severity("psi", root.stats.psi.mem))
             Layout.minimumWidth: root._wPsiMem
             Layout.preferredWidth: root._wPsiMem
         }
         Text {
             text: "cpu " + (root.stats.psi.cpu || 0) + "%"
             font.family: root.theme.iconFont; font.pixelSize: 10
-            color: root.sevColor(SysFmt.severity("psi", root.stats.psi.cpu))
+            color: SysFmt.sevColor(root.theme,SysFmt.severity("psi", root.stats.psi.cpu))
             Layout.minimumWidth: root._wPsiCpu
             Layout.preferredWidth: root._wPsiCpu
         }

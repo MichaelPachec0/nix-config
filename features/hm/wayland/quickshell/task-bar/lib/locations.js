@@ -24,12 +24,15 @@ function byId(id) {
     return list[0];
 }
 
-// weather.sh argument string for a location entry.
-//   geo:   "<id> geo"            fixed: "<id> <lat> <lon> '<label>'"
-function argsFor(loc) {
+// weather.sh argv for a location entry, as an array so it can be exec'd
+// directly (no shell). Passing the label as its own token means an apostrophe
+// city ("Coeur d'Alene") or a space survives without shell quoting, and the
+// negative-lon coord is never re-split or treated as a flag.
+//   geo:   ["<id>", "geo"]      fixed: ["<id>", "<lat>", "<lon>", "<label>"]
+function argsArrayFor(loc) {
     if (!loc)
-        return "geo";
+        return ["geo"];
     if (loc.geo)
-        return loc.id + " geo";
-    return loc.id + " " + loc.lat + " " + loc.lon + " '" + loc.label + "'";
+        return [loc.id, "geo"];
+    return [loc.id, loc.lat, loc.lon, loc.label];
 }

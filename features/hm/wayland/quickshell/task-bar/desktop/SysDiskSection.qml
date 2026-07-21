@@ -12,11 +12,6 @@ ColumnLayout {
     required property QtObject theme
     required property var disk
 
-    function sevColor(sev) {
-        return sev === "good" ? theme.accentGreen
-             : sev === "fair" ? theme.accentYellow : theme.accentRed;
-    }
-
     // Header
     Text {
         text: "Disk"
@@ -52,7 +47,7 @@ ColumnLayout {
                     width: parent.width * Math.min(modelData.pct, 100) / 100
                     height: parent.height
                     radius: parent.radius
-                    color: root.sevColor(SysFmt.severity("mem", modelData.pct))
+                    color: SysFmt.sevColor(root.theme,SysFmt.severity("mem", modelData.pct))
                 }
             }
 

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 
 // Base hub card: a themed rounded surface with a soft shadow and a subtle
 // hover lift/border. Children go into the default ColumnLayout. Adapted from
@@ -37,13 +38,19 @@ Rectangle {
         }
     }
 
-    // Soft drop shadow behind the card.
-    Rectangle {
-        z: -1
-        anchors.fill: parent
-        color: "black"
-        opacity: 0.22
-        radius: parent.radius
+    // Soft drop shadow: render the card through a MultiEffect (the Pill.qml
+    // shadow idiom). Replaces a dead full-size black Rectangle that was pinned
+    // directly behind the card with no offset or blur -- fully occluded, so it
+    // never actually rendered a shadow.
+    layer.enabled: true
+    layer.effect: MultiEffect {
+        autoPaddingEnabled: true
+        shadowEnabled: true
+        shadowColor: Qt.rgba(0, 0, 0, 0.35)
+        shadowBlur: 0.5
+        blurMax: 12
+        shadowVerticalOffset: 2
+        shadowHorizontalOffset: 0
     }
 
     ColumnLayout {

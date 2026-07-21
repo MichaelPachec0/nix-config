@@ -2,11 +2,15 @@
 // both a QML JS resource (import "../lib/routerfmt.js" as RouterFmt) and
 // readable by the Deno test via indirect eval. Do NOT add `.pragma library`.
 
+// Signal-quality band thresholds per metric ([good, fair] cutoffs). Module-level
+// so the table is built once, not rebuilt on every quality() call.
+var QUALITY_BANDS = { rsrp: [-90, -105], rsrq: [-11, -16], sinr: [13, 0] };
+
 // Signal-quality band -> "good"|"fair"|"poor" (spec section 9).
 function quality(metric, value) {
     if (value === null || value === undefined || isNaN(value))
         return "poor";
-    var b = { rsrp: [-90, -105], rsrq: [-11, -16], sinr: [13, 0] }[metric];
+    var b = QUALITY_BANDS[metric];
     if (!b)
         return "poor";
     if (value >= b[0])

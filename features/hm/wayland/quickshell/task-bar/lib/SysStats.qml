@@ -1,4 +1,6 @@
 import QtQuick
+import Quickshell
+import Quickshell.Io
 import "sysfmt.js" as SysFmt
 
 // Shared CPU%/RAM% poller, read by both the bar (Taskbar) and the hub Header.
@@ -6,6 +8,8 @@ import "sysfmt.js" as SysFmt
 // CPU% = busy fraction from successive /proc/stat samples; RAM% = used/total.
 QtObject {
     id: root
+
+    readonly property string _libDir: Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib"
 
     property bool active: true
     property real cpuPct: 0
@@ -22,23 +26,21 @@ QtObject {
     }
     property var _prevCpu: null
 
-    property CommandPoll cpuPoll: CommandPoll {
-        interval: 2000
-        running: root.active
-        command: ["bash", "-lc", "head -1 /proc/stat"]
-        parse: function (o) {
-            var n = String(o).trim().split(/\s+/).slice(1).map(Number);
+    // CPU busy% from successive /proc/stat first-line samples. Read via FileView
+    // (Quickshell's native file idiom) + a reload timer instead of forking
+    // head/cat every 2s. reload() is async, so parsing happens in onLoaded, which
+    // fires on every reload -> the sparkline advances each tick regardless of
+    // whether the value changed.
+    property FileView cpuFile: FileView {
+        path: root.active ? "/proc/stat" : ""
+        onLoaded: {
+            var line = (cpuFile.text() || "").split("\n")[0] || "";
+            var n = line.trim().split(/\s+/).slice(1).map(Number);
             var idle = (n[3] || 0) + (n[4] || 0);
             var total = n.reduce(function (a, b) {
                 return a + (b || 0);
             }, 0);
-            return {
-                total: total,
-                idle: idle
-            };
-        }
-        onUpdated: {
-            var cur = value;
+            var cur = { total: total, idle: idle };
             if (root._prevCpu) {
                 var dt = cur.total - root._prevCpu.total;
                 var di = cur.idle - root._prevCpu.idle;
@@ -49,29 +51,37 @@ QtObject {
             root.cpuHist = root._pushHist(root.cpuHist, root.cpuPct);
         }
     }
-
-    property CommandPoll ramPoll: CommandPoll {
+    property Timer cpuTimer: Timer {
         interval: 2000
         running: root.active
-        command: ["bash", "-lc", "cat /proc/meminfo"]
-        parse: function (o) {
-            // Return a fresh object every tick so CommandPoll's change-detection
-            // always fires updated() -- otherwise a steady ram% would suppress it
-            // and ramHist (the sparkline) would never advance.
-            var t = String(o).match(/MemTotal:\s+(\d+)/);
-            var a = String(o).match(/MemAvailable:\s+(\d+)/);
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.cpuFile.reload()
+    }
+
+    // RAM used% from /proc/meminfo (MemTotal/MemAvailable). FileView + timer.
+    property FileView ramFile: FileView {
+        path: root.active ? "/proc/meminfo" : ""
+        onLoaded: {
+            var o = ramFile.text() || "";
+            var t = o.match(/MemTotal:\s+(\d+)/);
+            var a = o.match(/MemAvailable:\s+(\d+)/);
             var pct = 0;
             if (t && a) {
                 var total = Number(t[1]);
                 var avail = Number(a[1]);
                 pct = total > 0 ? Math.round(100 * (total - avail) / total) : 0;
             }
-            return { pct: pct };
-        }
-        onUpdated: {
-            root.ramPct = value.pct;
+            root.ramPct = pct;
             root.ramHist = root._pushHist(root.ramHist, root.ramPct);
         }
+    }
+    property Timer ramTimer: Timer {
+        interval: 2000
+        running: root.active
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.ramFile.reload()
     }
 
     // --- Detailed stats for the system popup; polled only while it is open. ---
@@ -96,11 +106,7 @@ QtObject {
     property CommandPoll corePoll: CommandPoll {
         interval: 2000
         running: root.active && root.wantDetail
-        command: ["bash", "-lc",
-            "grep '^cpu[0-9]' /proc/stat; echo @F; " +
-            "for c in /sys/devices/system/cpu/cpu[0-9]*; do n=${c##*/cpu}; " +
-            "printf '%s %s\\n' \"$n\" \"$(cat \"$c/cpufreq/scaling_cur_freq\" 2>/dev/null)\"; " +
-            "done | sort -n"]
+        command: [root._libDir + "/sys-percore.sh"]
         parse: function (o) {
             var lines = String(o).split("\n");
             var cpus = [];
@@ -147,10 +153,7 @@ QtObject {
     property CommandPoll topoPoll: CommandPoll {
         interval: 60000
         running: root.active && root.wantDetail && root.cpuTopology.length === 0
-        command: ["bash", "-lc",
-            "for c in /sys/devices/system/cpu/cpu[0-9]*; do n=${c##*/cpu}; " +
-            "printf '%s %s %s\\n' \"$n\" \"$(cat \"$c/topology/core_id\" 2>/dev/null)\" " +
-            "\"$(cat \"$c/cache/index3/shared_cpu_list\" 2>/dev/null)\"; done | sort -n"]
+        command: [root._libDir + "/sys-topo.sh"]
         parse: function (o) { return SysFmt.parseTopology(String(o)); }
         onUpdated: root.cpuTopology = value
     }
@@ -159,14 +162,7 @@ QtObject {
     property CommandPoll detailPoll: CommandPoll {
         interval: 2000
         running: root.active && root.wantDetail
-        command: ["bash", "-lc",
-            "echo @L; cat /proc/loadavg; " +
-            "echo @M; cat /proc/meminfo; " +
-            "echo @P; head -1 /proc/pressure/cpu; head -1 /proc/pressure/memory; " +
-            "echo @U; cat /proc/uptime; " +
-            "echo @T; for h in /sys/class/hwmon/hwmon*; do [ \"$(cat $h/name 2>/dev/null)\" = zenpower ] && cat $h/temp1_input 2>/dev/null && break; done; " +
-            "echo @TM; ps -eo pid,rss,pmem,comm --sort=-rss | head -6; " +
-            "echo @TC; ps -eo pid,pcpu,comm --sort=-pcpu | head -6"]
+        command: [root._libDir + "/sys-detail.sh"]
         parse: function (o) {
             var out = { load: [0, 0, 0], mem: {}, swap: {}, psi: { cpu: 0, mem: 0 },
                         uptime: 0, cpuTemp: 0, topMem: [], topCpu: [] };

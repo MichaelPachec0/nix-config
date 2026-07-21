@@ -21,6 +21,8 @@ PanelWindow {
     property var submap: null
     property var calState: null
     property var routerSvc: null
+    property var net: null      // shared NetworkService (hoisted to ShellRoot)
+    property var inhibit: null  // shared InhibitService (hoisted to ShellRoot)
 
     anchors {
         top: true
@@ -127,10 +129,6 @@ PanelWindow {
     }
 
     // Severity -> accent color for the inline CPU/RAM readouts (matches SysPopup).
-    function sevColor(sev) {
-        return sev === "good" ? dock.theme.accentGreen
-             : sev === "fair" ? dock.theme.accentYellow : dock.theme.accentRed;
-    }
 
     // --- Clock helpers (12/24h toggle; world clocks live in ClockPopup) ---
     property bool h12: false
@@ -333,6 +331,7 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
+                net: dock.net
             }
 
             // Bluetooth: state glyph + connected device, click for the device menu.
@@ -363,6 +362,7 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
+                svc: dock.inhibit
             }
         }
 
@@ -398,7 +398,7 @@ PanelWindow {
                     }
                     Lib.BarText {
                         text: Math.round(dock.stats ? dock.stats.cpuPct : 0) + "%"
-                        color: dock.sevColor(SysFmt.severity("cpu", dock.stats ? dock.stats.cpuPct : 0))
+                        color: SysFmt.sevColor(dock.theme,SysFmt.severity("cpu", dock.stats ? dock.stats.cpuPct : 0))
                         font.family: dock.theme.iconFont
                         font.pixelSize: 11
                         Layout.preferredWidth: Math.ceil(pctMetrics.advanceWidth)
@@ -415,7 +415,7 @@ PanelWindow {
                     }
                     Lib.BarText {
                         text: Math.round(dock.stats ? dock.stats.ramPct : 0) + "%"
-                        color: dock.sevColor(SysFmt.severity("mem", dock.stats ? dock.stats.ramPct : 0))
+                        color: SysFmt.sevColor(dock.theme,SysFmt.severity("mem", dock.stats ? dock.stats.ramPct : 0))
                         font.family: dock.theme.iconFont
                         font.pixelSize: 11
                         Layout.preferredWidth: Math.ceil(pctMetrics.advanceWidth)
@@ -474,9 +474,14 @@ PanelWindow {
         Lib.Pill {
             Layout.alignment: Qt.AlignVCenter
             theme: dock.theme
+            // Notable weather (heat/rain) washes the whole capsule with the alert
+            // hue; the pill owns the pulse so the colour fills it uniformly.
+            pulseColor: weatherWidget.alertColor
+            pulseActive: weatherWidget.visible && weatherWidget.alert !== ""
 
             // Weather: current condition glyph + temperature; hover for details.
             WeatherWidget {
+                id: weatherWidget
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
