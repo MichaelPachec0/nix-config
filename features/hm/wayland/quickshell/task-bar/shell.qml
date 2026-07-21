@@ -11,6 +11,8 @@ import "desktop" as Desktop
 import "hub" as Hub
 
 ShellRoot {
+    id: shellRoot
+
     // Global notification service (one server for all screens).
     Lib.NotifService {
         id: notifSvc
@@ -53,6 +55,22 @@ ShellRoot {
         id: inhibitSvc
     }
 
+    // GL-E5800 router status (reads the hardened poll service's
+    // /run/e5800/status.json). One reader for all screens. The id MUST differ
+    // from the Taskbar `routerSvc` property it feeds: a same-name binding
+    // (routerSvc: routerSvc) across the Variants delegate resolves to the
+    // Taskbar's own null property (own-property shadows the outer-component id),
+    // so the router widget would get svc=null. Matches btSvc->bt / netSvc->net.
+    Lib.RouterService {
+        id: e5800Svc
+    }
+
+    // Shared CPU/RAM poller, read by every bar + hub header. One /proc reader for
+    // all screens (was one per monitor).
+    Lib.SysStats {
+        id: sysStats
+    }
+
     // Mirror Hyprland's screencast state into the notification service so toasts
     // are suppressed while screen sharing -- the QS-native replacement for the
     // swaync screencast inhibitor (see quickshell-notifications-cutover). The
@@ -67,6 +85,41 @@ ShellRoot {
         }
     }
 
+    // Per-screen HubWindows register themselves here (below) so the two global
+    // shortcuts can toggle the hub on the FOCUSED monitor. Previously each screen
+    // declared its own hubToggle/notifToggle GlobalShortcut inside the Variants
+    // delegate, registering the same shortcut name once per monitor.
+    property var hubsByMonitor: ({})
+    function focusedHub() {
+        var reg = shellRoot.hubsByMonitor;
+        for (var k in reg) {
+            var h = reg[k];
+            var m = (h && h.screen) ? Hyprland.monitorFor(h.screen) : null;
+            if (m && m.focused)
+                return h;
+        }
+        return null;
+    }
+
+    GlobalShortcut {
+        name: "hubToggle"
+        description: "Toggle the hub (settings + notifications) on the focused monitor"
+        onPressed: {
+            var h = shellRoot.focusedHub();
+            if (h)
+                h.hubToggle();
+        }
+    }
+    GlobalShortcut {
+        name: "notifToggle"
+        description: "Toggle the notifications panel on the focused monitor"
+        onPressed: {
+            var h = shellRoot.focusedHub();
+            if (h)
+                h.notifToggle();
+        }
+    }
+
     Variants {
         model: Quickshell.screens
         Scope {
@@ -77,26 +130,13 @@ ShellRoot {
                 id: screenTheme
             }
 
-            // Disk-persisted calendar layout choice. Must live INSIDE the Variants
-            // Scope (like screenTheme/weatherState): a ShellRoot-level instance does
-            // not resolve when referenced across the Variants delegate, so the date
-            // popup would receive calState=undefined and render empty. Per-screen
-            // instances all read/write the same state file; FileView watchChanges
-            // keeps monitors in sync.
+            // Disk-persisted calendar layout choice. Kept per-screen by choice so
+            // each monitor can hold its own layout; the instances read/write the
+            // same state file and FileView watchChanges keeps them in sync. (A
+            // single ShellRoot instance would also resolve fine -- see the shared
+            // services above -- this is a UX choice, not a resolution limit.)
             Lib.CalState {
                 id: calState
-            }
-
-            // GL-E5800 router status (reads the hardened poll service's
-            // /run/e5800/status.json). Like CalState, must live INSIDE the
-            // Variants Scope so it resolves across the delegate.
-            Lib.RouterService {
-                id: routerSvc
-            }
-
-            // Shared CPU/RAM poller, read by the bar and the hub header.
-            Lib.SysStats {
-                id: sysStats
             }
 
             // Shared weather location selection (bar widget <-> hub card chips).
@@ -123,14 +163,17 @@ ShellRoot {
                 audio: audioSvc
                 submap: submapSvc
                 calState: calState
-                routerSvc: routerSvc
+                routerSvc: e5800Svc
                 net: netSvc
                 inhibit: inhibitSvc
             }
 
             // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a
             // `global, quickshell:hubToggle` dispatch (see hyprland.nix hubBind),
-            // which fires this GlobalShortcut.
+            // which fires the single ShellRoot GlobalShortcut; that toggles the
+            // hub on the focused monitor via the hubsByMonitor registry this
+            // populates. A stale entry (monitor unplugged) becomes a null ref and
+            // is skipped by focusedHub().
             Hub.HubWindow {
                 id: hub
                 screen: v.modelData
@@ -138,6 +181,7 @@ ShellRoot {
                 stats: sysStats
                 weatherState: weatherState
                 notif: notifSvc
+                Component.onCompleted: shellRoot.hubsByMonitor[v.modelData.name] = hub
             }
 
             // Toast popups (top-right, below the bar).
@@ -146,19 +190,6 @@ ShellRoot {
                 theme: screenTheme
                 notif: notifSvc
             }
-
-            GlobalShortcut {
-                name: "hubToggle"
-                description: "Toggle the hub (settings + notifications)"
-                onPressed: hub.hubToggle()
-            }
-
-            GlobalShortcut {
-                name: "notifToggle"
-                description: "Toggle the notifications panel only"
-                onPressed: hub.notifToggle()
-            }
-
         }
     }
 }
