@@ -19,6 +19,7 @@ PanelWindow {
     property QtObject stats: null
     property QtObject weatherState: null
     property QtObject notif: null
+    property var powerz: null   // shared PowerZStats; hubOpen gates its poll
 
     // "full" = hub + notifications; "notif" = notifications only.
     property string mode: "full"
@@ -70,6 +71,14 @@ PanelWindow {
             win.open();
         }
     }
+
+    // Drive the shared POWER-Z poll: run it while THIS hub is showing the full
+    // panel (where BatteryCard lives). Edge-triggered per hub -- the focused hub
+    // is the one that opens. (Multi-monitor caveat: if two hubs are open at once,
+    // closing one may pause the poll for a tick; benign, the card just holds its
+    // last reading until the next tick.)
+    readonly property bool hubShowing: win.visible && win.mode === "full"
+    onHubShowingChanged: if (win.powerz) win.powerz.hubOpen = win.hubShowing
 
     onVisibleChanged: if (win.visible) {
         scroller.contentY = 0; // always open scrolled to the top
@@ -205,6 +214,7 @@ PanelWindow {
                         BatteryCard {
                             Layout.fillWidth: true
                             theme: win.theme
+                            powerz: win.powerz
                         }
                     }
                 }
