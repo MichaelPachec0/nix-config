@@ -85,6 +85,34 @@ ShellRoot {
         }
     }
 
+    // hy3 group/tab transitions leave Quickshell's *incremental* toplevel model
+    // stale for now-hidden windows (their lastIpcObject loses `class`/`workspace`),
+    // so iconFor() gets "" and a tab group of N renders as one invisible slot. A
+    // full refreshToplevels() re-syncs every field. Driven ONCE here at ShellRoot
+    // -- refreshToplevels() updates the shared Hyprland.toplevels that every bar
+    // reads, so a per-monitor copy (the old Taskbar location) only multiplied the
+    // `hyprctl clients` spawns by the monitor count. Debounced so an event burst
+    // collapses into one refresh; windowtitle* is excluded (terminals spam it).
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            switch (event.name) {
+            case "openwindow":
+            case "closewindow":
+            case "movewindowv2":
+            case "activewindowv2":
+                toplevelRefresh.restart();
+                break;
+            }
+        }
+    }
+    Timer {
+        id: toplevelRefresh
+        interval: 150
+        repeat: false
+        onTriggered: Hyprland.refreshToplevels()
+    }
+
     // Per-screen HubWindows register themselves here (below) so the two global
     // shortcuts can toggle the hub on the FOCUSED monitor. Previously each screen
     // declared its own hubToggle/notifToggle GlobalShortcut inside the Variants
