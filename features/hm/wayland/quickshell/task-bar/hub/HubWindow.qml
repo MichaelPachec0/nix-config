@@ -74,9 +74,12 @@ PanelWindow {
 
     // Drive the shared POWER-Z poll: run it while THIS hub is showing the full
     // panel (where BatteryCard lives). Edge-triggered per hub -- the focused hub
-    // is the one that opens. (Multi-monitor caveat: if two hubs are open at once,
-    // closing one may pause the poll for a tick; benign, the card just holds its
-    // last reading until the next tick.)
+    // is the one that opens. (Multi-monitor caveat: popupOpen/hubOpen are shared
+    // booleans, not refcounts. If two hubs are open in full mode at once, closing
+    // one clears hubOpen while the other stays visible, and since that hub's
+    // hubShowing doesn't change nothing re-arms the poll -- its card holds the
+    // last reading until any surface's visibility next changes, then self-heals.
+    // Benign: stale, never wrong; the focused-hub toggle normally keeps one open.)
     readonly property bool hubShowing: win.visible && win.mode === "full"
     onHubShowingChanged: if (win.powerz) win.powerz.hubOpen = win.hubShowing
 
