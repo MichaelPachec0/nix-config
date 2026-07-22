@@ -196,7 +196,7 @@ fc_build() {
 # keeps night icon variants (an overnight hour should read as a moon, not a sun).
 # Only providers with sub-daily data populate it; emit_rich defaults to [].
 hr_reset() { R_hr_items=(); }
-hr_add() { R_hr_items+=("{\"h\":\"$1\",\"icon\":\"$2\",\"temp\":\"$3\",\"precip\":\"$4\"}"); }
+hr_add() { R_hr_items+=("{\"h\":\"$1\",\"icon\":\"$2\",\"temp\":\"$3\",\"precip\":\"$4\",\"uv\":\"$5\"}"); }
 hr_build() {
   local IFS=,
   R_hr="[${R_hr_items[*]:-}]"
@@ -442,7 +442,7 @@ fetch_owm() {
 }
 
 fetch_pirate() {
-  local key resp days i t hi lo fic hours htemp hic hpp hlabel
+  local key resp days i t hi lo fic hours htemp hic hpp hlabel huv
   key=$(pirate_key) || return 1
   [ -n "$key" ] || return 1
   resp=$(curl -sf --max-time 6 \
@@ -473,7 +473,7 @@ fetch_pirate() {
 
   # Next 12 hours: label (e.g. 3PM), icon (night variants kept), temp, precip%.
   hr_reset
-  hours=$(printf '%s' "$resp" | jq -c '[.hourly.data[] | {t:.time, tp:.temperature, ic:.icon, pp:.precipProbability}] | .[0:12]' 2>/dev/null)
+  hours=$(printf '%s' "$resp" | jq -c '[.hourly.data[] | {t:.time, tp:.temperature, ic:.icon, pp:.precipProbability, uv:.uvIndex}] | .[0:12]' 2>/dev/null)
   if [ -n "$hours" ] && [ "$hours" != "null" ]; then
     for i in 0 1 2 3 4 5 6 7 8 9 10 11; do
       t=$(printf '%s' "$hours" | jq -r ".[$i].t // empty")
@@ -481,8 +481,9 @@ fetch_pirate() {
       htemp=$(printf '%s' "$hours" | jq -r ".[$i].tp // empty" | round)
       hic=$(pirate_icon "$(printf '%s' "$hours" | jq -r ".[$i].ic")")
       hpp=$(printf '%s' "$hours" | jq -r "if (.[$i].pp|type)==\"number\" then (.[$i].pp*100|round) else empty end")
+      huv=$(round_opt "$(printf '%s' "$hours" | jq -r ".[$i].uv // empty")")
       hlabel=$(fmt_hour_tz "@$t")
-      hr_add "$hlabel" "$hic" "$htemp" "$hpp"
+      hr_add "$hlabel" "$hic" "$htemp" "$hpp" "$huv"
     done
   fi
   hr_build
@@ -556,7 +557,7 @@ fetch_metno() {
       hic=$(metno_icon "$(printf '%s' "$hours" | jq -r ".[$i].sym")")
       hpp=$(printf '%s' "$hours" | jq -r "if (.[$i].pp|type)==\"number\" then (.[$i].pp|round) else empty end")
       hlabel=$(fmt_hour_tz "$t")
-      hr_add "$hlabel" "$hic" "$htemp" "$hpp"
+      hr_add "$hlabel" "$hic" "$htemp" "$hpp" ""
     done
   fi
   hr_build
@@ -576,9 +577,9 @@ fetch_metno() {
 }
 
 fetch_openmeteo() {
-  local resp code isday night days i d hi lo fcode t hours hnow htemp hnight hic hpp hlabel
+  local resp code isday night days i d hi lo fcode t hours hnow htemp hnight hic hpp hlabel huv
   resp=$(curl -sf --max-time 6 \
-    "https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,weather_code,is_day,wind_speed_10m,wind_direction_10m,uv_index,wind_gusts_10m&hourly=temperature_2m,weather_code,precipitation_probability,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=7") || return 1
+    "https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,weather_code,is_day,wind_speed_10m,wind_direction_10m,uv_index,wind_gusts_10m&hourly=temperature_2m,weather_code,precipitation_probability,is_day,uv_index&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=7") || return 1
   code=$(printf '%s' "$resp" | jq -r '.current.weather_code // empty')
   [ -n "$code" ] || return 1
   isday=$(printf '%s' "$resp" | jq -r '.current.is_day // 1')
@@ -617,8 +618,8 @@ fetch_openmeteo() {
   # minutes; a raw >= would drop it and start the strip at the next hour).
   [ -n "$hnow" ] && hnow="${hnow:0:13}:00"
   hours=$(printf '%s' "$resp" | jq -c --arg now "$hnow" '
-    [ [.hourly.time, .hourly.temperature_2m, .hourly.weather_code, .hourly.precipitation_probability, .hourly.is_day]
-      | transpose | .[] | {t:.[0], tp:.[1], wc:.[2], pp:.[3], day:.[4]} ]
+    [ [.hourly.time, .hourly.temperature_2m, .hourly.weather_code, .hourly.precipitation_probability, .hourly.is_day, .hourly.uv_index]
+      | transpose | .[] | {t:.[0], tp:.[1], wc:.[2], pp:.[3], day:.[4], uv:.[5]} ]
     | map(select(.t >= $now)) | .[0:12]' 2>/dev/null)
   if [ -n "$hours" ] && [ "$hours" != "null" ]; then
     for i in 0 1 2 3 4 5 6 7 8 9 10 11; do
@@ -628,8 +629,9 @@ fetch_openmeteo() {
       hnight=$(printf '%s' "$hours" | jq -r "if .[$i].day==0 then 1 else 0 end")
       hic=$(openmeteo_icon "$(printf '%s' "$hours" | jq -r ".[$i].wc")" "$hnight")
       hpp=$(printf '%s' "$hours" | jq -r ".[$i].pp // empty")
+      huv=$(round_opt "$(printf '%s' "$hours" | jq -r ".[$i].uv // empty")")
       hlabel=$(fmt_hour_tz "$t")
-      hr_add "$hlabel" "$hic" "$htemp" "$hpp"
+      hr_add "$hlabel" "$hic" "$htemp" "$hpp" "$huv"
     done
   fi
   hr_build

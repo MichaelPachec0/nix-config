@@ -365,6 +365,14 @@ PopupWindow {
                             }
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
+                                text: modelData.uv !== "" ? ("UV " + modelData.uv) : ""
+                                visible: modelData.uv !== ""
+                                color: pop.uvColor(modelData.uv)
+                                font.family: pop.theme.textFont
+                                font.pixelSize: 9
+                            }
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
                                 text: modelData.precip + "%"
                                 visible: modelData.precip !== "" && modelData.precip !== "0"
                                 color: pop.theme.textSecondary
