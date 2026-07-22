@@ -434,8 +434,6 @@ misc {
     disable_splash_rendering = true
     force_default_wallpaper = 0
     animate_manual_resizes = true
-    enable_swallow = true
-    swallow_regex = ^(kitty)$
 }
 
 ###################

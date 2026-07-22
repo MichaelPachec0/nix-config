@@ -478,6 +478,23 @@ in {
         systemd.enable = false;
         xwayland.enable = true;
 
+        # nwg-displays hand-off. The GUI writes ~/.config/hypr/monitors.lua as a
+        # series of hl.monitor() calls. home-manager appends `extraConfig`
+        # verbatim AFTER the generated body -- including the settings.monitor
+        # baseline below -- so sourcing monitors.lua here lets nwg-displays
+        # override the declarative layout for any connected output (later
+        # hl.monitor() wins per output). On a machine where the file does not
+        # exist yet, pcall falls back silently to the nix baseline. `require`
+        # (not dofile) mirrors the loader the hyprland module itself uses for
+        # extraLuaFiles; the package.loaded reset forces re-exec on `hyprctl
+        # reload` in case the Lua state is reused. When you settle on a layout,
+        # copy monitors.lua's values back into settings.monitor to re-baseline.
+        extraConfig = ''
+          package.path = package.path .. ";${config.xdg.configHome}/hypr/?.lua"
+          package.loaded["monitors"] = nil
+          pcall(require, "monitors")
+        '';
+
         settings = {
           # hl.config({...}) -- all "variable"-style settings nest under one key.
           config = {
@@ -530,8 +547,7 @@ in {
             misc = {
               disable_hyprland_logo = true;
               animate_manual_resizes = true;
-              enable_swallow = true;
-              swallow_regex = "^(kitty)$";
+              enable_swallow = false; # keep GUI apps in their own window; don't hide the launching terminal
             };
 
             render = {
