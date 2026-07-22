@@ -71,6 +71,14 @@ ShellRoot {
         id: sysStats
     }
 
+    // Shared POWER-Z KM003C reader (bar battery popup + hub battery card). One
+    // gated sysfs poll for all screens. Id `powerzStats` MUST differ from the
+    // `powerz` property it feeds on Taskbar/HubWindow -- an own-property shadows
+    // the outer id across the Variants delegate (see netSvc/routerSvc/submapSvc).
+    Lib.PowerZStats {
+        id: powerzStats
+    }
+
     // Mirror Hyprland's screencast state into the notification service so toasts
     // are suppressed while screen sharing -- the QS-native replacement for the
     // swaync screencast inhibitor (see quickshell-notifications-cutover). The
