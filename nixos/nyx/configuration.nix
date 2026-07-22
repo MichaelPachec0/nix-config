@@ -1313,6 +1313,11 @@ in {
       owner = "geoclue";
       mode = "0400";
     };
+    sops.secrets."pirate-weather-key" = {
+      owner = "michael";
+      mode = "0400";
+      path = "/run/secrets/pirateweather_api_key";
+    };
     environment.etc."geoclue/geoclue.conf".source =
       lib.mkForce config.sops.templates."geoclue.conf".path;
     services.avahi = {
