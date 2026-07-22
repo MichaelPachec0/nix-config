@@ -16,6 +16,7 @@ PopupWindow {
     required property QtObject theme
     required property var barWindow
     required property var anchorItem
+    property var powerz: null   // shared PowerZStats; popupOpen gates its poll
 
     readonly property var dev: UPower.displayDevice
     readonly property real pct: pop.dev ? pop.dev.percentage * 100 : 0
@@ -43,9 +44,13 @@ PopupWindow {
         pop.anchor.rect.width = 0;
         pop.anchor.rect.height = 0;
         pop.visible = true;
+        if (pop.powerz)
+            pop.powerz.popupOpen = true;
     }
     function hide() {
         pop.visible = false;
+        if (pop.powerz)
+            pop.powerz.popupOpen = false;
     }
 
     function stateLabel() {
@@ -292,6 +297,65 @@ PopupWindow {
                         font.family: pop.theme.textFont
                         font.pixelSize: 11
                         elide: Text.ElideRight
+                    }
+                }
+            }
+
+            // --- POWER-Z USB meter (KM003C) ------------------------------------
+            // Shown while the meter is present (active) or claimed by another app
+            // (busy); hidden entirely when unplugged (absent). Read-only sysfs via
+            // the shared PowerZStats provider -- never locks the device.
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                spacing: 6
+                visible: pop.powerz && pop.powerz.state !== "absent"
+
+                Text {
+                    text: "USB Meter"
+                    color: pop.theme.textSecondary
+                    font.family: pop.theme.textFont
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                }
+
+                // busy: another app owns interface 1.0 (hwmon detached).
+                Text {
+                    visible: pop.powerz && pop.powerz.state === "busy"
+                    Layout.fillWidth: true
+                    text: "In use by another app"
+                    color: pop.theme.textSecondary
+                    font.family: pop.theme.textFont
+                    font.pixelSize: 11
+                }
+
+                // active: live readings.
+                Repeater {
+                    model: (pop.powerz && pop.powerz.state === "active") ? [
+                        { k: "VBUS", v: pop.powerz.vbus.toFixed(2) + " V" },
+                        { k: "IBUS", v: pop.powerz.ibus.toFixed(2) + " A" },
+                        { k: "Power", v: pop.powerz.power.toFixed(1) + " W" },
+                        { k: "CC1", v: pop.powerz.cc1.toFixed(2) + " V" },
+                        { k: "CC2", v: pop.powerz.cc2.toFixed(2) + " V" }
+                    ] : []
+                    RowLayout {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        spacing: 10
+                        Text {
+                            text: modelData.k
+                            color: pop.theme.textSecondary
+                            font.family: pop.theme.textFont
+                            font.pixelSize: 11
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignRight
+                            text: modelData.v
+                            color: pop.theme.textPrimary
+                            font.family: pop.theme.textFont
+                            font.pixelSize: 11
+                        }
                     }
                 }
             }

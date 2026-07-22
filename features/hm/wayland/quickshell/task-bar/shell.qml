@@ -202,6 +202,7 @@ ShellRoot {
                 routerSvc: e5800Svc
                 net: netSvc
                 inhibit: inhibitSvc
+                powerz: powerzStats
             }
 
             // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a

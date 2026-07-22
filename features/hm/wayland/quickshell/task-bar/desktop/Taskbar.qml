@@ -23,6 +23,7 @@ PanelWindow {
     property var routerSvc: null
     property var net: null      // shared NetworkService (hoisted to ShellRoot)
     property var inhibit: null  // shared InhibitService (hoisted to ShellRoot)
+    property var powerz: null   // shared PowerZStats (hoisted to ShellRoot)
 
     anchors {
         top: true
@@ -443,6 +444,7 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
+                powerz: dock.powerz
             }
         }
 
