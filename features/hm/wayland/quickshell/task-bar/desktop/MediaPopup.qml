@@ -141,6 +141,7 @@ PopupWindow {
         property int glyphSize: 16
         property bool primary: false
         property bool enabledAction: true
+        property bool active: false // accent-tint the glyph (repeat/shuffle engaged)
         signal activated
 
         width: primary ? 46 : 34
@@ -163,7 +164,7 @@ PopupWindow {
         Text {
             anchors.centerIn: parent
             text: String.fromCodePoint(ctl.glyph)
-            color: ctl.primary ? pop.theme.textPrimary : pop.theme.textSecondary
+            color: ctl.active ? pop.theme.accent : (ctl.primary ? pop.theme.textPrimary : pop.theme.textSecondary)
             font.family: pop.theme.iconFont
             font.pixelSize: ctl.glyphSize
         }
@@ -673,6 +674,39 @@ PopupWindow {
                         font.pixelSize: 11
                         opacity: 0.8
                         elide: Text.ElideRight
+                    }
+                }
+
+                // Narrow controls column beside the metadata: shuffle over repeat.
+                // Replaces the old centered row (which wasted a full-width row on two
+                // buttons). Collapses to zero width when the player supports neither,
+                // so the title/artist reclaim the space.
+                ColumnLayout {
+                    Layout.alignment: Qt.AlignVCenter
+                    spacing: 2
+                    visible: pop.player ? (pop.player.shuffleSupported || pop.player.loopSupported) : false
+
+                    CtlButton {
+                        glyph: 0xF049D // shuffle
+                        glyphSize: 13
+                        visible: pop.player ? pop.player.shuffleSupported : false
+                        active: pop.player ? pop.player.shuffle : false
+                        onActivated: if (pop.player)
+                            pop.player.shuffle = !pop.player.shuffle
+                    }
+                    CtlButton {
+                        // repeat: off -> all (Playlist) -> one (Track) -> off; the
+                        // repeat-once glyph marks Track mode, else the plain repeat glyph.
+                        glyph: (pop.player && pop.player.loopState === MprisLoopState.Track) ? 0xF0458 : 0xF0456
+                        glyphSize: 13
+                        visible: pop.player ? pop.player.loopSupported : false
+                        active: pop.player ? pop.player.loopState !== MprisLoopState.None : false
+                        onActivated: {
+                            if (!pop.player)
+                                return;
+                            var s = pop.player.loopState;
+                            pop.player.loopState = s === MprisLoopState.None ? MprisLoopState.Playlist : (s === MprisLoopState.Playlist ? MprisLoopState.Track : MprisLoopState.None);
+                        }
                     }
                 }
             }
