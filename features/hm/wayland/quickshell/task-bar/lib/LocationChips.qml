@@ -2,15 +2,18 @@ import QtQuick
 import QtQuick.Layouts
 import "locations.js" as Locations
 
-// A row of selectable location chips (pill toggles) bound to a shared
+// A wrapping row of selectable location chips (pill toggles) bound to a shared
 // weatherState.selectedId. Reused by the bar weather popup and the hub
-// Calendar/Weather card so switching location in one place updates both.
-RowLayout {
+// Calendar/Weather card so switching location in one place updates both. A Flow
+// (not a RowLayout) so a growing city list wraps to another row instead of
+// overflowing the narrow (250px) popup.
+Flow {
     id: chips
 
     required property QtObject theme
     required property var weatherState
 
+    Layout.fillWidth: true
     spacing: 6
 
     Repeater {

@@ -498,10 +498,13 @@ PopupWindow {
                                 color: pop.theme.textSecondary
                                 font.family: pop.theme.iconFont
                                 font.pixelSize: 13
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: ex.remove(qrow.trackid)
+                                TapHandler {
+                                    // Own the tap on the (x): an exclusive grab on press
+                                    // pre-empts the row-level TapHandler's passive grab, so
+                                    // removing a track no longer also fires goTo. (Cursor is
+                                    // covered by the row's qHover PointingHandCursor.)
+                                    gesturePolicy: TapHandler.ExclusiveGrab
+                                    onTapped: ex.remove(qrow.trackid)
                                 }
                             }
                         }

@@ -30,7 +30,14 @@ Item {
     readonly property int curTemp: (root.wx && root.wx.temp) ? (parseInt(root.wx.temp) || 0) : 0
     readonly property var today: (root.wx && root.wx.forecast && root.wx.forecast.length > 0) ? root.wx.forecast[0] : null
     readonly property bool rainToday: (root.today && root.isRainy(root.today.icon)) || (root.wx ? root.isRainy(root.wx.icon) : false)
+    // Only the CURRENT location pulses the bar pill. A heat/rain (or any) alert
+    // for a manually-selected remote city (LA/SF/NYC/Durango) isn't where the
+    // user physically is, so it must never highlight the pill -- the popup still
+    // surfaces that city's own alerts when it's open.
+    readonly property bool isCurrentPlace: root.loc ? (root.loc.geo === true) : false
     readonly property string alert: {
+        if (!root.isCurrentPlace)
+            return "";
         if (root.curTemp >= 90)
             return "red";
         if (root.curTemp >= 85)
@@ -69,7 +76,14 @@ Item {
                     wind: d.wind ?? "",
                     windDir: d.windDir ?? "",
                     place: d.place ?? "",
-                    forecast: d.forecast ?? []
+                    forecast: d.forecast ?? [],
+                    hourly: d.hourly ?? [],
+                    uv: d.uv ?? "",
+                    windGust: d.windGust ?? "",
+                    precipType: d.precipType ?? "",
+                    sunrise: d.sunrise ?? "",
+                    sunset: d.sunset ?? "",
+                    alerts: d.alerts ?? []
                 };
             } catch (e) {
                 return null;
