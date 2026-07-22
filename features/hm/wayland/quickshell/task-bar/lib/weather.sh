@@ -208,11 +208,12 @@ hr_build() {
 emit_rich() {
   local ptype
   ptype=$(precip_type "${R_icon}")
-  printf '{"temp":"%s","icon":"%s","desc":"%s","source":"%s","feels":"%s","humidity":"%s","precip":"%s","precipType":"%s","uv":"%s","wind":"%s","windGust":"%s","windDir":"%s","sunrise":"%s","sunset":"%s","place":"%s","forecast":%s,"hourly":%s,"alerts":%s}\n' \
+  printf '{"temp":"%s","icon":"%s","desc":"%s","source":"%s","feels":"%s","humidity":"%s","precip":"%s","precipType":"%s","uv":"%s","wind":"%s","windGust":"%s","windDir":"%s","visibility":"%s","sunrise":"%s","sunset":"%s","place":"%s","forecast":%s,"hourly":%s,"alerts":%s}\n' \
     "$(json_escape "${R_temp}")" "${R_icon}" "$(json_escape "${R_desc}")" "$1" \
     "$(json_escape "${R_feels}")" "$(json_escape "${R_humidity}")" "$(json_escape "${R_precip}")" "${ptype}" \
     "$(json_escape "${R_uv:-}")" \
     "$(json_escape "${R_wind}")" "$(json_escape "${R_windGust:-}")" "$(json_escape "${R_windDir}")" \
+    "$(json_escape "${R_visibility:-}")" \
     "$(json_escape "${R_sunrise:-}")" "$(json_escape "${R_sunset:-}")" \
     "$(json_escape "${PLACE}")" "${R_fc:-[]}" "${R_hr:-[]}" "${R_alerts:-[]}"
 }
@@ -404,6 +405,7 @@ fetch_owm() {
   R_humidity=$(printf '%s' "$resp" | jq -r '.main.humidity // empty')
   R_wind=$(printf '%s' "$resp" | jq -r '.wind.speed // empty' | round)
   R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.wind.deg // empty')")
+  R_visibility=$(awk -v m="$(printf '%s' "$resp" | jq -r '.visibility // empty')" 'BEGIN{if(m=="")exit; printf "%d", m/1609+0.5}')
 
   # Forecast via the free 5-day/3-hour endpoint, aggregated to daily.
   fc_reset
@@ -456,6 +458,7 @@ fetch_pirate() {
   R_precip=$(printf '%s' "$resp" | jq -r 'if (.currently.precipProbability|type)=="number" then (.currently.precipProbability*100|round) else empty end')
   R_wind=$(printf '%s' "$resp" | jq -r '.currently.windSpeed // empty' | round)
   R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.currently.windBearing // empty')")
+  R_visibility=$(round_opt "$(printf '%s' "$resp" | jq -r '.currently.visibility // empty')")
 
   fc_reset
   days=$(printf '%s' "$resp" | jq -c '[.daily.data[] | {t:.time, hi:.temperatureHigh, lo:.temperatureLow, ic:.icon}] | .[0:7]' 2>/dev/null)
@@ -579,7 +582,7 @@ fetch_metno() {
 fetch_openmeteo() {
   local resp code isday night days i d hi lo fcode t hours hnow htemp hnight hic hpp hlabel huv
   resp=$(curl -sf --max-time 6 \
-    "https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,weather_code,is_day,wind_speed_10m,wind_direction_10m,uv_index,wind_gusts_10m&hourly=temperature_2m,weather_code,precipitation_probability,is_day,uv_index&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=7") || return 1
+    "https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,weather_code,is_day,wind_speed_10m,wind_direction_10m,uv_index,wind_gusts_10m,visibility&hourly=temperature_2m,weather_code,precipitation_probability,is_day,uv_index&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=7") || return 1
   code=$(printf '%s' "$resp" | jq -r '.current.weather_code // empty')
   [ -n "$code" ] || return 1
   isday=$(printf '%s' "$resp" | jq -r '.current.is_day // 1')
@@ -593,6 +596,7 @@ fetch_openmeteo() {
   R_precip=$(printf '%s' "$resp" | jq -r '.current.precipitation_probability // empty') # already percent
   R_wind=$(printf '%s' "$resp" | jq -r '.current.wind_speed_10m // empty' | round)
   R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.current.wind_direction_10m // empty')")
+  R_visibility=$(awk -v m="$(printf '%s' "$resp" | jq -r '.current.visibility // empty')" 'BEGIN{if(m=="")exit; printf "%d", m/1609+0.5}')
 
   fc_reset
   days=$(printf '%s' "$resp" | jq -c '[.daily.time, .daily.weather_code, .daily.temperature_2m_max, .daily.temperature_2m_min] | transpose | .[0:7]' 2>/dev/null)
@@ -660,6 +664,7 @@ fetch_wttr() {
   R_precip=$(printf '%s' "$resp" | jq -r --argjson s "$((10#$(date +%H) / 3))" '.weather[0].hourly[$s].chanceofrain // empty')
   R_wind=$(printf '%s' "$resp" | jq -r '.current_condition[0].windspeedMiles // empty')
   R_windDir=$(printf '%s' "$resp" | jq -r '.current_condition[0].winddir16Point // empty')
+  R_visibility=$(round_opt "$(printf '%s' "$resp" | jq -r '.current_condition[0].visibilityMiles // empty')")
 
   fc_reset
   days=$(printf '%s' "$resp" | jq -c '[.weather[] | {d:.date, hi:.maxtempF, lo:.mintempF, code:(.hourly[4].weatherCode // .hourly[0].weatherCode)}] | .[0:7]' 2>/dev/null)
@@ -746,5 +751,5 @@ if [ -n "$out" ]; then
 elif [ -f "$CACHE_FILE" ]; then
   cat "$CACHE_FILE" # stale, but better than nothing
 else
-  printf '{"temp":"--","icon":"cloudy","desc":"Offline","source":"none","feels":"","humidity":"","precip":"","precipType":"","uv":"","wind":"","windGust":"","windDir":"","sunrise":"","sunset":"","place":"","forecast":[],"hourly":[],"alerts":[]}\n'
+  printf '{"temp":"--","icon":"cloudy","desc":"Offline","source":"none","feels":"","humidity":"","precip":"","precipType":"","uv":"","wind":"","windGust":"","windDir":"","visibility":"","sunrise":"","sunset":"","place":"","forecast":[],"hourly":[],"alerts":[]}\n'
 fi
