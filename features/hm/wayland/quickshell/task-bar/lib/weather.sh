@@ -202,20 +202,40 @@ hr_build() {
   R_hr="[${R_hr_items[*]:-}]"
 }
 
+# Nowcast accumulator -> R_nowcast (a JSON object string). Reads the
+# R_rainSoon/R_nowcastEta/R_nowcastSrc scalars a provider set beforehand; each
+# provider runs in its own command-substitution subshell (set -u), so these
+# always start unset and are set fresh per fetch_* call.
+nowcast_build() {
+  local eta="null"
+  [ -n "${R_nowcastEta:-}" ] && eta="$R_nowcastEta"
+  local soon="false"; [ "${R_rainSoon:-0}" = "1" ] && soon="true"
+  local text=""
+  if [ "$soon" = "true" ]; then
+    if [ "${R_nowcastSrc:-}" = "minutely" ] && [ -n "${R_nowcastEta:-}" ]; then
+      text="Rain in ~${R_nowcastEta} min"
+    else
+      text="Rain likely within the hour"
+    fi
+  fi
+  R_nowcast="{\"rainSoon\":${soon},\"etaMin\":${eta},\"source\":\"${R_nowcastSrc:-none}\",\"text\":\"${text}\"}"
+}
+
 # Emit the unified record from R_* globals; arg1 = source. Optional fields
 # (uv/windGust/sunrise/sunset/alerts) default empty via :- so a provider that
 # can't supply one degrades cleanly; precipType is derived from the icon key.
 emit_rich() {
-  local ptype
+  local ptype nowcast_default='{"rainSoon":false,"etaMin":null,"source":"none","text":""}'
   ptype=$(precip_type "${R_icon}")
-  printf '{"temp":"%s","icon":"%s","desc":"%s","source":"%s","feels":"%s","humidity":"%s","precip":"%s","precipType":"%s","uv":"%s","wind":"%s","windGust":"%s","windDir":"%s","visibility":"%s","sunrise":"%s","sunset":"%s","place":"%s","forecast":%s,"hourly":%s,"alerts":%s}\n' \
+  printf '{"temp":"%s","icon":"%s","desc":"%s","source":"%s","feels":"%s","humidity":"%s","precip":"%s","precipType":"%s","uv":"%s","wind":"%s","windGust":"%s","windDir":"%s","visibility":"%s","sunrise":"%s","sunset":"%s","place":"%s","forecast":%s,"hourly":%s,"alerts":%s,"nowcast":%s}\n' \
     "$(json_escape "${R_temp}")" "${R_icon}" "$(json_escape "${R_desc}")" "$1" \
     "$(json_escape "${R_feels}")" "$(json_escape "${R_humidity}")" "$(json_escape "${R_precip}")" "${ptype}" \
     "$(json_escape "${R_uv:-}")" \
     "$(json_escape "${R_wind}")" "$(json_escape "${R_windGust:-}")" "$(json_escape "${R_windDir}")" \
     "$(json_escape "${R_visibility:-}")" \
     "$(json_escape "${R_sunrise:-}")" "$(json_escape "${R_sunset:-}")" \
-    "$(json_escape "${PLACE}")" "${R_fc:-[]}" "${R_hr:-[]}" "${R_alerts:-[]}"
+    "$(json_escape "${PLACE}")" "${R_fc:-[]}" "${R_hr:-[]}" "${R_alerts:-[]}" \
+    "${R_nowcast:-$nowcast_default}"
 }
 
 # API-key discovery: env var, explicit file, then sops-nix render paths
@@ -440,6 +460,17 @@ fetch_owm() {
   R_sunset=$(fmt_clock_dual "$(printf '%s' "$resp" | jq -r '.sys.sunset // empty')")
   # Free /weather has no UV index; left empty.
 
+  # Hourly fallback nowcast: rain likely if the next 1-2 hours cross the PoP bar.
+  # owm builds no R_hr (no hourly strip), so this degrades to rainSoon=false.
+  R_nowcastSrc=hourly
+  if [ -n "${R_hr:-}" ] && printf '%s' "${R_hr:-}" | jq -e '[.[0:2][] | (.precip|tonumber? // 0)] | max >= 50' >/dev/null 2>&1; then
+    R_rainSoon=1
+  else
+    R_rainSoon=0
+  fi
+  R_nowcastEta=""
+  nowcast_build
+
   emit_rich "owm"
 }
 
@@ -448,7 +479,7 @@ fetch_pirate() {
   key=$(pirate_key) || return 1
   [ -n "$key" ] || return 1
   resp=$(curl -sf --max-time 6 \
-    "https://api.pirateweather.net/forecast/${key}/${LAT},${LON}?units=us&exclude=minutely,alerts&icon=pirate") || return 1
+    "https://api.pirateweather.net/forecast/${key}/${LAT},${LON}?units=us&exclude=alerts&icon=pirate") || return 1
   [ "$(printf '%s' "$resp" | jq -r '.currently.icon // empty')" != "" ] || return 1
   R_temp=$(printf '%s' "$resp" | jq -r '.currently.temperature // empty' | round)
   R_icon=$(pirate_icon "$(printf '%s' "$resp" | jq -r '.currently.icon')")
@@ -490,6 +521,15 @@ fetch_pirate() {
     done
   fi
   hr_build
+
+  # Minutely nowcast: first minute in the next hour whose precip prob crosses 50%.
+  R_nowcastSrc=minutely
+  R_nowcastEta=$(printf '%s' "$resp" | jq -r '
+    ([.minutely.data // [] | to_entries[] | select(.value.precipProbability >= 0.5) | .key] | first) // empty')
+  if [ -n "$R_nowcastEta" ]; then R_rainSoon=1; else R_rainSoon=0; R_nowcastEta=""; fi
+  # Heavy precip now (in/hr) for the hydroplaning heuristic.
+  R_precipHeavy=$(printf '%s' "$resp" | jq -r 'if (.currently.precipIntensity // 0) >= 0.3 then "1" else "0" end')
+  nowcast_build
 
   R_uv=$(round_opt "$(printf '%s' "$resp" | jq -r '.currently.uvIndex // empty')")
   R_windGust=$(round_opt "$(printf '%s' "$resp" | jq -r '.currently.windGust // empty')")
@@ -576,6 +616,16 @@ fetch_metno() {
     R_sunset=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$sunresp" | jq -r '.properties.sunset.time // empty')")")
   fi
 
+  # Hourly fallback nowcast: rain likely if the next 1-2 hours cross the PoP bar.
+  R_nowcastSrc=hourly
+  if [ -n "${R_hr:-}" ] && printf '%s' "${R_hr:-}" | jq -e '[.[0:2][] | (.precip|tonumber? // 0)] | max >= 50' >/dev/null 2>&1; then
+    R_rainSoon=1
+  else
+    R_rainSoon=0
+  fi
+  R_nowcastEta=""
+  nowcast_build
+
   emit_rich "metno"
 }
 
@@ -645,6 +695,16 @@ fetch_openmeteo() {
   R_sunrise=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$resp" | jq -r '.daily.sunrise[0] // empty')")")
   R_sunset=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$resp" | jq -r '.daily.sunset[0] // empty')")")
 
+  # Hourly fallback nowcast: rain likely if the next 1-2 hours cross the PoP bar.
+  R_nowcastSrc=hourly
+  if [ -n "${R_hr:-}" ] && printf '%s' "${R_hr:-}" | jq -e '[.[0:2][] | (.precip|tonumber? // 0)] | max >= 50' >/dev/null 2>&1; then
+    R_rainSoon=1
+  else
+    R_rainSoon=0
+  fi
+  R_nowcastEta=""
+  nowcast_build
+
   emit_rich "openmeteo"
 }
 
@@ -686,6 +746,17 @@ fetch_wttr() {
   R_windGust=$(round_opt "$(printf '%s' "$resp" | jq -r --argjson s "$((10#$(date +%H) / 3))" '.weather[0].hourly[$s].WindGustMiles // empty')")
   R_sunrise=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$resp" | jq -r 'if .weather[0].astronomy[0].sunrise then (.weather[0].date) + " " + (.weather[0].astronomy[0].sunrise) else empty end')")")
   R_sunset=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$resp" | jq -r 'if .weather[0].astronomy[0].sunset then (.weather[0].date) + " " + (.weather[0].astronomy[0].sunset) else empty end')")")
+
+  # Hourly fallback nowcast: rain likely if the next 1-2 hours cross the PoP bar.
+  # wttr builds no R_hr (no hourly strip), so this degrades to rainSoon=false.
+  R_nowcastSrc=hourly
+  if [ -n "${R_hr:-}" ] && printf '%s' "${R_hr:-}" | jq -e '[.[0:2][] | (.precip|tonumber? // 0)] | max >= 50' >/dev/null 2>&1; then
+    R_rainSoon=1
+  else
+    R_rainSoon=0
+  fi
+  R_nowcastEta=""
+  nowcast_build
 
   emit_rich "wttr"
 }
@@ -751,5 +822,5 @@ if [ -n "$out" ]; then
 elif [ -f "$CACHE_FILE" ]; then
   cat "$CACHE_FILE" # stale, but better than nothing
 else
-  printf '{"temp":"--","icon":"cloudy","desc":"Offline","source":"none","feels":"","humidity":"","precip":"","precipType":"","uv":"","wind":"","windGust":"","windDir":"","visibility":"","sunrise":"","sunset":"","place":"","forecast":[],"hourly":[],"alerts":[]}\n'
+  printf '{"temp":"--","icon":"cloudy","desc":"Offline","source":"none","feels":"","humidity":"","precip":"","precipType":"","uv":"","wind":"","windGust":"","windDir":"","visibility":"","sunrise":"","sunset":"","place":"","forecast":[],"hourly":[],"alerts":[],"nowcast":{"rainSoon":false,"etaMin":null,"source":"none","text":""}}\n'
 fi
