@@ -5,11 +5,14 @@ import Quickshell.Io
 import "locations.js" as Locations
 import "weathercond.js" as WeatherCond
 
-// Background multi-city weather watcher. Tier-polls every city (the currently
-// selected city fast, the others slow), diffs each city's active condition keys
-// against the last scan, and notify-sends started/cleared transitions. One
-// instance, hoisted to ShellRoot (Task 10). Persists a per-city key set so a
-// restart does not re-notify conditions that were already active.
+// Background multi-city weather watcher. Tier-polls every city (the current
+// physical location -- geo -- fast, the others slow), diffs each city's active
+// condition keys against the last scan, and notify-sends started/cleared
+// transitions. One instance, hoisted to ShellRoot (Task 10), decoupled from the
+// per-monitor weatherState selection (minutely nowcast precision matters most
+// for where the user physically is, not whichever remote city a given monitor
+// happens to have selected). Persists a per-city key set so a restart does not
+// re-notify conditions that were already active.
 //
 // One CommandPoll per city (an Instantiator over Locations.list) reuses the
 // repo's Process+StdioCollector poll idiom: it collects stdout, keeps the
@@ -27,7 +30,6 @@ import "weathercond.js" as WeatherCond
 // writeAdapter() -- same discipline as InhibitService.
 Scope {
     id: watch
-    required property var weatherState
 
     readonly property string _home: Quickshell.env("HOME")
     readonly property string _script: watch._home + "/.config/quickshell/task-bar/lib/weather.sh"
@@ -87,13 +89,15 @@ Scope {
 
     // One tier-polling scanner per city. CommandPoll is a sibling in lib/, so it
     // resolves by name with no import. isCurrent picks the fast cadence + a short
-    // cache TTL for the selected city and the slow cadence for the rest.
+    // cache TTL for the geo (current physical location) entry and the slow
+    // cadence for the rest -- independent of any per-monitor weatherState
+    // selection.
     Instantiator {
         model: Locations.list
         delegate: CommandPoll {
             id: poll
             required property var modelData
-            readonly property bool isCurrent: watch.weatherState.selectedId === modelData.id
+            readonly property bool isCurrent: modelData.id === "geo"
             // Held off until the persisted state has loaded (or the fallback
             // Timer below fires), so the first tick's _apply never runs
             // against a not-yet-populated adapter.stateJson.

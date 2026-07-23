@@ -71,6 +71,12 @@ ShellRoot {
         id: sysStats
     }
 
+    // Background multi-city weather watcher: tier-polls every city (geo fast, the
+    // rest slow), diffs conditions, and notify-sends start/clear transitions. One
+    // instance for all screens; no per-monitor state needed.
+    Lib.WeatherWatch {
+    }
+
     // Shared POWER-Z KM003C reader (bar battery popup + hub battery card). One
     // gated sysfs poll for all screens. Id `powerzStats` MUST differ from the
     // `powerz` property it feeds on Taskbar/HubWindow -- an own-property shadows
