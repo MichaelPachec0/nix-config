@@ -32,3 +32,49 @@ function sortBySeverity(list) {
 function notifBody(cond) {
     return cond && cond.label ? cond.label : "Weather condition";
 }
+
+// Stable event key for a condition: nws alerts are keyed by their (unique)
+// title so two concurrent alerts are tracked separately; everything else is
+// keyed by kind (one active heat/rain/... per city at a time). WeatherWatch
+// persists a {key -> cond} map per city and diffs against it.
+// Guarded: a malformed/falsy cond (e.g. a bad weather.sh payload) has no kind
+// to key on, so it maps to "" rather than throwing inside _apply.
+function keyOf(cond) {
+    if (!cond || !cond.kind)
+        return "";
+    return cond.kind === "nws" ? ("nws:" + cond.label) : cond.kind;
+}
+
+// Diff a city's freshly-scanned conditions against its previously-persisted
+// {key -> cond} map. Returns:
+//   started: fresh conds whose key was NOT persisted (new -> notify start)
+//   cleared: persisted conds whose key is NOT in the fresh set (gone -> notify clear)
+//   next:    the fresh key -> cond map (what to persist for the next scan; the
+//            whole cond is stored so a later "cleared" still has its label)
+// A key present in both is unchanged (no notification), and next carries the
+// fresh cond so an updated label is kept.
+function diffConditions(prevLabels, freshConditions) {
+    var prev = prevLabels || {};
+    var fresh = freshConditions || [];
+    var next = {};
+    var started = [];
+    for (var i = 0; i < fresh.length; i++) {
+        var c = fresh[i];
+        var k = keyOf(c);
+        if (!k)
+            continue; // malformed/keyless entry -> skip, no phantom event
+        next[k] = c;
+        if (!prev[k])
+            started.push(c);
+    }
+    var cleared = [];
+    for (var pk in prev) {
+        if (Object.prototype.hasOwnProperty.call(prev, pk) && !next[pk])
+            cleared.push(prev[pk]);
+    }
+    return {
+        started: started,
+        cleared: cleared,
+        next: next
+    };
+}

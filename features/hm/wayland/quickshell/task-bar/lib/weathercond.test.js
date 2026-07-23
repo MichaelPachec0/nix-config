@@ -35,6 +35,76 @@ Deno.test("notifBody: uses label when present, falls back otherwise", () => {
   assertEquals(notifBody(null), "Weather condition");
 });
 
+Deno.test("keyOf: nws keyed by title, others keyed by kind", () => {
+  assertEquals(keyOf({ kind: "heat", sev: "warn", label: "Heat 96F" }), "heat");
+  assertEquals(keyOf({ kind: "nws", sev: "severe", label: "Heat Advisory" }), "nws:Heat Advisory");
+  assertEquals(keyOf({ kind: "nws", sev: "severe", label: "Flood Warning" }), "nws:Flood Warning");
+});
+
+Deno.test("diffConditions: a new condition is started, next holds it by key", () => {
+  const heat = { kind: "heat", sev: "warn", label: "Heat 96F" };
+  const d = diffConditions({}, [heat]);
+  assertEquals(d.started, [heat]);
+  assertEquals(d.cleared, []);
+  assertEquals(d.next, { heat: heat });
+});
+
+Deno.test("diffConditions: a persisted condition now absent is cleared", () => {
+  const heat = { kind: "heat", sev: "warn", label: "Heat 96F" };
+  const d = diffConditions({ heat: heat }, []);
+  assertEquals(d.started, []);
+  assertEquals(d.cleared, [heat]);
+  assertEquals(d.next, {});
+});
+
+Deno.test("diffConditions: an unchanged condition is neither started nor cleared", () => {
+  const heat = { kind: "heat", sev: "warn", label: "Heat 96F" };
+  const fresh = { kind: "heat", sev: "warn", label: "Heat 97F" }; // same key, updated label
+  const d = diffConditions({ heat: heat }, [fresh]);
+  assertEquals(d.started, []);
+  assertEquals(d.cleared, []);
+  assertEquals(d.next, { heat: fresh }); // next carries the fresh cond for its label
+});
+
+Deno.test("diffConditions: two distinct nws titles are tracked independently by key", () => {
+  const heatAlert = { kind: "nws", sev: "severe", label: "Heat Advisory" };
+  const floodAlert = { kind: "nws", sev: "severe", label: "Flood Warning" };
+  // Previously only the heat advisory was active; now the flood warning appears
+  // and the heat advisory persists.
+  const d = diffConditions({ "nws:Heat Advisory": heatAlert }, [heatAlert, floodAlert]);
+  assertEquals(d.started, [floodAlert]);
+  assertEquals(d.cleared, []);
+  assertEquals(d.next, {
+    "nws:Heat Advisory": heatAlert,
+    "nws:Flood Warning": floodAlert,
+  });
+});
+
+Deno.test("diffConditions: simultaneous start and clear across distinct nws keys", () => {
+  const heatAlert = { kind: "nws", sev: "severe", label: "Heat Advisory" };
+  const floodAlert = { kind: "nws", sev: "severe", label: "Flood Warning" };
+  const d = diffConditions({ "nws:Heat Advisory": heatAlert }, [floodAlert]);
+  assertEquals(d.started, [floodAlert]);
+  assertEquals(d.cleared, [heatAlert]);
+  assertEquals(d.next, { "nws:Flood Warning": floodAlert });
+});
+
+Deno.test("diffConditions: null/undefined inputs are safe", () => {
+  assertEquals(diffConditions(null, null), { started: [], cleared: [], next: {} });
+  assertEquals(diffConditions(undefined, undefined), { started: [], cleared: [], next: {} });
+});
+
+Deno.test("diffConditions: a malformed/keyless fresh entry does not throw and is not a phantom event", () => {
+  const heat = { kind: "heat", sev: "warn", label: "Heat 96F" };
+  // null and {} both key to "" via the keyOf guard and must be skipped, not
+  // recorded as started, and must not crash the scan (a malformed weather.sh
+  // payload element previously threw inside _apply).
+  const d = diffConditions({ heat: heat }, [heat, null, {}]);
+  assertEquals(d.started, []);
+  assertEquals(d.cleared, []);
+  assertEquals(d.next, { heat: heat });
+});
+
 Deno.test("color: rain/snow are fixed hex, others resolve via theme tokens", () => {
   const theme = {
     accentRed: "R",
