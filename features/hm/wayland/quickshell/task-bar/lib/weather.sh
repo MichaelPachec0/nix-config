@@ -41,6 +41,15 @@ read -ra PROVIDERS <<<"${WEATHER_PROVIDERS:-owm pirate openmeteo metno wttr}"
 
 readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/qs-weather"
 readonly CACHE_TTL=1800
+
+# --- condition thresholds (tunable) ------------------------------------------
+COND_HEAT_WARN=85; COND_HEAT_SEVERE=90
+COND_COLD_WARN=32; COND_COLD_SEVERE=20   # TUNABLE (user may adjust cold)
+COND_WIND_GUST=30
+COND_UV_WARN=6; COND_UV_SEVERE=8
+COND_FOG_VIS_MI=1
+COND_HYDRO_TEMP_MIN=40
+
 readonly GEO_CACHE="$CACHE_DIR/geo.json"
 readonly GEO_TTL=1800
 # where-am-i: the geoclue demo agent, already whitelisted in geoclue.conf. Found
@@ -109,6 +118,53 @@ precip_type() {
   sleet) echo "sleet" ;;
   *) echo "" ;;
   esac
+}
+
+# Build R_conditions (JSON array of {kind,sev,label}) from the parsed snapshot.
+# Integer comparisons guard against empty/non-numeric with 2>/dev/null.
+detect_conditions() {
+  local items=() t="${R_temp:-}"
+  if [ -n "$t" ] && [ "$t" -ge "$COND_HEAT_SEVERE" ] 2>/dev/null; then
+    items+=("{\"kind\":\"heat\",\"sev\":\"severe\",\"label\":\"Heat ${t}F\"}")
+  elif [ -n "$t" ] && [ "$t" -ge "$COND_HEAT_WARN" ] 2>/dev/null; then
+    items+=("{\"kind\":\"heat\",\"sev\":\"warn\",\"label\":\"Heat ${t}F\"}")
+  fi
+  if [ -n "$t" ] && [ "$t" -le "$COND_COLD_SEVERE" ] 2>/dev/null; then
+    items+=("{\"kind\":\"cold\",\"sev\":\"severe\",\"label\":\"Cold ${t}F\"}")
+  elif [ -n "$t" ] && [ "$t" -le "$COND_COLD_WARN" ] 2>/dev/null; then
+    items+=("{\"kind\":\"cold\",\"sev\":\"warn\",\"label\":\"Cold ${t}F\"}")
+  fi
+  if [ -n "${R_windGust:-}" ] && [ "$R_windGust" -ge "$COND_WIND_GUST" ] 2>/dev/null; then
+    items+=("{\"kind\":\"wind\",\"sev\":\"warn\",\"label\":\"Gusts ${R_windGust} mph\"}")
+  fi
+  if [ -n "${R_uv:-}" ] && [ "$R_uv" -ge "$COND_UV_SEVERE" ] 2>/dev/null; then
+    items+=("{\"kind\":\"uv\",\"sev\":\"severe\",\"label\":\"UV ${R_uv}\"}")
+  elif [ -n "${R_uv:-}" ] && [ "$R_uv" -ge "$COND_UV_WARN" ] 2>/dev/null; then
+    items+=("{\"kind\":\"uv\",\"sev\":\"warn\",\"label\":\"UV ${R_uv}\"}")
+  fi
+  if [ -n "${R_visibility:-}" ] && awk "BEGIN{exit !(${R_visibility} <= ${COND_FOG_VIS_MI})}"; then
+    items+=("{\"kind\":\"fog\",\"sev\":\"warn\",\"label\":\"Low visibility\"}")
+  elif [ "${R_icon:-}" = "fog" ]; then
+    items+=("{\"kind\":\"fog\",\"sev\":\"warn\",\"label\":\"Fog\"}")
+  fi
+  case "${R_icon:-}" in
+  snow | sleet) items+=("{\"kind\":\"snow\",\"sev\":\"warn\",\"label\":\"$(cap "${R_icon}")\"}") ;;
+  thunder) items+=("{\"kind\":\"thunder\",\"sev\":\"severe\",\"label\":\"Thunderstorm\"}") ;;
+  tornado) items+=("{\"kind\":\"thunder\",\"sev\":\"severe\",\"label\":\"Tornado\"}") ;;
+  esac
+  if [ "$(precip_type "${R_icon:-}")" = "rain" ] || [ "${R_rainSoon:-0}" = "1" ]; then
+    items+=("{\"kind\":\"rain\",\"sev\":\"info\",\"label\":\"Rain\"}")
+  fi
+  if [ "${R_precipHeavy:-0}" = "1" ] && [ -n "$t" ] && [ "$t" -gt "$COND_HYDRO_TEMP_MIN" ] 2>/dev/null; then
+    items+=("{\"kind\":\"hydroplaning\",\"sev\":\"warn\",\"label\":\"Hydroplaning risk (est.)\"}")
+  fi
+  # NWS passthrough: one condition per provider alert.
+  local nws
+  nws=$(printf '%s' "${R_alerts:-[]}" | jq -c '.[]? | {kind:"nws", sev:"severe", label:.title}' 2>/dev/null)
+  local line
+  while IFS= read -r line; do [ -n "$line" ] && items+=("$line"); done <<<"$nws"
+  local IFS=,
+  R_conditions="[${items[*]:-}]"
 }
 
 # --- timezone-aware clock formatting (for non-current cities) ------------------
@@ -227,7 +283,7 @@ nowcast_build() {
 emit_rich() {
   local ptype nowcast_default='{"rainSoon":false,"etaMin":null,"source":"none","text":""}'
   ptype=$(precip_type "${R_icon}")
-  printf '{"temp":"%s","icon":"%s","desc":"%s","source":"%s","feels":"%s","humidity":"%s","precip":"%s","precipType":"%s","uv":"%s","wind":"%s","windGust":"%s","windDir":"%s","visibility":"%s","sunrise":"%s","sunset":"%s","place":"%s","forecast":%s,"hourly":%s,"alerts":%s,"nowcast":%s}\n' \
+  printf '{"temp":"%s","icon":"%s","desc":"%s","source":"%s","feels":"%s","humidity":"%s","precip":"%s","precipType":"%s","uv":"%s","wind":"%s","windGust":"%s","windDir":"%s","visibility":"%s","sunrise":"%s","sunset":"%s","place":"%s","forecast":%s,"hourly":%s,"alerts":%s,"nowcast":%s,"conditions":%s}\n' \
     "$(json_escape "${R_temp}")" "${R_icon}" "$(json_escape "${R_desc}")" "$1" \
     "$(json_escape "${R_feels}")" "$(json_escape "${R_humidity}")" "$(json_escape "${R_precip}")" "${ptype}" \
     "$(json_escape "${R_uv:-}")" \
@@ -235,7 +291,7 @@ emit_rich() {
     "$(json_escape "${R_visibility:-}")" \
     "$(json_escape "${R_sunrise:-}")" "$(json_escape "${R_sunset:-}")" \
     "$(json_escape "${PLACE}")" "${R_fc:-[]}" "${R_hr:-[]}" "${R_alerts:-[]}" \
-    "${R_nowcast:-$nowcast_default}"
+    "${R_nowcast:-$nowcast_default}" "${R_conditions:-[]}"
 }
 
 # API-key discovery: env var, explicit file, then sops-nix render paths
@@ -471,6 +527,7 @@ fetch_owm() {
   R_nowcastEta=""
   nowcast_build
 
+  detect_conditions
   emit_rich "owm"
 }
 
@@ -539,6 +596,7 @@ fetch_pirate() {
   # it. `.alerts[]?` tolerates the field being absent when there are none.
   R_alerts=$(printf '%s' "$resp" | jq -c '[.alerts[]? | {title:(.title//""), severity:(.severity//""), expires:(.expires//0)}]' 2>/dev/null)
 
+  detect_conditions
   emit_rich "pirate"
 }
 
@@ -626,6 +684,7 @@ fetch_metno() {
   R_nowcastEta=""
   nowcast_build
 
+  detect_conditions
   emit_rich "metno"
 }
 
@@ -705,6 +764,7 @@ fetch_openmeteo() {
   R_nowcastEta=""
   nowcast_build
 
+  detect_conditions
   emit_rich "openmeteo"
 }
 
@@ -758,6 +818,7 @@ fetch_wttr() {
   R_nowcastEta=""
   nowcast_build
 
+  detect_conditions
   emit_rich "wttr"
 }
 
@@ -822,5 +883,5 @@ if [ -n "$out" ]; then
 elif [ -f "$CACHE_FILE" ]; then
   cat "$CACHE_FILE" # stale, but better than nothing
 else
-  printf '{"temp":"--","icon":"cloudy","desc":"Offline","source":"none","feels":"","humidity":"","precip":"","precipType":"","uv":"","wind":"","windGust":"","windDir":"","visibility":"","sunrise":"","sunset":"","place":"","forecast":[],"hourly":[],"alerts":[],"nowcast":{"rainSoon":false,"etaMin":null,"source":"none","text":""}}\n'
+  printf '{"temp":"--","icon":"cloudy","desc":"Offline","source":"none","feels":"","humidity":"","precip":"","precipType":"","uv":"","wind":"","windGust":"","windDir":"","visibility":"","sunrise":"","sunset":"","place":"","forecast":[],"hourly":[],"alerts":[],"nowcast":{"rainSoon":false,"etaMin":null,"source":"none","text":""},"conditions":[]}\n'
 fi
