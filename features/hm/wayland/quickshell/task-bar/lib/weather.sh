@@ -40,7 +40,8 @@ PLACE="" # resolved place name (reverse-geocoded for the geo entry)
 read -ra PROVIDERS <<<"${WEATHER_PROVIDERS:-owm pirate openmeteo metno wttr}"
 
 readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/qs-weather"
-readonly CACHE_TTL=1800
+readonly CACHE_TTL_DEFAULT=1800
+CACHE_TTL="${WEATHER_TTL:-$CACHE_TTL_DEFAULT}"
 
 # --- condition thresholds (tunable) ------------------------------------------
 COND_HEAT_WARN=85; COND_HEAT_SEVERE=90
