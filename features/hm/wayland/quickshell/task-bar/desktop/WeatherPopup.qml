@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import "../lib" as Lib
 import "../lib/weathericons.js" as WeatherIcons
+import "../lib/weathercond.js" as WeatherCond
 
 // Current-conditions + forecast popup shown on hover over the bar weather
 // widget. Read-only, so it's a plain non-grab tooltip anchored under the bar.
@@ -63,29 +64,20 @@ PopupWindow {
         return t === "snow" ? "Chance of snow" : (t === "sleet" ? "Chance of sleet" : "Chance of rain");
     }
 
-    // Unified flashing-alert list: the provider's NWS alerts plus a synthetic
-    // "High UV" alert when the index is High (>=6). The banner below flashes for
-    // attention and, when there's more than one, rotates through them one after
-    // the other (alertIdx, advanced by a timer).
+    // Unified flashing-alert list: driven straight from the shell's semantic
+    // conditions[] (which already folds in NWS alerts as kind "nws"). The
+    // banner below flashes for attention and, when there's more than one,
+    // rotates through them one after the other (alertIdx, advanced by a timer).
     readonly property var alertsAll: {
-        var out = [];
-        var a = pop.alerts || [];
-        for (var i = 0; i < a.length; i++)
-            out.push({
-                kind: "nws",
-                title: a[i].title || "Weather alert",
-                severity: a[i].severity || "",
-                expires: a[i].expires || 0
-            });
-        var n = parseInt(pop.uv);
-        if (!isNaN(n) && n >= 6)
-            out.push({
-                kind: "uv",
-                title: "UV index " + pop.uvBand(pop.uv).toLowerCase() + " (" + n + ")",
-                severity: n >= 8 ? "warning" : "advisory",
+        var src = (pop.wx && pop.wx.conditions) ? pop.wx.conditions : [];
+        return WeatherCond.sortBySeverity(src).map(function (c) {
+            return {
+                kind: c.kind,
+                title: c.label,
+                sev: c.sev,
                 expires: 0
-            });
-        return out;
+            };
+        });
     }
     property int alertIdx: 0
     onAlertsAllChanged: pop.alertIdx = 0 // restart the rotation when the set changes
@@ -162,10 +154,11 @@ PopupWindow {
             }
             spacing: 7
 
-            // Alert banner: the provider's NWS alerts + a synthetic High-UV alert
-            // (see alertsAll), shown one at a time. It flashes for attention and,
-            // when there's more than one, rotates through them one after the other.
-            // Read-only -- the popup is a non-grab tooltip, so there's no tap-to-open.
+            // Alert banner: driven by alertsAll (the shell's semantic conditions[],
+            // which already folds in NWS alerts), shown one at a time. It flashes
+            // for attention and, when there's more than one, rotates through them
+            // one after the other. Read-only -- the popup is a non-grab tooltip, so
+            // there's no tap-to-open.
             Rectangle {
                 id: alertBanner
                 readonly property var cur: pop.alertsAll.length > 0 ? pop.alertsAll[pop.alertIdx % pop.alertsAll.length] : null
@@ -174,16 +167,9 @@ PopupWindow {
                 implicitHeight: alertBody.implicitHeight + 10
                 radius: 6
 
-                // UV alerts get their own purple identity; NWS alerts are red for a
-                // warning/watch/emergency, yellow for an advisory.
-                readonly property color sev: {
-                    if (!cur)
-                        return pop.theme.accentYellow;
-                    if (cur.kind === "uv")
-                        return pop.theme.accentPurple;
-                    var s = (cur.severity || "").toLowerCase();
-                    return (s.indexOf("warn") >= 0 || s.indexOf("emerg") >= 0 || s.indexOf("watch") >= 0) ? pop.theme.accentRed : pop.theme.accentYellow;
-                }
+                // Color keyed off the condition's kind/sev, shared with the rest of
+                // the weather UI (WeatherCond.color).
+                readonly property color sev: cur ? WeatherCond.color(pop.theme, cur.kind, cur.sev) : pop.theme.accentYellow
 
                 // Flash: pulse the tint + border while an alert is up.
                 property real flash: 0
