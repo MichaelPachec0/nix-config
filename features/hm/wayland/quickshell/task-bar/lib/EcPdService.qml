@@ -17,11 +17,17 @@ Scope {
 
     readonly property bool present: root.data.present === true
     readonly property bool pd: root.data.pd === true
+    // watts (0xC9) is the charger/cable/port CAPABILITY, which can exceed what
+    // the laptop draws. The P14s Gen1 PD sink caps at 65 W, so the negotiated
+    // (and metered) power is min(capability, 65) -- e.g. a 100 W charger -> 65 W.
     readonly property int watts: root.data.watts || 0
-    readonly property bool cableLimited: root.data.cableLimited === true
-    // "PD, 100 W" / "PD, 60 W (3A cable)" / "non-PD 5 V" / "" (nothing attached)
+    readonly property int negotiated: Math.min(root.watts, 65)
+    // "PD, 65 W" / "non-PD 5 V" / "" (nothing attached). NOTE: the ec-pd JSON also
+    // carries cableLimited (0x2F bit6), but that byte proved an unreliable "3A
+    // cable" signal (set even on a full 100 W/3.25 A/5A-capable link), so it is
+    // deliberately NOT surfaced here.
     readonly property string label: !root.present ? ""
-        : (root.pd ? ("PD, " + root.watts + " W" + (root.cableLimited ? " (3A cable)" : ""))
+        : (root.pd ? ("PD, " + root.negotiated + " W")
                    : "non-PD 5 V")
 
     FileView {
