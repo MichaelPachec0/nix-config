@@ -13,6 +13,7 @@ Item {
     required property QtObject theme
     required property var barWindow // the bar PanelWindow, for popup anchoring
     property var powerz: null   // shared PowerZStats, forwarded to the popup
+    property var ecPd: null   // host-side charger/PD state, forwarded to the popup
 
     readonly property var dev: UPower.displayDevice
     readonly property real pct: root.dev ? root.dev.percentage * 100 : 0
@@ -104,5 +105,6 @@ Item {
         barWindow: root.barWindow
         anchorItem: root
         powerz: root.powerz
+        ecPd: root.ecPd
     }
 }

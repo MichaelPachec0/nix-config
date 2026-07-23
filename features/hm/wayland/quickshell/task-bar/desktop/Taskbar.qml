@@ -24,6 +24,7 @@ PanelWindow {
     property var net: null      // shared NetworkService (hoisted to ShellRoot)
     property var inhibit: null  // shared InhibitService (hoisted to ShellRoot)
     property var powerz: null   // shared PowerZStats (hoisted to ShellRoot)
+    property var ecPd: null      // host-side charger/PD state (EcPdService), for the battery popup
 
     anchors {
         top: true
@@ -445,6 +446,7 @@ PanelWindow {
                 theme: dock.theme
                 barWindow: dock
                 powerz: dock.powerz
+                ecPd: dock.ecPd
             }
         }
 

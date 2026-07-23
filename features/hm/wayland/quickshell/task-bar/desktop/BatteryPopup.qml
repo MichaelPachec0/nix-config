@@ -17,6 +17,7 @@ PopupWindow {
     required property var barWindow
     required property var anchorItem
     property var powerz: null   // shared PowerZStats; popupOpen gates its poll
+    property var ecPd: null   // host-side charger/PD state (EcPdService)
 
     readonly property var dev: UPower.displayDevice
     readonly property real pct: pop.dev ? pop.dev.percentage * 100 : 0
@@ -132,6 +133,11 @@ PopupWindow {
             k: "Power source",
             v: pop.onAC ? "AC" : "Battery"
         });
+        if (pop.ecPd && pop.ecPd.present)
+            r.push({
+                k: "Charger",
+                v: pop.ecPd.label
+            });
         if (i["state"])
             r.push({
                 k: "State",

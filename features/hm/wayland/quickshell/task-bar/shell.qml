@@ -85,6 +85,13 @@ ShellRoot {
         id: powerzStats
     }
 
+    // Host-side USB-C charger/PD state (EC RAM via the ec-pd-poll service). Read
+    // by the battery popup. Id `ecPdSvc` differs from the `ecPd` property it feeds
+    // (Variants delegate shadowing), matching powerzStats/netSvc/e5800Svc.
+    Lib.EcPdService {
+        id: ecPdSvc
+    }
+
     // Mirror Hyprland's screencast state into the notification service so toasts
     // are suppressed while screen sharing -- the QS-native replacement for the
     // swaync screencast inhibitor (see quickshell-notifications-cutover). The
@@ -209,6 +216,7 @@ ShellRoot {
                 net: netSvc
                 inhibit: inhibitSvc
                 powerz: powerzStats
+                ecPd: ecPdSvc
             }
 
             // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a
