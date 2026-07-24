@@ -576,9 +576,13 @@ in {
               # claims FK13-24 in the layout slot and would clobber it.
               kb_layout = "us";
               kb_options = "cadet:parens";
-              # ~200ms delay (mac InitialKeyRepeat 15), rate 45Hz.
-              repeat_rate = 45;
-              repeat_delay = 200;
+              # repeat_delay 300 + rate 40: the longer delay stops a brief
+              # key-linger from starting Wayland client-side key-repeat, which
+              # under load overshoots a late-delivered release and spews
+              # duplicate chars (the "stuck key" bug). Not a kanata/hardware
+              # issue -- the release is on time; the client repeat is late to stop.
+              repeat_rate = 40;
+              repeat_delay = 300;
               # accel_profile is global in Hyprland; "adaptive" is the libinput
               # default, so the mouse is unaffected -- this mirrors sway.
               accel_profile = "adaptive";
