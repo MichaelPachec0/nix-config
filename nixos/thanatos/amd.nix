@@ -148,6 +148,35 @@
   # { / } double-tap hard to trigger. One knob for both cadet keys on both
   # keyboards (the kanata `tap-dance` timeout in services.kanata below).
   cadetDoubleTapMs = 150;
+
+  # Realtime scheduling for the kanata input daemons. kanata grabs the keyboard
+  # (EVIOCGRAB) and must re-emit every event immediately; its tap-hold/tap-dance
+  # decisions are time-based, so being descheduled skews those timers and lets
+  # buffered kernel auto-repeats flush in a burst -- surfacing as stuck keys and
+  # duplicated characters, WORSE UNDER LOAD. At the module default (SCHED_OTHER,
+  # nice 0) that is exactly what happens: /proc/<pid>/schedstat measured ~2x more
+  # runqueue-wait than on-CPU time on this (35W-capped, frequently loaded) APU.
+  # SCHED_FIFO makes kanata preempt every normal task. Any RT priority beats
+  # SCHED_OTHER; 50 is a polite value -- kanata blocks on read between events and
+  # uses negligible CPU, so it cannot starve audio/pipewire. The stock module
+  # sets RestrictRealtime=true (and filters @resources), which only blocks the
+  # *process* from changing its own policy; systemd still applies CPUScheduling*
+  # from PID1 before those take effect. Flip RestrictRealtime off anyway so the
+  # combination is unambiguous across systemd versions.
+  kanataRtSched = {
+    CPUSchedulingPolicy = "fifo";
+    CPUSchedulingPriority = 50;
+    RestrictRealtime = lib.mkForce false;
+    # The LIBINPUT_IGNORE_DEVICE udev rule below makes Hyprland ignore the raw
+    # internal keyboard entirely, so kanata's uinput device is the ONLY keyboard
+    # the session sees. That means if kanata ever exits and stays dead, the
+    # laptop keyboard is invisible in the Wayland session (a TTY still works --
+    # the kernel VT bypasses libinput). The stock module sets Restart=no, so a
+    # crash would orphan the keyboard; force Restart=always so kanata always
+    # comes back and keeps owning the device. A clean stop during nixos-rebuild
+    # activation is not an unexpected exit, so this does not fight the switch.
+    Restart = lib.mkForce "always";
+  };
 in {
   imports = [
     ./tlp.nix
@@ -353,7 +382,102 @@ in {
           )
         '';
       };
+      # Failsafe passthrough keyboard. Empty defsrc/deflayer + process-unmapped-
+      # keys => every key passes through 1:1 (a plain US keyboard, NO remaps),
+      # so this config can never itself fail to load (verified: kanata --check).
+      # It grabs the SAME internal keyboard as `laptop`, so it must NOT run
+      # concurrently -- the systemd override below sets wantedBy=[] so it never
+      # autostarts, and kanata-laptop's OnFailure= starts it only when the main
+      # daemon gives up (persistent crash / invalid config). Conflicts= on the
+      # laptop unit stops it again when a fixed main daemon comes back. This is
+      # the recovery keyboard when the LIBINPUT_IGNORE rule below would otherwise
+      # leave you with a dead keyboard inside the Wayland session.
+      keyboards.fallback = {
+        devices = ["/dev/input/by-path/platform-i8042-serio-0-event-kbd"];
+        extraDefCfg = "process-unmapped-keys yes";
+        config = ''
+          (defsrc)
+          (deflayer base)
+        '';
+      };
     };
+    # Give the kanata daemons realtime scheduling + Restart=always (see
+    # kanataRtSched above). The upstream module hardcodes the units, so patch
+    # serviceConfig here. Gated on services.kanata.enable so that disabling
+    # kanata does not synthesize half-defined units with no ExecStart.
+    systemd.services."kanata-laptop" = lib.mkIf config.services.kanata.enable {
+      serviceConfig = kanataRtSched;
+      # When the main daemon gives up (start-limit exhausted after a persistent
+      # crash / invalid config), hand the keyboard to the passthrough failsafe.
+      # OnFailure only fires on the "failed" state, which Restart=always reaches
+      # solely via the start-limit -- so transient crashes still self-heal and
+      # only a real, repeating failure triggers the fallback.
+      unitConfig.OnFailure = "kanata-fallback.service";
+      # Reclaim the device when a fixed main daemon returns: starting this stops
+      # the fallback (Conflicts), and After= makes us wait for its grab to be
+      # released before we grab.
+      conflicts = ["kanata-fallback.service"];
+      after = ["kanata-fallback.service"];
+    };
+    systemd.services."kanata-razer" =
+      lib.mkIf config.services.kanata.enable {serviceConfig = kanataRtSched;};
+    # The failsafe unit exists (generated from keyboards.fallback) but must
+    # never autostart -- it grabs the same device as kanata-laptop. Only
+    # kanata-laptop's OnFailure= starts it.
+    systemd.services."kanata-fallback" = lib.mkIf config.services.kanata.enable {
+      wantedBy = lib.mkForce [];
+      serviceConfig = kanataRtSched;
+    };
+
+    # Hide the raw internal (i8042) keyboard from libinput/Hyprland. kanata
+    # grabs it via EVIOCGRAB and re-emits through its own uinput device, but the
+    # compositor still enumerates the physical device and keeps a PER-DEVICE xkb
+    # lock state for it. During the brief ungrab window on every kanata restart
+    # (each nixos-rebuild activation stops/starts the unit), Hyprland reads the
+    # raw keyboard and can latch Caps Lock on that device; kanata then re-grabs,
+    # freezing a stale caps=on state that desyncs from the hardware LED and gets
+    # re-applied to every window on focus change -- the reproducible "switching
+    # window focus turns on Caps Lock" bug. Ignoring the device makes kanata's
+    # uinput output the only keyboard the session tracks, so there is nothing to
+    # latch or leak. kanata reads evdev directly and is unaffected; the kernel VT
+    # also bypasses libinput, so a text-console keyboard still works if kanata is
+    # down. Tradeoff: the physical Caps Lock LED no longer lights (Hyprland only
+    # drives LEDs on devices it manages); the Esc->caps remap itself still works.
+    #
+    # CRITICAL: gate this on services.kanata.enable. Without kanata delivering
+    # remapped events, an ignored internal keyboard is dead INSIDE the Wayland
+    # session; tying the rule to kanata being enabled means `enable = false`
+    # automatically restores the plain keyboard. (An external USB keyboard has a
+    # different ID_PATH, is never ignored, and is always a recovery path.)
+    services.udev.extraRules = lib.mkIf config.services.kanata.enable ''
+      ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_PATH}=="platform-i8042-serio-0", ENV{ID_INPUT_KEYBOARD}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+    '';
+
+    # Build-time validation of every kanata config. runCommand runs `kanata
+    # --check` on the same body the module will run (wrapped in a minimal defcfg;
+    # the module-generated linux-dev lines are boilerplate and are not needed to
+    # validate the layers/aliases, which is where hand-edited errors live). A
+    # parse/validation error fails the derivation and therefore the whole
+    # `nixos-rebuild`, so a broken config never deploys and the running (good)
+    # generation stays active. This is the UPSTREAM guard; the passthrough
+    # failsafe (keyboards.fallback + OnFailure) is the RUNTIME net for whatever
+    # still slips through -- e.g. a config that validates but crashes at runtime.
+    # Reads the config strings straight from the evaluated options, so it covers
+    # laptop, razer, fallback, and any keyboard added later.
+    system.extraDependencies =
+      lib.optionals config.services.kanata.enable
+      (lib.mapAttrsToList
+        (name: kb:
+          pkgs.runCommand "kanata-check-${name}" {
+            nativeBuildInputs = [config.services.kanata.package];
+          } ''
+            kanata --check --cfg ${pkgs.writeText "kanata-${name}-check.kdb" ''
+              (defcfg ${kb.extraDefCfg})
+              ${kb.config}
+            ''} && touch "$out"
+          '')
+        config.services.kanata.keyboards);
+
     services.fwupd.extraRemotes = ["lvfs-testing"];
     services.fprintd.enable = true;
     services.thinkfan = {
