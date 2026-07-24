@@ -148,6 +148,12 @@ QtObject {
     function addItem(n) {
         var l = svc.items.slice();
         l.unshift(n);
+        // Cap the persistent list so a chatty or never-dismissed app can't grow it
+        // (and the decoded images its Notifications retain) without bound; keep the
+        // newest 100. Dropped items aren't dismiss()ed -- just released from our
+        // array. (Toasts cap at 8 in pushToast.)
+        if (l.length > 100)
+            l = l.slice(0, 100);
         svc.items = l;
     }
     function removeItem(n) {

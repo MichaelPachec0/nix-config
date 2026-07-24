@@ -11,6 +11,7 @@ Rectangle {
     id: root
 
     required property QtObject theme
+    property var powerz: null   // shared PowerZStats (from HubWindow)
 
     readonly property var dev: UPower.displayDevice
     readonly property bool present: root.dev !== null && root.dev.isLaptopBattery
@@ -240,6 +241,82 @@ Rectangle {
                     height: parent.height
                     radius: 2
                     color: Qt.rgba(root.theme.accentSlider.r, root.theme.accentSlider.g, root.theme.accentSlider.b, 0.6)
+                }
+            }
+        }
+
+        // --- POWER-Z USB meter (KM003C) ------------------------------------
+        // Same shared PowerZStats provider as the bar popup. Shown when the meter
+        // is present (active) or claimed by another app (busy); its height feeds
+        // col.implicitHeight so the card's existing collapse animation handles
+        // appear/disappear. Only rendered on laptops (the card itself is).
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: 2
+            spacing: 3
+            visible: root.powerz && root.powerz.state !== "absent"
+
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    text: "USB Meter"
+                    color: root.theme.textSecondary
+                    font.family: root.theme.textFont
+                    font.pixelSize: 10
+                    font.weight: Font.DemiBold
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    visible: root.powerz && root.powerz.state === "active"
+                    text: root.powerz ? (root.powerz.power.toFixed(1) + " W") : ""
+                    color: root.theme.textSecondary
+                    font.family: root.theme.textFont
+                    font.pixelSize: 10
+                    font.weight: Font.DemiBold
+                }
+            }
+
+            // busy: another app owns interface 1.0.
+            Text {
+                visible: root.powerz && root.powerz.state === "busy"
+                Layout.fillWidth: true
+                text: "In use by another app"
+                color: root.theme.textSecondary
+                font.family: root.theme.textFont
+                font.pixelSize: 10
+            }
+
+            // active: VBUS/IBUS/CC1/CC2 in a two-column grid (Power is in the header).
+            GridLayout {
+                Layout.fillWidth: true
+                visible: root.powerz && root.powerz.state === "active"
+                columns: 2
+                columnSpacing: 14
+                rowSpacing: 2
+                Repeater {
+                    model: (root.powerz && root.powerz.state === "active") ? [
+                        { k: "VBUS", v: root.powerz.vbus.toFixed(2) + " V" },
+                        { k: "IBUS", v: root.powerz.ibus.toFixed(2) + " A" },
+                        { k: "CC1", v: root.powerz.cc1.toFixed(2) + " V" },
+                        { k: "CC2", v: root.powerz.cc2.toFixed(2) + " V" }
+                    ] : []
+                    RowLayout {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Text {
+                            text: modelData.k
+                            color: root.theme.textSecondary
+                            font.family: root.theme.textFont
+                            font.pixelSize: 10
+                        }
+                        Item { Layout.fillWidth: true }
+                        Text {
+                            text: modelData.v
+                            color: root.theme.textPrimary
+                            font.family: root.theme.textFont
+                            font.pixelSize: 10
+                        }
+                    }
                 }
             }
         }

@@ -21,6 +21,18 @@ ColumnLayout {
     // GUARDED: if the SMU active-core count does not match the topology core count
     // (an APU whose numbering we cannot infer), fall back to identity -- the
     // previous behaviour of indexing the SMU arrays by core_id.
+    // Number of active (numeric) SMU per-core entries. Kept as its own property
+    // so the map below depends on a STABLE scalar, not perCoreFreq's identity
+    // (which changes every 2s poll): this cheap count reruns each tick, but the
+    // map's rebuild+sort only reruns when topology or the count actually changes.
+    readonly property int _smuCoreCount: {
+        var pf = (root.smu && root.smu.perCoreFreq) ? root.smu.perCoreFreq : [];
+        var n = 0;
+        for (var i = 0; i < pf.length; i++)
+            if (typeof pf[i] === "number")
+                n++;
+        return n;
+    }
     readonly property var _coreIdToSmu: {
         var ids = [];
         var topo = root.stats.cpuTopology || [];
@@ -28,12 +40,7 @@ ColumnLayout {
             for (var k = 0; k < topo[c].cores.length; k++)
                 ids.push(topo[c].cores[k].coreId);
         ids.sort(function (a, b) { return a - b; });
-        var pf = (root.smu && root.smu.perCoreFreq) ? root.smu.perCoreFreq : [];
-        var smuN = 0;
-        for (var i = 0; i < pf.length; i++)
-            if (typeof pf[i] === "number")
-                smuN++;
-        var dense = ids.length > 0 && smuN === ids.length; // else: identity fallback
+        var dense = ids.length > 0 && root._smuCoreCount === ids.length; // else: identity fallback
         var map = {};
         for (var r = 0; r < ids.length; r++)
             map[ids[r]] = dense ? r : ids[r];

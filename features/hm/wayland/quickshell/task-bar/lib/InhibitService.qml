@@ -139,9 +139,12 @@ Scope {
     }
 
     // --- 1s tick: advance now + auto-release elapsed timers ---
+    // Only runs while a TIMED inhibitor is armed: that's the only time `now`
+    // drives a visible countdown or an expiry needs auto-disarming. Off/
+    // indefinite states need no tick, so idle machines don't wake every second.
     Timer {
         interval: 1000
-        running: true
+        running: (svc.idleOn && svc.idleExpiry > 0) || (svc.sleepOn && svc.sleepExpiry > 0)
         repeat: true
         triggeredOnStart: true
         onTriggered: {

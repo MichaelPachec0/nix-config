@@ -478,6 +478,23 @@ in {
         systemd.enable = false;
         xwayland.enable = true;
 
+        # nwg-displays hand-off. The GUI writes ~/.config/hypr/monitors.lua as a
+        # series of hl.monitor() calls. home-manager appends `extraConfig`
+        # verbatim AFTER the generated body -- including the settings.monitor
+        # baseline below -- so sourcing monitors.lua here lets nwg-displays
+        # override the declarative layout for any connected output (later
+        # hl.monitor() wins per output). On a machine where the file does not
+        # exist yet, pcall falls back silently to the nix baseline. `require`
+        # (not dofile) mirrors the loader the hyprland module itself uses for
+        # extraLuaFiles; the package.loaded reset forces re-exec on `hyprctl
+        # reload` in case the Lua state is reused. When you settle on a layout,
+        # copy monitors.lua's values back into settings.monitor to re-baseline.
+        extraConfig = ''
+          package.path = package.path .. ";${config.xdg.configHome}/hypr/?.lua"
+          package.loaded["monitors"] = nil
+          pcall(require, "monitors")
+        '';
+
         settings = {
           # hl.config({...}) -- all "variable"-style settings nest under one key.
           config = {
@@ -530,8 +547,7 @@ in {
             misc = {
               disable_hyprland_logo = true;
               animate_manual_resizes = true;
-              enable_swallow = true;
-              swallow_regex = "^(kitty)$";
+              enable_swallow = false; # keep GUI apps in their own window; don't hide the launching terminal
             };
 
             render = {
@@ -560,9 +576,13 @@ in {
               # claims FK13-24 in the layout slot and would clobber it.
               kb_layout = "us";
               kb_options = "cadet:parens";
-              # ~200ms delay (mac InitialKeyRepeat 15), rate 45Hz.
-              repeat_rate = 45;
-              repeat_delay = 200;
+              # repeat_delay 300 + rate 40: the longer delay stops a brief
+              # key-linger from starting Wayland client-side key-repeat, which
+              # under load overshoots a late-delivered release and spews
+              # duplicate chars (the "stuck key" bug). Not a kanata/hardware
+              # issue -- the release is on time; the client repeat is late to stop.
+              repeat_rate = 40;
+              repeat_delay = 300;
               # accel_profile is global in Hyprland; "adaptive" is the libinput
               # default, so the mouse is unaffected -- this mirrors sway.
               accel_profile = "adaptive";

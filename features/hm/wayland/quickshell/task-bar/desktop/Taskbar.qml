@@ -23,6 +23,8 @@ PanelWindow {
     property var routerSvc: null
     property var net: null      // shared NetworkService (hoisted to ShellRoot)
     property var inhibit: null  // shared InhibitService (hoisted to ShellRoot)
+    property var powerz: null   // shared PowerZStats (hoisted to ShellRoot)
+    property var ecPd: null      // host-side charger/PD state (EcPdService), for the battery popup
 
     anchors {
         top: true
@@ -66,35 +68,11 @@ PanelWindow {
         return false;
     }
 
-    // hy3 group/tab transitions leave Quickshell's *incremental* toplevel model
-    // stale for the now-hidden windows: their lastIpcObject loses `class` (and
-    // sometimes `workspace`), so iconFor() gets "" and the window renders as an
-    // invisible slot -- a tab group of N looks like 1 icon. hy3 does NOT use
-    // Hyprland's native group events; grouping/tab-switching surfaces only as
-    // activewindowv2 (a focus/visibility flip -- confirmed against socket2). A
-    // full refreshToplevels() re-syncs every field, so fire it on the events
-    // that change the window list or its visibility, debounced so a burst
-    // collapses into one `hyprctl clients`. windowtitle* is excluded on purpose
-    // -- terminals emit it constantly.
-    Connections {
-        target: Hyprland
-        function onRawEvent(event) {
-            switch (event.name) {
-            case "openwindow":
-            case "closewindow":
-            case "movewindowv2":
-            case "activewindowv2":
-                toplevelRefresh.restart();
-                break;
-            }
-        }
-    }
-    Timer {
-        id: toplevelRefresh
-        interval: 150
-        repeat: false
-        onTriggered: Hyprland.refreshToplevels()
-    }
+    // The toplevel-model refresher (a full refreshToplevels() on the window-list
+    // events, needed because hy3 group/tab transitions leave the incremental model
+    // stale) lives once at ShellRoot in shell.qml -- refreshToplevels() re-syncs the
+    // shared Hyprland.toplevels this bar reads, so a per-monitor copy here only
+    // multiplied the `hyprctl clients` spawns by the monitor count.
 
     // Map a Hyprland window class to a themed icon path. A few classes don't
     // match a desktop entry / icon name (firefox-dev, the hy3proj terminal);
@@ -467,6 +445,8 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
+                powerz: dock.powerz
+                ecPd: dock.ecPd
             }
         }
 

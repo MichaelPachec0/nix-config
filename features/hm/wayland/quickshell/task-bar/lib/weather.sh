@@ -40,7 +40,17 @@ PLACE="" # resolved place name (reverse-geocoded for the geo entry)
 read -ra PROVIDERS <<<"${WEATHER_PROVIDERS:-owm pirate openmeteo metno wttr}"
 
 readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/qs-weather"
-readonly CACHE_TTL=1800
+readonly CACHE_TTL_DEFAULT=1800
+CACHE_TTL="${WEATHER_TTL:-$CACHE_TTL_DEFAULT}"
+
+# --- condition thresholds (tunable) ------------------------------------------
+COND_HEAT_WARN=85; COND_HEAT_SEVERE=90
+COND_COLD_WARN=32; COND_COLD_SEVERE=20   # TUNABLE (user may adjust cold)
+COND_WIND_GUST=30
+COND_UV_WARN=6; COND_UV_SEVERE=8
+COND_FOG_VIS_MI=1
+COND_HYDRO_TEMP_MIN=40
+
 readonly GEO_CACHE="$CACHE_DIR/geo.json"
 readonly GEO_TTL=1800
 # where-am-i: the geoclue demo agent, already whitelisted in geoclue.conf. Found
@@ -49,9 +59,25 @@ readonly GEO_TTL=1800
 WAI="$(ls -1 /nix/store/*-geoclue-*/libexec/geoclue-2.0/demos/where-am-i 2>/dev/null | head -1)"
 mkdir -p "$CACHE_DIR" 2>/dev/null
 
+# The fmt_*_tz helpers resolve a city's IANA zone via `TZ=<zone> date`. glibc's
+# compiled-in zoneinfo path (/usr/share/zoneinfo) does not exist on NixOS, so an
+# unset TZDIR makes a zone silently fall back to UTC (wrong dual times). Point it
+# at the stable /etc/zoneinfo symlink, or the tzdata store, when unset.
+if [ -z "${TZDIR:-}" ]; then
+  if [ -d /etc/zoneinfo ]; then
+    export TZDIR=/etc/zoneinfo
+  else
+    _zd="$(ls -d /nix/store/*-tzdata-*/share/zoneinfo 2>/dev/null | head -1)"
+    [ -n "$_zd" ] && export TZDIR="$_zd"
+  fi
+fi
+
 # --- small helpers ------------------------------------------------------------
 
 round() { awk '{printf "%d", ($1<0?$1-0.5:$1+0.5)}'; }
+# round() emits "0" for empty input; round_opt keeps empty empty (for optional
+# fields like gust/UV that a provider may not supply -> the popup then hides them).
+round_opt() { [ -n "$1" ] && printf '%s' "$1" | round; }
 c_to_f() { awk -v c="$1" 'BEGIN{if(c==""){exit}; f=c*9/5+32; printf "%d",(f<0?f-0.5:f+0.5)}'; }
 ms_to_mph() { awk -v v="$1" 'BEGIN{if(v==""){exit}; printf "%d", v*2.2369362920544+0.5}'; }
 
@@ -73,6 +99,119 @@ is_night() {
 json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 cap() { printf '%s' "$1" | sed 's/^\(.\)/\U\1/'; }
 weekday() { date -d "$1" +%a 2>/dev/null || echo "$1"; } # YYYY-MM-DD -> Mon
+
+# A time -> "6:12 AM" (local). Accepts epoch seconds (all-digits), an ISO
+# timestamp, or an already-textual clock ("06:12 AM"); empty in -> empty out.
+fmt_clock() {
+  [ -n "$1" ] || return 0
+  case "$1" in
+  *[!0-9]*) date -d "$1" +'%-I:%M %p' 2>/dev/null ;;  # ISO / textual
+  *) date -d "@$1" +'%-I:%M %p' 2>/dev/null ;;        # epoch seconds
+  esac
+}
+
+# Canonical icon key -> precipitation type shown beside the chance. Empty for
+# non-precip conditions so the popup shows just the percentage (or nothing).
+precip_type() {
+  case "$1" in
+  rain | showers | drizzle | thunder) echo "rain" ;;
+  snow) echo "snow" ;;
+  sleet) echo "sleet" ;;
+  *) echo "" ;;
+  esac
+}
+
+# Build R_conditions (JSON array of {kind,sev,label}) from the parsed snapshot.
+# Integer comparisons guard against empty/non-numeric with 2>/dev/null.
+detect_conditions() {
+  local items=() t="${R_temp:-}"
+  if [ -n "$t" ] && [ "$t" -ge "$COND_HEAT_SEVERE" ] 2>/dev/null; then
+    items+=("{\"kind\":\"heat\",\"sev\":\"severe\",\"label\":\"Heat ${t}F\"}")
+  elif [ -n "$t" ] && [ "$t" -ge "$COND_HEAT_WARN" ] 2>/dev/null; then
+    items+=("{\"kind\":\"heat\",\"sev\":\"warn\",\"label\":\"Heat ${t}F\"}")
+  fi
+  if [ -n "$t" ] && [ "$t" -le "$COND_COLD_SEVERE" ] 2>/dev/null; then
+    items+=("{\"kind\":\"cold\",\"sev\":\"severe\",\"label\":\"Cold ${t}F\"}")
+  elif [ -n "$t" ] && [ "$t" -le "$COND_COLD_WARN" ] 2>/dev/null; then
+    items+=("{\"kind\":\"cold\",\"sev\":\"warn\",\"label\":\"Cold ${t}F\"}")
+  fi
+  if [ -n "${R_windGust:-}" ] && [ "$R_windGust" -ge "$COND_WIND_GUST" ] 2>/dev/null; then
+    items+=("{\"kind\":\"wind\",\"sev\":\"warn\",\"label\":\"Gusts ${R_windGust} mph\"}")
+  fi
+  if [ -n "${R_uv:-}" ] && [ "$R_uv" -ge "$COND_UV_SEVERE" ] 2>/dev/null; then
+    items+=("{\"kind\":\"uv\",\"sev\":\"severe\",\"label\":\"UV ${R_uv}\"}")
+  elif [ -n "${R_uv:-}" ] && [ "$R_uv" -ge "$COND_UV_WARN" ] 2>/dev/null; then
+    items+=("{\"kind\":\"uv\",\"sev\":\"warn\",\"label\":\"UV ${R_uv}\"}")
+  fi
+  if [ -n "${R_visibility:-}" ] && awk "BEGIN{exit !(${R_visibility} <= ${COND_FOG_VIS_MI})}"; then
+    items+=("{\"kind\":\"fog\",\"sev\":\"warn\",\"label\":\"Low visibility\"}")
+  elif [ "${R_icon:-}" = "fog" ]; then
+    items+=("{\"kind\":\"fog\",\"sev\":\"warn\",\"label\":\"Fog\"}")
+  fi
+  case "${R_icon:-}" in
+  snow | sleet) items+=("{\"kind\":\"snow\",\"sev\":\"warn\",\"label\":\"$(cap "${R_icon}")\"}") ;;
+  thunder) items+=("{\"kind\":\"thunder\",\"sev\":\"severe\",\"label\":\"Thunderstorm\"}") ;;
+  tornado) items+=("{\"kind\":\"thunder\",\"sev\":\"severe\",\"label\":\"Tornado\"}") ;;
+  esac
+  if [ "$(precip_type "${R_icon:-}")" = "rain" ] || [ "${R_rainSoon:-0}" = "1" ]; then
+    items+=("{\"kind\":\"rain\",\"sev\":\"info\",\"label\":\"Rain\"}")
+  fi
+  if [ "${R_precipHeavy:-0}" = "1" ] && [ -n "$t" ] && [ "$t" -gt "$COND_HYDRO_TEMP_MIN" ] 2>/dev/null; then
+    items+=("{\"kind\":\"hydroplaning\",\"sev\":\"warn\",\"label\":\"Hydroplaning risk (est.)\"}")
+  fi
+  # NWS passthrough: one condition per provider alert.
+  local nws
+  nws=$(printf '%s' "${R_alerts:-[]}" | jq -c '.[]? | {kind:"nws", sev:"severe", label:.title}' 2>/dev/null)
+  local line
+  while IFS= read -r line; do [ -n "$line" ] && items+=("$line"); done <<<"$nws"
+  local IFS=,
+  R_conditions="[${items[*]:-}]"
+}
+
+# --- timezone-aware clock formatting (for non-current cities) ------------------
+# TZNAME holds the target city's IANA zone (empty for the current location).
+# NB: TZ="" means UTC in POSIX, so these branch on an empty zone instead of
+# blindly exporting TZ.
+
+# A date string -> epoch seconds. A naive (offset-less) time is read in the city
+# zone when set (else system); a string with a Z/offset is absolute regardless.
+iso_epoch() {
+  [ -n "$1" ] || return 0
+  if [ -n "$TZNAME" ]; then
+    TZ="$TZNAME" date -d "$1" +%s 2>/dev/null
+  else
+    date -d "$1" +%s 2>/dev/null
+  fi
+}
+
+# epoch -> "6:12 AM" in the city zone, plus the system-zone time in parens when
+# the two differ ("6:12 AM (8:12 AM)"). Empty epoch -> empty. Sunrise/sunset.
+fmt_clock_dual() {
+  [ -n "$1" ] || return 0
+  local sys city
+  sys=$(date -d "@$1" +'%-I:%M %p' 2>/dev/null)
+  if [ -z "$TZNAME" ]; then
+    printf '%s' "$sys"
+    return 0
+  fi
+  city=$(TZ="$TZNAME" date -d "@$1" +'%-I:%M %p' 2>/dev/null)
+  if [ "$city" = "$sys" ]; then
+    printf '%s' "$city"
+  else
+    printf '%s (%s)' "$city" "$sys"
+  fi
+}
+
+# Hour label ("3PM") for an epoch (@...), UTC, or naive-local time, rendered in
+# the city zone when set -- keeps the hourly strip on the city's clock.
+fmt_hour_tz() {
+  [ -n "$1" ] || return 0
+  if [ -n "$TZNAME" ]; then
+    TZ="$TZNAME" date -d "$1" +'%I%p' 2>/dev/null | sed 's/^0//'
+  else
+    date -d "$1" +'%I%p' 2>/dev/null | sed 's/^0//'
+  fi
+}
 
 # A daily forecast row always shows a day glyph (a moon next to a hi/lo reads
 # wrong), so fold any night variant to its day counterpart.
@@ -110,13 +249,50 @@ fc_build() {
   R_fc="[${R_fc_items[*]:-}]"
 }
 
-# Emit the unified record from R_* globals; arg1 = source.
+# Hourly accumulator -> R_hr (a JSON array string). Mirrors the daily strip but
+# keeps night icon variants (an overnight hour should read as a moon, not a sun).
+# Only providers with sub-daily data populate it; emit_rich defaults to [].
+hr_reset() { R_hr_items=(); }
+hr_add() { R_hr_items+=("{\"h\":\"$1\",\"icon\":\"$2\",\"temp\":\"$3\",\"precip\":\"$4\",\"uv\":\"$5\"}"); }
+hr_build() {
+  local IFS=,
+  R_hr="[${R_hr_items[*]:-}]"
+}
+
+# Nowcast accumulator -> R_nowcast (a JSON object string). Reads the
+# R_rainSoon/R_nowcastEta/R_nowcastSrc scalars a provider set beforehand; each
+# provider runs in its own command-substitution subshell (set -u), so these
+# always start unset and are set fresh per fetch_* call.
+nowcast_build() {
+  local eta="null"
+  [ -n "${R_nowcastEta:-}" ] && eta="$R_nowcastEta"
+  local soon="false"; [ "${R_rainSoon:-0}" = "1" ] && soon="true"
+  local text=""
+  if [ "$soon" = "true" ]; then
+    if [ "${R_nowcastSrc:-}" = "minutely" ] && [ -n "${R_nowcastEta:-}" ]; then
+      text="Rain in ~${R_nowcastEta} min"
+    else
+      text="Rain likely within the hour"
+    fi
+  fi
+  R_nowcast="{\"rainSoon\":${soon},\"etaMin\":${eta},\"source\":\"${R_nowcastSrc:-none}\",\"text\":\"${text}\"}"
+}
+
+# Emit the unified record from R_* globals; arg1 = source. Optional fields
+# (uv/windGust/sunrise/sunset/alerts) default empty via :- so a provider that
+# can't supply one degrades cleanly; precipType is derived from the icon key.
 emit_rich() {
-  printf '{"temp":"%s","icon":"%s","desc":"%s","source":"%s","feels":"%s","humidity":"%s","precip":"%s","wind":"%s","windDir":"%s","place":"%s","forecast":%s}\n' \
+  local ptype nowcast_default='{"rainSoon":false,"etaMin":null,"source":"none","text":""}'
+  ptype=$(precip_type "${R_icon}")
+  printf '{"temp":"%s","icon":"%s","desc":"%s","source":"%s","feels":"%s","humidity":"%s","precip":"%s","precipType":"%s","uv":"%s","wind":"%s","windGust":"%s","windDir":"%s","visibility":"%s","sunrise":"%s","sunset":"%s","place":"%s","forecast":%s,"hourly":%s,"alerts":%s,"nowcast":%s,"conditions":%s}\n' \
     "$(json_escape "${R_temp}")" "${R_icon}" "$(json_escape "${R_desc}")" "$1" \
-    "$(json_escape "${R_feels}")" "$(json_escape "${R_humidity}")" "$(json_escape "${R_precip}")" \
-    "$(json_escape "${R_wind}")" "$(json_escape "${R_windDir}")" \
-    "$(json_escape "${PLACE}")" "${R_fc:-[]}"
+    "$(json_escape "${R_feels}")" "$(json_escape "${R_humidity}")" "$(json_escape "${R_precip}")" "${ptype}" \
+    "$(json_escape "${R_uv:-}")" \
+    "$(json_escape "${R_wind}")" "$(json_escape "${R_windGust:-}")" "$(json_escape "${R_windDir}")" \
+    "$(json_escape "${R_visibility:-}")" \
+    "$(json_escape "${R_sunrise:-}")" "$(json_escape "${R_sunset:-}")" \
+    "$(json_escape "${PLACE}")" "${R_fc:-[]}" "${R_hr:-[]}" "${R_alerts:-[]}" \
+    "${R_nowcast:-$nowcast_default}" "${R_conditions:-[]}"
 }
 
 # API-key discovery: env var, explicit file, then sops-nix render paths
@@ -306,6 +482,7 @@ fetch_owm() {
   R_humidity=$(printf '%s' "$resp" | jq -r '.main.humidity // empty')
   R_wind=$(printf '%s' "$resp" | jq -r '.wind.speed // empty' | round)
   R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.wind.deg // empty')")
+  R_visibility=$(awk -v m="$(printf '%s' "$resp" | jq -r '.visibility // empty')" 'BEGIN{if(m=="")exit; printf "%d", m/1609+0.5}')
 
   # Forecast via the free 5-day/3-hour endpoint, aggregated to daily.
   fc_reset
@@ -334,15 +511,33 @@ fetch_owm() {
     fi
   fi
   fc_build
+
+  R_windGust=$(round_opt "$(printf '%s' "$resp" | jq -r '.wind.gust // empty')")
+  R_sunrise=$(fmt_clock_dual "$(printf '%s' "$resp" | jq -r '.sys.sunrise // empty')")
+  R_sunset=$(fmt_clock_dual "$(printf '%s' "$resp" | jq -r '.sys.sunset // empty')")
+  # Free /weather has no UV index; left empty.
+
+  # Hourly fallback nowcast: rain likely if the next 1-2 hours cross the PoP bar.
+  # owm builds no R_hr (no hourly strip), so this degrades to rainSoon=false.
+  R_nowcastSrc=hourly
+  if [ -n "${R_hr:-}" ] && printf '%s' "${R_hr:-}" | jq -e '[.[0:2][] | (.precip|tonumber? // 0)] | max >= 50' >/dev/null 2>&1; then
+    R_rainSoon=1
+  else
+    R_rainSoon=0
+  fi
+  R_nowcastEta=""
+  nowcast_build
+
+  detect_conditions
   emit_rich "owm"
 }
 
 fetch_pirate() {
-  local key resp days i t hi lo fic
+  local key resp days i t hi lo fic hours htemp hic hpp hlabel huv
   key=$(pirate_key) || return 1
   [ -n "$key" ] || return 1
   resp=$(curl -sf --max-time 6 \
-    "https://api.pirateweather.net/forecast/${key}/${LAT},${LON}?units=us&exclude=minutely,hourly,alerts&icon=pirate") || return 1
+    "https://api.pirateweather.net/forecast/${key}/${LAT},${LON}?units=us&exclude=alerts&icon=pirate") || return 1
   [ "$(printf '%s' "$resp" | jq -r '.currently.icon // empty')" != "" ] || return 1
   R_temp=$(printf '%s' "$resp" | jq -r '.currently.temperature // empty' | round)
   R_icon=$(pirate_icon "$(printf '%s' "$resp" | jq -r '.currently.icon')")
@@ -352,6 +547,7 @@ fetch_pirate() {
   R_precip=$(printf '%s' "$resp" | jq -r 'if (.currently.precipProbability|type)=="number" then (.currently.precipProbability*100|round) else empty end')
   R_wind=$(printf '%s' "$resp" | jq -r '.currently.windSpeed // empty' | round)
   R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.currently.windBearing // empty')")
+  R_visibility=$(round_opt "$(printf '%s' "$resp" | jq -r '.currently.visibility // empty')")
 
   fc_reset
   days=$(printf '%s' "$resp" | jq -c '[.daily.data[] | {t:.time, hi:.temperatureHigh, lo:.temperatureLow, ic:.icon}] | .[0:7]' 2>/dev/null)
@@ -366,11 +562,47 @@ fetch_pirate() {
     done
   fi
   fc_build
+
+  # Next 12 hours: label (e.g. 3PM), icon (night variants kept), temp, precip%.
+  hr_reset
+  hours=$(printf '%s' "$resp" | jq -c '[.hourly.data[] | {t:.time, tp:.temperature, ic:.icon, pp:.precipProbability, uv:.uvIndex}] | .[0:12]' 2>/dev/null)
+  if [ -n "$hours" ] && [ "$hours" != "null" ]; then
+    for i in 0 1 2 3 4 5 6 7 8 9 10 11; do
+      t=$(printf '%s' "$hours" | jq -r ".[$i].t // empty")
+      [ -n "$t" ] || break
+      htemp=$(printf '%s' "$hours" | jq -r ".[$i].tp // empty" | round)
+      hic=$(pirate_icon "$(printf '%s' "$hours" | jq -r ".[$i].ic")")
+      hpp=$(printf '%s' "$hours" | jq -r "if (.[$i].pp|type)==\"number\" then (.[$i].pp*100|round) else empty end")
+      huv=$(round_opt "$(printf '%s' "$hours" | jq -r ".[$i].uv // empty")")
+      hlabel=$(fmt_hour_tz "@$t")
+      hr_add "$hlabel" "$hic" "$htemp" "$hpp" "$huv"
+    done
+  fi
+  hr_build
+
+  # Minutely nowcast: first minute in the next hour whose precip prob crosses 50%.
+  R_nowcastSrc=minutely
+  R_nowcastEta=$(printf '%s' "$resp" | jq -r '
+    ([.minutely.data // [] | to_entries[] | select(.value.precipProbability >= 0.5) | .key] | first) // empty')
+  if [ -n "$R_nowcastEta" ]; then R_rainSoon=1; else R_rainSoon=0; R_nowcastEta=""; fi
+  # Heavy precip now (in/hr) for the hydroplaning heuristic.
+  R_precipHeavy=$(printf '%s' "$resp" | jq -r 'if (.currently.precipIntensity // 0) >= 0.3 then "1" else "0" end')
+  nowcast_build
+
+  R_uv=$(round_opt "$(printf '%s' "$resp" | jq -r '.currently.uvIndex // empty')")
+  R_windGust=$(round_opt "$(printf '%s' "$resp" | jq -r '.currently.windGust // empty')")
+  R_sunrise=$(fmt_clock_dual "$(printf '%s' "$resp" | jq -r '.daily.data[0].sunriseTime // empty')")
+  R_sunset=$(fmt_clock_dual "$(printf '%s' "$resp" | jq -r '.daily.data[0].sunsetTime // empty')")
+  # NWS watches/warnings (Pirate-only). Keep expires as epoch; the popup formats
+  # it. `.alerts[]?` tolerates the field being absent when there are none.
+  R_alerts=$(printf '%s' "$resp" | jq -c '[.alerts[]? | {title:(.title//""), severity:(.severity//""), expires:(.expires//0)}]' 2>/dev/null)
+
+  detect_conditions
   emit_rich "pirate"
 }
 
 fetch_metno() {
-  local ua resp sym days n i d hi lo fsym
+  local ua resp sym days n i d hi lo fsym t hours htemp hic hpp hlabel sunresp
   ua="${WEATHER_USER_AGENT:-quickshell-weather/1.0 michaelpacheco@protonmail.com}"
   resp=$(curl -sf --max-time 6 -H "User-Agent: $ua" \
     "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${LAT}&lon=${LON}") || return 1
@@ -407,13 +639,60 @@ fetch_metno() {
     done
   fi
   fc_build
+
+  # Next 12 hourly steps (the timeseries is hourly near-term). Times are UTC, so
+  # date converts them to local for the label; temp is C->F; icon from the 1h (or
+  # 6h) symbol; precip% only when met.no supplies it (null outside the Nordics,
+  # which the strip then hides).
+  hr_reset
+  hours=$(printf '%s' "$resp" | jq -c '
+    [ .properties.timeseries[]
+      | {t:.time, tp:.data.instant.details.air_temperature,
+         sym:((.data.next_1_hours.summary.symbol_code // .data.next_6_hours.summary.symbol_code) // "cloudy"),
+         pp:(.data.next_1_hours.details.probability_of_precipitation // null)} ]
+    | .[0:12]' 2>/dev/null)
+  if [ -n "$hours" ] && [ "$hours" != "null" ]; then
+    for i in 0 1 2 3 4 5 6 7 8 9 10 11; do
+      t=$(printf '%s' "$hours" | jq -r ".[$i].t // empty")
+      [ -n "$t" ] || break
+      htemp=$(c_to_f "$(printf '%s' "$hours" | jq -r ".[$i].tp // empty")")
+      hic=$(metno_icon "$(printf '%s' "$hours" | jq -r ".[$i].sym")")
+      hpp=$(printf '%s' "$hours" | jq -r "if (.[$i].pp|type)==\"number\" then (.[$i].pp|round) else empty end")
+      hlabel=$(fmt_hour_tz "$t")
+      hr_add "$hlabel" "$hic" "$htemp" "$hpp" ""
+    done
+  fi
+  hr_build
+
+  R_windGust=$(ms_to_mph "$(printf '%s' "$resp" | jq -r '.properties.timeseries[0].data.instant.details.wind_speed_of_gust // empty')")
+  # met.no compact carries no sunrise/sunset or UV; pull sun times from the
+  # dedicated Sunrise 3.0 API (one extra call, only when met.no is the active
+  # provider). UV is left empty (only the heavier "complete" variant has it).
+  sunresp=$(curl -sf --max-time 6 -H "User-Agent: $ua" \
+    "https://api.met.no/weatherapi/sunrise/3.0/sun?lat=${LAT}&lon=${LON}&date=$(date +%F)")
+  if [ -n "$sunresp" ]; then
+    R_sunrise=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$sunresp" | jq -r '.properties.sunrise.time // empty')")")
+    R_sunset=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$sunresp" | jq -r '.properties.sunset.time // empty')")")
+  fi
+
+  # Hourly fallback nowcast: rain likely if the next 1-2 hours cross the PoP bar.
+  R_nowcastSrc=hourly
+  if [ -n "${R_hr:-}" ] && printf '%s' "${R_hr:-}" | jq -e '[.[0:2][] | (.precip|tonumber? // 0)] | max >= 50' >/dev/null 2>&1; then
+    R_rainSoon=1
+  else
+    R_rainSoon=0
+  fi
+  R_nowcastEta=""
+  nowcast_build
+
+  detect_conditions
   emit_rich "metno"
 }
 
 fetch_openmeteo() {
-  local resp code isday night days i d hi lo fcode
+  local resp code isday night days i d hi lo fcode t hours hnow htemp hnight hic hpp hlabel huv
   resp=$(curl -sf --max-time 6 \
-    "https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,weather_code,is_day,wind_speed_10m,wind_direction_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=7") || return 1
+    "https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,weather_code,is_day,wind_speed_10m,wind_direction_10m,uv_index,wind_gusts_10m,visibility&hourly=temperature_2m,weather_code,precipitation_probability,is_day,uv_index&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=7") || return 1
   code=$(printf '%s' "$resp" | jq -r '.current.weather_code // empty')
   [ -n "$code" ] || return 1
   isday=$(printf '%s' "$resp" | jq -r '.current.is_day // 1')
@@ -427,6 +706,7 @@ fetch_openmeteo() {
   R_precip=$(printf '%s' "$resp" | jq -r '.current.precipitation_probability // empty') # already percent
   R_wind=$(printf '%s' "$resp" | jq -r '.current.wind_speed_10m // empty' | round)
   R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.current.wind_direction_10m // empty')")
+  R_visibility=$(awk -v m="$(printf '%s' "$resp" | jq -r '.current.visibility // empty')" 'BEGIN{if(m=="")exit; printf "%d", m/1609+0.5}')
 
   fc_reset
   days=$(printf '%s' "$resp" | jq -c '[.daily.time, .daily.weather_code, .daily.temperature_2m_max, .daily.temperature_2m_min] | transpose | .[0:7]' 2>/dev/null)
@@ -441,6 +721,51 @@ fetch_openmeteo() {
     done
   fi
   fc_build
+
+  # Next 12 hours from the current interval forward. The hourly arrays are
+  # parallel, so transpose them into per-hour objects, drop past hours
+  # (.t < the current interval), and keep 12. Per-hour is_day picks the icon's
+  # day/night variant; precipitation_probability is already a percent.
+  hr_reset
+  hnow=$(printf '%s' "$resp" | jq -r '.current.time // empty')
+  # Floor to the hour so the current hour's slot is kept (.current.time carries
+  # minutes; a raw >= would drop it and start the strip at the next hour).
+  [ -n "$hnow" ] && hnow="${hnow:0:13}:00"
+  hours=$(printf '%s' "$resp" | jq -c --arg now "$hnow" '
+    [ [.hourly.time, .hourly.temperature_2m, .hourly.weather_code, .hourly.precipitation_probability, .hourly.is_day, .hourly.uv_index]
+      | transpose | .[] | {t:.[0], tp:.[1], wc:.[2], pp:.[3], day:.[4], uv:.[5]} ]
+    | map(select(.t >= $now)) | .[0:12]' 2>/dev/null)
+  if [ -n "$hours" ] && [ "$hours" != "null" ]; then
+    for i in 0 1 2 3 4 5 6 7 8 9 10 11; do
+      t=$(printf '%s' "$hours" | jq -r ".[$i].t // empty")
+      [ -n "$t" ] || break
+      htemp=$(printf '%s' "$hours" | jq -r ".[$i].tp // empty" | round)
+      hnight=$(printf '%s' "$hours" | jq -r "if .[$i].day==0 then 1 else 0 end")
+      hic=$(openmeteo_icon "$(printf '%s' "$hours" | jq -r ".[$i].wc")" "$hnight")
+      hpp=$(printf '%s' "$hours" | jq -r ".[$i].pp // empty")
+      huv=$(round_opt "$(printf '%s' "$hours" | jq -r ".[$i].uv // empty")")
+      hlabel=$(fmt_hour_tz "$t")
+      hr_add "$hlabel" "$hic" "$htemp" "$hpp" "$huv"
+    done
+  fi
+  hr_build
+
+  R_uv=$(round_opt "$(printf '%s' "$resp" | jq -r '.current.uv_index // empty')")
+  R_windGust=$(round_opt "$(printf '%s' "$resp" | jq -r '.current.wind_gusts_10m // empty')")
+  R_sunrise=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$resp" | jq -r '.daily.sunrise[0] // empty')")")
+  R_sunset=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$resp" | jq -r '.daily.sunset[0] // empty')")")
+
+  # Hourly fallback nowcast: rain likely if the next 1-2 hours cross the PoP bar.
+  R_nowcastSrc=hourly
+  if [ -n "${R_hr:-}" ] && printf '%s' "${R_hr:-}" | jq -e '[.[0:2][] | (.precip|tonumber? // 0)] | max >= 50' >/dev/null 2>&1; then
+    R_rainSoon=1
+  else
+    R_rainSoon=0
+  fi
+  R_nowcastEta=""
+  nowcast_build
+
+  detect_conditions
   emit_rich "openmeteo"
 }
 
@@ -460,6 +785,7 @@ fetch_wttr() {
   R_precip=$(printf '%s' "$resp" | jq -r --argjson s "$((10#$(date +%H) / 3))" '.weather[0].hourly[$s].chanceofrain // empty')
   R_wind=$(printf '%s' "$resp" | jq -r '.current_condition[0].windspeedMiles // empty')
   R_windDir=$(printf '%s' "$resp" | jq -r '.current_condition[0].winddir16Point // empty')
+  R_visibility=$(round_opt "$(printf '%s' "$resp" | jq -r '.current_condition[0].visibilityMiles // empty')")
 
   fc_reset
   days=$(printf '%s' "$resp" | jq -c '[.weather[] | {d:.date, hi:.maxtempF, lo:.mintempF, code:(.hourly[4].weatherCode // .hourly[0].weatherCode)}] | .[0:7]' 2>/dev/null)
@@ -474,15 +800,38 @@ fetch_wttr() {
     done
   fi
   fc_build
+
+  R_uv=$(round_opt "$(printf '%s' "$resp" | jq -r '.current_condition[0].uvIndex // empty')")
+  # wttr has no gust on current_condition; take the nearest 3-hourly slot (same
+  # index the chance-of-rain uses).
+  R_windGust=$(round_opt "$(printf '%s' "$resp" | jq -r --argjson s "$((10#$(date +%H) / 3))" '.weather[0].hourly[$s].WindGustMiles // empty')")
+  R_sunrise=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$resp" | jq -r 'if .weather[0].astronomy[0].sunrise then (.weather[0].date) + " " + (.weather[0].astronomy[0].sunrise) else empty end')")")
+  R_sunset=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$resp" | jq -r 'if .weather[0].astronomy[0].sunset then (.weather[0].date) + " " + (.weather[0].astronomy[0].sunset) else empty end')")")
+
+  # Hourly fallback nowcast: rain likely if the next 1-2 hours cross the PoP bar.
+  # wttr builds no R_hr (no hourly strip), so this degrades to rainSoon=false.
+  R_nowcastSrc=hourly
+  if [ -n "${R_hr:-}" ] && printf '%s' "${R_hr:-}" | jq -e '[.[0:2][] | (.precip|tonumber? // 0)] | max >= 50' >/dev/null 2>&1; then
+    R_rainSoon=1
+  else
+    R_rainSoon=0
+  fi
+  R_nowcastEta=""
+  nowcast_build
+
+  detect_conditions
   emit_rich "wttr"
 }
 
 # --- resolve target location from args ----------------------------------------
-# Usage: weather.sh [<id> [geo | <lat> <lon> [place]]]
+# Usage: weather.sh [<id> [geo | <lat> <lon> [place [tz]]]]
 #   weather.sh                       -> geo, cached under id "geo"
 #   weather.sh geo                   -> geo, cached under id "geo"
-#   weather.sh la 34.0522 -118.2437 "Los Angeles"
+#   weather.sh la 34.0522 -118.2437 "Los Angeles, CA, USA" America/Los_Angeles
 LOC_ID="${1:-geo}"
+# Target city IANA zone (5th arg; empty for the current location). Read by the
+# fmt_*_tz helpers so a non-local city's clock times show in its own zone.
+TZNAME="${5:-}"
 CACHE_FILE="$CACHE_DIR/weather-${LOC_ID}.json"
 
 # --- serve fresh per-location cache (skips geolocation entirely) --------------
@@ -535,5 +884,5 @@ if [ -n "$out" ]; then
 elif [ -f "$CACHE_FILE" ]; then
   cat "$CACHE_FILE" # stale, but better than nothing
 else
-  printf '{"temp":"--","icon":"cloudy","desc":"Offline","source":"none","feels":"","humidity":"","precip":"","wind":"","windDir":"","place":"","forecast":[]}\n'
+  printf '{"temp":"--","icon":"cloudy","desc":"Offline","source":"none","feels":"","humidity":"","precip":"","precipType":"","uv":"","wind":"","windGust":"","windDir":"","visibility":"","sunrise":"","sunset":"","place":"","forecast":[],"hourly":[],"alerts":[],"nowcast":{"rainSoon":false,"etaMin":null,"source":"none","text":""},"conditions":[]}\n'
 fi

@@ -249,12 +249,14 @@
         ./nixos/thanatos/hardware-configuration.nix
         inputs.disko.nixosModules.disko
         ./nixos/thanatos/e5800.nix
+        ./nixos/thanatos/ec-pd.nix
         ./features/nixos/common/nix-access-tokens.nix
         {
           services.e5800 = {
             enable = true;
             cycleResetDay = 1;
           };
+          services.ecPd.enable = true;
           local.nixAccessTokens.enable = true;
         }
       ];

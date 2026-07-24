@@ -4,6 +4,7 @@ import Quickshell
 import "../lib" as Lib
 import "../lib/weathericons.js" as WeatherIcons
 import "../lib/locations.js" as Locations
+import "../lib/weathercond.js" as WeatherCond
 
 // Bar weather widget: current condition glyph + temperature for the selected
 // location, with an interactive hover popup (detail + forecast + location
@@ -21,27 +22,26 @@ Item {
     // {temp, icon, desc, source, feels, humidity, wind, windDir, place, forecast[]}
     readonly property var wx: poll.value
 
-    // --- alert state: pulse the widget when today's weather is notable --------
-    // Heat is read off the current temperature (>=85 orange, >=90 red); rain off
-    // today's forecast (or a current rainy condition) -> blue. Heat wins.
-    function isRainy(k) {
-        return k === "rain" || k === "showers" || k === "drizzle" || k === "thunder";
+    // --- alert state: rotate the pill pulse through the current place's active
+    // conditions (kind/sev/label), sourced from the shell's semantic detector.
+    // Only the CURRENT location pulses the bar pill. A condition for a
+    // manually-selected remote city (LA/SF/NYC/Durango) isn't where the user
+    // physically is, so it must never highlight the pill -- the popup still
+    // surfaces that city's own alerts when it's open.
+    readonly property bool isCurrentPlace: root.loc ? (root.loc.geo === true) : false
+    readonly property var conds: (root.isCurrentPlace && root.wx && root.wx.conditions) ? WeatherCond.sortBySeverity(root.wx.conditions) : []
+    property int condIdx: 0
+    onCondsChanged: root.condIdx = 0
+    readonly property var curCond: root.conds.length > 0 ? root.conds[root.condIdx % root.conds.length] : null
+    // Legacy string kept for the Pill binding; empty -> no pulse.
+    readonly property string alert: root.curCond ? root.curCond.kind : ""
+    readonly property color alertColor: root.curCond ? WeatherCond.color(root.theme, root.curCond.kind, root.curCond.sev) : "transparent"
+    Timer {
+        interval: 2500
+        repeat: true
+        running: root.conds.length > 1
+        onTriggered: root.condIdx = (root.condIdx + 1) % root.conds.length
     }
-    readonly property int curTemp: (root.wx && root.wx.temp) ? (parseInt(root.wx.temp) || 0) : 0
-    readonly property var today: (root.wx && root.wx.forecast && root.wx.forecast.length > 0) ? root.wx.forecast[0] : null
-    readonly property bool rainToday: (root.today && root.isRainy(root.today.icon)) || (root.wx ? root.isRainy(root.wx.icon) : false)
-    readonly property string alert: {
-        if (root.curTemp >= 90)
-            return "red";
-        if (root.curTemp >= 85)
-            return "orange";
-        if (root.rainToday)
-            return "blue";
-        return "";
-    }
-    // Alert hues: red/orange from the theme; a clear blue for rain (the theme's
-    // accentBlue reads too teal against the green widgets to signal "rain").
-    readonly property color alertColor: root.alert === "red" ? root.theme.accentRed : root.alert === "orange" ? root.theme.accentSlider2 : root.alert === "blue" ? "#4d8fd6" : "transparent"
 
     visible: root.wx !== null
     implicitWidth: row.implicitWidth
@@ -69,7 +69,16 @@ Item {
                     wind: d.wind ?? "",
                     windDir: d.windDir ?? "",
                     place: d.place ?? "",
-                    forecast: d.forecast ?? []
+                    forecast: d.forecast ?? [],
+                    hourly: d.hourly ?? [],
+                    uv: d.uv ?? "",
+                    windGust: d.windGust ?? "",
+                    precipType: d.precipType ?? "",
+                    sunrise: d.sunrise ?? "",
+                    sunset: d.sunset ?? "",
+                    alerts: d.alerts ?? [],
+                    conditions: d.conditions ?? [],
+                    nowcast: d.nowcast ?? ({ rainSoon: false, etaMin: null, source: "none", text: "" })
                 };
             } catch (e) {
                 return null;

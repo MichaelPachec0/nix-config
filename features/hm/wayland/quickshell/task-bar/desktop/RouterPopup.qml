@@ -32,7 +32,8 @@ PopupWindow {
     function hide() { pop.visible = false; }
 
     function qColor(q) {
-        return q === "good" ? pop.theme.accentGreen
+        return q === "excellent" ? pop.theme.accentGreen
+             : q === "good" ? pop.theme.accentBlue
              : q === "fair" ? pop.theme.accentYellow : pop.theme.accentRed;
     }
 

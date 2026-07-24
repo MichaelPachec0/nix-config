@@ -105,15 +105,17 @@ the `off` chip.
 
 ## 5. Signal coloring
 
-One shared helper `quality(metric, value)` -> good/fair/poor -> green/amber/red:
+One shared helper `quality(metric, value)` -> excellent/good/fair/poor ->
+green/blue/yellow/red:
 
-| Metric | green (good) | amber (fair) | red (poor) |
-|--------|--------------|--------------|------------|
-| RSRP   | >= -90 dBm   | -90 .. -105  | < -105     |
-| RSRQ   | >= -11 dB    | -11 .. -16   | < -16      |
-| SINR   | >= 13 dB     | 0 .. 13      | < 0        |
+| Metric | green (excellent) | blue (good)  | yellow (fair) | red (poor) |
+|--------|-------------------|--------------|---------------|------------|
+| RSRP   | >= -100 dBm       | -100 .. -105 | -105 .. -110  | < -110     |
+| RSRQ   | >= -12 dB         | -12 .. -16   | -16 .. -20    | < -20      |
+| SINR   | >= 12 dB          | 12 .. 6      | 6 .. 0        | < 0        |
 
-The bar's signal-bar tint uses the RSRP band; `strength` sets bar fill count.
+Band boundaries are inclusive at the upper (better) value. The bar's signal-bar
+tint uses the RSRP band; `strength` sets bar fill count.
 
 ---
 

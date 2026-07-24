@@ -3,9 +3,11 @@ import Quickshell
 import Quickshell.Io
 
 // Reads the hardened poll service's artifact and exposes it as properties.
-// Instantiate INSIDE the per-screen Variants Scope (like Lib.CalState) so the
-// binding resolves across the Variants delegate. Holds no secrets; the only
-// write path is reconnect(), which starts a polkit-gated systemd unit.
+// Hoisted to ShellRoot (one reader for all screens) and passed by reference as
+// e5800Svc -> the Taskbar `routerSvc` property. The ShellRoot id MUST differ
+// from that property name: a same-name binding across the Variants delegate
+// resolves to the child's own null property (see the shell.qml submapSvc note).
+// Holds no secrets; the only write path is reconnect(), a polkit-gated unit.
 Scope {
     id: root
 

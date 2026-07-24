@@ -106,8 +106,11 @@
 
         input = {
           "type:keyboard" = {
-            repeat_rate = "45";
-            repeat_delay = "200";
+            # repeat_delay 300 + rate 40: longer delay stops a brief key-linger
+            # from starting client-side key-repeat, which under load overshoots a
+            # late-delivered release and spews duplicate chars ("stuck key" bug).
+            repeat_rate = "40";
+            repeat_delay = "300";
           };
           "type:touchpad" = {
             natural_scroll = "enabled";

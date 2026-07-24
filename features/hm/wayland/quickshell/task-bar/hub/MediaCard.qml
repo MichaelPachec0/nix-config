@@ -14,6 +14,12 @@ Rectangle {
 
     required property QtObject theme
 
+    // True while the hub overlay is actually shown (fed from HubWindow, like the
+    // sibling cards). Gates the poll timers -- root.visible can't, since it stays
+    // true whenever a player exists, so the timers would run per monitor with the
+    // hub closed.
+    property bool active: true
+
     signal closeRequested
 
     // --- player selection: prefer a playing one, else paused, else first ---
@@ -43,7 +49,7 @@ Rectangle {
     Timer {
         interval: 5000
         repeat: true
-        running: (root.players || []).length > 0
+        running: root.active && (root.players || []).length > 0
         onTriggered: root._repick++
     }
 
@@ -67,7 +73,7 @@ Rectangle {
     Timer {
         interval: 1000
         repeat: true
-        running: root.visible && root.hasPlayer
+        running: root.active && root.hasPlayer
         triggeredOnStart: true
         onTriggered: root.posSec = root.player ? root.player.position : 0
     }
@@ -111,6 +117,7 @@ Rectangle {
         property int glyphSize: 15
         property bool primary: false
         property bool enabledAction: true
+        property bool active: false // accent-tint the glyph (repeat/shuffle engaged)
         signal activated
 
         width: primary ? 42 : 32
@@ -133,7 +140,7 @@ Rectangle {
         Text {
             anchors.centerIn: parent
             text: String.fromCodePoint(ctl.glyph)
-            color: ctl.primary ? root.theme.textPrimary : root.theme.textSecondary
+            color: ctl.active ? root.theme.accent : (ctl.primary ? root.theme.textPrimary : root.theme.textSecondary)
             font.family: root.theme.iconFont
             font.pixelSize: ctl.glyphSize
         }
@@ -248,30 +255,67 @@ Rectangle {
             }
         }
 
-        // Transport controls: prev / play-pause / next.
-        RowLayout {
+        // Transport controls: shuffle / repeat stacked ABOVE prev / play-pause /
+        // next, so the cluster stays as narrow as the primary trio (114px) and the
+        // title/artist column reclaims the width the flat 5-button row was eating.
+        // Every button keeps its size. The secondary row is hidden outright when
+        // the player supports neither toggle, so simple players lose no height.
+        ColumnLayout {
             Layout.alignment: Qt.AlignVCenter
-            spacing: 4
+            spacing: 2
 
-            CtlButton {
-                glyph: 0xF048 // step-backward
-                enabledAction: root.player ? root.player.canGoPrevious : false
-                onActivated: if (root.player)
-                    root.player.previous()
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 4
+                visible: root.player ? (root.player.shuffleSupported || root.player.loopSupported) : false
+
+                CtlButton {
+                    glyph: 0xF049D // shuffle
+                    glyphSize: 12
+                    visible: root.player ? root.player.shuffleSupported : false
+                    active: root.player ? root.player.shuffle : false
+                    onActivated: if (root.player)
+                        root.player.shuffle = !root.player.shuffle
+                }
+                CtlButton {
+                    // repeat: off -> all (Playlist) -> one (Track) -> off; repeat-once
+                    // glyph marks Track mode, else the plain repeat glyph.
+                    glyph: (root.player && root.player.loopState === MprisLoopState.Track) ? 0xF0458 : 0xF0456
+                    glyphSize: 12
+                    visible: root.player ? root.player.loopSupported : false
+                    active: root.player ? root.player.loopState !== MprisLoopState.None : false
+                    onActivated: {
+                        if (!root.player)
+                            return;
+                        var s = root.player.loopState;
+                        root.player.loopState = s === MprisLoopState.None ? MprisLoopState.Playlist : (s === MprisLoopState.Playlist ? MprisLoopState.Track : MprisLoopState.None);
+                    }
+                }
             }
-            CtlButton {
-                glyph: root.isPlaying ? 0xF04C : 0xF04B // pause / play
-                glyphSize: 18
-                primary: true
-                enabledAction: root.player ? root.player.canTogglePlaying : false
-                onActivated: if (root.player)
-                    root.player.togglePlaying()
-            }
-            CtlButton {
-                glyph: 0xF051 // step-forward
-                enabledAction: root.player ? root.player.canGoNext : false
-                onActivated: if (root.player)
-                    root.player.next()
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 4
+
+                CtlButton {
+                    glyph: 0xF048 // step-backward
+                    enabledAction: root.player ? root.player.canGoPrevious : false
+                    onActivated: if (root.player)
+                        root.player.previous()
+                }
+                CtlButton {
+                    glyph: root.isPlaying ? 0xF04C : 0xF04B // pause / play
+                    glyphSize: 18
+                    primary: true
+                    enabledAction: root.player ? root.player.canTogglePlaying : false
+                    onActivated: if (root.player)
+                        root.player.togglePlaying()
+                }
+                CtlButton {
+                    glyph: 0xF051 // step-forward
+                    enabledAction: root.player ? root.player.canGoNext : false
+                    onActivated: if (root.player)
+                        root.player.next()
+                }
             }
         }
     }

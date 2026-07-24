@@ -13,10 +13,15 @@ WIFI=$(nmcli -g WIFI radio 2>/dev/null) || exit 1
 echo "WIFI:$WIFI"
 case "$WIFI" in enabled | disabled) echo "HASWIFI:1" ;; *) echo "HASWIFI:0" ;; esac
 echo "CONNECTIVITY:$(nmcli -g CONNECTIVITY general status 2>/dev/null)"
-PDEV=$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="dev"){print $(i+1);exit}}')
+
+# One `ip route get` instead of three: pull dev/src/via together, |-delimited so
+# an empty field (e.g. a direct route with no via) is preserved positionally.
+ROUTE=$(ip -o route get 1.1.1.1 2>/dev/null | awk '{d=s=g="";for(i=1;i<=NF;i++){if($i=="dev")d=$(i+1);else if($i=="src")s=$(i+1);else if($i=="via")g=$(i+1)}printf "%s|%s|%s",d,s,g}')
+PDEV=${ROUTE%%|*}; _r=${ROUTE#*|}; PIP=${_r%%|*}; PGW=${_r#*|}
 echo "IFACE:$PDEV"
-echo "IP:$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
-echo "GW:$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="via"){print $(i+1);exit}}')"
+echo "IP:$PIP"
+echo "GW:$PGW"
+
 PTYPE=none
 if [ -n "$PDEV" ]; then
   T=$(nmcli -g GENERAL.TYPE device show "$PDEV" 2>/dev/null)
@@ -31,8 +36,18 @@ if [ -n "$WUUID" ]; then
   WSTATE=$(printf '%s' "$WROW" | cut -d: -f3)
   [ "$WSTATE" = "activated" ] && echo "STATE:activated" || echo "STATE:activating"
   echo "SSID:$(nmcli -g 802-11-wireless.ssid connection show uuid "$WUUID" 2>/dev/null | head -n1)"
-  echo "SIGNAL:$(nmcli -g IN-USE,SIGNAL dev wifi list 2>/dev/null | awk -F: '$1=="*"{print $2; exit}')"
-  echo "BSSID:$(nmcli -g IN-USE,BSSID dev wifi list 2>/dev/null | sed -n 's/^\*://p' | head -n1 | tr -d '\\')"
+  # One `nmcli dev wifi list` instead of two: the active (IN-USE=*) row carries
+  # both SIGNAL and BSSID. -g escapes ':' in the BSSID as '\:', so drop the "*:"
+  # prefix, take SIGNAL up to the next ':', then de-escape the rest as the BSSID.
+  SIGNAL=""; BSSID=""
+  WIFILINE=$(nmcli -g IN-USE,SIGNAL,BSSID dev wifi list 2>/dev/null | grep -m1 '^\*:')
+  if [ -n "$WIFILINE" ]; then
+    _w=${WIFILINE#*:}
+    SIGNAL=${_w%%:*}
+    BSSID=$(printf '%s' "${_w#*:}" | tr -d '\\')
+  fi
+  echo "SIGNAL:$SIGNAL"
+  echo "BSSID:$BSSID"
 elif [ "$PTYPE" = "ethernet" ]; then
   echo "STATE:activated"
 else
