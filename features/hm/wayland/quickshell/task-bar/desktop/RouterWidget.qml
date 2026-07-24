@@ -16,7 +16,8 @@ Item {
     implicitHeight: parent ? parent.height : 22
 
     function qColor(q) {
-        return q === "good" ? root.theme.accentGreen
+        return q === "excellent" ? root.theme.accentGreen
+             : q === "good" ? root.theme.accentBlue
              : q === "fair" ? root.theme.accentYellow
              : root.theme.accentRed;
     }

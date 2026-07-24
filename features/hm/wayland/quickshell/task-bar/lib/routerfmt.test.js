@@ -7,14 +7,28 @@ const load = eval; // indirect eval -> global scope
 load(code);
 
 Deno.test("quality bands", () => {
-  assertEquals(quality("rsrp", -73), "good");
-  assertEquals(quality("rsrp", -100), "fair");
-  assertEquals(quality("rsrp", -110), "poor");
-  assertEquals(quality("rsrq", -10), "good");
-  assertEquals(quality("rsrq", -14), "fair");
-  assertEquals(quality("rsrq", -20), "poor");
-  assertEquals(quality("sinr", 30), "good");
+  // RSRP: excellent >= -100, good >= -105, fair >= -110, else poor (boundaries inclusive).
+  assertEquals(quality("rsrp", -73), "excellent");
+  assertEquals(quality("rsrp", -100), "excellent");
+  assertEquals(quality("rsrp", -103), "good");
+  assertEquals(quality("rsrp", -105), "good");
+  assertEquals(quality("rsrp", -108), "fair");
+  assertEquals(quality("rsrp", -110), "fair");
+  assertEquals(quality("rsrp", -111), "poor");
+  // RSRQ: excellent >= -12, good >= -16, fair >= -20, else poor.
+  assertEquals(quality("rsrq", -10), "excellent");
+  assertEquals(quality("rsrq", -12), "excellent");
+  assertEquals(quality("rsrq", -14), "good");
+  assertEquals(quality("rsrq", -16), "good");
+  assertEquals(quality("rsrq", -18), "fair");
+  assertEquals(quality("rsrq", -20), "fair");
+  assertEquals(quality("rsrq", -21), "poor");
+  // SINR: excellent >= 12, good >= 6, fair >= 0, else poor.
+  assertEquals(quality("sinr", 30), "excellent");
+  assertEquals(quality("sinr", 12), "excellent");
+  assertEquals(quality("sinr", 6), "good");
   assertEquals(quality("sinr", 5), "fair");
+  assertEquals(quality("sinr", 0), "fair");
   assertEquals(quality("sinr", -2), "poor");
 });
 
