@@ -28,14 +28,12 @@ covered by hypr-window-keeper_test.py; the rest is I/O glue.
 from __future__ import annotations
 
 import json
-import os
 import re
 import select
-import subprocess
 import sys
 import time
 
-from hypr_ipc import connect_socket2, find_instance
+from hypr_ipc import connect_socket2, find_instance, request, request_json
 
 # Move only when off-target by more than this (px) -- avoids fighting the
 # move animation with redundant commands.
@@ -140,16 +138,12 @@ def compute_target(pos, size, mon):
 # Hyprland I/O
 # ---------------------------------------------------------------------------
 def hyprctl_json(sig, *args):
-    env = {**os.environ, "HYPRLAND_INSTANCE_SIGNATURE": sig}
-    out = subprocess.run(
-        ["hyprctl", *args, "-j"], capture_output=True, text=True, env=env, check=False
-    )
-    return json.loads(out.stdout or "[]")
+    # direct request-socket round-trip (~0.1ms) instead of spawning hyprctl (~12ms)
+    return request_json(sig, " ".join(args)) or []
 
 
 def hyprctl(sig, *args):
-    env = {**os.environ, "HYPRLAND_INSTANCE_SIGNATURE": sig}
-    subprocess.run(["hyprctl", *args], capture_output=True, env=env, check=False)
+    request(sig, " ".join(args))
 
 
 def reconcile(sig, rules):

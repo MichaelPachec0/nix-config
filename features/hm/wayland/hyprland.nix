@@ -418,13 +418,18 @@
   # scratchpad-cycle: sway-style cycling scratchpad (special:magic). Super+-
   # (rebound below) reveals the next parked window and hides the previous, one
   # at a time; Super+Shift+- (rebound below) runs `send` (force-float + park the
-  # focused window); Super+= runs `pull`. stdlib Python; hyprctl for IPC,
+  # focused window); Super+= runs `pull`. stdlib Python; talks to Hyprland's
+  # request socket directly (via hypr_ipc on PYTHONPATH, no hyprctl spawn),
   # notify-send for the empty toast.
   # Pure rotation logic covered by scratchpad_cycle_test.py.
+  hyprIpc = import ./hypr-ipc-py.nix {inherit pkgs;};
   scratchpadCycleScript = pkgs.writeShellApplication {
     name = "scratchpad-cycle";
-    runtimeInputs = [pkgs.python3 pkgs.latest.hyprland pkgs.libnotify];
-    text = ''exec python3 ${./scratchpad_cycle.py} "$@"'';
+    runtimeInputs = [pkgs.python3 pkgs.libnotify];
+    text = ''
+      export PYTHONPATH=${hyprIpc}''${PYTHONPATH:+:$PYTHONPATH}
+      exec python3 ${./scratchpad_cycle.py} "$@"
+    '';
   };
 in {
   config = {

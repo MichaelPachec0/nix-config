@@ -28,10 +28,11 @@ scratchpad_cycle_test.py; the rest is Hyprland I/O.
 from __future__ import annotations
 
 import datetime
-import json
 import os
 import subprocess
 import sys
+
+from hypr_ipc import find_instance, request, request_json
 
 SPECIAL = "magic"
 SPECIAL_WS = f"special:{SPECIAL}"
@@ -119,13 +120,27 @@ def forget(addr, members, shown):
 # ---------------------------------------------------------------------------
 # Hyprland I/O
 # ---------------------------------------------------------------------------
+_SIG = None
+
+
+def _sig():
+    """Resolve (and cache) the running Hyprland instance signature. This is a
+    short-lived script, so one lazy lookup covers the whole run; kept out of
+    import time so scratchpad_cycle_test.py can import the module with no
+    Hyprland session."""
+    global _SIG
+    if _SIG is None:
+        _SIG, _ = find_instance()
+    return _SIG or ""
+
+
 def hyprctl_json(*args):
-    out = subprocess.run(["hyprctl", *args, "-j"], capture_output=True, text=True, check=False)
-    return json.loads(out.stdout or "null")
+    # direct request-socket round-trip (~0.1ms) instead of spawning hyprctl (~12ms)
+    return request_json(_sig(), " ".join(args))
 
 
 def dispatch(expr):
-    subprocess.run(["hyprctl", "dispatch", expr], capture_output=True, check=False)
+    request(_sig(), "dispatch " + expr)
 
 
 def notify(msg):

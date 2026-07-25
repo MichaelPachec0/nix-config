@@ -17,13 +17,13 @@
     pkgs.writeText "hypr-window-keeper.json"
     (builtins.toJSON {rules = cfg.rules;});
 
-  # runtimeInputs puts python3 + hyprctl on PATH; the daemon shells out to
-  # `hyprctl` for clients/monitors/dispatch.
+  # runtimeInputs puts python3 on PATH; the daemon talks to Hyprland's request
+  # socket directly (via hypr_ipc on PYTHONPATH) for clients/monitors/dispatch.
   hyprIpc = import ./hypr-ipc-py.nix {inherit pkgs;};
 
   daemon = pkgs.writeShellApplication {
     name = "hypr-window-keeper";
-    runtimeInputs = [pkgs.python3 pkgs.latest.hyprland];
+    runtimeInputs = [pkgs.python3];
     text = ''
       export PYTHONPATH=${hyprIpc}''${PYTHONPATH:+:$PYTHONPATH}
       exec python3 ${./hypr_window_keeper.py} ${configJson} "$@"

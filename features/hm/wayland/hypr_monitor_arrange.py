@@ -22,13 +22,11 @@ rest is I/O glue.
 """
 from __future__ import annotations
 
-import os
 import select
-import subprocess
 import sys
 import time
 
-from hypr_ipc import connect_socket2, find_instance, parse_event
+from hypr_ipc import connect_socket2, find_instance, parse_event, request
 
 # Coalesce a burst of monitor removals (e.g. undocking a multi-head dock) into a
 # single reload: fire only after this many ms of quiet.
@@ -84,8 +82,8 @@ class Debouncer:
 # Hyprland I/O (shared shape with hypr_window_keeper.py)
 # ---------------------------------------------------------------------------
 def hyprctl(sig, *args):
-    env = {**os.environ, "HYPRLAND_INSTANCE_SIGNATURE": sig}
-    subprocess.run(["hyprctl", *args], capture_output=True, env=env, check=False)
+    # direct request-socket round-trip (~0.1ms) instead of spawning hyprctl (~12ms)
+    request(sig, " ".join(args))
 
 
 def run(delay_s):

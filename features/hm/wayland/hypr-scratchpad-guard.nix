@@ -17,12 +17,13 @@
 
   hyprIpc = import ./hypr-ipc-py.nix {inherit pkgs;};
 
-  # runtimeInputs puts python3 + hyprctl + notify-send on PATH; the daemon and
-  # the scratchpad-cycle subcommands it invokes read the event socket and shell
-  # out to hyprctl. PYTHONPATH carries the shared hypr_ipc module.
+  # runtimeInputs puts python3 + notify-send on PATH; the daemon and the
+  # scratchpad-cycle subcommands it invokes read the event socket and talk to the
+  # request socket directly. PYTHONPATH carries the shared hypr_ipc module (used
+  # by the daemon and the spawned scratchpad_cycle for socket I/O).
   daemon = pkgs.writeShellApplication {
     name = "hypr-scratchpad-guard";
-    runtimeInputs = [pkgs.python3 pkgs.latest.hyprland pkgs.libnotify];
+    runtimeInputs = [pkgs.python3 pkgs.libnotify];
     text = ''
       export PYTHONPATH=${hyprIpc}''${PYTHONPATH:+:$PYTHONPATH}
       exec python3 ${./hypr_scratchpad_guard.py} ${./scratchpad_cycle.py} "$@"
