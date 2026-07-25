@@ -576,13 +576,18 @@ in {
               # claims FK13-24 in the layout slot and would clobber it.
               kb_layout = "us";
               kb_options = "cadet:parens";
-              # repeat_delay 300 + rate 40: the longer delay stops a brief
-              # key-linger from starting Wayland client-side key-repeat, which
-              # under load overshoots a late-delivered release and spews
-              # duplicate chars (the "stuck key" bug). Not a kanata/hardware
-              # issue -- the release is on time; the client repeat is late to stop.
+              # repeat_delay 400: ordinary typing holds some keys 150-310ms
+              # (measured from a kanata --trace of a bad session: 354 keys, max
+              # *letter* hold 311ms -- S/C/A all ~310ms mid-word). Wayland
+              # client-side key-repeat fires the instant a hold crosses
+              # repeat_delay, so the old 200 turned those normal long-ish presses
+              # into duplicate chars (the "stuck key" bug). 400 sits above the
+              # hold tail, so repeat only fires on deliberate holds. Proven NOT a
+              # kanata/compositor/scheduling issue -- kanata emits in ~0.3ms and
+              # the Hyprland IPC loop answers in ~0.1ms; the release is on time,
+              # the press was just long enough to legitimately trigger repeat.
               repeat_rate = 40;
-              repeat_delay = 300;
+              repeat_delay = 400;
               # accel_profile is global in Hyprland; "adaptive" is the libinput
               # default, so the mouse is unaffected -- this mirrors sway.
               accel_profile = "adaptive";
