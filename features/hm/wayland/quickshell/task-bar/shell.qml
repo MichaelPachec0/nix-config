@@ -9,6 +9,7 @@ import QtQuick
 import "lib" as Lib
 import "desktop" as Desktop
 import "hub" as Hub
+import "lock" as Lock
 
 ShellRoot {
     id: shellRoot
@@ -16,6 +17,12 @@ ShellRoot {
     // Global notification service (one server for all screens).
     Lib.NotifService {
         id: notifSvc
+    }
+
+    // Global lock: one WlSessionLock manages every output. Instantiated once
+    // (not per-screen) -- the surface Component is created per output internally.
+    Lock.Lock {
+        id: lockScreen
     }
 
     // Global Bluetooth state (one default adapter, shared by all screens).
