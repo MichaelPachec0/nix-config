@@ -372,33 +372,29 @@
   #       # };
   #     });
   # };
-  latest = final: prev: let
-    # Downstream fix for a Hyprland SIGSEGV (seen with the Quickshell popup
-    # work): CPopup::coordsRelativeToParent() dereferences the weak pointer
-    # m_resource->m_surface after only checking m_resource. A popup that
-    # outlives its XDG surface during client teardown -- still "visible" while
-    # m_fadingOut, hit-tested when a layer surface unmap re-runs
-    # simulateMouseMovement -- has an expired m_surface, so reading
-    # m_current.geometry.pos() segfaults in CBox::pos(). Every other access
-    # site in Popup.cpp guards both; this one doesn't. Present in v0.55.4 and
-    # upstream main. See overlays/0005-*.patch.
-    hyprland-patched = final.hyprland.overrideAttrs (old: {
-      patches =
-        (old.patches or [])
-        ++ [
-          ../overlays/0005-fix-hyprland-popup-coords-null-surface-deref.patch
-        ];
-    });
-  in {
+  latest = final: prev: {
     latest = {
-      hyprland = hyprland-patched;
+      # nixpkgs ships Hyprland 0.56.0 -- the old 0005 popup-coords SIGSEGV patch
+      # is obsolete (fixed upstream in 0.56) and is dropped. But nixpkgs'
+      # hyprlandPlugins.hy3 is still hl0.55.0, which will not load against a 0.56
+      # compositor, so hy3's src is pinned to the matching hl0.56.0.1 release
+      # (see the hy3 attr below) with our patches re-applied.
+      hyprland = final.hyprland;
       inherit (prev) waybar;
 
       sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
-      # Build hy3 against the patched hyprland so the plugin's embedded
-      # version/commit hash matches the running compositor (ABI is otherwise
-      # unchanged -- the patch only touches a .cpp, no headers).
-      hy3 = (final.hyprlandPlugins.hy3.override {hyprland = hyprland-patched;}).overrideAttrs (old: {
+      # nixpkgs' hy3 is hl0.55.0; pin the src to the hl0.56.0.1 release (built
+      # against nixpkgs' 0.56.0 hyprland so the plugin ABI matches) and re-apply
+      # our dispatcher patches -- 0004 rebased onto the 0.56 workspace API
+      # (getWorkspaceByID -> State::workspaceState()->query().id().run()).
+      hy3 = (final.hyprlandPlugins.hy3.override {inherit (final) hyprland;}).overrideAttrs (old: {
+        src = final.fetchFromGitHub {
+          owner = "outfoxxed";
+          repo = "hy3";
+          rev = "42b7ed8fd9aefd3f36e5f617afd5071245c67853"; # hl0.56.0.1
+          hash = "sha256-iK0vERuy5aXisDXm/bzcJP0dgaIot5MLPoVG62DjqO4=";
+        };
+        version = "0.56.0.1";
         patches =
           (old.patches or [])
           ++ [
