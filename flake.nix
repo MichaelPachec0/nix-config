@@ -5,18 +5,12 @@
     # NOTE: keeping stable so that stable packages (sway) can be accessed, and when using defining system on server.
     # IF LOGIN FAILS REMOVE THIS, this is also used because cross compilation of arm64 UEFI does not work on current stable.
     nixpkgs-oldstable = {url = "nixpkgs/nixos-23.05";};
-    # nixpkgs-stable = {url = "nixpkgs/nixos-25.05";};
     nixpkgs-stable = {url = "nixpkgs/nixos-26.05";};
-    # nixpkgs-stable = {url = "nixpkgs/nixos-23.11";};
-    # NixOS/nixpkgs/2057814051972fa1453ddfb0d98badbea9b83c06
     nixpkgs = {url = "nixpkgs/nixos-unstable";};
-    # NOTE: this is without nixos tests being done (ie does the installer work, DE's ...ect)
-    # a4073ec70f298e2941f4d3a7a0542135a9d24d04
     nixpkgs-master = {url = "nixpkgs/master";};
     nixpkgs-unstable-small.url = "nixpkgs/nixpkgs-unstable";
     home-manager = {
       url = "github:nix-community/home-manager";
-      # inputs.nixpkgs.follows = "nixpkgs-treesitter";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     home-manager-stable = {
@@ -36,19 +30,12 @@
       inputs = {
         nixpkgs.follows = "nixpkgs";
       };
-      # 2025-11-19: flake.nix for swayfx is month old
-      # inputs.scenefx.follows = "scenefx";
     };
 
     kmonad-pkgs = {
       url = "github:kmonad/kmonad?dir=nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    # nwg-displays-pkgs = {
-    #   url = "github:nwg-piotr/nwg-displays";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    # };
 
     nixpkgs-wayland = {
       url = "github:nix-community/nixpkgs-wayland";
@@ -57,13 +44,9 @@
     };
 
     spicetify = {
-      # url = "github:MichaelPachec0/spicetify-nix/fix-snap-err";
       url = "github:MichaelPachec0/spicetify-nix";
-      # url = "path:/home/michael/old/git/github/personal/nix/repos/spicetify-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # spicetify = {url = "path:/home/michael/old/git/github/personal/nixos-config-actual/repos/spicetify-nix";};
-    # tch-nvim = {url = "path:/home/michael/old/git/github/forked/telescope-cheat.nvim";};
     tch-nvim = {
       url = "github:MichaelPachec0/telescope-cheat.nvim";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -83,15 +66,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # this is for pr's that have not been merged yet.
-    # TODO: check if these have been merged into nixpkgs
-    # slh.url = "github:matthewcroughan/nixpkgs/mc/systemd-lock-handler";
-    # git-oxide.url = "github:jalil-salame/nixpkgs/fix-gitoxide";
     # for devshell
     flake-utils.url = "github:numtide/flake-utils";
-    # for cody
-    # TODO: move from using this to regular nixpkgs or create an overlay
-    # that uses this as the package.
 
     nixd = {
       url = "github:nix-community/nixd";
@@ -108,26 +84,14 @@
     neovim = {
       url = "github:nix-community/neovim-nightly-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
-      # NOTE: this is based on nightly from 2024-02-18 issues abound with some plugins (my version of lspconfig)
-      # inputs.neovim-flake.url = "github:neovim/neovim?dir=contrib&rev=8f1f2a1d9f6af56ae928f6cdc29055a0ba13baea";
     };
     # mozilla.url = "github:mozilla/nixpkgs-mozilla";
     joshuto = {
       url = "github:kamiyaa/joshuto";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # waybar-test = {
-    #   # WARN: only needed for the moment where waybar cannot compile
-    #   url = "github:tokyovigilante/waybar/wireplumber-0.5";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    # };
-    #    easy-tether = {
-    #      # url = "github:Programmerino/easytether-flake";
-    #      url = "path:/home/michael/old/git/github/personal/nixos-config-actual/repos/easytether-flake";
-    #      inputs.nixpkgs.follows = "nixpkgs"; };
     nix-gaming = {
       url = "github:fufexan/nix-gaming";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
     jlink = {
       # 2025-11-18: this gets tied to 874a, which is should have a download at all times for
@@ -166,17 +130,12 @@
     };
     flake-playground = {
       url = "github:MichaelPachec0/flake-playground";
-      # WARN: MAKE SURE TO CHANGE THIS!
+      # INFO: for local building
       # url = "path:/home/michael/git/personal/flake-playground";
-      # inputs.nixpkgs.follows = "nixpkgs";
     };
     lanzaboote = {
-      # 2025-11-11: upgraded to allow builing on unstable
-      # url = "github:nix-community/lanzaboote/v0.4.3";
-
-      # 2026-06-18 fixes nobootspec error in unstable
-      # ref: https://github.com/nix-community/lanzaboote/pull/617
-      url = "github:nix-community/lanzaboote/0403b4b7e8b2612657f0053a4c315e6c43eee9e6";
+      # 2025-11-11: graduated to the stable v1.1.0 relase
+      url = "github:nix-community/lanzaboote/v1.1.0";
 
       # Optional but recommended to limit the size of your system closure.
       inputs.nixpkgs.follows = "nixpkgs";
@@ -201,25 +160,22 @@
     };
     claude-for-linux = {
       url = "github:MichaelPachec0/claude-for-linux";
-      # inputs.nixpkgs.follows = "nixpkgs";
-      # inputs.flake-utils.follows = "flake-utils";
     };
+
     llm-agents.url = "github:numtide/llm-agents.nix";
-    # hy3 = {
-    #   url = "github:outfoxxed/hy3/2a89da65adeb5ae4c8782b64eaaa281003109d9f";
-    #   # inputs.hyprland.follows = "nixpkgs";
-    #   inputs.nixpkgs.follows = "nixpkgs";
-    # };
+
     glide = {
       url = "github:glide-browser/glide.nix";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.home-manager.follows = "home-manager";
     };
+
     ncspot = {
       url = "github:MichaelPachec0/ncspot";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
+
   outputs = {
     self,
     nixpkgs,
@@ -256,7 +212,15 @@
             enable = true;
             cycleResetDay = 1;
           };
-          services.ecPd.enable = true;
+          # DISABLED: reading EC RAM via ec_sys drives a gpe03 (EC SCI) storm
+          # (~700-1000/s) that starves the EC's keyboard-matrix scan -> late key
+          # releases / dropped keys (the "sticky keyboard"). Proven by isolation:
+          # stopping ec-pd-poll drops gpe03 from ~700/s to ~4/s. The reads
+          # themselves are the trigger (each RD_EC interleaves with the EC's query
+          # protocol); it is NOT fixed by a reboot or a full battery drain because
+          # the poller re-arms it every boot. Do not re-enable without a
+          # storm-safe EC read path.
+          services.ecPd.enable = false;
           local.nixAccessTokens.enable = true;
         }
       ];

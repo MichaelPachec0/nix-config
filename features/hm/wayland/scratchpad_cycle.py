@@ -28,10 +28,11 @@ scratchpad_cycle_test.py; the rest is Hyprland I/O.
 from __future__ import annotations
 
 import datetime
-import json
 import os
 import subprocess
 import sys
+
+from hypr_ipc import find_instance, request, request_json
 
 SPECIAL = "magic"
 SPECIAL_WS = f"special:{SPECIAL}"
@@ -42,6 +43,11 @@ STATE_FILE = os.path.join(_RT, "hypr-scratchpad-shown")
 # find members that are currently OUT even when the single state pointer above
 # doesn't track them (multiple out, stale pointer, etc.).
 MEMBERS_FILE = os.path.join(_RT, "hypr-scratchpad-members")
+# Command FIFO: the resident guard (hypr_scratchpad_guard) reads keybind commands
+# here, one per line, and runs them in-process -- so a keypress needn't spawn a
+# fresh python. The scratchpad-cycle wrapper writes here; a one-shot run is the
+# fallback when the daemon isn't up.
+CMD_FIFO = os.path.join(_RT, "hypr-scratchpad.cmd")
 # Debug trace: append-only, timestamped log of every cycle/reset decision. Off by
 # default; enable with SCRATCHPAD_DEBUG=1 (any non-"0" value), then follow it with:
 #   tail -f "$XDG_RUNTIME_DIR/hypr-scratchpad.log"
@@ -119,13 +125,28 @@ def forget(addr, members, shown):
 # ---------------------------------------------------------------------------
 # Hyprland I/O
 # ---------------------------------------------------------------------------
+_SIG = None
+
+
+def _sig():
+    """Resolve (and cache) the running Hyprland instance signature. Re-resolves if
+    the cached instance's socket has vanished, so the resident guard keeps working
+    across a Hyprland restart; lazy so the tests import the module with no session."""
+    global _SIG
+    if _SIG is None or not os.path.exists(
+        os.path.join(_RT, "hypr", _SIG, ".socket.sock")
+    ):
+        _SIG, _ = find_instance()
+    return _SIG or ""
+
+
 def hyprctl_json(*args):
-    out = subprocess.run(["hyprctl", *args, "-j"], capture_output=True, text=True, check=False)
-    return json.loads(out.stdout or "null")
+    # direct request-socket round-trip (~0.1ms) instead of spawning hyprctl (~12ms)
+    return request_json(_sig(), " ".join(args))
 
 
 def dispatch(expr):
-    subprocess.run(["hyprctl", "dispatch", expr], capture_output=True, check=False)
+    request(_sig(), "dispatch " + expr)
 
 
 def notify(msg):
@@ -448,9 +469,9 @@ def toggle_float():
         evict(addr)
 
 
-def main(argv):
-    cmd = argv[1] if len(argv) > 1 else "cycle"
-    arg = argv[2] if len(argv) > 2 else None
+def run_command(cmd, arg=None):
+    """Dispatch one scratchpad command. Shared by the one-shot CLI (main) and the
+    resident guard, which calls this in-process instead of spawning python."""
     if cmd == "reset":
         reset()
     elif cmd == "send":
@@ -465,6 +486,12 @@ def main(argv):
         toggle_float()
     else:
         cycle()
+
+
+def main(argv):
+    cmd = argv[1] if len(argv) > 1 else "cycle"
+    arg = argv[2] if len(argv) > 2 else None
+    run_command(cmd, arg)
     return 0
 
 

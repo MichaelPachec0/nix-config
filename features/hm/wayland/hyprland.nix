@@ -297,7 +297,7 @@
       ""
     ]
     ++ (submapCheatRows "group_with submap (Super+Shift+g)" "groupwith")
-    ++ [ "" ]
+    ++ [""]
     ++ (submapCheatRows "resize submap (Super+r)" "resize")
     ++ [
       ""
@@ -325,26 +325,50 @@
       icon = "f424"; # fa up-right-and-down-left-from-center
       label = "RESIZE";
       keys = [
-        { k = "hjkl"; d = "Resize"; }
-        { k = "Shift+hjkl"; d = "Nudge / move"; }
-        { k = "r"; d = "Equalize workspace"; }
-        { k = "Esc / Return"; d = "Exit"; }
+        {
+          k = "hjkl";
+          d = "Resize";
+        }
+        {
+          k = "Shift+hjkl";
+          d = "Nudge / move";
+        }
+        {
+          k = "r";
+          d = "Equalize workspace";
+        }
+        {
+          k = "Esc / Return";
+          d = "Exit";
+        }
       ];
     };
     groupwith = {
       icon = "f247"; # fa object-group
       label = "GROUP";
       keys = [
-        { k = "hjkl"; d = "Group w/ neighbour -> vertical"; }
-        { k = "Shift+hjkl"; d = "Group w/ neighbour -> tabbed"; }
-        { k = "Ctrl+hjkl"; d = "Group w/ neighbour -> horizontal"; }
-        { k = "Esc / Return"; d = "Cancel"; }
+        {
+          k = "hjkl";
+          d = "Group w/ neighbour -> vertical";
+        }
+        {
+          k = "Shift+hjkl";
+          d = "Group w/ neighbour -> tabbed";
+        }
+        {
+          k = "Ctrl+hjkl";
+          d = "Group w/ neighbour -> horizontal";
+        }
+        {
+          k = "Esc / Return";
+          d = "Cancel";
+        }
       ];
     };
   };
   # Cheatsheet rows for a submap, derived from submapHints (no drift with the pill).
   submapCheatRows = header: name:
-    [ "-- ${header} --" ]
+    ["-- ${header} --"]
     ++ map (e: chRow "  ${e.k}" e.d) submapHints.${name}.keys;
 
   # ---- hy3-project: open a project layout on the active workspace ----------
@@ -418,13 +442,27 @@
   # scratchpad-cycle: sway-style cycling scratchpad (special:magic). Super+-
   # (rebound below) reveals the next parked window and hides the previous, one
   # at a time; Super+Shift+- (rebound below) runs `send` (force-float + park the
-  # focused window); Super+= runs `pull`. stdlib Python; hyprctl for IPC,
-  # notify-send for the empty toast.
-  # Pure rotation logic covered by scratchpad_cycle_test.py.
+  # focused window); Super+= runs `pull`. Fast path: hand the command to the
+  # resident guard's FIFO (no python startup). Fallback: a one-shot python run
+  # when the daemon isn't up (stdlib; request socket via hypr_ipc on PYTHONPATH,
+  # notify-send for the empty toast). Pure rotation logic in scratchpad_cycle_test.py.
+  hyprIpc = import ./hypr-ipc-py.nix {inherit pkgs;};
   scratchpadCycleScript = pkgs.writeShellApplication {
     name = "scratchpad-cycle";
-    runtimeInputs = [pkgs.python3 pkgs.latest.hyprland pkgs.libnotify];
-    text = ''exec python3 ${./scratchpad_cycle.py} "$@"'';
+    runtimeInputs = [pkgs.python3 pkgs.libnotify pkgs.coreutils];
+    text = ''
+      # No-arg invocation means `cycle` (matches the one-shot default).
+      [ "$#" -gt 0 ] || set -- cycle
+      # Resident fast path: one line to the guard's command FIFO, no python
+      # startup. `timeout` guards a stale FIFO (daemon down, no reader).
+      fifo="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr-scratchpad.cmd"
+      if [ -p "$fifo" ] && printf '%s\n' "$*" | timeout 0.25 tee "$fifo" >/dev/null; then
+        exit 0
+      fi
+      # Fallback: one-shot run when the daemon isn't up.
+      export PYTHONPATH=${hyprIpc}''${PYTHONPATH:+:$PYTHONPATH}
+      exec python3 ${./scratchpad_cycle.py} "$@"
+    '';
   };
 in {
   config = {
@@ -576,13 +614,18 @@ in {
               # claims FK13-24 in the layout slot and would clobber it.
               kb_layout = "us";
               kb_options = "cadet:parens";
-              # repeat_delay 300 + rate 40: the longer delay stops a brief
-              # key-linger from starting Wayland client-side key-repeat, which
-              # under load overshoots a late-delivered release and spews
-              # duplicate chars (the "stuck key" bug). Not a kanata/hardware
-              # issue -- the release is on time; the client repeat is late to stop.
+              # repeat_delay 400: ordinary typing holds some keys 150-310ms
+              # (measured from a kanata --trace of a bad session: 354 keys, max
+              # *letter* hold 311ms -- S/C/A all ~310ms mid-word). Wayland
+              # client-side key-repeat fires the instant a hold crosses
+              # repeat_delay, so the old 200 turned those normal long-ish presses
+              # into duplicate chars (the "stuck key" bug). 400 sits above the
+              # hold tail, so repeat only fires on deliberate holds. Proven NOT a
+              # kanata/compositor/scheduling issue -- kanata emits in ~0.3ms and
+              # the Hyprland IPC loop answers in ~0.1ms; the release is on time,
+              # the press was just long enough to legitimately trigger repeat.
               repeat_rate = 40;
-              repeat_delay = 300;
+              repeat_delay = 400;
               # accel_profile is global in Hyprland; "adaptive" is the libinput
               # default, so the mouse is unaffected -- this mirrors sway.
               accel_profile = "adaptive";
@@ -768,10 +811,14 @@ in {
           # pulled-out member back to the pad); Super+= runs `pull` (extract the
           # focused member onto the current workspace).
           bind =
-            (builtins.filter (b: let k = builtins.elemAt b._args 0;
-                              in k != "SUPER + minus" && k != "SUPER + SHIFT + minus"
-                                 && k != "SUPER + SHIFT + f")
-              generatedLuaBinds)
+            (builtins.filter (b: let
+              k = builtins.elemAt b._args 0;
+            in
+              k
+              != "SUPER + minus"
+              && k != "SUPER + SHIFT + minus"
+              && k != "SUPER + SHIFT + f")
+            generatedLuaBinds)
             ++ hy3ExtraBinds
             ++ mouseBinds
             ++ [

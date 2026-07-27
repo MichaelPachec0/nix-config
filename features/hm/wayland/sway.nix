@@ -106,11 +106,14 @@
 
         input = {
           "type:keyboard" = {
-            # repeat_delay 300 + rate 40: longer delay stops a brief key-linger
-            # from starting client-side key-repeat, which under load overshoots a
-            # late-delivered release and spews duplicate chars ("stuck key" bug).
+            # repeat_delay 500: ordinary typing holds some keys 150-310ms (measured
+            # from a kanata --trace; max letter-hold 311ms). Wayland client-side
+            # key-repeat fires once a hold crosses repeat_delay, so a short delay
+            # turned normal long-ish presses into duplicate chars ("stuck key" bug).
+            # Kept above the hold tail so repeat only fires on deliberate holds --
+            # not a kanata/compositor issue (both add well under 1ms of latency).
             repeat_rate = "40";
-            repeat_delay = "300";
+            repeat_delay = "500";
           };
           "type:touchpad" = {
             natural_scroll = "enabled";

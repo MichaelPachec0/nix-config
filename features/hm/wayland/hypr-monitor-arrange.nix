@@ -15,13 +15,13 @@
 }: let
   cfg = config.services.hyprMonitorArrange;
 
-  # runtimeInputs puts python3 + hyprctl on PATH; the daemon shells out to
-  # `hyprctl reload` and reads the Hyprland event socket.
+  # runtimeInputs puts python3 on PATH; the daemon issues `reload` over Hyprland's
+  # request socket (via hypr_ipc on PYTHONPATH) and reads the event socket.
   hyprIpc = import ./hypr-ipc-py.nix {inherit pkgs;};
 
   daemon = pkgs.writeShellApplication {
     name = "hypr-monitor-arrange";
-    runtimeInputs = [pkgs.python3 pkgs.latest.hyprland];
+    runtimeInputs = [pkgs.python3];
     text = ''
       export PYTHONPATH=${hyprIpc}''${PYTHONPATH:+:$PYTHONPATH}
       exec python3 ${./hypr_monitor_arrange.py} "$@"

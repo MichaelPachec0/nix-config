@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+import os, sys
+# realpath (NOT abspath) resolves the ~/.claude/tools/affine-sync symlink back to
+# the repo, so the affine_sync package on the real path is importable.
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from affine_sync.cli import main
+raise SystemExit(main())

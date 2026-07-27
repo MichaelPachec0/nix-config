@@ -84,10 +84,10 @@ in {
     # Wine: wine-ge is the default `wine` (provides wine/wine64/wineserver/...).
     # wine-osu ships its own bin/wine and would collide, so it is exposed as a
     # separate `wine-osu` command to switch to when needed (e.g. for osu!).
-    ng.wine-ge
-    (pkgs.writeShellScriptBin "wine-osu" ''
-      exec ${ng.wine-osu}/bin/wine "$@"
-    '')
+    # ng.wine-ge
+    # (pkgs.writeShellScriptBin "wine-osu" ''
+    #   exec ${ng.wine-osu}/bin/wine "$@"
+    # '')
   ];
 
   # Proton-GE for Steam AND Heroic (reads Steam's compatibilitytools.d).

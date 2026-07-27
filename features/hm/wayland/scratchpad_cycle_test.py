@@ -124,5 +124,41 @@ class Forget(unittest.TestCase):
         self.assertEqual(sc.forget("0xa", ["0xa", "0xb"], None), (["0xb"], False))
 
 
+class RunCommand(unittest.TestCase):
+    """run_command routes each verb to the right action (the actions are stubbed,
+    so no Hyprland I/O runs)."""
+
+    ACTIONS = ("cycle", "send", "reset", "pull", "evict", "float_fix", "toggle_float")
+
+    def setUp(self):
+        self.calls = []
+        self._orig = {}
+        for name in self.ACTIONS:
+            self._orig[name] = getattr(sc, name)
+            setattr(sc, name, (lambda n: lambda *a: self.calls.append((n, a)))(name))
+
+    def tearDown(self):
+        for name, fn in self._orig.items():
+            setattr(sc, name, fn)
+
+    def test_named_verbs(self):
+        for verb in ("send", "reset", "pull", "toggle-float"):
+            sc.run_command(verb)
+        self.assertEqual(
+            self.calls,
+            [("send", ()), ("reset", ()), ("pull", ()), ("toggle_float", ())],
+        )
+
+    def test_verbs_with_arg(self):
+        sc.run_command("evict", "0xa")
+        sc.run_command("float-fix", "0xb")
+        self.assertEqual(self.calls, [("evict", ("0xa",)), ("float_fix", ("0xb",))])
+
+    def test_default_and_unknown_are_cycle(self):
+        sc.run_command("cycle")
+        sc.run_command("bogus")
+        self.assertEqual(self.calls, [("cycle", ()), ("cycle", ())])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1165,7 +1165,10 @@ in {
         networkmanagerapplet
         libva-utils
         mesa-demos
-        mindustry
+
+        # TODO: 2026-07-24: For some reason this needs compiling, check l8r
+        # if hydra has it cached
+        # mindustry
 
         lutris
         heroic
@@ -1390,9 +1393,23 @@ in {
     nix.settings.extra-platforms = config.boot.binfmt.emulatedSystems;
 
     services.windscribe.addUsersToGroup = ["michael"];
+    mcp.affine = {
+      enable = true;
+      baseUrl = "https://affine.michaelpacheco.org";
+      emailFile = config.sops.secrets."mcp/affine/username".path;
+      passwordFile = config.sops.secrets."mcp/affine/password".path;
+      http.allowUnauthenticated = true;
+      workspaceId = "2f9183ef-deea-4c65-a514-add0f71aa92b";
+      # toolProfile = "authoring";
+    };
+
+    sops.secrets."mcp/affine/username" = {};
+    sops.secrets."mcp/affine/password" = {};
+    # 2f9183ef-deea-4c65-a514-add0f71aa92b
 
     # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
     # system.stateVersion = "23.11";
+
     system.stateVersion = "24.11";
   };
 }
