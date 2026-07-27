@@ -113,11 +113,8 @@
             ../overlays/swaylock_effects/32_unlock_on_USR1_accept_input.patch
           ];
       });
-    # capnnproto-rust = prev.callPackage ./overlays/capnproto-rust {};
     electron-mail-latest =
       prev.callPackage ../pkgs/electron-mail {};
-    # inherit (inputs.slh.legacyPackages.${prev.stdenv.hostPlatform.system}) systemd-lock-handler;
-    # inherit (inputs.git-oxide.legacyPackages.${prev.stdenv.hostPlatform.system}) gitoxide;
     swaylockCheck =
       prev.callPackage ../pkgs/swaylock-check {inherit prev;};
     # charles = import ./pkgs/charles;
@@ -134,10 +131,6 @@
     nw = let
       nw = inputs.nixpkgs-wayland.packages.${prev.stdenv.hostPlatform.system};
       swayfx-unwrapped = prev.swayfx-unwrapped.overrideAttrs (old: {
-        # (_swayfx-unwrapped.override {
-        #   scenefx = _scenefx;
-        #   # wlroots_0_18 = prev.wlroots_0_19;
-        # }).overrideAttrs (old: {
         postPatch = ''
           mv sway.desktop swayfx.desktop
           substituteInPlace swayfx.desktop \
@@ -167,99 +160,10 @@
         inherit swayfx-unwrapped;
         sway = prev.sway.override {inherit (nw) sway-unwrapped;};
 
-        # {
-        #   "url": "https://gitlab.freedesktop.org/wlroots/wlroots",
-        #   "rev": "3f2aced8c6fd00b0b71da24c790850af2004052b",
-        #   "date": "2023-12-21T19:42:26+01:00",
-        #   "path": "/nix/store/kc7y95z65a9gzm72x8dafgm40sgidp43-wlroots",
-        #   "sha256": "1hj4gq5vx8in65622yvjm8bwqkw2vpc556k9my997a0hn0ricj37",
-        #   "hash": "sha256-Z0gWM7AQqJOSr2maUtjdgk/MF6pyeyFMMTaivgt+RMI=",
-        #   "fetchLFS": false,
-        #   "fetchSubmodules": false,
-        #   "deepClone": false,
-        #   "leaveDotGit": false
-        # }
-
-        # sway-beta = prev.stable.sway.override {sway-unwrapped = prev.stable.sway-unwrapped.override {wlroots = prev.wlroots_0_16.override { inherit (prev) mesa;} ;};};
-        # sway-beta = prev.sway.override {
-        #   sway-unwrapped =
-        #     # (inputs.nixpkgs-wayland.packages.${prev.stdenv.hostPlatform.system}.sway-unwrapped.override {
-        #     #   wlroots_0_16 = let
-        #     #     # NOTE: use lastest "stable" wlroots
-        #     #     wlroots = pkgs.wlroots_0_16.overrideAttrs (
-        #     #       old: {
-        #     #         src = pkgs.fetchFromGitLab {
-        #     #           domain = "gitlab.freedesktop.org";
-        #     #           owner = "wlroots";
-        #     #           repo = "wlroots";
-        #     #           hash = "sha256-JeDDYinio14BOl6CbzAPnJDOnrk4vgGNMN++rcy2ItQ=";
-        #     #           rev = "0a32b5a74db06a27bee55a47205951bb277a9657";
-        #     #         };
-        #     #       }
-        #     #     );
-        #     #   in
-        #     #     wlroots;
-        #     #   # wlroots_0_16 = nw.wlroots;
-        #     # })
-        #     (pkgs.sway-unwrapped)
-        #     # NOTE: using sway 1.9 branch
-        #     # .overrideAttrs (old: {
-        #     #   src = pkgs.fetchFromGitHub {
-        #     #     owner = "swaywm";
-        #     #     repo = "sway";
-        #     #     rev = "68d620a8fd70d70eb91c58dcfafc4af16c58379d";
-        #     #     hash = "sha256-WxnT+le9vneQLFPz2KoBduOI+zfZPhn1fKlaqbPL6/g=";
-        #     #   };
-        #     # });
-        #     ;
-        # };
-
-        # swayfx = prev.swayfx.override {
-        #   swayfx-unwrapped =
-        #     # install_data(
-        #     # 	'sway.desktop',
-        #     # 	install_dir: join_paths(datadir, 'wayland-sessions')
-        #     # )
-        #     #           then ''
-        #     #   substituteInPlace src/commands/cynthion_setup.py \
-        #     #   --replace-fail \
-        #     #         "        _install_udev(args)" \
-        #     #         "        logging.info(\"✅ NixOS has already took care of setup process.\n   Please verify with cythion setup --check\")"
-        #     # ''
-        #     prev.swayfx-unwrapped.overrideAttrs (old: {
-        #       postPatch = ''
-        #         mv sway.desktop swayfx.desktop
-        #         substituteInPlace meson.build \
-        #         --replace-fail \
-        #           "	'sway.desktop'," \
-        #           "	'swayfx.desktop',"
-        #       '';
-        #       # postInstall = ''
-        #       #
-        #       #
-        #       # '';
-        #     });
-        # };
-        # NOTE: sway from nixpkgs-wayland currently is not operational
-        # (spotify black screens even in xwayland, firefox has weird scaling issues moving from screen to screen.)
-        # for now use sway from nixpkgs.
-        # sway-beta = prev.swayfx;
-        # hypr = ((import (hyprland-patched + "/flake.nix")).outputs{ inherit nixpkgs;}).packages.${prev.stdenv.hostPlatform.system};
-        # NOTE: sway from nixpkgs-wayland currently is not operational
-        # (spotify black screens even in xwayland, firefox has weird scaling issues moving from screen to screen.)
-        # for now use sway from nixpkgs.
         sway-beta = prev.sway.override {inherit (nw) sway-unwrapped;};
         swayidle-test = nw.swayidle.override {systemdSupport = false;};
-        # sway-beta = pkgs.swayfx;
-        # hypr = ((import (hyprland-patched + "/flake.nix")).outputs{ inherit nixpkgs;}).packages.${prev.stdenv.hostPlatform.system};
-        # zen-browser = inputs.zen-browser.packages.${prev.stdenv.hostPlatform.system}.default;
         swayfx = prev.swayfx.override {inherit swayfx-unwrapped;};
       };
-  };
-  firefox = final: prev: {
-    # NOTE: This the best way think of manually updating firefox
-    # TODO: (med prio) break this off into its own flake. This will allow for
-    # auto-update per-flake basis, and maybe run checks?
   };
   figma-linux = final: prev: {
     figma-linux = prev.figma-linux.overrideAttrs (old: rec {
@@ -276,102 +180,10 @@
       '';
     });
   };
-  ncspot = final: prev: {
-    ncspot = (prev.ncspot.overrideAttrs
-      (old: rec {
-        version = "1.3.3";
-        src = prev.fetchFromGitHub {
-          owner = "MichaelPachec0";
-          inherit (old.src) repo;
-          # rev = "0b6400e7d5d86460cdaaff39be4585edd1f4d628";
-          # hash = "sha256-mGv2FNTHp25/ZFSpAiU7hA41VrXWO35AKFUther56Qo=";
-          # rev = "f6b65b9b53fd7397e17ff094efad0384e6ff6250";
-          # hash = "sha256-CpcB+/z47r+XorBS16yYjVESX7L+vJQnsw7v0N4R2ok=";
-          # rev = "f6d9af30637403559a72ba343c28c239fbad0640";
-          # hash = "sha256-S8EWp9vtWDnTDzfDz45LvbRfOS4yfIeKdIstpPQxsHc=";
-          # rev = "3a7a0adfb7af7b00a1e335da1015e1ea5d789f88";
-          # hash = "sha256-4lXdGqsKSnJGwJJQ4jKUdCS11ZSJxZL1786C+aoY/xk=";
-          rev = "c3decd3bf22f31b8e12223f5182dfc78e6862b6d";
-          hash = "sha256-fyKBpyE/TjwPo8nZCPxjBmHwHhsNVhIDtPwt3e6toEs=";
-        };
-
-        cargoDeps = prev.rustPlatform.fetchCargoVendor {
-          name = "${old.pname}-${old.version}";
-          inherit src;
-          # when rebuilding make sure to make hash = "" so that the cargo hash gets computed
-          # hash = "sha256-1+dt7tzYpV5g/rlI3Xyv7X5BdyiheOZNO122H8eKA2E=";
-          # hash = "sha256-Qjsn3U9KZr5qZliJ/vbudfkH1uOng1N5c8dAyH+Y5vQ=";
-          # hash = "sha256-ivlanIexJDn2V47ni0cCLCsNC+ObMh/5IpvPXuv+1/Q=";
-          # hash = "sha256-FepaUgwOaQKW+0ugGDbqFmZmVPL7wqVaYyLk5UjND2o=";
-          # hash = "sha256-XmEiTUKb7ksPxQbjjDG8hZmIM/vJ6nnb30GSJp9F+18=";
-          hash = "sha256-ny1vGZSUHxjUZb/nxu2SXP1gimPlPBUejAjiqPpe+CM=";
-        };
-        passthru = {
-          tests.version = old.testers.testVersion {package = final.ncspot;};
-          updateScript = old.nix-update-script {};
-        };
-        # cargoBuildFlags = ["--features=cover"];
-      }))
-    .override {withCover = true;};
-
-    # fastanime = inputs.fastanime.packages.${pkgs.system}.default;
-  };
-  fastanime = final: prev: {
-    fastanime = inputs.fastanime.packages.${prev.stdenv.hostPlatform.system}.default;
-  };
-
-  # cantarell-fonts (0.311+) runs afdko's otfautohint during its build. A
-  # spurious assertion in calcInstanceStems() aborts hinting whenever a 'high'
-  # ghost stem is a glyph's first stem -- exactly the case for Cantarell's small
-  # diagonal accents -- so the whole font fails to build. Patch the afdko used
-  # by the font build. The override is scoped through cantarell's own python3
-  # argument, so the system-wide python3 package set is untouched: only afdko
-  # and the handful of build inputs that depend on it (e.g. cffsubr) rebuild.
-  # See overlays/afdko-otfautohint-high-ghost-assert.patch.
-  fonts = final: prev: {
-    cantarell-fonts = prev.cantarell-fonts.override {
-      python3 = prev.python3.override {
-        packageOverrides = _pyFinal: pyPrev: {
-          afdko = pyPrev.afdko.overrideAttrs (old: {
-            patches =
-              (old.patches or [])
-              ++ [
-                # ../overlays/afdko-otfautohint-high-ghost-assert.patch
-              ];
-          });
-        };
-      };
-    };
-  };
 
   pam_rssh = final: prev: {
     pam_rssh = prev.callPackage ../overlays/pam_rssh {};
   };
-  # pam_rssh = final: prev: {
-  #   pam_rssh =
-  #     prev.pam_rssh.overrideAttrs
-  #     (old: rec {
-  #       version = "master_1.2.0_6-22-25";
-  #       src = prev.fetchFromGitHub {
-  #         inherit (old.src) owner repo;
-  #         rev = "98ab0f80d116923eae196a496e01b2975be9eeeb";
-  #         hash = "sha256-DCCBIjo6h3E+fyk2vN2EAQP+G+IGWWxI7FYJzC9yRgQ=";
-  #         fetchSubmodules = true;
-  #         deepClone = true;
-  #       };
-  #       cargoDeps = prev.rustPlatform.importCargoLock {
-  #         lockFile = "${src}/Cargo.lock";
-  #       };
-  #       # useFetchCargoVendor = true;
-  #       # cargoHash = "sha256-4DoMRtyT2t4degi8oOyVTStb0AU0P/7XeYk15JLRrqg=";
-  #       # cargoDeps = prev.rustPlatform.fetchCargoVendor {
-  #       #   name = "${old.pname}-${old.version}";
-  #       #   inherit src;
-  #       #   hash = "sha256-4DoMRtyT2t4degi8oOyVTStb0AU0P/7XeYk15JLRrqg=";
-  #       #   fetchSubmodules = true;
-  #       # };
-  #     });
-  # };
   latest = final: prev: {
     latest = {
       # nixpkgs ships Hyprland 0.56.0 -- the old 0005 popup-coords SIGSEGV patch
@@ -379,7 +191,7 @@
       # hyprlandPlugins.hy3 is still hl0.55.0, which will not load against a 0.56
       # compositor, so hy3's src is pinned to the matching hl0.56.0.1 release
       # (see the hy3 attr below) with our patches re-applied.
-      hyprland = final.hyprland;
+      inherit (final) hyprland;
       inherit (prev) waybar;
 
       sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
@@ -421,20 +233,12 @@
   };
   baseDesktop = [
     inputs.nix-vscode-extensions.overlays.default
-    # inputs.swayfx.overlays.default
-    # inputs.waybar-git.overlays.default
     inputs.nix-your-shell.overlays.default
     inputs.rust-overlay.overlays.default
-    # inputs.hyprland.overlays.default
     # (import ./pkgs/charles)
-    firefox
     wayland
     figma-linux
-    ncspot
     # fastanime
-    fonts
-    # NOTE: still need to migrate from using this, as sg has now moved from using an overlay.
-    # inputs.sg.overlays.default
   ];
   # TODO: decide if abstracting this is worthwhile.
   overlayList = {};
@@ -449,17 +253,9 @@
   base = [
     channels
     inputs.flake-playground.overlays.default
-    # (
-    #   final: prev: {
-    #     joshuto = prev.joshuto.override {rustPlatform = prev.unstable.rustPlatform;};
-    #   }
-    # )
     pam_rssh
-    # modules
   ];
 in {
-  # stable = mkOverlay "stable";
-  # unstable = mkOverlay;
   stable = let
     # NOTE: for some reason this does not work, its asking for config, where it should not be asking for it
     # this is not an issue when home-manager is defined in flake.nix.
@@ -572,13 +368,5 @@ in {
           ++ lspServers
         ))
     ];
-    # nixosDesktop =
   };
-  # nixosMinimal = nixos;
-  # nixosDesktop = nixosDesktop;
-  # homeManagerModules = homeManagerModules;
-  # homeManagerMinmal = homeManagerMinmal;
-  # base = base;
-  # channels = channels;
-  # base =
 }
