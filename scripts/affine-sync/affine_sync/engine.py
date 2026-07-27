@@ -56,7 +56,6 @@ def sync_changed(cfg, repo_dir, force_all=False):
         sp = os.path.join(repo_dir, STATE_FILE)
         st = state.load(sp)
         st["workspaceId"] = cfg["workspaceId"]
-        _ensure_property(client)
         changed = False
         for path in _docs(repo_dir):
             try:
@@ -84,19 +83,11 @@ def sync_file(cfg, repo_dir, relpath):
         repo = _repo_name(cfg, repo_dir)
         sp = os.path.join(repo_dir, STATE_FILE)
         st = state.load(sp); st["workspaceId"] = cfg["workspaceId"]
-        _ensure_property(client)
         if _sync_one(client, st, repo, repo_dir, os.path.join(repo_dir, relpath)):
             state.save(sp, st)
             build_readme(cfg, client, st)
     except Exception as e:
         _log("{} ERROR file {} {}".format(_now(), relpath, e))
-
-def _ensure_property(client):
-    # Ensure the workspace-wide syncKey text property exists (idempotent per spike).
-    try:
-        client.call("create_custom_property", {"name": "syncKey", "type": "text"})
-    except Exception:
-        pass   # already exists (or transient) -> fine
 
 def _build_index(client, state_data):
     # Build the repo->feature->docs index from the ORGANIZE-FOLDER tree.
