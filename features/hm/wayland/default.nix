@@ -10,6 +10,7 @@
   imports = [
     ./theme.nix
     ./quickshell.nix
+    ./quickshell-lock.nix
     ./swayidle.nix
     ./waybar
     ./rofi.nix

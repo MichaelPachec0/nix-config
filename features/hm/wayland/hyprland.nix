@@ -586,6 +586,10 @@ in {
               disable_hyprland_logo = true;
               animate_manual_resizes = true;
               enable_swallow = false; # keep GUI apps in their own window; don't hide the launching terminal
+              # Let a relaunched Quickshell re-acquire (then release) a stranded
+              # ext-session-lock -- the escape hatch's recovery path
+              # (lock-escape / QS_LOCK_ESCAPE). See quickshell-lock.nix.
+              allow_session_lock_restore = true;
             };
 
             render = {
@@ -834,7 +838,19 @@ in {
               cheatBind
               hy3ProjectBind
               hubBind
-            ];
+            ]
+            # Dev escape hatch: recover a stranded/crashed session lock. LOCKED
+            # bind (locked=true) so it fires WHILE the ext-session-lock holds
+            # input -- a plain bind is suppressed under lock. Gated by the same
+            # failOpenOnCrash flag as the watchdog (quickshell-lock.nix); dropped
+            # at v2. `lock-escape` is on PATH via that module.
+            ++ lib.optional config.quickshellLock.failOpenOnCrash {
+              _args = [
+                "SUPER + CONTROL + ALT + u"
+                (mkLuaInline ''hl.dsp.exec_cmd("lock-escape")'')
+                {locked = true;}
+              ];
+            };
 
           # hl.on("hyprland.start", function() ... end). hy3 setup runs first
           # (load + config), then the autostart apps.
