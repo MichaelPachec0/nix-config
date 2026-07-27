@@ -29,7 +29,7 @@ def _ensure_folder(client, name, parent_id):
 def ensure(client, state_data, repo, feature):
     folders = state_data.setdefault("folders", {})
     feat_key = "{}/{}".format(repo, feature)
-    if feat_key in folders:
+    if folders.get(feat_key):
         return folders[feat_key]
     repo_id = folders.get(repo) or _ensure_folder(client, repo, None)
     folders[repo] = repo_id

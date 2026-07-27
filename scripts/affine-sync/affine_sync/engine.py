@@ -37,7 +37,8 @@ def _sync_one(client, st, repo, repo_dir, path):
     spec = docspec.build(repo, relpath, text)
     if spec.skip:
         return False
-    if state.unchanged(st, relpath, spec.sha256):
+    prev = st["docs"].get(relpath, {})
+    if state.unchanged(st, relpath, spec.sha256) and prev.get("title") == spec.title:
         return False
     fid = folders.ensure(client, st, repo, spec.feature)
     entry = upsert.doc(client, st, repo, spec, fid)

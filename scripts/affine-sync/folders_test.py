@@ -36,3 +36,10 @@ class Ensure(unittest.TestCase):
         fid = folders.ensure(c, st, "nix-config", "quickshell")
         self.assertEqual(fid, "F")
         self.assertEqual([n for n, _ in c.calls].count("create_folder"), 0)
+    def test_cached_none_feature_self_heals(self):
+        c = FakeClient()
+        c.nodes = [{"id": "R", "parentId": None, "type": "folder", "data": "nix-config"}]
+        st = {"folders": {"nix-config": "R", "nix-config/quickshell": None}}   # poisoned None
+        fid = folders.ensure(c, st, "nix-config", "quickshell")
+        self.assertIsNotNone(fid)                                # self-healed
+        self.assertEqual(st["folders"]["nix-config/quickshell"], fid)

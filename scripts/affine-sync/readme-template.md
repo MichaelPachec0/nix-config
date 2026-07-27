@@ -14,6 +14,6 @@ Engine: `~/.claude/tools/affine-sync`. Config: `~/.claude/affine-sync/config.jso
 
 - kinds: `spec`, `plan`, `review`, `notes`, reference docs (`<name>.md`), and
   dated `handoffs/` and `errata/` subfolders.
-- Titles: `"<feature> - <kind>"`. Identity: per-repo state file + a `syncKey`
-  custom property; never the title.
+- Titles: `"<feature> - <kind>"`. Identity: the per-repo state file (docId per
+  path); on state loss it reconciles by matching the title.
 - Front-matter overrides: `title`, `order`, `skipSync`.

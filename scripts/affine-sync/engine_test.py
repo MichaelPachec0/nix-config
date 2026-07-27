@@ -48,3 +48,15 @@ class Engine(unittest.TestCase):
             cfg = {"endpoint": "E", "workspaceId": "W", "_client": c, "_repo_name": "repo"}
             engine.sync_changed(cfg, repo)                 # bad.md sorts first; must not abort
             self.assertIn("create_doc_from_markdown", c.calls)  # foo/spec.md still synced
+    def test_title_only_change_resyncs(self):
+        with tempfile.TemporaryDirectory() as repo:
+            d = os.path.join(repo, "docs", "foo"); os.makedirs(d)
+            fp = os.path.join(d, "spec.md")
+            open(fp, "w").write("# S\nbody\n")
+            c = FakeClient()
+            cfg = {"endpoint": "E", "workspaceId": "W", "_client": c, "_repo_name": "repo"}
+            engine.sync_changed(cfg, repo)                       # first: create
+            c.calls.clear()
+            open(fp, "w").write("---\ntitle: New Title\n---\n# S\nbody\n")  # title-only (body same)
+            engine.sync_changed(cfg, repo)
+            self.assertIn("update_doc_title", c.calls)           # title change propagated
