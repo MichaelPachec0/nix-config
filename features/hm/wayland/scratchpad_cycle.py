@@ -43,6 +43,11 @@ STATE_FILE = os.path.join(_RT, "hypr-scratchpad-shown")
 # find members that are currently OUT even when the single state pointer above
 # doesn't track them (multiple out, stale pointer, etc.).
 MEMBERS_FILE = os.path.join(_RT, "hypr-scratchpad-members")
+# Command FIFO: the resident guard (hypr_scratchpad_guard) reads keybind commands
+# here, one per line, and runs them in-process -- so a keypress needn't spawn a
+# fresh python. The scratchpad-cycle wrapper writes here; a one-shot run is the
+# fallback when the daemon isn't up.
+CMD_FIFO = os.path.join(_RT, "hypr-scratchpad.cmd")
 # Debug trace: append-only, timestamped log of every cycle/reset decision. Off by
 # default; enable with SCRATCHPAD_DEBUG=1 (any non-"0" value), then follow it with:
 #   tail -f "$XDG_RUNTIME_DIR/hypr-scratchpad.log"
@@ -124,12 +129,13 @@ _SIG = None
 
 
 def _sig():
-    """Resolve (and cache) the running Hyprland instance signature. This is a
-    short-lived script, so one lazy lookup covers the whole run; kept out of
-    import time so scratchpad_cycle_test.py can import the module with no
-    Hyprland session."""
+    """Resolve (and cache) the running Hyprland instance signature. Re-resolves if
+    the cached instance's socket has vanished, so the resident guard keeps working
+    across a Hyprland restart; lazy so the tests import the module with no session."""
     global _SIG
-    if _SIG is None:
+    if _SIG is None or not os.path.exists(
+        os.path.join(_RT, "hypr", _SIG, ".socket.sock")
+    ):
         _SIG, _ = find_instance()
     return _SIG or ""
 
@@ -463,9 +469,9 @@ def toggle_float():
         evict(addr)
 
 
-def main(argv):
-    cmd = argv[1] if len(argv) > 1 else "cycle"
-    arg = argv[2] if len(argv) > 2 else None
+def run_command(cmd, arg=None):
+    """Dispatch one scratchpad command. Shared by the one-shot CLI (main) and the
+    resident guard, which calls this in-process instead of spawning python."""
     if cmd == "reset":
         reset()
     elif cmd == "send":
@@ -480,6 +486,12 @@ def main(argv):
         toggle_float()
     else:
         cycle()
+
+
+def main(argv):
+    cmd = argv[1] if len(argv) > 1 else "cycle"
+    arg = argv[2] if len(argv) > 2 else None
+    run_command(cmd, arg)
     return 0
 
 

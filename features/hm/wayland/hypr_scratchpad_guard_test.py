@@ -30,5 +30,33 @@ class Classify(unittest.TestCase):
         self.assertEqual(g.classify("activewindowv2", "593cb426c700"), (None, None))
 
 
+class RunLine(unittest.TestCase):
+    """run_line parses 'cmd [arg]' and forwards to scratchpad_cycle.run_command
+    (stubbed, so no Hyprland I/O runs)."""
+
+    def setUp(self):
+        import scratchpad_cycle
+        self._sc = scratchpad_cycle
+        self._orig = scratchpad_cycle.run_command
+        self.calls = []
+        scratchpad_cycle.run_command = lambda cmd, arg=None: self.calls.append((cmd, arg))
+
+    def tearDown(self):
+        self._sc.run_command = self._orig
+
+    def test_cmd_only(self):
+        g.run_line("cycle")
+        self.assertEqual(self.calls, [("cycle", None)])
+
+    def test_cmd_with_arg(self):
+        g.run_line("float-fix 0xabc")
+        self.assertEqual(self.calls, [("float-fix", "0xabc")])
+
+    def test_blank_is_noop(self):
+        g.run_line("")
+        g.run_line("   ")
+        self.assertEqual(self.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()

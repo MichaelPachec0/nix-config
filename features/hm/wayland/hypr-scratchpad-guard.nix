@@ -1,12 +1,13 @@
-# Home-manager module: a small daemon that keeps the Hyprland scratchpad
-# (special:magic) float-only. It watches socket2 and, via the scratchpad-cycle
-# subcommands, (a) evicts a pad member whose floating attribute is turned off
-# and (b) floats a tiled window that is moved into the pad. Daemon logic:
-# ./hypr_scratchpad_guard.py (pure classify covered by
-# ./hypr_scratchpad_guard_test.py); shared socket2 glue from ./hypr_ipc.py
-# (co-located on PYTHONPATH via ./hypr-ipc-py.nix). The daemon shells out to
-# ./scratchpad_cycle.py (passed by store path) so all pad state lives in one
-# place. Pairs with the float-forcing send/pull binds in hyprland.nix.
+# Home-manager module: the resident scratchpad daemon. It keeps the Hyprland
+# scratchpad (special:magic) float-only AND serves the scratchpad-cycle keybinds:
+# it watches socket2 (floats a tiled window moved into the pad) and reads a
+# command FIFO (cycle/send/reset/pull/toggle-float/evict) that the keybinds
+# write to, running every action IN-PROCESS via scratchpad_cycle.run_command --
+# so a keypress or event no longer spawns a fresh python. Daemon logic:
+# ./hypr_scratchpad_guard.py (pure classify + run_line parsing covered by
+# ./hypr_scratchpad_guard_test.py); it imports scratchpad_cycle + hypr_ipc,
+# co-located on PYTHONPATH via ./hypr-scratchpad-py.nix. Pairs with the
+# float-forcing send/pull binds and the FIFO-writing wrapper in hyprland.nix.
 {
   config,
   lib,
@@ -15,18 +16,17 @@
 }: let
   cfg = config.services.hyprScratchpadGuard;
 
-  hyprIpc = import ./hypr-ipc-py.nix {inherit pkgs;};
+  hyprPy = import ./hypr-scratchpad-py.nix {inherit pkgs;};
 
-  # runtimeInputs puts python3 + notify-send on PATH; the daemon and the
-  # scratchpad-cycle subcommands it invokes read the event socket and talk to the
-  # request socket directly. PYTHONPATH carries the shared hypr_ipc module (used
-  # by the daemon and the spawned scratchpad_cycle for socket I/O).
+  # runtimeInputs puts python3 + notify-send on PATH; the daemon reads the event
+  # socket and the command FIFO and talks to Hyprland's request socket directly.
+  # PYTHONPATH carries hypr_ipc + scratchpad_cycle (imported in-process), no spawn.
   daemon = pkgs.writeShellApplication {
     name = "hypr-scratchpad-guard";
     runtimeInputs = [pkgs.python3 pkgs.libnotify];
     text = ''
-      export PYTHONPATH=${hyprIpc}''${PYTHONPATH:+:$PYTHONPATH}
-      exec python3 ${./hypr_scratchpad_guard.py} ${./scratchpad_cycle.py} "$@"
+      export PYTHONPATH=${hyprPy}''${PYTHONPATH:+:$PYTHONPATH}
+      exec python3 ${./hypr_scratchpad_guard.py} "$@"
     '';
   };
 in {
