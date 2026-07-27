@@ -127,7 +127,6 @@
     #      inputs.nixpkgs.follows = "nixpkgs"; };
     nix-gaming = {
       url = "github:fufexan/nix-gaming";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
     jlink = {
       # 2025-11-18: this gets tied to 874a, which is should have a download at all times for
@@ -166,17 +165,13 @@
     };
     flake-playground = {
       url = "github:MichaelPachec0/flake-playground";
-      # WARN: MAKE SURE TO CHANGE THIS!
+      # INFO: for local building
       # url = "path:/home/michael/git/personal/flake-playground";
       # inputs.nixpkgs.follows = "nixpkgs";
     };
     lanzaboote = {
-      # 2025-11-11: upgraded to allow builing on unstable
-      # url = "github:nix-community/lanzaboote/v0.4.3";
-
-      # 2026-06-18 fixes nobootspec error in unstable
-      # ref: https://github.com/nix-community/lanzaboote/pull/617
-      url = "github:nix-community/lanzaboote/0403b4b7e8b2612657f0053a4c315e6c43eee9e6";
+      # 2025-11-11: graduated to the stable v1.1.0 relase
+      url = "github:nix-community/lanzaboote/v1.1.0";
 
       # Optional but recommended to limit the size of your system closure.
       inputs.nixpkgs.follows = "nixpkgs";
