@@ -46,7 +46,11 @@ in {
         ExecStart = pkgs.writeShellScript "qs-lock-watchdog" ''
           marker="''${XDG_RUNTIME_DIR:-/run/user/$UID}/quickshell-lock.locked"
           while true; do
-            if [ -e "$marker" ] && ! ${pkgs.procps}/bin/pgrep -x quickshell >/dev/null; then
+            # `-f 'quickshell -c task-bar'`, not `-x quickshell`: the wrapped bar's
+            # comm is `.quickshell-wra`, so `-x quickshell` matches nothing even while
+            # the bar is alive -- which would make this watchdog false-detect "dead" and
+            # unlock every legitimate lock. Match the full command line instead.
+            if [ -e "$marker" ] && ! ${pkgs.procps}/bin/pgrep -f 'quickshell -c task-bar' >/dev/null; then
               ${lockEscape}/bin/lock-escape
               rm -f "$marker"
             fi

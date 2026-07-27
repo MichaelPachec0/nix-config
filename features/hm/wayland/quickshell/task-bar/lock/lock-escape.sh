@@ -13,7 +13,10 @@ if qs -c "$CFG" ipc call lock unlock 2>/dev/null; then
 fi
 
 # Shell unresponsive/dead: ensure it is gone, then relaunch in escape mode.
-pkill -x quickshell 2>/dev/null || true
+# Match the wrapped bar by cmdline: its comm is truncated to
+# `.quickshell-wra`, so `-x quickshell` never matches. `-f` on the full
+# `quickshell -c task-bar` command line is comm-truncation-proof.
+pkill -f 'quickshell -c task-bar' 2>/dev/null || true
 sleep 0.3
 QS_LOCK_ESCAPE=1 qs -c "$CFG" >/dev/null 2>&1 &
 exit 0
