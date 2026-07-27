@@ -59,10 +59,13 @@ def sync_changed(cfg, repo_dir, force_all=False):
         _ensure_property(client)
         changed = False
         for path in _docs(repo_dir):
-            if force_all:
-                relpath = os.path.relpath(path, repo_dir)
-                st["docs"].get(relpath, {}).pop("sha256", None)
-            changed = _sync_one(client, st, repo, repo_dir, path) or changed
+            try:
+                if force_all:
+                    relpath = os.path.relpath(path, repo_dir)
+                    st["docs"].get(relpath, {}).pop("sha256", None)
+                changed = _sync_one(client, st, repo, repo_dir, path) or changed
+            except Exception as e:
+                _log("{} ERROR doc {} {}".format(_now(), path, e))
         state.save(sp, st)
         if changed:
             build_readme(cfg, client, st)

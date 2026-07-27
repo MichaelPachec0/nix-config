@@ -38,3 +38,13 @@ class Engine(unittest.TestCase):
                 def reachable(self): return False
             cfg = {"endpoint": "E", "workspaceId": "W", "_client": Down(), "_repo_name": "repo"}
             engine.sync_changed(cfg, repo)  # must return without raising
+    def test_bad_doc_path_does_not_abort_batch(self):
+        # a flat docs/bad.md path makes docspec.build raise; the valid doc must still sync
+        with tempfile.TemporaryDirectory() as repo:
+            os.makedirs(os.path.join(repo, "docs", "foo"))
+            open(os.path.join(repo, "docs", "bad.md"), "w").write("flat path -> raises")
+            open(os.path.join(repo, "docs", "foo", "spec.md"), "w").write("# ok\nbody\n")
+            c = FakeClient()
+            cfg = {"endpoint": "E", "workspaceId": "W", "_client": c, "_repo_name": "repo"}
+            engine.sync_changed(cfg, repo)                 # bad.md sorts first; must not abort
+            self.assertIn("create_doc_from_markdown", c.calls)  # foo/spec.md still synced
