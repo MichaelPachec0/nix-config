@@ -1165,7 +1165,10 @@ in {
         networkmanagerapplet
         libva-utils
         mesa-demos
-        mindustry
+
+        # TODO: 2026-07-24: For some reason this needs compiling, check l8r
+        # if hydra has it cached
+        # mindustry
 
         lutris
         heroic

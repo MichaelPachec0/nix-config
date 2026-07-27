@@ -77,7 +77,8 @@ in {
         # vnc
         wayvnc
         # browsers
-        nyxt
+        # WARN: 2026-07-25: wtf does it take so long to compile this shiii
+        # nyxt
         #firefox-esr
 
         # NOTE: depends on qute
