@@ -256,7 +256,15 @@
             enable = true;
             cycleResetDay = 1;
           };
-          services.ecPd.enable = true;
+          # DISABLED: reading EC RAM via ec_sys drives a gpe03 (EC SCI) storm
+          # (~700-1000/s) that starves the EC's keyboard-matrix scan -> late key
+          # releases / dropped keys (the "sticky keyboard"). Proven by isolation:
+          # stopping ec-pd-poll drops gpe03 from ~700/s to ~4/s. The reads
+          # themselves are the trigger (each RD_EC interleaves with the EC's query
+          # protocol); it is NOT fixed by a reboot or a full battery drain because
+          # the poller re-arms it every boot. Do not re-enable without a
+          # storm-safe EC read path.
+          services.ecPd.enable = false;
           local.nixAccessTokens.enable = true;
         }
       ];
