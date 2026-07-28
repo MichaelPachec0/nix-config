@@ -3,7 +3,6 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
-import "." as Lock
 
 Scope {
     id: root
@@ -65,7 +64,7 @@ Scope {
     // fail-open is enabled, acquire the (stranded) lock then immediately release
     // it, which unlocks the compositor. Requires misc:allow_session_lock_restore.
     Component.onCompleted: {
-        if (Quickshell.env("QS_LOCK_ESCAPE") === "1" && Lock.LockConfig.failOpenOnCrash) {
+        if (Quickshell.env("QS_LOCK_ESCAPE") === "1" && LockConfig.failOpenOnCrash) {
             root.locked = true;   // re-acquires the stranded lock (restore)
             releaseTimer.start();
         }
