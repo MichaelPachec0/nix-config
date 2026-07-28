@@ -1,5 +1,6 @@
 // features/hm/wayland/quickshell/task-bar/lock/LockConfig.qml
 pragma Singleton
+import QtQuick
 import Quickshell
 import Quickshell.Io
 
