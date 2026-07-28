@@ -3,6 +3,7 @@
 // Non-security presentation. All surfaces share the same `context`, so typing /
 // feedback is mirrored across outputs.
 import QtQuick
+import Quickshell.Services.Mpris
 import "../lib/weathericons.js" as WeatherIcons
 import "../lib/weathercond.js" as WeatherCond
 
@@ -12,6 +13,7 @@ Item {
     property string backdropSource: ""
     property var clockState: null
     property var weather: null // {temp, icon, desc, uv, conditions[], ...} or null; from Lock.qml's weatherPoll
+    property var audio: null // Lib.AudioService, threaded from shell.qml via Lock.qml
 
     // Static Gruvbox accent object (mirrors lib/ThemeEngine.qml's fallback hex
     // values) for the UV/condition color helpers below -- the lock has no
@@ -43,6 +45,25 @@ Item {
             return root.wxTheme.textPrimary;
         return n <= 2 ? root.wxTheme.accentGreen : (n <= 5 ? root.wxTheme.accentYellow : root.wxTheme.accentPurple);
     }
+
+    // MPRIS media state -- mirrors desktop/MediaWidget.qml's players filter and
+    // autoPlayer reduce verbatim (playing > paused > first). No re-selection UI
+    // here (unlike the bar's MediaPopup player-switcher chips): the lock surface
+    // always follows the auto-pick.
+    readonly property var players: (Mpris.players.values || []).filter(function (p) {
+        return p && (p.dbusName || "").indexOf("playerctld") < 0;
+    })
+    readonly property MprisPlayer autoPlayer: {
+        var ps = root.players || [];
+        for (var i = 0; i < ps.length; i++)
+            if (ps[i] && ps[i].isPlaying)
+                return ps[i];
+        for (var j = 0; j < ps.length; j++)
+            if (ps[j] && ps[j].playbackState === MprisPlaybackState.Paused)
+                return ps[j];
+        return ps.length ? ps[0] : null;
+    }
+    readonly property var mediaPlayer: autoPlayer
 
     LockBackdrop {
         anchors.fill: parent
@@ -218,6 +239,147 @@ Item {
                 color: WeatherCond.color(root.wxTheme, modelData.kind, modelData.sev)
                 font.pixelSize: 14
                 font.bold: true
+            }
+        }
+    }
+
+    // Media widget (below weather, display-only + focus-neutral transport/volume
+    // controls). A NEW sibling of `column`/`weatherCol` -- anchored below
+    // weatherCol so it never reflows the centered auth block. Auto-picked MPRIS
+    // player (playing > paused > first, see root.autoPlayer above) mirrors
+    // desktop/MediaWidget.qml; art/title/artist/transport layout + glyph
+    // codepoints mirror desktop/MediaPopup.qml. Self-hides while no MPRIS player
+    // is active. No focus:true / forceActiveFocus anywhere below -- the password
+    // TextInput keeps keyboard focus.
+    Column {
+        id: mediaCol
+        anchors.top: weatherCol.bottom
+        anchors.right: parent.right
+        anchors.topMargin: 16
+        anchors.rightMargin: 28
+        spacing: 8
+        visible: root.mediaPlayer !== null
+
+        // Album art + title/artist. Art mirrors MediaPopup's rounded, clipped
+        // Rectangle with a placeholder music-note glyph shown until (or unless)
+        // trackArtUrl resolves.
+        Row {
+            anchors.right: parent.right
+            spacing: 10
+
+            Rectangle {
+                width: 56
+                height: 56
+                radius: 8
+                color: Qt.rgba(0, 0, 0, 0.35)
+                clip: true
+
+                LockText {
+                    anchors.centerIn: parent
+                    visible: art.status !== Image.Ready
+                    text: String.fromCodePoint(0xF001) // music note (MediaPopup placeholder)
+                    font.family: "JetBrainsMono Nerd Font"
+                    font.pixelSize: 22
+                }
+                Image {
+                    id: art
+                    anchors.fill: parent
+                    source: root.mediaPlayer ? (root.mediaPlayer.trackArtUrl || "") : ""
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    cache: true
+                    sourceSize.width: 112
+                    sourceSize.height: 112
+                }
+            }
+
+            Column {
+                width: 220
+                spacing: 2
+                LockText {
+                    width: parent.width
+                    text: root.mediaPlayer ? (root.mediaPlayer.trackTitle || "Unknown Title") : ""
+                    font.pixelSize: 15
+                    font.bold: true
+                    elide: Text.ElideRight
+                }
+                LockText {
+                    width: parent.width
+                    text: root.mediaPlayer ? (root.mediaPlayer.trackArtist || "Unknown Artist") : ""
+                    color: root.wxTheme.textSecondary
+                    font.pixelSize: 13
+                    elide: Text.ElideRight
+                }
+            }
+        }
+
+        // Transport: prev / play-pause / next. Glyph codepoints copied verbatim
+        // from desktop/MediaPopup.qml's CtlButton usage (step-backward 0xF048,
+        // play 0xF04B / pause 0xF04C, step-forward 0xF051). Each glyph is wrapped
+        // in a focus-neutral MouseArea (no focus:true) and dimmed when its
+        // canGo*/canTogglePlaying is false, matching CtlButton's disabled opacity.
+        Row {
+            anchors.right: parent.right
+            spacing: 18
+
+            LockText {
+                text: String.fromCodePoint(0xF048) // step-backward
+                font.family: "JetBrainsMono Nerd Font"
+                font.pixelSize: 18
+                opacity: (root.mediaPlayer && root.mediaPlayer.canGoPrevious) ? 1.0 : 0.35
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: if (root.mediaPlayer && root.mediaPlayer.canGoPrevious)
+                        root.mediaPlayer.previous()
+                }
+            }
+            LockText {
+                text: String.fromCodePoint((root.mediaPlayer && root.mediaPlayer.playbackState === MprisPlaybackState.Playing) ? 0xF04C : 0xF04B)
+                font.family: "JetBrainsMono Nerd Font"
+                font.pixelSize: 20
+                opacity: (root.mediaPlayer && root.mediaPlayer.canTogglePlaying) ? 1.0 : 0.35
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: if (root.mediaPlayer && root.mediaPlayer.canTogglePlaying)
+                        root.mediaPlayer.togglePlaying()
+                }
+            }
+            LockText {
+                text: String.fromCodePoint(0xF051) // step-forward
+                font.family: "JetBrainsMono Nerd Font"
+                font.pixelSize: 18
+                opacity: (root.mediaPlayer && root.mediaPlayer.canGoNext) ? 1.0 : 0.35
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: if (root.mediaPlayer && root.mediaPlayer.canGoNext)
+                        root.mediaPlayer.next()
+                }
+            }
+        }
+
+        // Volume readout: glyph + level (combined in one LockText via the icon
+        // font, matching the bar's mixed glyph+percent Text idiom). Scroll
+        // adjusts +/-5, click toggles mute. Guarded on root.audio !== null
+        // (threaded shell.qml -> Lock.qml -> LockSurface); self-hides otherwise.
+        LockText {
+            anchors.right: parent.right
+            visible: root.audio !== null
+            text: root.audio ? (root.audio.volumeGlyph(root.audio.volume, root.audio.muted) + "  " + root.audio.volume + "%") : ""
+            font.family: "JetBrainsMono Nerd Font"
+            font.pixelSize: 14
+            color: root.wxTheme.textSecondary
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: if (root.audio) root.audio.toggleMute()
+                onWheel: function (wheel) {
+                    if (root.audio)
+                        root.audio.stepVolume(wheel.angleDelta.y > 0 ? 5 : -5);
+                }
             }
         }
     }

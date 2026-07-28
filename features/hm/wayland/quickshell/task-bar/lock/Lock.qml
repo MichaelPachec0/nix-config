@@ -13,6 +13,7 @@ Scope {
     property alias context: lockContext
     property var wallpapers: ({}) // screenName -> image path
     readonly property var weather: weatherPoll.value // {temp, icon, desc, uv, conditions[], ...} or null
+    property var audio: null // Lib.AudioService, threaded from shell.qml
 
     function lock() { root.locked = true; }
     function unlock() { root.locked = false; }
@@ -91,6 +92,7 @@ Scope {
                 backdropSource: root.wallpaperFor(surface.screen ? surface.screen.name : "")
                 clockState: lockClockState
                 weather: root.weather
+                audio: root.audio
             }
         }
     }

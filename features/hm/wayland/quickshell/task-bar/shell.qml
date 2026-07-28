@@ -23,6 +23,7 @@ ShellRoot {
     // (not per-screen) -- the surface Component is created per output internally.
     Lock.Lock {
         id: lockScreen
+        audio: audioSvc
     }
 
     // Global Bluetooth state (one default adapter, shared by all screens).
