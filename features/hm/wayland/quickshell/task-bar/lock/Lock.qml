@@ -3,6 +3,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import "../lib" as Lib
+import "../lib/locations.js" as Locations
 
 Scope {
     id: root
@@ -10,6 +12,7 @@ Scope {
     property bool locked: false
     property alias context: lockContext
     property var wallpapers: ({}) // screenName -> image path
+    readonly property var weather: weatherPoll.value // {temp, icon, desc, uv, conditions[], ...} or null
 
     function lock() { root.locked = true; }
     function unlock() { root.locked = false; }
@@ -32,6 +35,47 @@ Scope {
 
     LockClockState { id: lockClockState }
 
+    // Bar-mirrored weather poll for the current ("geo") location. Gated to
+    // `root.locked` so it only fetches while the lock is up (no always-on
+    // network poll); triggeredOnStart in Lib.CommandPoll's Timer means it also
+    // fires immediately when the lock engages. command/parse copied verbatim
+    // from desktop/WeatherWidget.qml.
+    Lib.CommandPoll {
+        id: weatherPoll
+        interval: 1800000 // 30 min; weather.sh caches the same window
+        running: root.locked
+        command: [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/weather.sh"].concat(Locations.argsArrayFor(Locations.byId("geo")))
+        parse: function (out) {
+            try {
+                var d = JSON.parse(String(out));
+                return {
+                    temp: d.temp ?? "--",
+                    icon: d.icon ?? "cloudy",
+                    desc: d.desc ?? "Unknown",
+                    source: d.source ?? "",
+                    feels: d.feels ?? "",
+                    humidity: d.humidity ?? "",
+                    precip: d.precip ?? "",
+                    wind: d.wind ?? "",
+                    windDir: d.windDir ?? "",
+                    place: d.place ?? "",
+                    forecast: d.forecast ?? [],
+                    hourly: d.hourly ?? [],
+                    uv: d.uv ?? "",
+                    windGust: d.windGust ?? "",
+                    precipType: d.precipType ?? "",
+                    sunrise: d.sunrise ?? "",
+                    sunset: d.sunset ?? "",
+                    alerts: d.alerts ?? [],
+                    conditions: d.conditions ?? [],
+                    nowcast: d.nowcast ?? ({ rainSoon: false, etaMin: null, source: "none", text: "" })
+                };
+            } catch (e) {
+                return null;
+            }
+        }
+    }
+
     WlSessionLock {
         id: sessionLock
         locked: root.locked
@@ -46,6 +90,7 @@ Scope {
                 context: root.context
                 backdropSource: root.wallpaperFor(surface.screen ? surface.screen.name : "")
                 clockState: lockClockState
+                weather: root.weather
             }
         }
     }

@@ -3,12 +3,46 @@
 // Non-security presentation. All surfaces share the same `context`, so typing /
 // feedback is mirrored across outputs.
 import QtQuick
+import "../lib/weathericons.js" as WeatherIcons
+import "../lib/weathercond.js" as WeatherCond
 
 Item {
     id: root
     required property var context
     property string backdropSource: ""
     property var clockState: null
+    property var weather: null // {temp, icon, desc, uv, conditions[], ...} or null; from Lock.qml's weatherPoll
+
+    // Static Gruvbox accent object (mirrors lib/ThemeEngine.qml's fallback hex
+    // values) for the UV/condition color helpers below -- the lock has no
+    // FileView-backed theme, so this is a fixed palette rather than the live
+    // ~/.config/theme/colors.json read.
+    readonly property var wxTheme: ({
+        textPrimary: "#ebdbb2", textSecondary: "#a89984",
+        accentGreen: "#b8bb26", accentYellow: "#fabd2f",
+        accentPurple: "#d3869b", accentRed: "#fb4934",
+        accentOrange: "#fe8019"
+    })
+
+    // UV index band word / "7  High" label / severity colour -- copied
+    // verbatim from desktop/WeatherPopup.qml:44-61 (pop.theme -> root.wxTheme,
+    // pop.uvBand -> root.uvBand). Empty in -> empty out (row self-hides).
+    function uvBand(v) {
+        var n = parseInt(v);
+        if (v === "" || isNaN(n))
+            return "";
+        return n <= 2 ? "Low" : (n <= 5 ? "Moderate" : (n <= 7 ? "High" : (n <= 10 ? "Very high" : "Extreme")));
+    }
+    function uvLabel(v) {
+        var b = root.uvBand(v);
+        return b === "" ? "" : (parseInt(v) + "  " + b);
+    }
+    function uvColor(v) {
+        var n = parseInt(v);
+        if (isNaN(n))
+            return root.wxTheme.textPrimary;
+        return n <= 2 ? root.wxTheme.accentGreen : (n <= 5 ? root.wxTheme.accentYellow : root.wxTheme.accentPurple);
+    }
 
     LockBackdrop {
         anchors.fill: parent
@@ -98,6 +132,74 @@ Item {
         text: root.context.showFailure
             ? ("Incorrect password" + (root.context.failCount > 1 ? " (" + root.context.failCount + ")" : ""))
             : root.context.statusMessage
+    }
+
+    // Weather widget (top-right, display-only). A NEW sibling of the centered
+    // `column` above -- it never reflows the auth block. RELATIVE flow: a plain
+    // Column, so when a condition/alert clears the stack shifts up (intended
+    // for this corner, per docs/quickshell-lockscreen/lock-widgets.md). No
+    // MouseArea/focus -- must never steal keyboard focus from the password
+    // TextInput. Self-hides entirely while root.weather is null (no poll yet /
+    // fetch failed).
+    Column {
+        id: weatherCol
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 28
+        spacing: 6
+
+        // Icon + temp. Icon glyph via weathericons.js, icon font matches
+        // lib/ThemeEngine.qml's iconFont default ("JetBrainsMono Nerd Font").
+        Row {
+            anchors.right: parent.right
+            spacing: 8
+            visible: root.weather !== null
+            LockText {
+                text: WeatherIcons.glyph(root.weather ? root.weather.icon : "cloudy")
+                font.family: "JetBrainsMono Nerd Font"
+                font.pixelSize: 28
+            }
+            LockText {
+                text: (root.weather ? root.weather.temp : "--") + String.fromCodePoint(0x00B0)
+                font.pixelSize: 28
+            }
+        }
+
+        // Condition description.
+        LockText {
+            anchors.right: parent.right
+            horizontalAlignment: Text.AlignRight
+            visible: text !== ""
+            text: root.weather ? root.weather.desc : ""
+            color: root.wxTheme.textSecondary
+            font.pixelSize: 16
+        }
+
+        // UV index (hidden when the active provider supplies none).
+        LockText {
+            anchors.right: parent.right
+            horizontalAlignment: Text.AlignRight
+            visible: root.weather && root.uvLabel(root.weather.uv) !== ""
+            text: "UV " + (root.weather ? root.uvLabel(root.weather.uv) : "")
+            color: root.weather ? root.uvColor(root.weather.uv) : root.wxTheme.textPrimary
+            font.pixelSize: 14
+        }
+
+        // ALL active conditions/alerts, severity-sorted and color-coded
+        // (incl. Pirate rain predictions and NWS alerts when that provider
+        // wins the fetch) -- not filtered to severe/warn. Empty list -> no rows.
+        Repeater {
+            model: root.weather ? WeatherCond.sortBySeverity(root.weather.conditions) : []
+            LockText {
+                required property var modelData
+                anchors.right: parent.right
+                horizontalAlignment: Text.AlignRight
+                text: modelData.label
+                color: WeatherCond.color(root.wxTheme, modelData.kind, modelData.sev)
+                font.pixelSize: 14
+                font.bold: true
+            }
+        }
     }
 
     // Re-focus the hidden input whenever this surface (re)appears.
