@@ -77,10 +77,12 @@ Item {
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            visible: root.context.showFailure
-            color: "#fb4934"
+            visible: root.context.showFailure || root.context.statusMessage.length > 0
+            color: (root.context.showFailure || root.context.statusIsError) ? "#fb4934" : "#a89984"
             font.pixelSize: 16
-            text: "Incorrect password" + (root.context.failCount > 1 ? " (" + root.context.failCount + ")" : "")
+            text: root.context.showFailure
+                ? ("Incorrect password" + (root.context.failCount > 1 ? " (" + root.context.failCount + ")" : ""))
+                : root.context.statusMessage
         }
     }
 
