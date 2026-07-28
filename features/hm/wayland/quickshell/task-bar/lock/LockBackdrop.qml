@@ -32,9 +32,10 @@ Item {
         asynchronous: true
     }
 
-    // Blurred copy, cross-faded over the sharp base. ShaderEffectSource renders
-    // `img` into its own texture regardless of img's own visibility, so both
-    // layers can be on screen at once.
+    // Blurred copy, cross-faded over the sharp base. Qt5Compat's GaussianBlur
+    // wraps its source in a SourceProxy, which passes a plain Image straight
+    // through as a texture provider without hiding it -- so `img` stays on
+    // screen as the sharp base while the blur samples the same texture.
     GaussianBlur {
         anchors.fill: parent
         source: img

@@ -20,7 +20,18 @@ Scope {
     // lock is released.
     property bool revealed: false
 
-    function lock() { root.locked = true; }
+    // A lock request always wins over an in-flight unlock detransition. Note
+    // `root.locked = true` is a no-op when we are already locked (mid-
+    // detransition), so onLockedChanged would not fire -- re-arm the reveal
+    // here explicitly or the surface stays fully transparent.
+    function lock() {
+        unlockTimer.stop();
+        if (root.locked) {
+            revealTimer.restart();
+            return;
+        }
+        root.locked = true;
+    }
 
     // Unlock is a two-phase move: play the detransition, then release. The
     // Timer -- not any animation signal -- is the authority, so a skipped or
@@ -30,6 +41,7 @@ Scope {
     function beginUnlock() {
         if (!root.locked)
             return;
+        revealTimer.stop();      // a pending reveal must not fight the detransition
         root.revealed = false;   // starts the blur-out + content fade
         unlockTimer.restart();
     }
