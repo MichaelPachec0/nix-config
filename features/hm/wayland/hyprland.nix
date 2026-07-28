@@ -20,6 +20,11 @@
   inherit (lib.generators) mkLuaInline;
   luaStr = s: lib.generators.toLua {} s;
 
+  # activate-linux watermark params -- single source of truth also consumed by
+  # quickshell-lock.nix's config.json (see LockConfig.qml / LockSurface.qml).
+  wm = config.quickshellLock.watermark;
+  activateLinuxCmd = ''${lib.getExe pkgs.activate-linux} -t "${wm.title}" -m "${wm.message}" -x ${toString wm.width} -y ${toString wm.height} -c "${wm.color}"'';
+
   # hy3 dispatcher binds with no sway equivalent (appended to generatedLuaBinds).
   # Wrapped in `function() ...() end`: hl.plugin.hy3.* is nil at config-parse
   # time (registers only after the plugin loads at startup), and hl.plugin.hy3.fn
@@ -160,7 +165,7 @@
   autostartHook = mkLuaInline ''
     function()
       hl.exec_cmd("qs -c task-bar")
-      hl.exec_cmd(${luaStr "${lib.getExe pkgs.activate-linux} -t \"Activate NixOS\" -m \"Edit configuration.nix to activate NixOS.\" -x 360 -c \"1-1-1-0.10\""})
+      ${lib.optionalString wm.enable ''hl.exec_cmd(${luaStr activateLinuxCmd})''}
       hl.exec_cmd("[workspace special:magic silent] keepassxc")
       hl.exec_cmd("[workspace special:magic silent] Windscribe")
       hl.exec_cmd("[workspace 3 silent] telegram")

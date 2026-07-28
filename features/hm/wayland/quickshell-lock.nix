@@ -26,6 +26,46 @@ in {
     '';
   };
 
+  # Single source of truth for the activate-linux watermark: hyprland.nix +
+  # sway.nix build the activate-linux CLI invocation from these fields, and
+  # this module writes them into config.json below for LockConfig.qml (the
+  # lock's under-lock replica) to read -- so the desktop overlay and the lock
+  # replica never drift out of sync. activate-linux's internal cairo layout
+  # constants (text x=20, baseline offsets, 24/16px fonts, DejaVu Sans) are
+  # fixed by its source, not its CLI, so they stay hardcoded in the QML.
+  options.quickshellLock.watermark = {
+    enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Render the activate-linux-style watermark (bottom-right) on the desktop overlay AND replicate it on the lock. Single source for both.";
+    };
+    title = lib.mkOption {
+      type = lib.types.str;
+      default = "Activate NixOS";
+      description = "Watermark title (activate-linux -t).";
+    };
+    message = lib.mkOption {
+      type = lib.types.str;
+      default = "Edit configuration.nix to activate NixOS.";
+      description = "Watermark subtitle (activate-linux -m).";
+    };
+    color = lib.mkOption {
+      type = lib.types.str;
+      default = "1-1-1-0.10";
+      description = "r-g-b-a floats, activate-linux -c format; the lock QML parses the same string.";
+    };
+    width = lib.mkOption {
+      type = lib.types.int;
+      default = 360;
+      description = "Overlay width (activate-linux -x).";
+    };
+    height = lib.mkOption {
+      type = lib.types.int;
+      default = 120;
+      description = "Overlay height (activate-linux -y).";
+    };
+  };
+
   config = {
     home.packages = [ lockEscape ];
 
@@ -34,6 +74,9 @@ in {
     xdg.configFile."quickshell-lock/config.json".text = builtins.toJSON {
       failOpenOnCrash = cfg.failOpenOnCrash;
       fallbackImage = "${config.home.homeDirectory}/.local/share/lockscreen.png";
+      watermark = {
+        inherit (cfg.watermark) enable title message color width height;
+      };
     };
 
     # Watchdog: quickshell is exec'd by Hyprland (not a supervised unit), so a

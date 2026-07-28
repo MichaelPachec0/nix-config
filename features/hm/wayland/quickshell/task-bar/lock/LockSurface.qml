@@ -112,6 +112,53 @@ Item {
         source: root.backdropSource
     }
 
+    // activate-linux watermark, positioned to MATCH the real overlay exactly.
+    // hyprctl layers shows it as a fixed wlr-layer surface flush to the
+    // bottom-right corner; activate-linux draws the title at (20,30) px font 24
+    // and the subtitle at (20,55) px font 16 inside that box
+    // (src/cairo_draw_text.c). We reproduce the box + those offsets so it lands
+    // where the real overlay sits (hidden under the session lock). Title/
+    // message/color/width/height come from LockConfig (Nix
+    // quickshellLock.watermark, single source of truth also feeding the real
+    // activate-linux CLI invocation in hyprland.nix/sway.nix) so the lock
+    // replica never drifts from the desktop overlay. Plain Text, shadow-less --
+    // a faithful subtle watermark, not legibility text. The (20,30)/(20,55)
+    // offsets, 24/16px fonts, and "DejaVu Sans" family are activate-linux's
+    // internal cairo layout constants (fixed by its source, not its CLI) and
+    // stay hardcoded here.
+    Item {
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        width: LockConfig.watermarkWidth
+        height: LockConfig.watermarkHeight
+        visible: LockConfig.watermarkEnable && LockConfig.watermarkTitle.length > 0
+
+        // activate-linux uses cairo's toy API: cairo_select_font_face (default
+        // "sans-serif" -> DejaVu Sans) + cairo_set_font_size (user units = px at
+        // scale 1), and cairo_move_to sets the text BASELINE. QML Text positions
+        // by the TOP, so shift each up by its font ascent to align the baseline
+        // with the real overlay's (20,30) title / (20,55) subtitle.
+        FontMetrics { id: fmT; font.family: "DejaVu Sans"; font.pixelSize: 24 }
+        FontMetrics { id: fmS; font.family: "DejaVu Sans"; font.pixelSize: 16 }
+
+        Text {
+            x: 20
+            y: 30 - fmT.ascent
+            text: LockConfig.watermarkTitle
+            color: LockConfig.watermarkColor
+            font.family: "DejaVu Sans"
+            font.pixelSize: 24
+        }
+        Text {
+            x: 20
+            y: 55 - fmS.ascent
+            text: LockConfig.watermarkMessage
+            color: LockConfig.watermarkColor
+            font.family: "DejaVu Sans"
+            font.pixelSize: 16
+        }
+    }
+
     Column {
         id: column
         anchors.centerIn: parent

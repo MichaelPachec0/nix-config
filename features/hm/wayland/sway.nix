@@ -324,6 +324,11 @@
       extraConfig = let
         # TODO: better way of doing this?
         firefox = "${lib.getExe config.programs.firefox.package}";
+        # activate-linux watermark params -- single source of truth also
+        # consumed by quickshell-lock.nix's config.json (see LockConfig.qml /
+        # LockSurface.qml).
+        wm = config.quickshellLock.watermark;
+        activateLinuxCmd = ''${lib.getExe pkgs.activate-linux} -t "${wm.title}" -m "${wm.message}" -x ${toString wm.width} -y ${toString wm.height} -c "${wm.color}"'';
         # NOTE: Tries and gets the entry point for spotify, spotifywm -> spotify theme/spotify
         # found out using the repl (builtins.elemAt homeConfigurations.michael-nyx.config.programs.spicetify.createdPackages 0)
         # exec sleep 2 && swaymsg "workspace number 2; exec
@@ -423,7 +428,7 @@
         exec sworkstyle &> /tmp/sworkstyle.log
         # exec_always ${lib.getExe fastanime-notifier}
         # do this differently
-        exec ${lib.getExe pkgs.activate-linux} -t "Activate NixOS" -m "Edit configuration.nix to activate NixOS." -x 360 -c "1-1-1-0.10"
+        ${lib.optionalString wm.enable "exec ${activateLinuxCmd}"}
       '';
 
       # ${mkWorkspace 9 [
