@@ -14,17 +14,53 @@ Item {
     property real blurAmount: 1.0
     property int animDuration: 350
 
-    // This output's frozen desktop capture (ScreencopyView from Lock.qml's
-    // pool), or null. Reparented in below so it renders inside THIS surface's
-    // scene graph -- a GaussianBlur cannot source an item from another window.
-    property var capture: null
+    // This surface's output name, and the callback that publishes our capture
+    // holder to Lock.qml's registry under that name.
+    //
+    // Ownership is INVERTED on purpose: this backdrop never looks a capture up
+    // by name and never reparents one in. It only advertises "the holder for
+    // output <screenName> is this Item", and Lock.qml's pool delegate -- whose
+    // own `modelData` is stable -- parents ITSELF in. A backdrop therefore can
+    // never touch another output's view.
+    //
+    // The earlier design had each backdrop resolve captureFor(screen.name) and
+    // reparent the result in. That is unfixable on multi-monitor: while the
+    // lock surfaces are being built `surface.screen` is briefly unsettled, so a
+    // surface resolves to its NEIGHBOUR's view and steals it out of the holder
+    // that owned it -- the victim never recovering, because its own `capture`
+    // never changed and so nothing re-ran adoption. Worse, a Qt
+    // ShaderEffectSource reparents its sourceItem whenever that item has no
+    // parent (exactly the state of a fresh pool view), so a neighbouring
+    // GaussianBlur could claim one too; re-adopting on parentChanged then
+    // ping-ponged the item between surfaces forever.
+    property string screenName: ""
+    property var registerHolder: null
 
-    // The capture is used only in workspace backdrop mode, and only when it
-    // holds a PRE-LOCK frame and is actually hosted in this surface's scene.
-    // Anything else -- wallpaper mode, no capture, a frame that landed after
-    // the lock, a view from a regenerated pool that has not been adopted yet
-    // -- falls back to the wallpaper Image.
-    readonly property Item blurSource: (LockConfig.backdropMode === "workspace" && root.capture && root.capture.preLockContent && root.capture.parent === captureHolder) ? root.capture : img
+    // Restate our claim on every change, including to "" -- Lock.qml rebuilds
+    // the whole name->holder map from the live claims, so a stale or
+    // transiently-wrong claim is corrected rather than accumulated.
+    function _publishHolder() {
+        if (root.registerHolder)
+            root.registerHolder(root.screenName, captureHolder);
+    }
+    onScreenNameChanged: root._publishHolder()
+    Component.onDestruction: {
+        if (root.registerHolder)
+            root.registerHolder("", captureHolder); // retire on monitor unplug
+    }
+
+    // Whatever the pool has parented into us, or null. Derived from our OWN
+    // children rather than from a lookup, so this can never name an item that
+    // lives in another surface. `children` notifies, so it stays live as the
+    // pool parents in and (on unlock) tears the views down.
+    readonly property Item capture: captureHolder.children.length > 0 ? captureHolder.children[0] : null
+
+    // The capture is used only in workspace mode, and only when it holds a
+    // PRE-LOCK frame. Anything else -- wallpaper mode, no capture yet, or a
+    // frame that only landed after the lock engaged (which would be black) --
+    // falls back to the wallpaper Image.
+    readonly property Item blurSource: (LockConfig.backdropMode === "workspace" && root.capture
+        && root.capture.preLockContent) ? root.capture : img
 
     Behavior on blurAmount {
         NumberAnimation {
@@ -45,29 +81,16 @@ Item {
         visible: root.blurSource === img
     }
 
-    // Host for the reparented capture, and the sharp cross-fade base when the
-    // capture is in use -- mirrors img.visible on the wallpaper side. Hidden
-    // only when the capture is not the blur source, in which case nothing is
-    // sampling it anyway.
+    // Host for the pool's view, and the sharp cross-fade base when the capture
+    // is in use -- mirrors img.visible on the wallpaper side.
     Item {
         id: captureHolder
         anchors.fill: parent
         visible: root.blurSource === root.capture
     }
 
-    // Adopt the capture whenever it changes, not just once at creation: the
-    // `capture` binding re-evaluates (monitor hotplug regenerates the whole
-    // pool), and an unadopted view would be selected as the blur source while
-    // sitting outside this scene -- a black backdrop.
-    function _adoptCapture() {
-        if (root.capture && root.capture.parent !== captureHolder) {
-            root.capture.parent = captureHolder;
-            root.capture.anchors.fill = captureHolder;
-        }
-    }
+    Component.onCompleted: root._publishHolder()
 
-    onCaptureChanged: root._adoptCapture()
-    Component.onCompleted: root._adoptCapture()
 
     // Blurred copy, cross-faded over the sharp base. Qt5Compat's GaussianBlur
     // wraps its source in a SourceProxy, which passes a plain Image straight

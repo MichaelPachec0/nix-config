@@ -140,6 +140,50 @@ Scope {
 
     readonly property bool workspaceMode: LockConfig.backdropMode === "workspace"
 
+    // Per-output capture holders: `{ screenName: holderItem }`, consumed by the
+    // pool delegates below.
+    //
+    // This map is DERIVED, never accumulated. Each live LockBackdrop holds one
+    // claim (its holder + the output it currently believes it is on) and the
+    // map is rebuilt from all claims on every change. That is load-bearing:
+    // `WlSessionLockSurface.screen` oscillates while the surfaces are being
+    // built -- observed HDMI-A-1 -> eDP-1 -> HDMI-A-1 on one surface -- so a
+    // surface transiently claims its NEIGHBOUR's output. An accumulating map
+    // keeps that bad entry forever and starves the rightful surface of its
+    // capture (it renders the wallpaper while its neighbour shows the frozen
+    // desktop). Rebuilding from claims makes every transient self-heal, because
+    // the rightful owner's claim is still in the list when the blip resolves.
+    property var holders: ({})
+    property var claims: [] // [{ holder, name }] -- one entry per live backdrop
+
+    // A backdrop (re)states which output it is on. An empty `name` retires the
+    // claim, which is how a destroyed backdrop drops out on monitor unplug.
+    function registerHolder(name, item) {
+        if (!item)
+            return;
+        var next = [];
+        var found = false;
+        for (var i = 0; i < root.claims.length; i++) {
+            var c = root.claims[i];
+            if (c.holder === item) {
+                found = true;
+                next.push({ holder: item, name: name });
+            } else {
+                next.push(c);
+            }
+        }
+        if (!found)
+            next.push({ holder: item, name: name });
+        root.claims = next;
+
+        var map = {};
+        for (var j = 0; j < next.length; j++) {
+            if (next[j].name)
+                map[next[j].name] = next[j].holder;
+        }
+        root.holders = map;
+    }
+
     Instantiator {
         id: capturePool
         model: root.captureArmed ? Quickshell.screens : []
@@ -148,6 +192,7 @@ Scope {
         // otherwise never be re-polled.
         onObjectAdded: root._noteCapture()
         delegate: ScreencopyView {
+            id: view
             required property var modelData
             // True only when the frame landed BEFORE the compositor lock
             // engaged. `hasContent` alone is not enough: it means "a frame
@@ -157,24 +202,31 @@ Scope {
             property bool preLockContent: false
             live: false
             captureSource: modelData
+
+            // The view parents ITSELF into the holder registered for its own
+            // output, and nothing else ever reparents it. `modelData` is stable
+            // for the delegate's whole life, so this pairing cannot go wrong --
+            // unlike a per-surface lookup, which resolves against a
+            // briefly-unsettled `surface.screen` and lands on the neighbouring
+            // output's view. Rendering the frozen frame must happen inside the
+            // owning surface's scene graph; a GaussianBlur cannot source an
+            // item from another window.
+            readonly property Item targetHolder: (view.modelData && root.holders[view.modelData.name]) || null
+            onTargetHolderChanged: view._reparent()
+            Component.onCompleted: view._reparent()
+            function _reparent() {
+                if (view.targetHolder && view.parent !== view.targetHolder) {
+                    view.parent = view.targetHolder;
+                    view.anchors.fill = view.targetHolder;
+                }
+            }
+
             onHasContentChanged: {
                 if (hasContent && !root.locked)
                     preLockContent = true;
                 root._noteCapture();
             }
         }
-    }
-
-    // The ScreencopyView for `screenName`, or null. Evaluated once per surface
-    // at creation -- correct because every capture is issued before locked
-    // flips, so the pool is already populated by the time surfaces exist.
-    function captureFor(screenName) {
-        for (var i = 0; i < capturePool.count; i++) {
-            var v = capturePool.objectAt(i);
-            if (v && v.modelData && v.modelData.name === screenName)
-                return v;
-        }
-        return null;
     }
 
     function _allCaptured() {
@@ -204,9 +256,20 @@ Scope {
     // Safety net: lock even if a capture never lands. The backdrop falls back
     // to the wallpaper Image, so a failed capture costs a blur source, never
     // the lock itself.
+    //
+    // The budget MUST clear the slowest output's physical capture floor, or
+    // that monitor silently loses the race every time and shows the wallpaper
+    // while its neighbour shows the frozen desktop. wlr-screencopy delivers on
+    // the output's next commit, so latency is quantised to its refresh
+    // interval: ~6.9ms at 144Hz but ~16.7ms at 60Hz, and Instantiator builds
+    // the delegates serially. Measured here: 17-30ms (144Hz) vs 24-41ms
+    // (60Hz), with a miss past 50ms under load. 250ms is ~3 missed 60Hz frames
+    // of headroom and is NOT the normal cost -- _noteCapture() stops the timer
+    // the moment the last frame lands (~25-40ms), so only a genuinely failing
+    // capture ever waits this long.
     Timer {
         id: captureTimer
-        interval: 50
+        interval: 250
         onTriggered: root.locked = true
     }
 
@@ -223,7 +286,8 @@ Scope {
                 anchors.fill: parent
                 context: root.context
                 backdropSource: root.wallpaperFor(surface.screen ? surface.screen.name : "")
-                capture: root.captureFor(surface.screen ? surface.screen.name : "")
+                screenName: surface.screen ? surface.screen.name : ""
+                registerHolder: root.registerHolder
                 clockState: lockClockState
                 weather: root.weather
                 audio: root.audio
@@ -271,6 +335,8 @@ Scope {
         } else {
             root.revealed = false;
             root.captureArmed = false;  // destroys the views, frees the GPU buffers
+            root.holders = ({});        // drop refs to the destroyed surfaces' holders
+            root.claims = [];
         }
     }
 
