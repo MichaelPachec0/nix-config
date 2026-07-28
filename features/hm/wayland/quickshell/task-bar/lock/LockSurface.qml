@@ -404,14 +404,36 @@ Item {
             }
         }
 
-        // Transport: prev / play-pause / next. Glyph codepoints copied verbatim
-        // from desktop/MediaPopup.qml's CtlButton usage (step-backward 0xF048,
-        // play 0xF04B / pause 0xF04C, step-forward 0xF051). Each glyph is wrapped
-        // in a focus-neutral MouseArea (no focus:true) and dimmed when its
-        // canGo*/canTogglePlaying is false, matching CtlButton's disabled opacity.
+        // Transport: shuffle / prev / play-pause / next / repeat. Glyph
+        // codepoints copied verbatim from desktop/MediaPopup.qml's CtlButton
+        // usage (shuffle 0xF049D, step-backward 0xF048, play 0xF04B / pause
+        // 0xF04C, step-forward 0xF051, repeat 0xF0456 / repeat-once 0xF0458).
+        // Each glyph is a focus-neutral MouseArea (no focus:true). prev/play-
+        // pause/next dim when their canGo*/canTogglePlaying is false
+        // (matching CtlButton's disabled opacity); shuffle/repeat are
+        // accent-tinted when engaged and hidden entirely when the player
+        // doesn't support them (MediaPopup.qml gates the same way). No
+        // `accent` key exists on the lock's wxTheme (only accentGreen/Yellow/
+        // Purple/Red/Orange/Blue) -- accentGreen is used here, matching the
+        // queue's "current track" and the switcher's selected-chip accent.
         Row {
             anchors.right: parent.right
             spacing: 18
+
+            // Shuffle -- first child (before prev).
+            LockText {
+                font.family: "JetBrainsMono Nerd Font"
+                font.pixelSize: 18
+                visible: root.player && root.player.shuffleSupported
+                text: String.fromCodePoint(0xF049D)
+                color: (root.player && root.player.shuffle) ? root.wxTheme.accentGreen : root.wxTheme.textSecondary
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: if (root.player && root.player.shuffleSupported)
+                        root.player.shuffle = !root.player.shuffle
+                }
+            }
 
             LockText {
                 text: String.fromCodePoint(0xF048) // step-backward
@@ -447,6 +469,27 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: if (root.player && root.player.canGoNext)
                         root.player.next()
+                }
+            }
+
+            // Repeat -- last child (after next). Cycles off -> all (Playlist)
+            // -> one (Track) -> off; the repeat-once glyph marks Track mode.
+            LockText {
+                font.family: "JetBrainsMono Nerd Font"
+                font.pixelSize: 18
+                visible: root.player && root.player.loopSupported
+                text: String.fromCodePoint((root.player && root.player.loopState === MprisLoopState.Track) ? 0xF0458 : 0xF0456)
+                color: (root.player && root.player.loopState !== MprisLoopState.None) ? root.wxTheme.accentGreen : root.wxTheme.textSecondary
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (!root.player || !root.player.loopSupported)
+                            return;
+                        var s = root.player.loopState;
+                        root.player.loopState = s === MprisLoopState.None ? MprisLoopState.Playlist
+                            : (s === MprisLoopState.Playlist ? MprisLoopState.Track : MprisLoopState.None);
+                    }
                 }
             }
         }
