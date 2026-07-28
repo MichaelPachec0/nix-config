@@ -23,14 +23,26 @@ Scope {
     // A lock request always wins over an in-flight unlock detransition. Note
     // `root.locked = true` is a no-op when we are already locked (mid-
     // detransition), so onLockedChanged would not fire -- re-arm the reveal
-    // here explicitly or the surface stays fully transparent.
+    // and redo the lock-time resets here explicitly, or the surface stays
+    // fully transparent AND keeps the just-authenticated password buffer.
+    //
+    // Wallpaper mode then locks immediately (unchanged MVP behaviour).
+    // Workspace mode arms the capture pool and defers `locked` until every
+    // output's frame has landed (or captureTimer's 50ms safety net fires).
     function lock() {
         unlockTimer.stop();
         if (root.locked) {
+            lockContext.reset();
+            root.refreshWallpapers();
             revealTimer.restart();
             return;
         }
-        root.locked = true;
+        if (!root.workspaceMode) {
+            root.locked = true;
+            return;
+        }
+        root.captureArmed = true;
+        captureTimer.restart();
     }
 
     // Unlock is a two-phase move: play the detransition, then release. The
@@ -117,6 +129,73 @@ Scope {
         }
     }
 
+    // Per-output desktop capture pool. MUST live here (a sibling of
+    // WlSessionLock), not inside the lock surface: Hyprland stops compositing
+    // the desktop the moment the lock request lands, which is before any
+    // WlSessionLockSurface exists -- a capture started there would grab black.
+    // `live: false` latches one frame, so it survives the desktop going dark.
+    // Armed only for the duration of a lock; disarming destroys the views and
+    // frees their GPU buffers. The frame never leaves the GPU swapchain.
+    property bool captureArmed: false
+
+    readonly property bool workspaceMode: LockConfig.backdropMode === "workspace"
+
+    Instantiator {
+        id: capturePool
+        model: root.captureArmed ? Quickshell.screens : []
+        delegate: ScreencopyView {
+            required property var modelData
+            live: false
+            captureSource: modelData
+            onHasContentChanged: root._noteCapture()
+        }
+    }
+
+    // The ScreencopyView for `screenName`, or null. Evaluated once per surface
+    // at creation -- correct because every capture is issued before locked
+    // flips, so the pool is already populated by the time surfaces exist.
+    function captureFor(screenName) {
+        for (var i = 0; i < capturePool.count; i++) {
+            var v = capturePool.objectAt(i);
+            if (v && v.modelData && v.modelData.name === screenName)
+                return v;
+        }
+        return null;
+    }
+
+    function _allCaptured() {
+        // The count check is load-bearing on multi-monitor: Instantiator builds
+        // its delegates one at a time, so without it the first screen's
+        // hasContent could satisfy the loop while the second view does not yet
+        // exist -- locking with only one output captured.
+        var want = (Quickshell.screens || []).length;
+        if (want === 0 || capturePool.count !== want)
+            return false;
+        for (var i = 0; i < capturePool.count; i++) {
+            var v = capturePool.objectAt(i);
+            if (!v || !v.hasContent)
+                return false;
+        }
+        return true;
+    }
+
+    // Every capture landed -> stop waiting and lock immediately.
+    function _noteCapture() {
+        if (root.captureArmed && !root.locked && root._allCaptured()) {
+            captureTimer.stop();
+            root.locked = true;
+        }
+    }
+
+    // Safety net: lock even if a capture never lands. The backdrop falls back
+    // to the wallpaper Image, so a failed capture costs a blur source, never
+    // the lock itself.
+    Timer {
+        id: captureTimer
+        interval: 50
+        onTriggered: root.locked = true
+    }
+
     WlSessionLock {
         id: sessionLock
         locked: root.locked
@@ -130,6 +209,7 @@ Scope {
                 anchors.fill: parent
                 context: root.context
                 backdropSource: root.wallpaperFor(surface.screen ? surface.screen.name : "")
+                capture: root.captureFor(surface.screen ? surface.screen.name : "")
                 clockState: lockClockState
                 weather: root.weather
                 audio: root.audio
@@ -176,6 +256,7 @@ Scope {
             revealTimer.restart();  // flip `revealed` after the surface exists
         } else {
             root.revealed = false;
+            root.captureArmed = false;  // destroys the views, frees the GPU buffers
         }
     }
 

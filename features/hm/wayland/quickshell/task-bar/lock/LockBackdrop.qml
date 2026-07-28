@@ -14,6 +14,16 @@ Item {
     property real blurAmount: 1.0
     property int animDuration: 350
 
+    // This output's frozen desktop capture (ScreencopyView from Lock.qml's
+    // pool), or null. Reparented in below so it renders inside THIS surface's
+    // scene graph -- a GaussianBlur cannot source an item from another window.
+    property var capture: null
+
+    // Use the capture only once it actually holds a frame; otherwise the
+    // wallpaper Image is the source, which is also the `wallpaper` mode path
+    // and the automatic fallback when capture fails.
+    readonly property Item blurSource: (root.capture && root.capture.hasContent) ? root.capture : img
+
     Behavior on blurAmount {
         NumberAnimation {
             duration: root.animDuration
@@ -30,6 +40,23 @@ Item {
         fillMode: Image.PreserveAspectCrop
         cache: false
         asynchronous: true
+        visible: root.blurSource === img
+    }
+
+    // Holder for the reparented capture. Hidden (rather than the capture being
+    // hidden) so the GaussianBlur can still source the capture through it: a
+    // ShaderEffectSource renders its source item regardless of visibility.
+    Item {
+        id: captureHolder
+        anchors.fill: parent
+        visible: root.blurSource === root.capture
+    }
+
+    Component.onCompleted: {
+        if (root.capture) {
+            root.capture.parent = captureHolder;
+            root.capture.anchors.fill = captureHolder;
+        }
     }
 
     // Blurred copy, cross-faded over the sharp base. Qt5Compat's GaussianBlur
@@ -38,7 +65,7 @@ Item {
     // screen as the sharp base while the blur samples the same texture.
     GaussianBlur {
         anchors.fill: parent
-        source: img
+        source: root.blurSource
         radius: 9
         samples: 11
         opacity: root.blurAmount

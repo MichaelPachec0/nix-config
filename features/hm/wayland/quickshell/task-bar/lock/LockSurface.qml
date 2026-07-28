@@ -12,6 +12,7 @@ Item {
     id: root
     required property var context
     property string backdropSource: ""
+    property var capture: null // this output's frozen ScreencopyView, or null (Lock.qml)
     property var clockState: null
     property var weather: null // {temp, icon, desc, uv, conditions[], ...} or null; from Lock.qml's weatherPoll
     property var audio: null // Lib.AudioService, threaded from shell.qml via Lock.qml
@@ -130,6 +131,7 @@ Item {
     LockBackdrop {
         anchors.fill: parent
         source: root.backdropSource
+        capture: root.capture
         blurAmount: root.revealed ? 1.0 : 0.0
         animDuration: root.blurDuration
     }
