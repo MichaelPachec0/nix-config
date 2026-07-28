@@ -27,6 +27,30 @@ in {
         lib.getExe pkgs.nw.swaylock
       } -f 2>&1 ) >> ~/swaylock_logfile
     '';
+    # `ipc call lock lock` returns as soon as the lock is REQUESTED. In workspace
+    # backdrop mode that is before the compositor lock actually engages (the
+    # desktop capture is armed first), so returning immediately would let
+    # lock.target -- and therefore sleep.target -- proceed on an unlocked
+    # session. Wait, bounded, for the lock marker that Lock.qml writes when
+    # `locked` becomes true.
+    lockTrigger = pkgs.writeShellApplication {
+      name = "qs-lock-trigger";
+      runtimeInputs = [ pkgs.quickshell pkgs.coreutils ];
+      text = ''
+        # Fail-open by design: if qs is down / ipc fails, nothing locks.
+        qs -c task-bar ipc call lock lock || exit 0
+        marker="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/quickshell-lock.locked"
+        i=0
+        while [ "$i" -lt 100 ]; do
+          if [ -e "$marker" ]; then
+            exit 0
+          fi
+          sleep 0.01
+          i=$((i + 1))
+        done
+        exit 0
+      '';
+    };
   in {
     xdg.configFile."swaylock/config".source = configPkg;
     # Idle-policy seam for the Quickshell "stay awake" popup: same numbers the
@@ -46,9 +70,9 @@ in {
           };
           Service = {
             Type = "oneshot";
-            # Fail-open by design: if qs is down / ipc fails, nothing locks.
             # No swaylock fallback in the active path (manual backstop only).
-            ExecStart = "${pkgs.quickshell}/bin/qs -c task-bar ipc call lock lock";
+            # lockTrigger itself is fail-open (see its comment above).
+            ExecStart = "${lockTrigger}/bin/qs-lock-trigger";
           };
           Install = {WantedBy = ["lock.target"];};
         };

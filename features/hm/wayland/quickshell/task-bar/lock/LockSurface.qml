@@ -30,6 +30,11 @@ Item {
     // target; the Behavior animates the approach.
     property real contentOpacity: root.revealed ? 1.0 : 0.0
 
+    // Emitted once this surface exists, so Lock.qml can start the reveal only
+    // after the surface's bindings have initialised at revealed == false --
+    // a Behavior does not animate an initial binding value.
+    signal surfaceReady
+
     Behavior on contentOpacity {
         NumberAnimation {
             duration: root.contentDuration
@@ -114,7 +119,10 @@ Item {
             root.player = root.autoPlayer || (root.allPlayers.length ? root.allPlayers[0] : null);
         }
     }
-    Component.onCompleted: root.player = root.autoPlayer
+    Component.onCompleted: {
+        root.player = root.autoPlayer;
+        root.surfaceReady();
+    }
 
     // Up-next queue for the picked player (optional MPRIS TrackList iface,
     // e.g. ncspot) -- mirrors the bar's Lib.MprisExtras wiring. popupOpen must

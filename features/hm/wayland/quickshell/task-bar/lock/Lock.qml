@@ -42,7 +42,7 @@ Scope {
             return;
         }
         root.captureArmed = true;
-        captureTimer.restart();
+        captureTimer.start();
     }
 
     // Unlock is a two-phase move: play the detransition, then release. The
@@ -143,6 +143,10 @@ Scope {
     Instantiator {
         id: capturePool
         model: root.captureArmed ? Quickshell.screens : []
+        // Re-check when the pool finishes building: a hasContent that arrives
+        // while count < screens.length is rejected by _allCaptured() and would
+        // otherwise never be re-polled.
+        onObjectAdded: root._noteCapture()
         delegate: ScreencopyView {
             required property var modelData
             // True only when the frame landed BEFORE the compositor lock
@@ -224,6 +228,7 @@ Scope {
                 weather: root.weather
                 audio: root.audio
                 revealed: root.revealed
+                onSurfaceReady: revealTimer.restart()
             }
         }
     }
@@ -263,7 +268,6 @@ Scope {
         if (root.locked) {
             lockContext.reset();
             root.refreshWallpapers();
-            revealTimer.restart();  // flip `revealed` after the surface exists
         } else {
             root.revealed = false;
             root.captureArmed = false;  // destroys the views, frees the GPU buffers

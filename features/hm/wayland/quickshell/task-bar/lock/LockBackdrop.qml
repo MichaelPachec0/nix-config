@@ -19,11 +19,12 @@ Item {
     // scene graph -- a GaussianBlur cannot source an item from another window.
     property var capture: null
 
-    // The capture is used only when it holds a PRE-LOCK frame and is actually
-    // hosted in this surface's scene. Anything else -- no capture, a frame that
-    // landed after the lock, a view from a regenerated pool that has not been
-    // adopted yet -- falls back to the wallpaper Image.
-    readonly property Item blurSource: (root.capture && root.capture.preLockContent && root.capture.parent === captureHolder) ? root.capture : img
+    // The capture is used only in workspace backdrop mode, and only when it
+    // holds a PRE-LOCK frame and is actually hosted in this surface's scene.
+    // Anything else -- wallpaper mode, no capture, a frame that landed after
+    // the lock, a view from a regenerated pool that has not been adopted yet
+    // -- falls back to the wallpaper Image.
+    readonly property Item blurSource: (LockConfig.backdropMode === "workspace" && root.capture && root.capture.preLockContent && root.capture.parent === captureHolder) ? root.capture : img
 
     Behavior on blurAmount {
         NumberAnimation {
@@ -44,9 +45,10 @@ Item {
         visible: root.blurSource === img
     }
 
-    // Holder for the reparented capture. Hidden (rather than the capture being
-    // hidden) so the GaussianBlur can still source the capture through it: a
-    // ShaderEffectSource renders its source item regardless of visibility.
+    // Host for the reparented capture, and the sharp cross-fade base when the
+    // capture is in use -- mirrors img.visible on the wallpaper side. Hidden
+    // only when the capture is not the blur source, in which case nothing is
+    // sampling it anyway.
     Item {
         id: captureHolder
         anchors.fill: parent
