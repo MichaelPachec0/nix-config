@@ -66,6 +66,22 @@ in {
     };
   };
 
+  # Backdrop source for the lock surface. "workspace" freezes each output's
+  # desktop via ScreencopyView at the instant of locking and blurs that;
+  # "wallpaper" blurs the awww wallpaper (the original MVP behaviour). The
+  # workspace path falls back to the wallpaper automatically whenever a capture
+  # is missing or empty, so "workspace" is never a hard dependency on
+  # screencopy being available.
+  options.quickshellLock.backdrop.mode = lib.mkOption {
+    type = lib.types.enum [ "workspace" "wallpaper" ];
+    default = "workspace";
+    description = ''
+      Lock backdrop source: "workspace" (frozen ScreencopyView of the desktop,
+      blurred; falls back to the wallpaper when capture yields nothing) or
+      "wallpaper" (blurred awww wallpaper).
+    '';
+  };
+
   config = {
     home.packages = [ lockEscape ];
 
@@ -76,6 +92,9 @@ in {
       fallbackImage = "${config.home.homeDirectory}/.local/share/lockscreen.png";
       watermark = {
         inherit (cfg.watermark) enable title message color width height;
+      };
+      backdrop = {
+        inherit (cfg.backdrop) mode;
       };
     };
 

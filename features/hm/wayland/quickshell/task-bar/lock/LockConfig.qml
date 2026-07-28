@@ -13,6 +13,11 @@ Singleton {
     property bool failOpenOnCrash: true
     property string fallbackImage: (Quickshell.env("HOME") || "") + "/.local/share/lockscreen.png"
 
+    // Lock backdrop source, from Nix quickshellLock.backdrop.mode. "workspace"
+    // = frozen ScreencopyView of the desktop (wallpaper fallback when the
+    // capture is missing/empty); "wallpaper" = blurred awww wallpaper.
+    property string backdropMode: "workspace"
+
     // activate-linux watermark params, mirrored from the SAME
     // quickshellLock.watermark Nix option that builds the real activate-linux
     // CLI invocation (hyprland.nix/sway.nix) -- keeps the lock's under-lock
@@ -45,6 +50,7 @@ Singleton {
                 var o = JSON.parse(file.text());
                 if (o.failOpenOnCrash !== undefined) root.failOpenOnCrash = !!o.failOpenOnCrash;
                 if (o.fallbackImage) root.fallbackImage = o.fallbackImage;
+                if (o.backdrop && o.backdrop.mode) root.backdropMode = o.backdrop.mode;
                 if (o.watermark) {
                     var w = o.watermark;
                     if (w.enable !== undefined) root.watermarkEnable = !!w.enable;
