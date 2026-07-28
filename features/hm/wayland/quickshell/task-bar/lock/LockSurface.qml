@@ -21,7 +21,7 @@ Item {
         textPrimary: "#ebdbb2", textSecondary: "#a89984",
         accentGreen: "#b8bb26", accentYellow: "#fabd2f",
         accentPurple: "#d3869b", accentRed: "#fb4934",
-        accentOrange: "#fe8019"
+        accentOrange: "#fe8019", accentBlue: "#83a598"
     })
 
     // UV index band word / "7  High" label / severity colour -- copied
@@ -183,6 +183,26 @@ Item {
             text: "UV " + (root.weather ? root.uvLabel(root.weather.uv) : "")
             color: root.weather ? root.uvColor(root.weather.uv) : root.wxTheme.textPrimary
             font.pixelSize: 14
+        }
+
+        // Hourly forecast (up to 4h), mirroring the popup's hourly strip.
+        // wx.hourly is [] for providers that supply none (owm/wttr) -> Row hides.
+        Row {
+            anchors.right: parent.right
+            spacing: 12
+            visible: root.weather !== null && root.weather.hourly !== undefined && root.weather.hourly.length > 0
+            Repeater {
+                model: root.weather ? root.weather.hourly.slice(0, 4) : []
+                Column {
+                    required property var modelData
+                    spacing: 2
+                    LockText { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.h; color: root.wxTheme.textSecondary; font.pixelSize: 11 }
+                    LockText { anchors.horizontalCenter: parent.horizontalCenter; text: WeatherIcons.glyph(modelData.icon); font.family: "JetBrainsMono Nerd Font"; font.pixelSize: 16 }
+                    LockText { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.temp + String.fromCodePoint(0x00B0); color: root.wxTheme.textPrimary; font.pixelSize: 12 }
+                    LockText { anchors.horizontalCenter: parent.horizontalCenter; visible: modelData.uv !== ""; text: "UV " + modelData.uv; color: root.uvColor(modelData.uv); font.pixelSize: 10 }
+                    LockText { anchors.horizontalCenter: parent.horizontalCenter; visible: modelData.precip !== "" && modelData.precip !== "0"; text: modelData.precip + "%"; color: root.wxTheme.textSecondary; font.pixelSize: 10; opacity: 0.85 }
+                }
+            }
         }
 
         // ALL active conditions/alerts, severity-sorted and color-coded
