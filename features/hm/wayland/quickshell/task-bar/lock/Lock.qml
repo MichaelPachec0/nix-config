@@ -37,30 +37,12 @@ Scope {
         // One WlSessionLockSurface is created per output automatically.
         surface: WlSessionLockSurface {
             id: surface
-            color: "transparent" // LockBackdrop paints the surface (Task 4)
+            color: "transparent"
 
-            LockBackdrop {
+            LockSurface {
                 anchors.fill: parent
-                source: root.wallpaperFor(surface.screen ? surface.screen.name : "")
-            }
-
-            TextInput {
-                anchors.centerIn: parent
-                width: 300
-                echoMode: TextInput.Password
-                color: "#ebdbb2"
-                font.pixelSize: 22
-                focus: true
-                text: root.context.currentText
-                onTextChanged: root.context.currentText = text
-                onAccepted: root.context.tryUnlock()
-                Component.onCompleted: forceActiveFocus()
-            }
-            Text {
-                anchors { horizontalCenter: parent.horizontalCenter; top: parent.verticalCenter; topMargin: 40 }
-                visible: root.context.showFailure
-                text: "Incorrect password (" + root.context.failCount + ")"
-                color: "#fb4934" // Gruvbox red
+                context: root.context
+                backdropSource: root.wallpaperFor(surface.screen ? surface.screen.name : "")
             }
         }
     }
