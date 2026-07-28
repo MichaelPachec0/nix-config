@@ -31,6 +31,7 @@
     pkgs.wl-clipboard # wl-copy (network widget middle-click copy)
     pkgs.networkmanager # nmcli (NetworkService)
     pkgs.iproute2 # ip (NetworkService default-route lookup)
+    config.services.awww.package # awww query (LockBackdrop reads per-output wallpaper)
   ];
 
   quickshell' = pkgs.quickshell.overrideAttrs (o: {

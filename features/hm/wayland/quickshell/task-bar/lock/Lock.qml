@@ -9,9 +9,16 @@ Scope {
 
     property bool locked: false
     property alias context: lockContext
+    property var wallpapers: ({}) // screenName -> image path
 
     function lock() { root.locked = true; }
     function unlock() { root.locked = false; }
+
+    function wallpaperFor(name) {
+        return (name && root.wallpapers[name]) ? root.wallpapers[name] : LockConfig.fallbackImage;
+    }
+
+    function refreshWallpapers() { awwwProc.running = true; }
 
     LockContext {
         id: lockContext
@@ -30,7 +37,12 @@ Scope {
         // One WlSessionLockSurface is created per output automatically.
         surface: WlSessionLockSurface {
             id: surface
-            color: "#1d2021" // Gruvbox dark bg0_h; replaced by LockBackdrop in Task 4
+            color: "transparent" // LockBackdrop paints the surface (Task 4)
+
+            LockBackdrop {
+                anchors.fill: parent
+                source: root.wallpaperFor(surface.screen ? surface.screen.name : "")
+            }
 
             TextInput {
                 anchors.centerIn: parent
@@ -85,10 +97,32 @@ Scope {
             ? ["sh", "-c", "touch \"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/quickshell-lock.locked\""]
             : ["sh", "-c", "rm -f \"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/quickshell-lock.locked\""]
         );
-        // clear stale auth state whenever we newly lock (Task 3)
-        if (root.locked)
+        if (root.locked) {
             lockContext.reset();
+            root.refreshWallpapers();
+        }
     }
 
     Process { id: markerProc }
+
+    // Per-output current wallpaper (LockBackdrop). Refreshed on lock so the
+    // backdrop refines from the fallback image to the real wallpaper without
+    // any desktop-visible race (locked is already true by then).
+    Process {
+        id: awwwProc
+        command: ["awww", "query"]
+        stdout: StdioCollector {
+            id: awwwOut
+            onStreamFinished: {
+                var map = {};
+                var re = /^:?\s*(\S+):.*currently displaying:\s*image:\s*(.+)$/;
+                var lines = (awwwOut.text || "").split("\n");
+                for (var i = 0; i < lines.length; i++) {
+                    var m = lines[i].match(re);
+                    if (m) map[m[1]] = m[2].trim();
+                }
+                root.wallpapers = map;
+            }
+        }
+    }
 }
