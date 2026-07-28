@@ -8,6 +8,7 @@ Item {
     id: root
     required property var context
     property string backdropSource: ""
+    property var clockState: null
 
     LockBackdrop {
         anchors.fill: parent
@@ -19,16 +20,22 @@ Item {
         anchors.centerIn: parent
         spacing: 28
 
-        // Clock
-        Text {
-            id: clock
+        // Clock -- click to toggle 24h/12h (persisted via clockState).
+        LockText {
             anchors.horizontalCenter: parent.horizontalCenter
             color: "#ebdbb2"
             font.pixelSize: 72
             font.bold: true
-            text: Qt.formatDateTime(clockTick.now, "HH:mm")
+            text: (root.clockState && root.clockState.hour12)
+                ? Qt.formatDateTime(clockTick.now, "h:mm AP")
+                : Qt.formatDateTime(clockTick.now, "HH:mm")
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: if (root.clockState) root.clockState.hour12 = !root.clockState.hour12
+            }
         }
-        Text {
+        LockText {
             anchors.horizontalCenter: parent.horizontalCenter
             color: "#a89984"
             font.pixelSize: 22
@@ -81,7 +88,7 @@ Item {
     // Message line (PAM prompts / "Incorrect password"). Positioned OUTSIDE the
     // centered Column and anchored below it, so toggling it never reflows the
     // clock/field -- they stay put whether or not a message is showing.
-    Text {
+    LockText {
         anchors.horizontalCenter: column.horizontalCenter
         anchors.top: column.bottom
         anchors.topMargin: 12

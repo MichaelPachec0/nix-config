@@ -30,6 +30,8 @@ Scope {
     }
     Process { id: unlockSessionProc }
 
+    LockClockState { id: lockClockState }
+
     WlSessionLock {
         id: sessionLock
         locked: root.locked
@@ -43,6 +45,7 @@ Scope {
                 anchors.fill: parent
                 context: root.context
                 backdropSource: root.wallpaperFor(surface.screen ? surface.screen.name : "")
+                clockState: lockClockState
             }
         }
     }
