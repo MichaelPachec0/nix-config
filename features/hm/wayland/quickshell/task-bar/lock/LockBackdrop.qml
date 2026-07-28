@@ -19,10 +19,11 @@ Item {
     // scene graph -- a GaussianBlur cannot source an item from another window.
     property var capture: null
 
-    // Use the capture only once it actually holds a frame; otherwise the
-    // wallpaper Image is the source, which is also the `wallpaper` mode path
-    // and the automatic fallback when capture fails.
-    readonly property Item blurSource: (root.capture && root.capture.hasContent) ? root.capture : img
+    // The capture is used only when it holds a PRE-LOCK frame and is actually
+    // hosted in this surface's scene. Anything else -- no capture, a frame that
+    // landed after the lock, a view from a regenerated pool that has not been
+    // adopted yet -- falls back to the wallpaper Image.
+    readonly property Item blurSource: (root.capture && root.capture.preLockContent && root.capture.parent === captureHolder) ? root.capture : img
 
     Behavior on blurAmount {
         NumberAnimation {
@@ -52,12 +53,19 @@ Item {
         visible: root.blurSource === root.capture
     }
 
-    Component.onCompleted: {
-        if (root.capture) {
+    // Adopt the capture whenever it changes, not just once at creation: the
+    // `capture` binding re-evaluates (monitor hotplug regenerates the whole
+    // pool), and an unadopted view would be selected as the blur source while
+    // sitting outside this scene -- a black backdrop.
+    function _adoptCapture() {
+        if (root.capture && root.capture.parent !== captureHolder) {
             root.capture.parent = captureHolder;
             root.capture.anchors.fill = captureHolder;
         }
     }
+
+    onCaptureChanged: root._adoptCapture()
+    Component.onCompleted: root._adoptCapture()
 
     // Blurred copy, cross-faded over the sharp base. Qt5Compat's GaussianBlur
     // wraps its source in a SourceProxy, which passes a plain Image straight

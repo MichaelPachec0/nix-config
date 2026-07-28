@@ -145,9 +145,19 @@ Scope {
         model: root.captureArmed ? Quickshell.screens : []
         delegate: ScreencopyView {
             required property var modelData
+            // True only when the frame landed BEFORE the compositor lock
+            // engaged. `hasContent` alone is not enough: it means "a frame
+            // arrived", not "a useful frame arrived" -- a copy still in flight
+            // when captureTimer locks will latch the post-lock (black) screen
+            // and set hasContent true anyway.
+            property bool preLockContent: false
             live: false
             captureSource: modelData
-            onHasContentChanged: root._noteCapture()
+            onHasContentChanged: {
+                if (hasContent && !root.locked)
+                    preLockContent = true;
+                root._noteCapture();
+            }
         }
     }
 
@@ -173,7 +183,7 @@ Scope {
             return false;
         for (var i = 0; i < capturePool.count; i++) {
             var v = capturePool.objectAt(i);
-            if (!v || !v.hasContent)
+            if (!v || !v.preLockContent)
                 return false;
         }
         return true;
