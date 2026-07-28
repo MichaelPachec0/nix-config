@@ -4,6 +4,7 @@
 // feedback is mirrored across outputs.
 import QtQuick
 import Quickshell.Services.Mpris
+import "../lib" as Lib
 import "../lib/weathericons.js" as WeatherIcons
 import "../lib/weathercond.js" as WeatherCond
 
@@ -47,9 +48,8 @@ Item {
     }
 
     // MPRIS media state -- mirrors desktop/MediaWidget.qml's players filter and
-    // autoPlayer reduce verbatim (playing > paused > first). No re-selection UI
-    // here (unlike the bar's MediaPopup player-switcher chips): the lock surface
-    // always follows the auto-pick.
+    // autoPlayer reduce verbatim (playing > paused > first); still the default
+    // source for `player` below.
     readonly property var players: (Mpris.players.values || []).filter(function (p) {
         return p && (p.dbusName || "").indexOf("playerctld") < 0;
     })
@@ -63,7 +63,46 @@ Item {
                 return ps[j];
         return ps.length ? ps[0] : null;
     }
-    readonly property var mediaPlayer: autoPlayer
+
+    // Player switcher model -- mirrors desktop/MediaPopup.qml's
+    // allPlayers/player/userPicked/onDefaultPlayerChanged/onAllPlayersChanged,
+    // adapted for the lock: no `popup.visible` gate, since the LockSurface
+    // itself only exists while locked (a fresh WlSessionLockSurface -- and
+    // thus fresh `player`/`userPicked` state -- is created each lock, so the
+    // pick resets naturally instead of needing an open/closed guard).
+    //
+    // Active players (playing or paused) -> the switcher chips. Drop the
+    // playerctld proxy, which mirrors the active player as a duplicate entry.
+    readonly property var allPlayers: (Mpris.players.values || []).filter(function (p) {
+        return p && p.playbackState !== MprisPlaybackState.Stopped && (p.dbusName || "").indexOf("playerctld") < 0;
+    })
+    // Effective displayed player: follows the auto-pick UNTIL a chip is
+    // clicked (userPicked = true), after which it stays on that choice for
+    // the rest of this lock session. Released back to auto-tracking if the
+    // picked player disappears.
+    property var player: null
+    property bool userPicked: false
+    onAutoPlayerChanged: if (!root.userPicked)
+        root.player = root.autoPlayer
+    onAllPlayersChanged: {
+        if (root.player === null || root.allPlayers.indexOf(root.player) < 0) {
+            root.userPicked = false;
+            root.player = root.autoPlayer || (root.allPlayers.length ? root.allPlayers[0] : null);
+        }
+    }
+    Component.onCompleted: root.player = root.autoPlayer
+
+    // Up-next queue for the picked player (optional MPRIS TrackList iface,
+    // e.g. ncspot) -- mirrors the bar's Lib.MprisExtras wiring. popupOpen must
+    // be true for the (cheap) caps poll to run and populate supportsQueue --
+    // the lock has no popup to gate on, so it tracks "a player is picked"
+    // instead of a fixed `true`, avoiding a poll with no bus to query.
+    Lib.MprisExtras {
+        id: mprisExtras
+        bus: root.player ? (root.player.dbusName || "") : ""
+        popupOpen: root.player !== null
+        queueWants: root.player !== null
+    }
 
     LockBackdrop {
         anchors.fill: parent
@@ -243,14 +282,15 @@ Item {
         }
     }
 
-    // Media widget (below weather, display-only + focus-neutral transport/volume
-    // controls). A NEW sibling of `column`/`weatherCol` -- anchored below
-    // weatherCol so it never reflows the centered auth block. Auto-picked MPRIS
-    // player (playing > paused > first, see root.autoPlayer above) mirrors
-    // desktop/MediaWidget.qml; art/title/artist/transport layout + glyph
-    // codepoints mirror desktop/MediaPopup.qml. Self-hides while no MPRIS player
-    // is active. No focus:true / forceActiveFocus anywhere below -- the password
-    // TextInput keeps keyboard focus.
+    // Media widget (below weather, display-only + focus-neutral transport/
+    // switcher/queue/volume controls). A NEW sibling of `column`/`weatherCol`
+    // -- anchored below weatherCol so it never reflows the centered auth
+    // block. root.player defaults to the auto-pick (playing > paused > first,
+    // see root.autoPlayer above) but is settable via the chip switcher below
+    // (root.userPicked); art/title/artist/transport/chip/queue layout + glyph
+    // codepoints mirror desktop/MediaPopup.qml. Self-hides while no MPRIS
+    // player is active. No focus:true / forceActiveFocus anywhere below --
+    // the password TextInput keeps keyboard focus.
     Column {
         id: mediaCol
         anchors.top: weatherCol.bottom
@@ -258,7 +298,47 @@ Item {
         anchors.topMargin: 16
         anchors.rightMargin: 28
         spacing: 8
-        visible: root.mediaPlayer !== null
+        visible: root.player !== null
+
+        // Player switcher chips (only shown when more than one player is
+        // active). Mirrors MediaPopup.qml's chip Repeater: `modelData.identity`
+        // label, tinted background for the selected chip, sticky pick via
+        // userPicked (see root.player/root.userPicked above). Focus-neutral
+        // (no focus:true) -- the password field keeps keyboard focus.
+        Row {
+            anchors.right: parent.right
+            spacing: 6
+            visible: root.allPlayers.length > 1
+
+            Repeater {
+                model: root.allPlayers
+                Rectangle {
+                    id: chip
+                    required property var modelData
+                    readonly property bool sel: modelData === root.player
+                    implicitHeight: 22
+                    implicitWidth: chipLabel.implicitWidth + 16
+                    radius: 11
+                    color: chip.sel ? root.wxTheme.accentGreen : Qt.rgba(0, 0, 0, 0.35)
+
+                    LockText {
+                        id: chipLabel
+                        anchors.centerIn: parent
+                        text: chip.modelData.identity || "Player"
+                        color: chip.sel ? root.wxTheme.textPrimary : root.wxTheme.textSecondary
+                        font.pixelSize: 12
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.player = chip.modelData;
+                            root.userPicked = true;
+                        }
+                    }
+                }
+            }
+        }
 
         // Album art + title/artist. Art mirrors MediaPopup's rounded, clipped
         // Rectangle with a placeholder music-note glyph shown until (or unless)
@@ -284,7 +364,7 @@ Item {
                 Image {
                     id: art
                     anchors.fill: parent
-                    source: root.mediaPlayer ? (root.mediaPlayer.trackArtUrl || "") : ""
+                    source: root.player ? (root.player.trackArtUrl || "") : ""
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                     cache: true
@@ -298,14 +378,14 @@ Item {
                 spacing: 2
                 LockText {
                     width: parent.width
-                    text: root.mediaPlayer ? (root.mediaPlayer.trackTitle || "Unknown Title") : ""
+                    text: root.player ? (root.player.trackTitle || "Unknown Title") : ""
                     font.pixelSize: 15
                     font.bold: true
                     elide: Text.ElideRight
                 }
                 LockText {
                     width: parent.width
-                    text: root.mediaPlayer ? (root.mediaPlayer.trackArtist || "Unknown Artist") : ""
+                    text: root.player ? (root.player.trackArtist || "Unknown Artist") : ""
                     color: root.wxTheme.textSecondary
                     font.pixelSize: 13
                     elide: Text.ElideRight
@@ -326,36 +406,36 @@ Item {
                 text: String.fromCodePoint(0xF048) // step-backward
                 font.family: "JetBrainsMono Nerd Font"
                 font.pixelSize: 18
-                opacity: (root.mediaPlayer && root.mediaPlayer.canGoPrevious) ? 1.0 : 0.35
+                opacity: (root.player && root.player.canGoPrevious) ? 1.0 : 0.35
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: if (root.mediaPlayer && root.mediaPlayer.canGoPrevious)
-                        root.mediaPlayer.previous()
+                    onClicked: if (root.player && root.player.canGoPrevious)
+                        root.player.previous()
                 }
             }
             LockText {
-                text: String.fromCodePoint((root.mediaPlayer && root.mediaPlayer.playbackState === MprisPlaybackState.Playing) ? 0xF04C : 0xF04B)
+                text: String.fromCodePoint((root.player && root.player.playbackState === MprisPlaybackState.Playing) ? 0xF04C : 0xF04B)
                 font.family: "JetBrainsMono Nerd Font"
                 font.pixelSize: 20
-                opacity: (root.mediaPlayer && root.mediaPlayer.canTogglePlaying) ? 1.0 : 0.35
+                opacity: (root.player && root.player.canTogglePlaying) ? 1.0 : 0.35
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: if (root.mediaPlayer && root.mediaPlayer.canTogglePlaying)
-                        root.mediaPlayer.togglePlaying()
+                    onClicked: if (root.player && root.player.canTogglePlaying)
+                        root.player.togglePlaying()
                 }
             }
             LockText {
                 text: String.fromCodePoint(0xF051) // step-forward
                 font.family: "JetBrainsMono Nerd Font"
                 font.pixelSize: 18
-                opacity: (root.mediaPlayer && root.mediaPlayer.canGoNext) ? 1.0 : 0.35
+                opacity: (root.player && root.player.canGoNext) ? 1.0 : 0.35
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: if (root.mediaPlayer && root.mediaPlayer.canGoNext)
-                        root.mediaPlayer.next()
+                    onClicked: if (root.player && root.player.canGoNext)
+                        root.player.next()
                 }
             }
         }
@@ -379,6 +459,39 @@ Item {
                 onWheel: function (wheel) {
                     if (root.audio)
                         root.audio.stepVolume(wheel.angleDelta.y > 0 ? 5 : -5);
+                }
+            }
+        }
+
+        // Up-next queue (up to 4 tracks) via Lib.MprisExtras -- only for
+        // players implementing the optional MPRIS TrackList interface (e.g.
+        // ncspot); self-hides entirely otherwise (empty queue or unsupported).
+        // Display-only except a focus-neutral tap-to-jump, mirroring the
+        // queue rows' click-to-goTo in MediaPopup.qml.
+        Column {
+            anchors.right: parent.right
+            spacing: 2
+            visible: mprisExtras.supportsQueue && mprisExtras.queue && mprisExtras.queue.length > 0
+
+            Repeater {
+                model: mprisExtras.queue ? mprisExtras.queue.slice(0, 4) : []
+                LockText {
+                    id: qrow
+                    required property var modelData
+                    anchors.right: parent.right
+                    horizontalAlignment: Text.AlignRight
+                    text: (qrow.modelData.title || "") + (qrow.modelData.artist ? "  -  " + qrow.modelData.artist : "")
+                    color: qrow.modelData.current ? root.wxTheme.accentGreen : root.wxTheme.textSecondary
+                    font.pixelSize: 12
+                    font.bold: qrow.modelData.current === true
+                    elide: Text.ElideRight
+                    width: 240
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: mprisExtras.goTo(qrow.modelData.trackid)
+                    }
                 }
             }
         }
