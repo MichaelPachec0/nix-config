@@ -412,10 +412,9 @@ Item {
         // pause/next dim when their canGo*/canTogglePlaying is false
         // (matching CtlButton's disabled opacity); shuffle/repeat are
         // accent-tinted when engaged and hidden entirely when the player
-        // doesn't support them (MediaPopup.qml gates the same way). No
-        // `accent` key exists on the lock's wxTheme (only accentGreen/Yellow/
-        // Purple/Red/Orange/Blue) -- accentGreen is used here, matching the
-        // queue's "current track" and the switcher's selected-chip accent.
+        // doesn't support them (MediaPopup.qml gates the same way). The engaged
+        // tint uses wxTheme.accent (#87b158, the MPRIS popup's accent), matching
+        // the switcher's selected chip and the queue's "current track".
         Row {
             anchors.right: parent.right
             spacing: 18
@@ -426,7 +425,7 @@ Item {
                 font.pixelSize: 18
                 visible: root.player && root.player.shuffleSupported
                 text: String.fromCodePoint(0xF049D)
-                color: (root.player && root.player.shuffle) ? root.wxTheme.accentGreen : root.wxTheme.textSecondary
+                color: (root.player && root.player.shuffle) ? root.wxTheme.accent : root.wxTheme.textSecondary
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
@@ -479,7 +478,7 @@ Item {
                 font.pixelSize: 18
                 visible: root.player && root.player.loopSupported
                 text: String.fromCodePoint((root.player && root.player.loopState === MprisLoopState.Track) ? 0xF0458 : 0xF0456)
-                color: (root.player && root.player.loopState !== MprisLoopState.None) ? root.wxTheme.accentGreen : root.wxTheme.textSecondary
+                color: (root.player && root.player.loopState !== MprisLoopState.None) ? root.wxTheme.accent : root.wxTheme.textSecondary
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
