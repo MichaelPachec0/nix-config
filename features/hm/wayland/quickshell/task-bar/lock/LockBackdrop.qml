@@ -1,13 +1,28 @@
 // features/hm/wayland/quickshell/task-bar/lock/LockBackdrop.qml
-// Swappable lock backdrop. MVP: a wallpaper image, GPU-blurred. v2 swaps `source`
-// for a ScreencopyView frozen frame; the blur pipeline is unchanged.
+// Swappable lock backdrop. The wallpaper Image is the sharp base layer; a
+// constant-radius GaussianBlur of it is cross-faded on top via `blurAmount`,
+// together with the dim overlay. Animating the blur's OPACITY (not its radius)
+// keeps the kernel constant -- animating `radius` would regenerate the blur
+// kernel every frame. blurAmount 0 = sharp/undimmed, 1 = the original MVP end
+// state (radius 9, dim 0.35).
 import QtQuick
 import Qt5Compat.GraphicalEffects
 
 Item {
     id: root
     property string source: ""
+    property real blurAmount: 1.0
+    property int animDuration: 350
 
+    Behavior on blurAmount {
+        NumberAnimation {
+            duration: root.animDuration
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    // Sharp base. Visible (unlike the MVP, where the blur was the only layer)
+    // so blurAmount can fade between sharp and blurred.
     Image {
         id: img
         anchors.fill: parent
@@ -15,19 +30,23 @@ Item {
         fillMode: Image.PreserveAspectCrop
         cache: false
         asynchronous: true
-        visible: false // shown via the blur effect
     }
 
+    // Blurred copy, cross-faded over the sharp base. ShaderEffectSource renders
+    // `img` into its own texture regardless of img's own visibility, so both
+    // layers can be on screen at once.
     GaussianBlur {
         anchors.fill: parent
         source: img
         radius: 9
         samples: 11
-        // Dim overlay so the input field stays legible over bright wallpapers.
+        opacity: root.blurAmount
     }
+
+    // Dim overlay so the input field stays legible over bright wallpapers.
     Rectangle {
         anchors.fill: parent
         color: "#1d2021"
-        opacity: 0.35
+        opacity: root.blurAmount * 0.35
     }
 }

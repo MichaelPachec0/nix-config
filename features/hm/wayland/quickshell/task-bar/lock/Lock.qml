@@ -15,8 +15,30 @@ Scope {
     readonly property var weather: weatherPoll.value // {temp, icon, desc, uv, conditions[], ...} or null
     property var audio: null // Lib.AudioService, threaded from shell.qml
 
+    // Drives the surfaces' blur/content animation. Set false while the surface
+    // is still up so the unlock detransition can play before the compositor
+    // lock is released.
+    property bool revealed: false
+
     function lock() { root.locked = true; }
-    function unlock() { root.locked = false; }
+
+    // Unlock is a two-phase move: play the detransition, then release. The
+    // Timer -- not any animation signal -- is the authority, so a skipped or
+    // broken animation can never strand the session locked.
+    function unlock() { root.beginUnlock(); }
+
+    function beginUnlock() {
+        if (!root.locked)
+            return;
+        root.revealed = false;   // starts the blur-out + content fade
+        unlockTimer.restart();
+    }
+
+    function _release() {
+        root.locked = false;                                   // release the compositor lock
+        unlockSessionProc.exec(["loginctl", "unlock-session"]); // fire unlock.target
+        lockContext.reset();
+    }
 
     function wallpaperFor(name) {
         return (name && root.wallpapers[name]) ? root.wallpapers[name] : LockConfig.fallbackImage;
@@ -26,13 +48,19 @@ Scope {
 
     LockContext {
         id: lockContext
-        onUnlocked: {
-            root.locked = false;                // release the compositor lock
-            unlockSessionProc.exec(["loginctl", "unlock-session"]); // fire unlock.target
-            lockContext.reset();
-        }
+        // PAM success is still the ONLY thing that reaches here; it now starts
+        // the detransition instead of releasing immediately (unlockTimer does
+        // the release ~200ms later).
+        onUnlocked: root.beginUnlock()
     }
     Process { id: unlockSessionProc }
+
+    // Authoritative unlock release. Matches LockSurface's 200ms blur-out.
+    Timer {
+        id: unlockTimer
+        interval: 200
+        onTriggered: root._release()
+    }
 
     LockClockState { id: lockClockState }
 
@@ -93,6 +121,7 @@ Scope {
                 clockState: lockClockState
                 weather: root.weather
                 audio: root.audio
+                revealed: root.revealed
             }
         }
     }
@@ -101,7 +130,7 @@ Scope {
         target: "lock"
         function lock(): void { root.lock(); }
         function unlock(): void { root.unlock(); }
-        function toggle(): void { root.locked = !root.locked; }
+        function toggle(): void { if (root.locked) root.unlock(); else root.lock(); }
     }
 
     // Dev escape: when relaunched by lock-escape.sh (QS_LOCK_ESCAPE=1) and
@@ -132,10 +161,21 @@ Scope {
         if (root.locked) {
             lockContext.reset();
             root.refreshWallpapers();
+            revealTimer.restart();  // flip `revealed` after the surface exists
+        } else {
+            root.revealed = false;
         }
     }
 
     Process { id: markerProc }
+
+    // `revealed` must change AFTER the surfaces are built, otherwise the
+    // Behaviors see their target as the initial value and no animation plays.
+    Timer {
+        id: revealTimer
+        interval: 16
+        onTriggered: root.revealed = true
+    }
 
     // Per-output current wallpaper (LockBackdrop). Refreshed on lock so the
     // backdrop refines from the fallback image to the real wallpaper without

@@ -16,6 +16,26 @@ Item {
     property var weather: null // {temp, icon, desc, uv, conditions[], ...} or null; from Lock.qml's weatherPoll
     property var audio: null // Lib.AudioService, threaded from shell.qml via Lock.qml
 
+    // Lock-in / unlock-out animation, driven by Lock.qml. `revealed` false =
+    // sharp backdrop + hidden widgets; true = blurred backdrop + visible
+    // widgets. Durations are asymmetric: a slower reveal on lock, a quick
+    // blur-out on unlock so the frozen (stale) backdrop is on screen sharp for
+    // as little time as possible.
+    property bool revealed: false
+    readonly property int contentDuration: root.revealed ? 350 : 150
+    readonly property int blurDuration: root.revealed ? 350 : 200
+    // NOT readonly: the Behavior below animates this property, and an
+    // animation has to write intermediate values into it. The binding sets the
+    // target; the Behavior animates the approach.
+    property real contentOpacity: root.revealed ? 1.0 : 0.0
+
+    Behavior on contentOpacity {
+        NumberAnimation {
+            duration: root.contentDuration
+            easing.type: Easing.OutCubic
+        }
+    }
+
     // Static Gruvbox accent object (mirrors lib/ThemeEngine.qml's fallback hex
     // values) for the UV/condition color helpers below -- the lock has no
     // FileView-backed theme, so this is a fixed palette rather than the live
@@ -110,8 +130,14 @@ Item {
     LockBackdrop {
         anchors.fill: parent
         source: root.backdropSource
+        blurAmount: root.revealed ? 1.0 : 0.0
+        animDuration: root.blurDuration
     }
 
+    // NB: every top-level content child below (watermark, column, message,
+    // weatherCol, mediaCol) -- i.e. everything except LockBackdrop -- binds
+    // `opacity: root.contentOpacity` so the whole UI fades in on lock and out
+    // on unlock as one. Add the same binding to any new top-level widget.
     // activate-linux watermark, positioned to MATCH the real overlay exactly.
     // hyprctl layers shows it as a fixed wlr-layer surface flush to the
     // bottom-right corner; activate-linux draws the title at (20,30) px font 24
@@ -127,6 +153,7 @@ Item {
     // internal cairo layout constants (fixed by its source, not its CLI) and
     // stay hardcoded here.
     Item {
+        opacity: root.contentOpacity
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         width: LockConfig.watermarkWidth
@@ -161,6 +188,7 @@ Item {
 
     Column {
         id: column
+        opacity: root.contentOpacity
         anchors.centerIn: parent
         spacing: 28
 
@@ -233,6 +261,7 @@ Item {
     // centered Column and anchored below it, so toggling it never reflows the
     // clock/field -- they stay put whether or not a message is showing.
     LockText {
+        opacity: root.contentOpacity
         anchors.horizontalCenter: column.horizontalCenter
         anchors.top: column.bottom
         anchors.topMargin: 12
@@ -253,6 +282,7 @@ Item {
     // fetch failed).
     Column {
         id: weatherCol
+        opacity: root.contentOpacity
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 28
@@ -343,6 +373,7 @@ Item {
     // the password TextInput keeps keyboard focus.
     Column {
         id: mediaCol
+        opacity: root.contentOpacity
         anchors.top: weatherCol.bottom
         anchors.right: parent.right
         anchors.topMargin: 16
