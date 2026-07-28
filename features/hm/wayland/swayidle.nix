@@ -40,18 +40,15 @@ in {
         # NOTE: taken from example here: https://sr.ht/~whynothugo/systemd-lock-handler/#usage
         swaylock = {
           Unit = {
-            Description = "service runs on dbus lock event. (systemd-lock-handler is required)";
-            # if there any services that need to process an unlock event 
-            OnSuccess = ["unlock.target"];
-            # this is what activates the lock screen
+            Description = "Trigger the Quickshell lock on lock.target.";
             PartOf = ["lock.target"];
             After = ["lock.target"];
           };
           Service = {
-            Type = "forking";
-            # TODO: (med prio) change this so that it can configurable by the user.
-            ExecStart = "${lib.getExe pkgs.swaylock} -f -i %h/.local/share/lockscreen.png";
-            Restart = "on-failure";
+            Type = "oneshot";
+            # Fail-open by design: if qs is down / ipc fails, nothing locks.
+            # No swaylock fallback in the active path (manual backstop only).
+            ExecStart = "${pkgs.quickshell}/bin/qs -c task-bar ipc call lock lock";
           };
           Install = {WantedBy = ["lock.target"];};
         };
