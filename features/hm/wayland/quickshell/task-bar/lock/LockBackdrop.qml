@@ -21,8 +21,8 @@ Item {
     GaussianBlur {
         anchors.fill: parent
         source: img
-        radius: 64
-        samples: 33
+        radius: 9
+        samples: 11
         // Dim overlay so the input field stays legible over bright wallpapers.
     }
     Rectangle {

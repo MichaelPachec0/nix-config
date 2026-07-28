@@ -15,6 +15,7 @@ Item {
     }
 
     Column {
+        id: column
         anchors.centerIn: parent
         spacing: 28
 
@@ -75,15 +76,21 @@ Item {
             }
         }
 
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            visible: root.context.showFailure || root.context.statusMessage.length > 0
-            color: (root.context.showFailure || root.context.statusIsError) ? "#fb4934" : "#a89984"
-            font.pixelSize: 16
-            text: root.context.showFailure
-                ? ("Incorrect password" + (root.context.failCount > 1 ? " (" + root.context.failCount + ")" : ""))
-                : root.context.statusMessage
-        }
+    }
+
+    // Message line (PAM prompts / "Incorrect password"). Positioned OUTSIDE the
+    // centered Column and anchored below it, so toggling it never reflows the
+    // clock/field -- they stay put whether or not a message is showing.
+    Text {
+        anchors.horizontalCenter: column.horizontalCenter
+        anchors.top: column.bottom
+        anchors.topMargin: 12
+        visible: root.context.showFailure || root.context.statusMessage.length > 0
+        color: (root.context.showFailure || root.context.statusIsError) ? "#fb4934" : "#a89984"
+        font.pixelSize: 16
+        text: root.context.showFailure
+            ? ("Incorrect password" + (root.context.failCount > 1 ? " (" + root.context.failCount + ")" : ""))
+            : root.context.statusMessage
     }
 
     // Re-focus the hidden input whenever this surface (re)appears.
