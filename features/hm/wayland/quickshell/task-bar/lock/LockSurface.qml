@@ -325,7 +325,7 @@ Item {
                         id: chipLabel
                         anchors.centerIn: parent
                         text: chip.modelData.identity || "Player"
-                        color: chip.sel ? root.wxTheme.textPrimary : root.wxTheme.textSecondary
+                        color: chip.sel ? "#1d2021" : root.wxTheme.textSecondary
                         font.pixelSize: 12
                     }
                     MouseArea {
@@ -467,30 +467,46 @@ Item {
         // players implementing the optional MPRIS TrackList interface (e.g.
         // ncspot); self-hides entirely otherwise (empty queue or unsupported).
         // Display-only except a focus-neutral tap-to-jump, mirroring the
-        // queue rows' click-to-goTo in MediaPopup.qml.
+        // queue rows' click-to-goTo + ~30x30 art thumbnail in MediaPopup.qml.
         Column {
             anchors.right: parent.right
-            spacing: 2
+            spacing: 6
             visible: mprisExtras.supportsQueue && mprisExtras.queue && mprisExtras.queue.length > 0
 
             Repeater {
                 model: mprisExtras.queue ? mprisExtras.queue.slice(0, 4) : []
-                LockText {
+                Row {
                     id: qrow
                     required property var modelData
                     anchors.right: parent.right
-                    horizontalAlignment: Text.AlignRight
-                    text: (qrow.modelData.title || "") + (qrow.modelData.artist ? "  -  " + qrow.modelData.artist : "")
-                    color: qrow.modelData.current ? root.wxTheme.accentGreen : root.wxTheme.textSecondary
-                    font.pixelSize: 12
-                    font.bold: qrow.modelData.current === true
-                    elide: Text.ElideRight
-                    width: 240
+                    spacing: 8
 
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: mprisExtras.goTo(qrow.modelData.trackid)
+                    // TapHandler (not a MouseArea) so it doesn't claim a Row
+                    // layout slot and stays focus-neutral.
+                    TapHandler { onTapped: mprisExtras.goTo(qrow.modelData.trackid) }
+
+                    LockText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        horizontalAlignment: Text.AlignRight
+                        width: 200
+                        text: (qrow.modelData.title || "") + (qrow.modelData.artist ? "  -  " + qrow.modelData.artist : "")
+                        color: qrow.modelData.current ? root.wxTheme.accentGreen : root.wxTheme.textSecondary
+                        font.pixelSize: 12
+                        font.bold: qrow.modelData.current === true
+                        elide: Text.ElideRight
+                    }
+                    Rectangle {
+                        width: 28; height: 28; radius: 4; clip: true
+                        color: Qt.rgba(0, 0, 0, 0.35)
+                        Image {
+                            anchors.fill: parent
+                            source: qrow.modelData.art || ""
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: true
+                            sourceSize.width: 56
+                            sourceSize.height: 56
+                        }
                     }
                 }
             }
