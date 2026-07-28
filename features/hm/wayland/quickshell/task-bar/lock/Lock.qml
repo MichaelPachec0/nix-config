@@ -9,9 +9,20 @@ Scope {
     id: root
 
     property bool locked: false
+    property alias context: lockContext
 
     function lock() { root.locked = true; }
     function unlock() { root.locked = false; }
+
+    LockContext {
+        id: lockContext
+        onUnlocked: {
+            root.locked = false;                // release the compositor lock
+            unlockSessionProc.exec(["loginctl", "unlock-session"]); // fire unlock.target
+            lockContext.reset();
+        }
+    }
+    Process { id: unlockSessionProc }
 
     WlSessionLock {
         id: sessionLock
@@ -22,11 +33,23 @@ Scope {
             id: surface
             color: "#1d2021" // Gruvbox dark bg0_h; replaced by LockBackdrop in Task 4
 
-            Text {
+            TextInput {
                 anchors.centerIn: parent
-                text: "task-bar lock (skeleton) -- output: " + (surface.screen ? surface.screen.name : "?")
-                color: "#ebdbb2" // Gruvbox fg
-                font.pixelSize: 24
+                width: 300
+                echoMode: TextInput.Password
+                color: "#ebdbb2"
+                font.pixelSize: 22
+                focus: true
+                text: root.context.currentText
+                onTextChanged: root.context.currentText = text
+                onAccepted: root.context.tryUnlock()
+                Component.onCompleted: forceActiveFocus()
+            }
+            Text {
+                anchors { horizontalCenter: parent.horizontalCenter; top: parent.verticalCenter; topMargin: 40 }
+                visible: root.context.showFailure
+                text: "Incorrect password (" + root.context.failCount + ")"
+                color: "#fb4934" // Gruvbox red
             }
         }
     }
@@ -57,11 +80,16 @@ Scope {
     // a poll can tell "locked marker present but quickshell dead" apart from a
     // clean unlocked state. NB: single onLockedChanged handler -- later tasks
     // add more effects here rather than declaring a second one.
-    onLockedChanged: markerProc.exec(
-        root.locked
-        ? ["sh", "-c", "touch \"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/quickshell-lock.locked\""]
-        : ["sh", "-c", "rm -f \"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/quickshell-lock.locked\""]
-    )
+    onLockedChanged: {
+        markerProc.exec(
+            root.locked
+            ? ["sh", "-c", "touch \"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/quickshell-lock.locked\""]
+            : ["sh", "-c", "rm -f \"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/quickshell-lock.locked\""]
+        );
+        // clear stale auth state whenever we newly lock (Task 3)
+        if (root.locked)
+            lockContext.reset();
+    }
 
     Process { id: markerProc }
 }
