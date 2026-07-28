@@ -24,7 +24,10 @@ Item {
         textPrimary: "#ebdbb2", textSecondary: "#a89984",
         accentGreen: "#b8bb26", accentYellow: "#fabd2f",
         accentPurple: "#d3869b", accentRed: "#fb4934",
-        accentOrange: "#fe8019", accentBlue: "#83a598"
+        accentOrange: "#fe8019", accentBlue: "#83a598",
+        // Media-widget highlight, matching the MPRIS popup's chip colors
+        // (ThemeEngine accent/bgItem/textOnAccent).
+        accent: "#87b158", bgItem: "#3c3836", textOnAccent: "#1d2021"
     })
 
     // UV index band word / "7  High" label / severity colour -- copied
@@ -319,14 +322,22 @@ Item {
                     implicitHeight: 22
                     implicitWidth: chipLabel.implicitWidth + 16
                     radius: 11
-                    color: chip.sel ? root.wxTheme.accentGreen : Qt.rgba(0, 0, 0, 0.35)
+                    color: chip.sel ? root.wxTheme.accent : root.wxTheme.bgItem
 
                     LockText {
                         id: chipLabel
                         anchors.centerIn: parent
                         text: chip.modelData.identity || "Player"
-                        color: chip.sel ? "#1d2021" : root.wxTheme.textSecondary
+                        color: chip.sel ? root.wxTheme.textOnAccent : root.wxTheme.textSecondary
                         font.pixelSize: 12
+                        // Soft glow in the popup's accent (the chips' highlight)
+                        // instead of the strong black default, which overpowers
+                        // the small label.
+                        shadowColor: root.wxTheme.accent
+                        shadowRadius: 3
+                        shadowOffset: 0
+                        shadowOpacity: 0.35
+                        outlineOpacity: 0
                     }
                     MouseArea {
                         anchors.fill: parent
@@ -485,16 +496,7 @@ Item {
                     // layout slot and stays focus-neutral.
                     TapHandler { onTapped: mprisExtras.goTo(qrow.modelData.trackid) }
 
-                    LockText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        horizontalAlignment: Text.AlignRight
-                        width: 200
-                        text: (qrow.modelData.title || "") + (qrow.modelData.artist ? "  -  " + qrow.modelData.artist : "")
-                        color: qrow.modelData.current ? root.wxTheme.accentGreen : root.wxTheme.textSecondary
-                        font.pixelSize: 12
-                        font.bold: qrow.modelData.current === true
-                        elide: Text.ElideRight
-                    }
+                    // Art on the LEFT of the row, mirroring MediaPopup's queue.
                     Rectangle {
                         width: 28; height: 28; radius: 4; clip: true
                         color: Qt.rgba(0, 0, 0, 0.35)
@@ -507,6 +509,16 @@ Item {
                             sourceSize.width: 56
                             sourceSize.height: 56
                         }
+                    }
+                    LockText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        horizontalAlignment: Text.AlignLeft
+                        width: 200
+                        text: (qrow.modelData.title || "") + (qrow.modelData.artist ? "  -  " + qrow.modelData.artist : "")
+                        color: qrow.modelData.current ? root.wxTheme.accent : root.wxTheme.textSecondary
+                        font.pixelSize: 12
+                        font.bold: qrow.modelData.current === true
+                        elide: Text.ElideRight
                     }
                 }
             }
