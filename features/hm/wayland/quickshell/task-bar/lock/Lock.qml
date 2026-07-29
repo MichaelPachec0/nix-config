@@ -14,6 +14,7 @@ Scope {
     property var wallpapers: ({}) // screenName -> image path
     readonly property var weather: weatherPoll.value // {temp, icon, desc, uv, conditions[], ...} or null
     property var audio: null // Lib.AudioService, threaded from shell.qml
+    property var notifications: null // Lib.NotifService, threaded from shell.qml
 
     // Drives the surfaces' blur/content animation. Set false while the surface
     // is still up so the unlock detransition can play before the compositor
@@ -87,6 +88,16 @@ Scope {
     }
 
     LockClockState { id: lockClockState }
+
+    // Lock-only notification classifier; rules are bound to LockConfig so they
+    // stay in sync with the Nix-driven settings (see LockNotifyPolicy.qml).
+    LockNotifyPolicy {
+        id: lockNotifyPolicy
+        trustedApps: LockConfig.notifTrustedApps
+        privateApps: LockConfig.notifPrivateApps
+        trustedCategories: LockConfig.notifTrustedCategories
+        defaultMode: LockConfig.notifDefaultMode
+    }
 
     // Live theme = the taskbar's source of truth (~/.config/theme/colors.json).
     // One global instance (colours are not per-output); passed to every surface so
@@ -297,6 +308,8 @@ Scope {
                 clockState: lockClockState
                 weather: root.weather
                 audio: root.audio
+                notifications: root.notifications
+                policy: lockNotifyPolicy
                 revealed: root.revealed
                 onSurfaceReady: revealTimer.restart()
             }

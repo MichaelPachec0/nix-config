@@ -24,6 +24,7 @@ ShellRoot {
     Lock.Lock {
         id: lockScreen
         audio: audioSvc
+        notifications: notifSvc
     }
 
     // Global Bluetooth state (one default adapter, shared by all screens).

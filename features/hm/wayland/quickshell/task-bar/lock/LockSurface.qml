@@ -17,6 +17,8 @@ Item {
     property var clockState: null
     property var weather: null // {temp, icon, desc, uv, conditions[], ...} or null; from Lock.qml's weatherPoll
     property var audio: null // Lib.AudioService, threaded from shell.qml via Lock.qml
+    property var notifications: null // Lib.NotifService, threaded from shell.qml via Lock.qml
+    property var policy: null // LockNotifyPolicy, instantiated in Lock.qml
 
     // Lock-in / unlock-out animation, driven by Lock.qml. `revealed` false =
     // sharp backdrop + hidden widgets; true = blurred backdrop + visible
@@ -663,6 +665,20 @@ Item {
                 }
             }
         }
+    }
+
+    // Notification backlog (bottom-right column, below media, above the
+    // watermark). Task 3: sensitive shape only -- see LockNotifications.qml.
+    LockNotifications {
+        anchors.top: mediaCol.bottom
+        anchors.right: parent.right
+        anchors.topMargin: 16
+        anchors.rightMargin: 28
+        notifications: root.notifications
+        policy: root.policy
+        theme: root.theme
+        contentOpacity: root.contentOpacity
+        maxCards: LockConfig.notifMaxCards
     }
 
     // Re-focus the hidden input whenever this surface (re)appears.
