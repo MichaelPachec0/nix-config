@@ -43,18 +43,18 @@ Item {
         }
     }
 
-    // Static Gruvbox accent object (mirrors lib/ThemeEngine.qml's fallback hex
-    // values) for the UV/condition color helpers below -- the lock has no
-    // FileView-backed theme, so this is a fixed palette rather than the live
-    // ~/.config/theme/colors.json read.
-    readonly property var wxTheme: ({
-        textPrimary: "#ebdbb2", textSecondary: "#a89984",
-        accentGreen: "#b8bb26", accentYellow: "#fabd2f",
-        accentPurple: "#d3869b", accentRed: "#fb4934",
-        accentOrange: "#fe8019", accentBlue: "#83a598",
-        // Media-widget highlight, matching the MPRIS popup's chip colors
-        // (ThemeEngine accent/bgItem/textOnAccent).
-        accent: "#87b158", bgItem: "#3c3836", textOnAccent: "#1d2021"
+    // The lock's palette IS the taskbar's source of truth: a Lib.ThemeEngine in
+    // Lock.qml reads the live ~/.config/theme/colors.json and is passed in as
+    // `theme`, so every lock colour tracks the bar (incl. live theme changes).
+    // `wxTheme` resolves to it; the static object is only a pre-load fallback
+    // (mirrors ThemeEngine's Gruvbox defaults) and MUST carry every key we read.
+    property var theme: null
+    readonly property var wxTheme: root.theme ? root.theme : ({
+        bgMain: "#1d2021", bgCard: "#282828", bgItem: "#3c3836", bgItemHover: "#504945",
+        textPrimary: "#ebdbb2", textSecondary: "#a89984", textOnAccent: "#1d2021",
+        accent: "#87b158", accentGreen: "#b8bb26", accentYellow: "#fabd2f",
+        accentPurple: "#d3869b", accentRed: "#fb4934", accentOrange: "#fe8019",
+        accentBlue: "#83a598"
     })
 
     // UV index band word / "7  High" label / severity colour -- copied
@@ -140,6 +140,7 @@ Item {
     LockBackdrop {
         anchors.fill: parent
         source: root.backdropSource
+        theme: root.theme
         screenName: root.screenName
         registerHolder: root.registerHolder
         blurAmount: root.revealed ? 1.0 : 0.0
@@ -207,7 +208,7 @@ Item {
         // Clock -- click to toggle 24h/12h (persisted via clockState).
         LockText {
             anchors.horizontalCenter: parent.horizontalCenter
-            color: "#ebdbb2"
+            color: root.wxTheme.textPrimary
             font.pixelSize: 72
             font.bold: true
             text: (root.clockState && root.clockState.hour12)
@@ -221,7 +222,7 @@ Item {
         }
         LockText {
             anchors.horizontalCenter: parent.horizontalCenter
-            color: "#a89984"
+            color: root.wxTheme.textSecondary
             font.pixelSize: 22
             text: Qt.formatDateTime(clockTick.now, "dddd, MMMM d")
         }
@@ -231,16 +232,16 @@ Item {
             id: field
             anchors.horizontalCenter: parent.horizontalCenter
             width: 320; height: 52; radius: 26
-            color: "#282828"; opacity: 0.85
+            color: root.wxTheme.bgCard; opacity: 0.85
             border.width: 2
-            border.color: root.context.showFailure ? "#fb4934" : "#504945"
+            border.color: root.context.showFailure ? root.wxTheme.accentRed : root.wxTheme.bgItemHover
 
             Row {
                 anchors.centerIn: parent
                 spacing: 10
                 Repeater {
                     model: root.context.currentText.length
-                    Rectangle { width: 12; height: 12; radius: 6; color: "#ebdbb2" }
+                    Rectangle { width: 12; height: 12; radius: 6; color: root.wxTheme.textPrimary }
                 }
             }
 
@@ -278,7 +279,7 @@ Item {
         anchors.top: column.bottom
         anchors.topMargin: 12
         visible: root.context.showFailure || root.context.statusMessage.length > 0
-        color: (root.context.showFailure || root.context.statusIsError) ? "#fb4934" : "#a89984"
+        color: (root.context.showFailure || root.context.statusIsError) ? root.wxTheme.accentRed : root.wxTheme.textSecondary
         font.pixelSize: 16
         text: root.context.showFailure
             ? ("Incorrect password" + (root.context.failCount > 1 ? " (" + root.context.failCount + ")" : ""))
@@ -308,11 +309,13 @@ Item {
             visible: root.weather !== null
             LockText {
                 text: WeatherIcons.glyph(root.weather ? root.weather.icon : "cloudy")
+                color: root.wxTheme.textPrimary
                 font.family: "JetBrainsMono Nerd Font"
                 font.pixelSize: 28
             }
             LockText {
                 text: (root.weather ? root.weather.temp : "--") + String.fromCodePoint(0x00B0)
+                color: root.wxTheme.textPrimary
                 font.pixelSize: 28
             }
         }
@@ -349,7 +352,7 @@ Item {
                     required property var modelData
                     spacing: 2
                     LockText { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.h; color: root.wxTheme.textSecondary; font.pixelSize: 11 }
-                    LockText { anchors.horizontalCenter: parent.horizontalCenter; text: WeatherIcons.glyph(modelData.icon); font.family: "JetBrainsMono Nerd Font"; font.pixelSize: 16 }
+                    LockText { anchors.horizontalCenter: parent.horizontalCenter; text: WeatherIcons.glyph(modelData.icon); color: root.wxTheme.textPrimary; font.family: "JetBrainsMono Nerd Font"; font.pixelSize: 16 }
                     LockText { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.temp + String.fromCodePoint(0x00B0); color: root.wxTheme.textPrimary; font.pixelSize: 12 }
                     LockText { anchors.horizontalCenter: parent.horizontalCenter; visible: modelData.uv !== ""; text: "UV " + modelData.uv; color: root.uvColor(modelData.uv); font.pixelSize: 10 }
                     LockText { anchors.horizontalCenter: parent.horizontalCenter; visible: modelData.precip !== "" && modelData.precip !== "0"; text: modelData.precip + "%"; color: root.wxTheme.textSecondary; font.pixelSize: 10; opacity: 0.85 }
@@ -459,6 +462,7 @@ Item {
                     anchors.centerIn: parent
                     visible: art.status !== Image.Ready
                     text: String.fromCodePoint(0xF001) // music note (MediaPopup placeholder)
+                    color: root.wxTheme.textSecondary
                     font.family: "JetBrainsMono Nerd Font"
                     font.pixelSize: 22
                 }
@@ -480,6 +484,7 @@ Item {
                 LockText {
                     width: parent.width
                     text: root.player ? (root.player.trackTitle || "Unknown Title") : ""
+                    color: root.wxTheme.textPrimary
                     font.pixelSize: 15
                     font.bold: true
                     elide: Text.ElideRight
@@ -526,6 +531,7 @@ Item {
 
             LockText {
                 text: String.fromCodePoint(0xF048) // step-backward
+                color: root.wxTheme.textPrimary
                 font.family: "JetBrainsMono Nerd Font"
                 font.pixelSize: 18
                 opacity: (root.player && root.player.canGoPrevious) ? 1.0 : 0.35
@@ -538,6 +544,7 @@ Item {
             }
             LockText {
                 text: String.fromCodePoint((root.player && root.player.playbackState === MprisPlaybackState.Playing) ? 0xF04C : 0xF04B)
+                color: root.wxTheme.textPrimary
                 font.family: "JetBrainsMono Nerd Font"
                 font.pixelSize: 20
                 opacity: (root.player && root.player.canTogglePlaying) ? 1.0 : 0.35
@@ -550,6 +557,7 @@ Item {
             }
             LockText {
                 text: String.fromCodePoint(0xF051) // step-forward
+                color: root.wxTheme.textPrimary
                 font.family: "JetBrainsMono Nerd Font"
                 font.pixelSize: 18
                 opacity: (root.player && root.player.canGoNext) ? 1.0 : 0.35

@@ -88,6 +88,11 @@ Scope {
 
     LockClockState { id: lockClockState }
 
+    // Live theme = the taskbar's source of truth (~/.config/theme/colors.json).
+    // One global instance (colours are not per-output); passed to every surface so
+    // lock colours track the bar instead of a frozen Gruvbox copy.
+    Lib.ThemeEngine { id: lockTheme }
+
     // Bar-mirrored weather poll for the current ("geo") location. Gated to
     // `root.locked` so it only fetches while the lock is up (no always-on
     // network poll); triggeredOnStart in Lib.CommandPoll's Timer means it also
@@ -285,6 +290,7 @@ Scope {
             LockSurface {
                 anchors.fill: parent
                 context: root.context
+                theme: lockTheme
                 backdropSource: root.wallpaperFor(surface.screen ? surface.screen.name : "")
                 screenName: surface.screen ? surface.screen.name : ""
                 registerHolder: root.registerHolder

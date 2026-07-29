@@ -13,6 +13,7 @@ Item {
     property string source: ""
     property real blurAmount: 1.0
     property int animDuration: 350
+    property var theme: null // live ThemeEngine (LockSurface->Lock.qml); dim tint tracks the bar
 
     // This surface's output name, and the callback that publishes our capture
     // holder to Lock.qml's registry under that name.
@@ -107,7 +108,7 @@ Item {
     // Dim overlay so the input field stays legible over bright wallpapers.
     Rectangle {
         anchors.fill: parent
-        color: "#1d2021"
+        color: root.theme ? root.theme.bgMain : "#1d2021"
         opacity: root.blurAmount * 0.35
     }
 }
