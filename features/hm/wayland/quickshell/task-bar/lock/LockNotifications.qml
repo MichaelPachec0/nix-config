@@ -32,6 +32,12 @@ ColumnLayout {
     // component is instantiated fresh per WlSessionLockSurface -- no
     // persistence is added.
     property bool hideAll: false
+    // Toggle callback for the global panic state, supplied by Lock.qml via
+    // LockSurface. `hideAll` above is now purely a read of that shared
+    // state -- the ONLY write path is this callback (see the eye toggle's
+    // onClicked below), so one click hides every locked output, not just
+    // this one.
+    property var toggleHideAll: null
 
     readonly property var groups: (root.notifications && LockConfig.notifEnable) ? root.notifications.groups : []
     spacing: 8
@@ -116,7 +122,7 @@ ColumnLayout {
             color: root.theme ? root.theme.textSecondary : "#a89984"
             MouseArea {
                 anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                onClicked: root.hideAll = !root.hideAll
+                onClicked: if (root.toggleHideAll) root.toggleHideAll()
             }
         }
     }
@@ -157,7 +163,7 @@ ColumnLayout {
                 delegate: Rectangle {
                     id: cardRect
                     required property var modelData // Notification
-                    readonly property var cls: root.policy ? root.policy.classify(modelData, root.hideAll) : ({visibility: "sensitive", interactive: false})
+                    readonly property var cls: root.policy ? root.policy.classify(modelData, root.hideAll) : ({tier: "private", visibility: "hidden", interactive: false})
                     // HIDDEN tier: the card does not render at all. QtQuick.Layouts
                     // excludes invisible items from layout, so this collapses to
                     // zero size; the group's "N hidden" line above covers it.

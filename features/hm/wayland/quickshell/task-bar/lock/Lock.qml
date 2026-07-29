@@ -21,6 +21,14 @@ Scope {
     // lock is released.
     property bool revealed: false
 
+    // Global hide-all panic toggle for locked notifications. Hoisted here
+    // (rather than living per-output on LockNotifications) so ONE eye click
+    // on any monitor hides sensitive content on EVERY locked output --
+    // mirrored/multi-monitor setups must not leave other screens exposed.
+    // Reset to false on every lock (see onLockedChanged below); tighten-only,
+    // same as before.
+    property bool notifHideAll: false
+
     // A lock request always wins over an in-flight unlock detransition. Note
     // `root.locked = true` is a no-op when we are already locked (mid-
     // detransition), so onLockedChanged would not fire -- re-arm the reveal
@@ -310,6 +318,8 @@ Scope {
                 audio: root.audio
                 notifications: root.notifications
                 policy: lockNotifyPolicy
+                notifHideAll: root.notifHideAll
+                toggleNotifHideAll: function() { root.notifHideAll = !root.notifHideAll; }
                 revealed: root.revealed
                 onSurfaceReady: revealTimer.restart()
             }
@@ -351,6 +361,7 @@ Scope {
         if (root.locked) {
             lockContext.reset();
             root.refreshWallpapers();
+            root.notifHideAll = false;
         } else {
             root.revealed = false;
             root.captureArmed = false;  // destroys the views, frees the GPU buffers

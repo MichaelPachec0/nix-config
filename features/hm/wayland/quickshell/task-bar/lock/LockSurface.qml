@@ -19,6 +19,8 @@ Item {
     property var audio: null // Lib.AudioService, threaded from shell.qml via Lock.qml
     property var notifications: null // Lib.NotifService, threaded from shell.qml via Lock.qml
     property var policy: null // LockNotifyPolicy, instantiated in Lock.qml
+    property bool notifHideAll: false // global hide-all panic state, from Lock.qml
+    property var toggleNotifHideAll: null // Lock.qml's toggle function for notifHideAll
 
     // Lock-in / unlock-out animation, driven by Lock.qml. `revealed` false =
     // sharp backdrop + hidden widgets; true = blurred backdrop + visible
@@ -679,6 +681,8 @@ Item {
         theme: root.theme
         contentOpacity: root.contentOpacity
         maxCards: LockConfig.notifMaxCards
+        hideAll: root.notifHideAll
+        toggleHideAll: root.toggleNotifHideAll
     }
 
     // Re-focus the hidden input whenever this surface (re)appears.
