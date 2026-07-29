@@ -319,7 +319,6 @@ in {
     automount = true;
     notify = true;
     tray = "always";
-    package = pkgs.udiskie;
   };
   programs.claude-desktop = {
     enable = true;
