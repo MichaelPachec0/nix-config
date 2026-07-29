@@ -31,6 +31,14 @@ Singleton {
     property int watermarkWidth: 360
     property int watermarkHeight: 120
 
+    // notifications (Nix quickshellLock.notifications)
+    property bool notifEnable: true
+    property string notifDefaultMode: "sensitive"
+    property int notifMaxCards: 4
+    property var notifTrustedApps: ["blueman", "blueman-applet", "NetworkManager", "org.freedesktop.*"]
+    property var notifPrivateApps: []
+    property var notifTrustedCategories: ["device", "network", "x-systemd*", "hardware"]
+
     function _parseWmColor(s) {
         var p = (s || "").split("-");
         return (p.length === 4)
@@ -51,6 +59,15 @@ Singleton {
                 if (o.failOpenOnCrash !== undefined) root.failOpenOnCrash = !!o.failOpenOnCrash;
                 if (o.fallbackImage) root.fallbackImage = o.fallbackImage;
                 if (o.backdrop && o.backdrop.mode) root.backdropMode = o.backdrop.mode;
+                if (o.notifications) {
+                    var nf = o.notifications;
+                    if (nf.enable !== undefined) root.notifEnable = nf.enable;
+                    if (nf.defaultMode) root.notifDefaultMode = nf.defaultMode;
+                    if (nf.maxCards !== undefined) root.notifMaxCards = nf.maxCards;
+                    if (nf.trustedApps) root.notifTrustedApps = nf.trustedApps;
+                    if (nf.privateApps) root.notifPrivateApps = nf.privateApps;
+                    if (nf.trustedCategories) root.notifTrustedCategories = nf.trustedCategories;
+                }
                 if (o.watermark) {
                     var w = o.watermark;
                     if (w.enable !== undefined) root.watermarkEnable = !!w.enable;

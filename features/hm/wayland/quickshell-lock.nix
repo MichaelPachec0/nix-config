@@ -82,6 +82,39 @@ in {
     '';
   };
 
+  options.quickshellLock.notifications = {
+    enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Show the notification backlog on the lock.";
+    };
+    defaultMode = lib.mkOption {
+      type = lib.types.enum [ "hidden" "sensitive" "full" ];
+      default = "sensitive";
+      description = "Default visibility for the 'default' tier (non-trusted, non-private).";
+    };
+    maxCards = lib.mkOption {
+      type = lib.types.int;
+      default = 4;
+      description = "Max notification cards before a '+N more' footer.";
+    };
+    trustedApps = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ "blueman" "blueman-applet" "NetworkManager" "org.freedesktop.*" ];
+      description = "App names / desktop-entries (glob, '*' only) whose notifications are full + interactive on the lock.";
+    };
+    privateApps = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "App names / desktop-entries (glob) forced to hidden (count-only) on the lock, even when Critical.";
+    };
+    trustedCategories = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ "device" "network" "x-systemd*" "hardware" ];
+      description = "freedesktop notification categories (glob) treated as trusted.";
+    };
+  };
+
   config = {
     home.packages = [ lockEscape ];
 
@@ -95,6 +128,9 @@ in {
       };
       backdrop = {
         inherit (cfg.backdrop) mode;
+      };
+      notifications = {
+        inherit (cfg.notifications) enable defaultMode maxCards trustedApps privateApps trustedCategories;
       };
     };
 
