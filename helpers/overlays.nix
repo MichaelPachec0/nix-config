@@ -185,12 +185,23 @@
     pam_rssh = prev.callPackage ../overlays/pam_rssh {};
   };
   latest = final: prev: {
+    # Patch Hyprland CORE: guard the weak-pointer derefs that hard-crash the
+    # compositor when the session locks while a grabbing xdg_popup (a bar
+    # dropdown/menu) is open. Not fixed upstream as of main@36b2e0c. This
+    # overrides the TOP-LEVEL `hyprland` (not just latest.hyprland below) so the
+    # compositor AND hy3 -- which builds against final.hyprland -- share the one
+    # patched binary and the plugin API-hash check still matches. See
+    # docs/hyprland-popup-lock-crash for the full analysis + upstream PR.
+    hyprland = prev.hyprland.overrideAttrs (old: {
+      patches = (old.patches or []) ++ [../overlays/hyprland-popup-sessionlock-crash.patch];
+    });
     latest = {
-      # nixpkgs ships Hyprland 0.56.0 -- the old 0005 popup-coords SIGSEGV patch
-      # is obsolete (fixed upstream in 0.56) and is dropped. But nixpkgs'
-      # hyprlandPlugins.hy3 is still hl0.55.0, which will not load against a 0.56
-      # compositor, so hy3's src is pinned to the matching hl0.56.0.1 release
-      # (see the hy3 attr below) with our patches re-applied.
+      # nixpkgs ships Hyprland 0.56.0. The old 0005 popup-coords SIGSEGV patch
+      # is obsolete (fixed upstream in 0.56, #15416) and dropped; the NEW
+      # popup->session-lock crash patch is applied to `hyprland` just above.
+      # nixpkgs' hyprlandPlugins.hy3 is still hl0.55.0, which will not load
+      # against a 0.56 compositor, so hy3's src is pinned to the matching
+      # hl0.56.0.1 release (see the hy3 attr below) with our patches re-applied.
       inherit (final) hyprland;
       inherit (prev) waybar;
 
