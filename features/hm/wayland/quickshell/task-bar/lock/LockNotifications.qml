@@ -1,7 +1,8 @@
 // features/hm/wayland/quickshell/task-bar/lock/LockNotifications.qml
 // Lock-native notification list. Reads notifSvc.groups, classifies each via
 // `policy`, renders theme-styled cards. Task 4: full/sensitive/hidden tier
-// rendering + trusted-tier action buttons. cap + hideAll land in Task 5. See
+// rendering + trusted-tier action buttons. Task 5: cap to `maxCards` cards
+// with a "+N more" footer, plus a hide-all panic toggle. See
 // docs/lock-notifications/spec.md.
 //
 // PRIVACY: this renders on a LOCKED, unauthenticated screen. `modelData.body`
@@ -22,6 +23,14 @@ ColumnLayout {
     property var theme: null           // live ThemeEngine
     property real contentOpacity: 1.0
     property int maxCards: 4
+    // Panic toggle: forces every card to the hidden tier (see
+    // LockNotifyPolicy.classify's hideAll precedence). Privacy-increasing
+    // only -- flipping it back off simply returns to normal
+    // per-notification classification, which is itself capped at
+    // `defaultMode` for the default tier. There is no path from here to a
+    // wider mode than configured. Resets to false on every lock because this
+    // component is instantiated fresh per WlSessionLockSurface -- no
+    // persistence is added.
     property bool hideAll: false
 
     readonly property var groups: (root.notifications && LockConfig.notifEnable) ? root.notifications.groups : []
@@ -60,10 +69,63 @@ ColumnLayout {
         return c;
     }
 
+    // Flatten every group's notifications into a single ordered card list,
+    // then cap to `maxCards`. Capping happens on the flat list (not per
+    // group) so the limit is a true backlog-wide cap, matching the "+N more"
+    // footer's count.
+    readonly property var _flat: {
+        var out = [];
+        var gs = root.groups;
+        for (var g = 0; g < gs.length; g++)
+            for (var i = 0; i < gs[g].list.length; i++)
+                out.push(gs[g].list[i]);
+        return out;
+    }
+    readonly property int _overflow: Math.max(0, root._flat.length - root.maxCards)
+
+    // Regroup the capped slice, mirroring NotifService.groupBy's shape and
+    // key so the capped render looks identical to the uncapped one (same
+    // app headers, same fallback bucket name).
+    function _keyOf(n) { return (n.appName && String(n.appName).length) ? String(n.appName) : "Notifications"; }
+    function _groupSlice(list) {
+        var map = {};
+        var order = [];
+        for (var i = 0; i < list.length; i++) {
+            var k = root._keyOf(list[i]);
+            if (!map[k]) {
+                map[k] = [];
+                order.push(k);
+            }
+            map[k].push(list[i]);
+        }
+        return order.map(function (k) {
+            return { app: k, list: map[k] };
+        });
+    }
+    readonly property var _capped: root._groupSlice(root._flat.slice(0, root.maxCards))
+
+    // List header: hide-all panic toggle. Eye (showing) / eye-slash (hidden)
+    // Nerd Font glyph; clicking flips `hideAll`. See the `hideAll` doc
+    // comment above for the tighten-only privacy semantics.
+    RowLayout {
+        Layout.alignment: Qt.AlignRight
+        visible: root.groups.length > 0
+        LockText {
+            text: root.hideAll ? String.fromCodePoint(0xF070) : String.fromCodePoint(0xF06E)
+            font.family: "JetBrainsMono Nerd Font"; font.pixelSize: 14
+            color: root.theme ? root.theme.textSecondary : "#a89984"
+            MouseArea {
+                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                onClicked: root.hideAll = !root.hideAll
+            }
+        }
+    }
+
     Repeater {
-        model: root.groups
+        model: root._capped
         delegate: ColumnLayout {
             required property var modelData // {app, list}
+            readonly property int _hidden: root._hiddenCount(modelData.list)
             Layout.alignment: Qt.AlignRight
             spacing: 4
             // app header
@@ -85,8 +147,8 @@ ColumnLayout {
             // no summary/body/image of a hidden notification is ever read.
             LockText {
                 Layout.alignment: Qt.AlignRight
-                visible: root._hiddenCount(modelData.list) > 0
-                text: root._hiddenCount(modelData.list) + " hidden"
+                visible: _hidden > 0
+                text: _hidden + " hidden"
                 color: root.theme ? root.theme.textSecondary : "#a89984"
                 font.pixelSize: 11; opacity: 0.8
             }
@@ -175,5 +237,15 @@ ColumnLayout {
                 }
             }
         }
+    }
+
+    // "+N more" footer: notifications beyond the `maxCards` cap. Count only
+    // -- no notification content from the overflow is ever read.
+    LockText {
+        Layout.alignment: Qt.AlignRight
+        visible: root._overflow > 0
+        text: "+" + root._overflow + " more"
+        color: root.theme ? root.theme.textSecondary : "#a89984"
+        font.pixelSize: 11; opacity: 0.8
     }
 }
