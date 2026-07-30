@@ -22,7 +22,10 @@ ColumnLayout {
     property var policy: null          // LockNotifyPolicy
     property var theme: null           // live ThemeEngine
     property real contentOpacity: 1.0
-    property int maxCards: 4
+    // Hard ceiling on rendered cards; 0 = no ceiling, let `availableHeight`
+    // decide alone. The real limit is normally the height budget (see Dynamic
+    // fit below) -- this stays only as a belt-and-braces bound from config.
+    property int maxCards: 0
     // Panic toggle: forces every card to the hidden tier (see
     // LockNotifyPolicy.classify's hideAll precedence). Privacy-increasing
     // only -- flipping it back off simply returns to normal
@@ -38,6 +41,13 @@ ColumnLayout {
     // onClicked below), so one click hides every locked output, not just
     // this one.
     property var toggleHideAll: null
+
+    // Vertical space this list may occupy, in px, measured from its own top
+    // down to whatever must stay clear beneath it (the watermark). Supplied by
+    // LockSurface, which owns the layout. <= 0 means "unbounded", so the list
+    // falls back to the `maxCards` ceiling alone -- that is also the
+    // standalone / unit-test case.
+    property real availableHeight: 0
 
     readonly property var groups: (root.notifications && LockConfig.notifEnable) ? root.notifications.groups : []
     spacing: 8
@@ -87,7 +97,125 @@ ColumnLayout {
                 out.push(gs[g].list[i]);
         return out;
     }
-    readonly property int _overflow: Math.max(0, root._flat.length - root.maxCards)
+    // --- Dynamic fit ------------------------------------------------------
+    // How many cards render is decided by the height BUDGET (`availableHeight`,
+    // supplied by LockSurface), not by a fixed count: the watermark below must
+    // never be overlapped or covered, and the list has to give space back when
+    // the media widget appears or a weather alert grows above it -- both push
+    // this block down, which shrinks the budget.
+    //
+    // Row heights are MODELLED here as a pure function of the notification
+    // (`_cardHeight`), deliberately mirroring the delegate's layout below --
+    // keep the two in step when either changes.
+    //
+    // DO NOT "improve" this by MEASURING the rendered cards and feeding the
+    // result back into the slice length. That was tried and it is a real
+    // binding loop: changing the slice makes the Repeater recreate its
+    // delegates, whose height signals fire again and change the slice again.
+    // Qt flags it as a loop on `_fitCount` and the resulting log spam grew the
+    // shell to 12 GB RSS, starved the machine, and left the lock's IPC
+    // unresponsive WHILE LOCKED. The reasoning that made it look safe ("a
+    // shorter slice only drops trailing cards, so the remaining heights do not
+    // change") is wrong, because re-slicing does not shorten the list in place
+    // -- it rebuilds every delegate. `_fitCount` must stay a pure function of
+    // the model, the budget, and the constants below.
+    //
+    readonly property real _hHeader: 22      // eye-toggle row
+    readonly property real _hFooter: 18      // "+N more"
+    readonly property real _hGroupHead: 20   // app icon + name + count
+    readonly property real _hHiddenLine: 18  // "N hidden"
+    readonly property real _hGroupSpacing: 4 // group-internal ColumnLayout spacing
+    readonly property real _hCardPad: 12     // card padding around cardCol
+    readonly property real _hSummary: 18     // 13px summary, single elided line
+    readonly property real _hBodyLine: 16    // 12px body, one wrapped line
+    readonly property real _hThumb: 64       // image thumb
+    readonly property real _hActions: 19     // action-button row
+    readonly property real _hCardSpacing: 3  // cardCol spacing
+    // Body wrap estimate: the card is 260px wide and the body is 12px, so
+    // ~40 characters land per line. Rounded so a long body errs TALL.
+    readonly property int _bodyCharsPerLine: 40
+    readonly property int _bodyMaxLines: 4   // matches the body's maximumLineCount
+
+    // Height of one rendered card, from the same layout the delegate builds
+    // below -- keep the two in step. Returns 0 for the hidden tier, which
+    // renders no card at all.
+    //
+    // PRIVACY: for the full tier this reads `body`.length and the presence of
+    // `image`/`actions` to size the card. That is a full-tier-gated read of
+    // content already being rendered in full, and nothing here enters the
+    // render tree. Below the full tier no body/image is touched at all -- see
+    // the file-header PRIVACY note.
+    function _cardHeight(n) {
+        if (!root.policy)
+            return 0;
+        var vis = root.policy.classify(n, root.hideAll).visibility;
+        if (vis === "hidden")
+            return 0;
+        var h = root._hCardPad + root._hSummary;
+        if (vis === "full") {
+            var body = root._plain(n.body);
+            if (body.length > 0) {
+                var lines = Math.min(root._bodyMaxLines,
+                                     Math.ceil(body.length / root._bodyCharsPerLine));
+                h += root._hCardSpacing + lines * root._hBodyLine;
+            }
+            if (n.image)
+                h += root._hCardSpacing + root._hThumb;
+            if (n.actions && n.actions.length > 0)
+                h += root._hCardSpacing + root._hActions;
+        }
+        return h;
+    }
+
+    // Number of leading cards from `_flat` that fit the budget. Walks the flat
+    // list in render order, charging each card its measured (or estimated)
+    // height plus the chrome it brings with it -- a group header on each app
+    // change, and one "N hidden" line per group containing hidden cards.
+    readonly property int _fitCount: {
+        var flat = root._flat;
+        var ceiling = (root.maxCards > 0) ? Math.min(root.maxCards, flat.length) : flat.length;
+        if (!(root.availableHeight > 0) || !root.policy)
+            return ceiling;
+        // The header and the "+N more" footer are reserved UNCONDITIONALLY.
+        // Reserving the footer even when nothing overflows is what stops the
+        // degenerate case where a list fills the budget exactly, the footer
+        // then appears, and the total spills over the watermark.
+        var budget = root.availableHeight
+                   - (root._hHeader + root.spacing)
+                   - (root._hFooter + root.spacing);
+        var used = 0;
+        var fit = 0;
+        var prevApp = null;
+        var chargedHidden = false;
+        for (var i = 0; i < ceiling; i++) {
+            var n = flat[i];
+            var app = root._keyOf(n);
+            var isNewApp = (app !== prevApp);
+            var vis = root.policy.classify(n, root.hideAll).visibility;
+            var cost = 0;
+            if (isNewApp)
+                cost += root._hGroupHead + (i > 0 ? root.spacing : 0);
+            if (vis === "hidden") {
+                if (isNewApp || !chargedHidden)
+                    cost += root._hHiddenLine + root._hGroupSpacing;
+            } else {
+                cost += root._cardHeight(n) + root._hGroupSpacing;
+            }
+            if (used + cost > budget)
+                break;
+            used += cost;
+            if (isNewApp) {
+                prevApp = app;
+                chargedHidden = false;
+            }
+            if (vis === "hidden")
+                chargedHidden = true;
+            fit++;
+        }
+        return fit;
+    }
+
+    readonly property int _overflow: Math.max(0, root._flat.length - root._fitCount)
 
     // Regroup the capped slice, mirroring NotifService.groupBy's shape and
     // key so the capped render looks identical to the uncapped one (same
@@ -108,7 +236,7 @@ ColumnLayout {
             return { app: k, list: map[k] };
         });
     }
-    readonly property var _capped: root._groupSlice(root._flat.slice(0, root.maxCards))
+    readonly property var _capped: root._groupSlice(root._flat.slice(0, root._fitCount))
 
     // List header: hide-all panic toggle. Eye (showing) / eye-slash (hidden)
     // Nerd Font glyph; clicking flips `hideAll`. See the `hideAll` doc

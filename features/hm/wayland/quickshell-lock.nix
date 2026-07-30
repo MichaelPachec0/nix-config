@@ -95,8 +95,14 @@ in {
     };
     maxCards = lib.mkOption {
       type = lib.types.int;
-      default = 4;
-      description = "Max notification cards before a '+N more' footer.";
+      default = 0;
+      description = ''
+        Hard ceiling on notification cards before a '+N more' footer.
+        0 (the default) means no ceiling: how many cards render is decided
+        by the space actually left above the watermark, shrinking when the
+        media or weather widgets grow. Set a positive value only to cap the
+        list tighter than the available space would.
+      '';
     };
     trustedApps = lib.mkOption {
       type = lib.types.listOf lib.types.str;

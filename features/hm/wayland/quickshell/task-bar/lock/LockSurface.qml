@@ -141,6 +141,15 @@ Item {
         queueWants: root.player !== null
     }
 
+    // Bottom limit for the right-hand widget stack. The watermark is a faithful
+    // replica of the real activate-linux overlay (which the lock covers), so it
+    // must never be overlapped or pushed off screen -- the notification list
+    // treats this as a hard floor and drops cards instead. With the watermark
+    // disabled the floor is the bottom edge, less a margin.
+    readonly property real notifFloorY: watermarkBox.visible
+        ? watermarkBox.y
+        : (root.height - 28)
+
     LockBackdrop {
         anchors.fill: parent
         source: root.backdropSource
@@ -170,6 +179,7 @@ Item {
     // internal cairo layout constants (fixed by its source, not its CLI) and
     // stay hardcoded here.
     Item {
+        id: watermarkBox
         opacity: root.contentOpacity
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -672,7 +682,12 @@ Item {
     // Notification backlog (bottom-right column, below media, above the
     // watermark). Task 3: sensitive shape only -- see LockNotifications.qml.
     LockNotifications {
-        anchors.top: mediaCol.bottom
+        id: notifBlock
+        // Anchor to whichever widget above is actually on screen: mediaCol is a
+        // plain Column, so while invisible it still reports its content height --
+        // anchoring to it unconditionally strands a media-sized gap here
+        // whenever no player is active.
+        anchors.top: mediaCol.visible ? mediaCol.bottom : weatherCol.bottom
         anchors.right: parent.right
         anchors.topMargin: 16
         anchors.rightMargin: 28
@@ -681,6 +696,13 @@ Item {
         theme: root.theme
         contentOpacity: root.contentOpacity
         maxCards: LockConfig.notifMaxCards
+        // Dynamic vertical budget: everything between this block's own top and
+        // the watermark floor. The anchor chain above already pushes the block
+        // down when weatherCol grows an alert row or mediaCol appears, so
+        // binding the budget to `y` is what makes the list hand space back to
+        // those widgets automatically. This cannot loop: `y` is resolved by the
+        // anchor above and the budget only feeds this block's own height.
+        availableHeight: Math.max(0, root.notifFloorY - notifBlock.y - 16)
         hideAll: root.notifHideAll
         toggleHideAll: root.toggleNotifHideAll
     }

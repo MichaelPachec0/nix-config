@@ -34,7 +34,7 @@ Singleton {
     // notifications (Nix quickshellLock.notifications)
     property bool notifEnable: true
     property string notifDefaultMode: "sensitive"
-    property int notifMaxCards: 4
+    property int notifMaxCards: 0 // 0 = no ceiling; the height budget decides
     property var notifTrustedApps: ["blueman", "blueman-applet", "NetworkManager", "org.freedesktop.*"]
     property var notifPrivateApps: []
     property var notifTrustedCategories: ["device", "network", "x-systemd*", "hardware"]
