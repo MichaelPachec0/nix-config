@@ -59,10 +59,12 @@ ColumnLayout {
     // would stay silent for the whole lock -- silence on a security indicator
     // reads as reassurance, which is exactly wrong during a failure. Before the
     // grace period expires, a not-yet-probed lock stays silent (not-yet is not
-    // unknown). With the poll off, `casts` is permanently null and `graceExpired`
-    // never rearms, so without the pollEnabled term switching the poll off would
-    // pin this warning on screen forever, which is the opposite of what opting
-    // out means.
+    // unknown). With the poll off, LockSurface forces `casts` to null
+    // regardless of what the probe actually returns (the probe itself keeps
+    // running and `graceExpired` keeps rearming normally -- it still drives
+    // uptime/sessions), so without the pollEnabled term here this row would
+    // read that forced null as "could not ask" and stay on screen for the
+    // whole lock, which is the opposite of what opting out means.
     readonly property bool sharingUnknown: root.pollEnabled && !root.sharing
         && (root.probed ? root.casts === null : root.graceExpired)
 

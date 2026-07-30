@@ -105,13 +105,31 @@ ShellRoot {
     // are suppressed while screen sharing -- the QS-native replacement for the
     // swaync screencast inhibitor (see quickshell-notifications-cutover). The
     // `screencast` IPC event carries `state,owner`; state 1 = sharing, 0 = off.
-    // If qs restarts mid-cast it misses the opening event, but the next state
-    // change re-syncs (rare, and only costs a few un-suppressed toasts).
+    //
+    // This MUST be a refcount, not a last-write-wins flag: the event is PER
+    // SESSION, not a global refcount, and the lock's own workspace backdrop
+    // (ScreencopyView) opens a screencast session every lock and closes it at
+    // unlock. A last-write-wins flag latches false the moment our backdrop's
+    // session closes, even while a real capture (wf-recorder, a portal share)
+    // is still running and will never re-announce -- a false all-clear on the
+    // feature's flagship signal. Counting sessions instead means our own
+    // open/close pair nets to zero without touching a concurrent real one.
+    //
+    // Clamped at 0 with Math.max: if qs restarts mid-cast it misses that
+    // session's opening `1` and under-counts by one until the next state
+    // change re-syncs it (rare, and only costs a few un-suppressed toasts).
+    // Without the clamp, that missed-opening under-count could go negative on
+    // the matching `0` and latch `screencasting` false, reintroducing the
+    // exact false-all-clear this refcount exists to prevent.
+    property int screencastCount: 0
     Connections {
         target: Hyprland
         function onRawEvent(event) {
-            if (event.name === "screencast")
-                notifSvc.screencasting = event.parse(2)[0] === "1";
+            if (event.name === "screencast") {
+                var sharing = event.parse(2)[0] === "1";
+                screencastCount = Math.max(0, screencastCount + (sharing ? 1 : -1));
+                notifSvc.screencasting = screencastCount > 0;
+            }
         }
     }
 

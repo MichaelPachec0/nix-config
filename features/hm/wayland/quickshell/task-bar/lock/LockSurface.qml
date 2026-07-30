@@ -321,7 +321,14 @@ Item {
         theme: root.wxTheme
         contentOpacity: root.contentOpacity
         castAtLock: root.security ? root.security.castAtLock : false
-        casts: root.security ? root.security.secCasts : null
+        // Gated on secScreencastPoll HERE, at the consumer, rather than by
+        // touching the poll's `running` in Lock.qml -- uptime/sessions come
+        // from the same probe tick and must keep working even with the
+        // screencast half of the feature switched off. This is what makes
+        // "casts is null when the poll is off" (LockConfig doc + the comment
+        // in LockSecurity.qml) actually true, instead of only true when the
+        // probe happens to fail.
+        casts: (root.security && LockConfig.secScreencastPoll) ? root.security.secCasts : null
         pollEnabled: LockConfig.secScreencastPoll
         probed: root.security ? root.security.secProbed : false
         graceExpired: root.security ? root.security.secGraceExpired : false
@@ -333,7 +340,15 @@ Item {
         showUptime: LockConfig.secShowUptime
         showLastUnlock: LockConfig.secShowLastUnlock
         stampFn: NotifTime.fmtStamp
-        nowMs: root.notifications ? root.notifications.nowMs : 0
+        // The security column is ALWAYS visible (unlike LockNotifications
+        // below, whose cards only render while the list is non-empty), so it
+        // cannot use the shared NotifService tick: that Timer's `running` is
+        // gated on items/toasts being non-empty and otherwise sits frozen at
+        // whatever Date.now() was when the shell started -- a "Last unlock"
+        // relative time computed against a dead clock can go negative and
+        // clamp to a false "just now". Use the surface's own live 1s tick
+        // instead (see clockTick at the bottom of this file).
+        nowMs: clockTick.now.getTime()
         hour12: root.clockState ? root.clockState.hour12 : false
     }
 

@@ -230,6 +230,17 @@ Scope {
     Connections {
         target: securityPoll
         function onUpdated() {
+            // A parse failure (the JSON.parse catch path) leaves
+            // securityPoll.value null. That is not a fresh reading -- it is
+            // no reading at all -- so it must not clear secStale or restart
+            // the watchdog: doing so would keep re-arming secFreshness on
+            // every failed tick, and secGraceExpired could never become
+            // true, silencing the "unknown" row during exactly the failure
+            // it exists to report. Unreachable today (the probe script always
+            // emits one atomic printf and exits 0), but the invariant is
+            // worth keeping explicit rather than assumed.
+            if (securityPoll.value === null)
+                return;
             root.secStale = false;
             secFreshness.restart();
         }
