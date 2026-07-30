@@ -208,6 +208,21 @@ QtObject {
             svc.addItem(notification);
             if (!svc.dnd && !svc.screencasting)
                 svc.pushToast(notification);
+            // An app that re-sends with replaces_id MUTATES this same object --
+            // upstream emits `notification` only for genuinely NEW ones -- so
+            // without these the card would keep its first arrival time and show
+            // fresh content under a stale stamp ("100%" at 14:30 stamped 09:00).
+            // Re-stamp on a CONTENT change only: an identical re-send carries no
+            // fresh information, and Qt emits these only on a real value change,
+            // so that distinction costs nothing. A content change also re-keys
+            // the notification's stack (summary/body are part of stackKey), which
+            // is why the new stamp and the new stack land together.
+            notification.summaryChanged.connect(function () {
+                svc._stamp(notification);
+            });
+            notification.bodyChanged.connect(function () {
+                svc._stamp(notification);
+            });
             notification.closed.connect(function () {
                 svc.removeItem(notification);
                 svc.removeToast(notification);
