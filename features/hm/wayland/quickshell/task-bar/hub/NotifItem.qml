@@ -44,9 +44,11 @@ Rectangle {
     //      through, a bare name goes through the icon theme;
     //   2. its `desktop-entry` hint, looked up in DesktopEntries for that app's
     //      Icon= (this is the step that fixes most icon-less notifications);
-    //   3. appName as a desktop-entry heuristic, then as a bare icon name --
-    //      plenty of apps ship an icon named exactly after themselves, and
-    //      lowercased because theme icon names are conventionally lower case.
+    //   3. appName as a desktop-entry heuristic (matches an entry ID or startup
+    //      class), then against each entry's human-readable Name= -- an app that
+    //      names itself after Name= is invisible to the heuristic (see
+    //      _nameEntryIcon), then as a bare icon name, lowercased because theme
+    //      icon names are conventionally lower case.
     // Each step is skipped when it resolves to nothing, so a bogus app_icon
     // falls through rather than pinning the card to a blank. All empty leaves
     // the bell glyph, which suits a notification better than a generic
@@ -73,6 +75,28 @@ Rectangle {
         var e = DesktopEntries.heuristicLookup(String(hint));
         return (e && e.icon) ? root._themeIcon(e.icon) : "";
     }
+    // Match appName against each desktop entry's human-readable Name=.
+    // heuristicLookup only matches an entry's ID / startup class, so an app that
+    // names itself after its Name= field misses it entirely: Firefox Developer
+    // Edition sends app_name "Firefox Developer Edition" with no desktop-entry
+    // hint, and firefox-devedition.desktop declares exactly that Name with
+    // Icon=firefox-devedition -- findable, but not by ID. Exact and
+    // case-insensitive; a substring match could pick the wrong app.
+    function _nameEntryIcon(appName) {
+        var want = String(appName || "").toLowerCase();
+        if (!want)
+            return "";
+        var apps = DesktopEntries.applications;
+        var vals = apps ? apps.values : null;
+        if (!vals)
+            return "";
+        for (var i = 0; i < vals.length; i++) {
+            var e = vals[i];
+            if (e && String(e.name || "").toLowerCase() === want)
+                return root._themeIcon(e.icon);
+        }
+        return "";
+    }
     readonly property string appIconUrl: {
         if (!root.source)
             return "";
@@ -83,6 +107,9 @@ Rectangle {
         if (u !== "")
             return u;
         u = root._entryIcon(root.source.appName);
+        if (u !== "")
+            return u;
+        u = root._nameEntryIcon(root.source.appName);
         if (u !== "")
             return u;
         return root._themeIcon(String(root.source.appName || "").toLowerCase());

@@ -96,8 +96,10 @@ ColumnLayout {
     //   1. the notification's own appIcon;
     //   2. its `desktop-entry` hint, looked up in DesktopEntries for that app's
     //      Icon= (the step that fixes most icon-less notifications);
-    //   3. appName as a desktop-entry heuristic, then as a bare icon name
-    //      (lowercased -- theme icon names are conventionally lower case).
+    //   3. appName as a desktop-entry heuristic (matches an entry ID or startup
+    //      class), then against each entry's human-readable Name= (see
+    //      _nameEntryIcon -- the heuristic alone misses an app that names itself
+    //      after Name=), then as a bare icon name (lowercased).
     // PRIVACY: this reads appIcon/desktopEntry/appName only. Those are app
     // IDENTITY, which the group header already shows as text, never message
     // content -- so unlike summary/body/image it needs no `_vis` gate. Do not
@@ -112,6 +114,28 @@ ColumnLayout {
         var e = DesktopEntries.heuristicLookup(String(hint));
         return (e && e.icon) ? root._resolveIconLike(e.icon) : "";
     }
+    // Match appName against each desktop entry's human-readable Name=.
+    // heuristicLookup only matches an entry's ID / startup class, so an app that
+    // names itself after its Name= field misses it entirely: Firefox Developer
+    // Edition sends app_name "Firefox Developer Edition" with no desktop-entry
+    // hint, and firefox-devedition.desktop declares exactly that Name with
+    // Icon=firefox-devedition -- findable, but not by ID. Exact and
+    // case-insensitive; a substring match could pick the wrong app.
+    function _nameEntryIcon(appName) {
+        var want = String(appName || "").toLowerCase();
+        if (!want)
+            return "";
+        var apps = DesktopEntries.applications;
+        var vals = apps ? apps.values : null;
+        if (!vals)
+            return "";
+        for (var i = 0; i < vals.length; i++) {
+            var e = vals[i];
+            if (e && String(e.name || "").toLowerCase() === want)
+                return root._resolveIconLike(e.icon);
+        }
+        return "";
+    }
     function _appIconUrl(n) {
         if (!n)
             return "";
@@ -122,6 +146,9 @@ ColumnLayout {
         if (u !== "")
             return u;
         u = root._entryIcon(n.appName);
+        if (u !== "")
+            return u;
+        u = root._nameEntryIcon(n.appName);
         if (u !== "")
             return u;
         return root._resolveIconLike(String(n.appName || "").toLowerCase());
