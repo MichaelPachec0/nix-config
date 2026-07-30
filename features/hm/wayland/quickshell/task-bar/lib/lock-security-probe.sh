@@ -24,11 +24,13 @@ if command -v pw-dump >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
         # A screen capture is a Video/Source node that is NOT a camera. Excluding
         # cameras is more robust than guessing the portal's node naming: the
         # built-in webcams are identifiable by device.api/media.role/factory.name.
-        n=$(printf '%s' "$dump" | jq '[ .[] | select(.type=="PipeWire:Interface:Node") | .info.props
-              | select((.["media.class"] // "") | contains("Video/Source"))
-              | select((.["device.api"] // "") != "v4l2")
-              | select((.["media.role"] // "") != "Camera")
-              | select(((.["factory.name"] // "") | startswith("api.v4l2")) | not) ] | length' 2>/dev/null) || n=""
+        # The ? operators and tostring guards ensure a single malformed node does not
+        # abort the traversal and hide a real capture that appears later in the array.
+        n=$(printf '%s' "$dump" | jq '[ .[]? | select((.type? // "") == "PipeWire:Interface:Node") | (.info.props? // {})
+              | select(((.["media.class"]? // "") | tostring) | contains("Video/Source"))
+              | select((.["device.api"]? // "") != "v4l2")
+              | select((.["media.role"]? // "") != "Camera")
+              | select((((.["factory.name"]? // "") | tostring) | startswith("api.v4l2")) | not) ] | length' 2>/dev/null) || n=""
         case "$n" in
             '' | *[!0-9]*) casts=null ;;
             *) casts=$n ;;
@@ -50,7 +52,11 @@ fi
 uptimeSec=0
 if [ -r /proc/uptime ]; then
     read -r up _ < /proc/uptime
-    uptimeSec=${up%%.*}
+    up=${up%%.*}
+    case "$up" in
+        '' | *[!0-9]*) uptimeSec=0 ;;
+        *) uptimeSec=$up ;;
+    esac
 fi
 
 printf '{"casts": %s, "sessions": %d, "otherUsers": %d, "uptimeSec": %d}\n' \
