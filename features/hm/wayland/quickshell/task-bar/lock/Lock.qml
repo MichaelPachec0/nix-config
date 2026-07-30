@@ -205,6 +205,14 @@ Scope {
     readonly property int secOtherUsers: root._sec ? root._sec.otherUsers : 0
     readonly property int secUptimeSec: root._sec ? root._sec.uptimeSec : 0
 
+    // True once the probe has returned at least one result. Distinguishes "no
+    // reading yet" (the first moments of a lock) from "the probe answered and
+    // could not determine", which look identical if you only look at secCasts.
+    // The probe always exits 0, so CommandPoll primes even on a null answer.
+    readonly property bool secProbed: root._sec !== null
+
+    readonly property double lockSecurityLastUnlockMs: lockSecurityState.lastUnlockMs
+
     // Per-output desktop capture pool. MUST live here (a sibling of
     // WlSessionLock), not inside the lock surface: Hyprland stops compositing
     // the desktop the moment the lock request lands, which is before any
@@ -372,6 +380,7 @@ Scope {
                 policy: lockNotifyPolicy
                 notifHideAll: root.notifHideAll
                 toggleNotifHideAll: function() { root.notifHideAll = !root.notifHideAll; }
+                security: root
                 revealed: root.revealed
                 onSurfaceReady: revealTimer.restart()
             }

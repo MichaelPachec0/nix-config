@@ -22,6 +22,7 @@ Item {
     property var policy: null // LockNotifyPolicy, instantiated in Lock.qml
     property bool notifHideAll: false // global hide-all panic state, from Lock.qml
     property var toggleNotifHideAll: null // Lock.qml's toggle function for notifHideAll
+    property var security: null   // the Lock root, for its security state
 
     // Lock-in / unlock-out animation, driven by Lock.qml. `revealed` false =
     // sharp backdrop + hidden widgets; true = blurred backdrop + visible
@@ -308,6 +309,33 @@ Item {
     // MouseArea/focus -- must never steal keyboard focus from the password
     // TextInput. Self-hides entirely while root.weather is null (no poll yet /
     // fetch failed).
+    // Security/presence signals (top-left; weatherCol mirrors this at
+    // top-right). Metadata only -- see LockSecurity.qml.
+    LockSecurity {
+        id: securityCol
+        opacity: root.contentOpacity
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.margins: 28
+        visible: LockConfig.secEnable
+        theme: root.wxTheme
+        contentOpacity: root.contentOpacity
+        castAtLock: root.security ? root.security.castAtLock : false
+        casts: root.security ? root.security.secCasts : null
+        pollEnabled: LockConfig.secScreencastPoll
+        probed: root.security ? root.security.secProbed : false
+        fails: root.security ? root.security.failsThisLock : 0
+        otherUsers: root.security ? root.security.secOtherUsers : 0
+        uptimeSec: root.security ? root.security.secUptimeSec : 0
+        lastUnlockMs: root.security ? root.security.lockSecurityLastUnlockMs : 0
+        ownerText: LockConfig.secOwnerText
+        showUptime: LockConfig.secShowUptime
+        showLastUnlock: LockConfig.secShowLastUnlock
+        stampFn: NotifTime.fmtStamp
+        nowMs: root.notifications ? root.notifications.nowMs : 0
+        hour12: root.clockState ? root.clockState.hour12 : false
+    }
+
     Column {
         id: weatherCol
         opacity: root.contentOpacity
