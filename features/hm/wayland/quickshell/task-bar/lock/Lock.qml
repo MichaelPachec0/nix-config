@@ -29,6 +29,22 @@ Scope {
     // same as before.
     property bool notifHideAll: false
 
+    // Was a screen capture already running when the lock engaged?
+    //
+    // This MUST be sampled before the backdrop arms. The workspace backdrop uses
+    // ScreencopyView, and Hyprland counts that as a screencast, so
+    // `notifications.screencasting` is true for the WHOLE lock because of us --
+    // sampling it any later would report a capture on every single lock. See
+    // docs/lock-security-signals/spec.md.
+    property bool castAtLock: false
+
+    // `lockContext.failCount` at the moment this lock engaged. LockContext.reset()
+    // does NOT clear failCount, so the counter is cumulative for the process
+    // lifetime; subtracting this baseline is what turns it into "attempts during
+    // THIS lock".
+    property int failBaseline: 0
+    readonly property int failsThisLock: Math.max(0, lockContext.failCount - root.failBaseline)
+
     // A lock request always wins over an in-flight unlock detransition. Note
     // `root.locked = true` is a no-op when we are already locked (mid-
     // detransition), so onLockedChanged would not fire -- re-arm the reveal
@@ -46,6 +62,9 @@ Scope {
             revealTimer.restart();
             return;
         }
+        // Sample BEFORE anything below arms a capture -- see castAtLock.
+        root.castAtLock = !!(root.notifications && root.notifications.screencasting);
+        root.failBaseline = lockContext.failCount;
         if (!root.workspaceMode) {
             root.locked = true;
             return;
@@ -69,6 +88,7 @@ Scope {
 
     function _release() {
         root.locked = false;                                   // release the compositor lock
+        lockSecurityState.lastUnlockMs = Date.now();           // "last unlock" readout
         unlockSessionProc.exec(["loginctl", "unlock-session"]); // fire unlock.target
         lockContext.reset();
     }
@@ -96,6 +116,7 @@ Scope {
     }
 
     LockClockState { id: lockClockState }
+    LockSecurityState { id: lockSecurityState }
 
     // Lock-only notification classifier; rules are bound to LockConfig so they
     // stay in sync with the Nix-driven settings (see LockNotifyPolicy.qml).
@@ -152,6 +173,37 @@ Scope {
             }
         }
     }
+
+    // Volatile security state, polled only while locked (idle on the desktop).
+    // One script for all of it, so a tick costs one subprocess rather than three.
+    Lib.CommandPoll {
+        id: securityPoll
+        interval: Math.max(1, LockConfig.secPollIntervalSec) * 1000
+        running: root.locked && LockConfig.secEnable
+        command: [Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib/lock-security-probe.sh"]
+        parse: function (out) {
+            try {
+                var o = JSON.parse(String(out));
+                return {
+                    // `casts` stays null when the probe could not determine it.
+                    // null and 0 are different answers and must not be merged:
+                    // 0 means "nothing is capturing", null means "could not ask".
+                    casts: (o.casts === null || o.casts === undefined) ? null : o.casts,
+                    sessions: o.sessions || 0,
+                    otherUsers: o.otherUsers || 0,
+                    uptimeSec: o.uptimeSec || 0
+                };
+            } catch (e) {
+                return null;
+            }
+        }
+    }
+
+    readonly property var _sec: securityPoll.value
+    readonly property var secCasts: root._sec ? root._sec.casts : null
+    readonly property int secSessions: root._sec ? root._sec.sessions : 0
+    readonly property int secOtherUsers: root._sec ? root._sec.otherUsers : 0
+    readonly property int secUptimeSec: root._sec ? root._sec.uptimeSec : 0
 
     // Per-output desktop capture pool. MUST live here (a sibling of
     // WlSessionLock), not inside the lock surface: Hyprland stops compositing
