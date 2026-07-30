@@ -2,16 +2,18 @@
 // Lock-native notification list. Reads notifSvc.groups, classifies each via
 // `policy`, renders theme-styled cards. Task 4: full/sensitive/hidden tier
 // rendering + trusted-tier action buttons. Task 5: cap to `maxCards` cards
-// with a "+N more" footer, plus a hide-all panic toggle. See
-// docs/lock-notifications/spec.md.
+// with a "+N more" footer, plus a hide-all panic toggle. Task 6: one card per
+// identical-content STACK (see lib/notifstack.js), with an "xN" count and an
+// arrival stamp. See docs/lock-notifications/spec.md.
 //
-// PRIVACY: this renders on a LOCKED, unauthenticated screen. `modelData.body`
-// and `modelData.image` must be referenced ONLY inside a `_vis === "full"`
-// -gated ternary so the string is never even read below the full tier.
-// `modelData.summary` must be referenced ONLY inside a `_vis !== "hidden"`
-// -gated ternary, for the same reason. Do not "fix" this by adding a
-// `visible:` guard around an unconditional `text: modelData.body` (or
-// `.summary`) -- a hidden Text item still holds the string.
+// PRIVACY: this renders on a LOCKED, unauthenticated screen. `cardRect.newest`
+// is the stack's newest member's Notification object; its `.body` and
+// `.image` must be referenced ONLY inside a `_vis === "full"`-gated ternary so
+// the string is never even read below the full tier. `.summary` must be
+// referenced ONLY inside a `_vis !== "hidden"`-gated ternary, for the same
+// reason. Do not "fix" this by adding a `visible:` guard around an
+// unconditional `text: cardRect.newest.body` (or `.summary`) -- a hidden Text
+// item still holds the string.
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
@@ -41,6 +43,19 @@ ColumnLayout {
     // onClicked below), so one click hides every locked output, not just
     // this one.
     property var toggleHideAll: null
+
+    // Arrival-time formatter, injected by LockSurface as `NotifTime.fmtStamp`
+    // with signature (nowMs, thenMs, use12h). Injected rather than imported
+    // because `import "../lib/notiftime.js"` fails when notiffit-test.qml is the
+    // quickshell -p entrypoint (the entrypoint's parent becomes the config root),
+    // which would make the fit test unrunnable.
+    property var stampFn: null
+    // Shared 30s clock from NotifService. This MUST be read inside the stamp's
+    // text binding, or the relative age would render once and never update.
+    property double nowMs: 0
+    // Lock clock preference (LockClockState.hour12), so the stamp matches the
+    // big clock above it.
+    property bool hour12: false
 
     // Vertical space this list may occupy, in px, measured from its own top
     // down to whatever must stay clear beneath it (the watermark). Supplied by
@@ -72,29 +87,42 @@ ColumnLayout {
     function _iconUrl(appIcon) { return root._resolveIconLike(appIcon); }
     function _imageUrl(image) { return root._resolveIconLike(image); }
 
-    // Count of hidden-tier notifications in a group's list (private tier, or
-    // hideAll). Used for the group's "N hidden" line -- counts only, no
-    // summary/body/image of a hidden notification is ever touched.
-    function _hiddenCount(list) {
+    // Notifications (not stacks) hidden in a group's stack list -- the "N
+    // hidden" line counts what the user is not being shown, and a hidden stack
+    // of 3 is 3 unseen notifications. Counts only; no summary/body/image of a
+    // hidden notification is ever touched.
+    function _hiddenCount(stacks) {
         if (!root.policy)
             return 0;
         var c = 0;
-        for (var i = 0; i < list.length; i++)
-            if (root.policy.classify(list[i], root.hideAll).visibility === "hidden")
-                c++;
+        for (var i = 0; i < stacks.length; i++)
+            if (root._visOf(stacks[i]) === "hidden")
+                c += stacks[i].count;
         return c;
     }
 
-    // Flatten every group's notifications into a single ordered card list,
-    // then cap to `maxCards`. Capping happens on the flat list (not per
-    // group) so the limit is a true backlog-wide cap, matching the "+N more"
-    // footer's count.
+    // Notifications in a group's stack list, for the app header's count.
+    function _groupTotal(stacks) {
+        var c = 0;
+        for (var i = 0; i < stacks.length; i++)
+            c += stacks[i].count;
+        return c;
+    }
+
+    // Every group's notifications collapsed into identical-content STACKS (see
+    // lib/notifstack.js) and flattened into one ordered card list. One card per
+    // stack, so a chatty source stops spending the height budget on visually
+    // identical cards.
     readonly property var _flat: {
         var out = [];
         var gs = root.groups;
-        for (var g = 0; g < gs.length; g++)
-            for (var i = 0; i < gs[g].list.length; i++)
-                out.push(gs[g].list[i]);
+        if (!root.notifications)
+            return out;
+        for (var g = 0; g < gs.length; g++) {
+            var stacks = root.notifications.stacksOf(gs[g].list);
+            for (var i = 0; i < stacks.length; i++)
+                out.push(stacks[i]);
+        }
         return out;
     }
     // --- Dynamic fit ------------------------------------------------------
@@ -135,6 +163,40 @@ ColumnLayout {
     // ~40 characters land per line. Rounded so a long body errs TALL.
     readonly property int _bodyCharsPerLine: 40
     readonly property int _bodyMaxLines: 4   // matches the body's maximumLineCount
+    readonly property real _hMetaRow: 15     // "x3  14:32 (2m ago)" line
+
+    // Privacy tier for a whole stack: the STRICTEST of its members.
+    //
+    // notifstack.js keys on appName/desktopEntry/summary/body/urgency, which are
+    // exactly the inputs the policy classifies on, so a stack is already
+    // tier-homogeneous and this loop normally sees one answer. It is a
+    // fail-closed backstop: if a key ever merged two tiers, the stack renders at
+    // the tighter one rather than exposing the private member's content.
+    function _rank(v) {
+        return v === "hidden" ? 2 : (v === "sensitive" ? 1 : 0);
+    }
+    function _classifyStack(st) {
+        if (!root.policy)
+            return ({ tier: "private", visibility: "hidden", interactive: false });
+        var worst = root.policy.classify(st.list[0], root.hideAll);
+        for (var i = 1; i < st.list.length; i++) {
+            var c = root.policy.classify(st.list[i], root.hideAll);
+            if (root._rank(c.visibility) > root._rank(worst.visibility))
+                worst = c;
+        }
+        // Actions come from the NEWEST member -- invoking a superseded
+        // duplicate's action is meaningless -- and only while the stack as a
+        // whole is at the full tier.
+        var newest = root.policy.classify(st.list[0], root.hideAll);
+        return {
+            tier: worst.tier,
+            visibility: worst.visibility,
+            interactive: worst.visibility === "full" && newest.interactive
+        };
+    }
+    function _visOf(st) {
+        return root._classifyStack(st).visibility;
+    }
 
     // Height of one rendered card, from the same layout the delegate builds
     // below -- keep the two in step. Returns 0 for the hidden tier, which
@@ -145,13 +207,18 @@ ColumnLayout {
     // content already being rendered in full, and nothing here enters the
     // render tree. Below the full tier no body/image is touched at all -- see
     // the file-header PRIVACY note.
-    function _cardHeight(n) {
+    function _cardHeight(st) {
         if (!root.policy)
             return 0;
-        var vis = root.policy.classify(n, root.hideAll).visibility;
+        var vis = root._visOf(st);
         if (vis === "hidden")
             return 0;
+        var n = st.list[0];
         var h = root._hCardPad + root._hSummary;
+        // Meta row: the count badge and/or the arrival stamp. Deterministic from
+        // the model (no measurement), so the budget stays honest.
+        if (st.count > 1 || st.newest > 0)
+            h += root._hCardSpacing + root._hMetaRow;
         if (vis === "full") {
             var body = root._plain(n.body);
             if (body.length > 0) {
@@ -191,7 +258,7 @@ ColumnLayout {
             var n = flat[i];
             var app = root._keyOf(n);
             var isNewApp = (app !== prevApp);
-            var vis = root.policy.classify(n, root.hideAll).visibility;
+            var vis = root._visOf(n);
             var cost = 0;
             if (isNewApp)
                 cost += root._hGroupHead + (i > 0 ? root.spacing : 0);
@@ -215,12 +282,22 @@ ColumnLayout {
         return fit;
     }
 
-    readonly property int _overflow: Math.max(0, root._flat.length - root._fitCount)
+    // "+N more" counts NOTIFICATIONS in the dropped stacks, not stacks -- the
+    // user cares how many messages they are not seeing.
+    readonly property int _overflow: {
+        var c = 0;
+        for (var i = root._fitCount; i < root._flat.length; i++)
+            c += root._flat[i].count;
+        return c;
+    }
 
-    // Regroup the capped slice, mirroring NotifService.groupBy's shape and
-    // key so the capped render looks identical to the uncapped one (same
+    // Regroup the capped slice of STACKS, mirroring NotifService.groupBy's shape
+    // and key so the capped render looks identical to the uncapped one (same
     // app headers, same fallback bucket name).
-    function _keyOf(n) { return (n.appName && String(n.appName).length) ? String(n.appName) : "Notifications"; }
+    function _keyOf(st) {
+        var n = st.list[0];
+        return (n.appName && String(n.appName).length) ? String(n.appName) : "Notifications";
+    }
     function _groupSlice(list) {
         var map = {};
         var order = [];
@@ -267,12 +344,12 @@ ColumnLayout {
                 Layout.alignment: Qt.AlignRight
                 spacing: 6
                 Image {
-                    source: (modelData.list[0] && modelData.list[0].appIcon) ? root._iconUrl(modelData.list[0].appIcon) : ""
+                    source: (modelData.list[0] && modelData.list[0].list[0] && modelData.list[0].list[0].appIcon) ? root._iconUrl(modelData.list[0].list[0].appIcon) : ""
                     sourceSize.width: 16; sourceSize.height: 16
                     visible: source != ""
                 }
                 LockText {
-                    text: (modelData.app || "Notifications") + "  " + modelData.list.length
+                    text: (modelData.app || "Notifications") + "  " + root._groupTotal(modelData.list)
                     color: root.theme ? root.theme.textSecondary : "#a89984"
                     font.pixelSize: 12; font.bold: true
                 }
@@ -290,8 +367,10 @@ ColumnLayout {
                 model: modelData.list
                 delegate: Rectangle {
                     id: cardRect
-                    required property var modelData // Notification
-                    readonly property var cls: root.policy ? root.policy.classify(modelData, root.hideAll) : ({tier: "private", visibility: "hidden", interactive: false})
+                    required property var modelData // a stack (see lib/notifstack.js)
+                    // The stack's newest member supplies all rendered content.
+                    readonly property var newest: cardRect.modelData.list[0]
+                    readonly property var cls: root._classifyStack(cardRect.modelData)
                     // HIDDEN tier: the card does not render at all. QtQuick.Layouts
                     // excludes invisible items from layout, so this collapses to
                     // zero size; the group's "N hidden" line above covers it.
@@ -311,34 +390,59 @@ ColumnLayout {
                         readonly property string _vis: cardRect.cls.visibility
                         readonly property bool _interactive: cardRect.cls.interactive
 
-                        // summary line (sensitive AND full). `modelData.summary` is
+                        // summary line (sensitive AND full). `newest.summary` is
                         // referenced ONLY inside this hidden-gated ternary -- a
-                        // visible:false Text would still hold the string in the
-                        // render tree, which is exactly the leak the file-header
-                        // PRIVACY note forbids for body/image. See PRIVACY note.
+                        // visible:false Text would still hold the string, which
+                        // is exactly the leak the file-header PRIVACY note
+                        // forbids for body/image. See PRIVACY note.
                         LockText {
                             Layout.fillWidth: true
-                            text: cardCol._vis !== "hidden" ? (modelData.summary || (modelData.appName || "Notification")) : ""
+                            text: cardCol._vis !== "hidden" ? (cardRect.newest.summary || (cardRect.newest.appName || "Notification")) : ""
                             color: root.theme ? root.theme.textPrimary : "#ebdbb2"
                             font.pixelSize: 13; elide: Text.ElideRight
                         }
-                        // BODY: full tier only. `modelData.body` is referenced ONLY
+                        // META ROW: how many identical notifications this card
+                        // stands for, and when the newest arrived. Both are
+                        // metadata (a count and a time), never content, so they
+                        // are safe at the sensitive tier. The hidden tier draws
+                        // no card at all, so it cannot reach here.
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            visible: cardRect.modelData.count > 1 || cardRect.modelData.newest > 0
+                            LockText {
+                                visible: cardRect.modelData.count > 1
+                                text: "x" + cardRect.modelData.count
+                                color: root.theme ? root.theme.accent : "#87b158"
+                                font.pixelSize: 11; font.bold: true
+                            }
+                            LockText {
+                                Layout.fillWidth: true
+                                // Reads root.nowMs so the age repaints on the
+                                // shared 30s tick, and root.hour12 so it tracks
+                                // the lock clock's 12/24h toggle.
+                                text: root.stampFn ? root.stampFn(root.nowMs, cardRect.modelData.newest, root.hour12) : ""
+                                color: root.theme ? root.theme.textSecondary : "#a89984"
+                                font.pixelSize: 11; opacity: 0.8; elide: Text.ElideRight
+                            }
+                        }
+                        // BODY: full tier only. `newest.body` is referenced ONLY
                         // inside this full-gated ternary -- see file-header PRIVACY note.
                         LockText {
                             Layout.fillWidth: true
                             visible: cardCol._vis === "full" && text.length > 0
-                            text: cardCol._vis === "full" ? root._plain(modelData.body) : ""
+                            text: cardCol._vis === "full" ? root._plain(cardRect.newest.body) : ""
                             color: root.theme ? root.theme.textSecondary : "#a89984"
                             font.pixelSize: 12; wrapMode: Text.WordWrap; maximumLineCount: 4; elide: Text.ElideRight
                         }
-                        // IMAGE THUMB: full tier only. `modelData.image` is referenced
+                        // IMAGE THUMB: full tier only. `newest.image` is referenced
                         // ONLY inside this full-gated ternary -- see PRIVACY note.
                         Image {
                             Layout.preferredWidth: 64
                             Layout.preferredHeight: 64
                             Layout.alignment: Qt.AlignLeft
                             visible: cardCol._vis === "full" && source != ""
-                            source: cardCol._vis === "full" ? root._imageUrl(modelData.image) : ""
+                            source: cardCol._vis === "full" ? root._imageUrl(cardRect.newest.image) : ""
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                             cache: true
@@ -350,7 +454,7 @@ ColumnLayout {
                             visible: cardCol._interactive
                             spacing: 6
                             Repeater {
-                                model: cardCol._interactive ? modelData.actions : []
+                                model: cardCol._interactive ? cardRect.newest.actions : []
                                 delegate: Rectangle {
                                     required property var modelData // NotificationAction
                                     radius: 6; color: root.theme ? root.theme.accent : "#87b158"

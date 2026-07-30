@@ -50,7 +50,9 @@ ShellRoot {
             image: o.image || "",
             urgency: o.urgency === undefined ? NotificationUrgency.Normal : o.urgency,
             actions: o.actions || [],
-            hints: o.hints || ({})
+            hints: o.hints || ({}),
+            _stack: o.stack,
+            _newest: o.newest
         };
     }
 
@@ -59,8 +61,23 @@ ShellRoot {
         return specs.map(function (sp) {
             var list = [];
             for (var i = 0; i < sp.n; i++)
-                list.push(mock({ id: sp.app + i, appName: sp.app, urgency: sp.urgency, body: sp.body, image: sp.image, actions: sp.actions }));
+                list.push(mock({ id: sp.app + i, appName: sp.app, urgency: sp.urgency, body: sp.body, image: sp.image, actions: sp.actions, stack: sp.stack, newest: sp.newest }));
             return { app: sp.app, list: list };
+        });
+    }
+
+    // Mock stacking: ONE stack per notification, with the count/newest the case
+    // asked for. Grouping itself is covered by lib/notifstack-test.qml, so
+    // reimplementing it here would only risk the two drifting apart.
+    function fakeStacksOf(list) {
+        return list.map(function (n) {
+            return {
+                key: String(n.id),
+                list: [n],
+                count: n._stack === undefined ? 1 : n._stack,
+                newest: n._newest === undefined ? 0 : n._newest,
+                oldest: n._newest === undefined ? 0 : n._newest
+            };
         });
     }
 
@@ -68,7 +85,14 @@ ShellRoot {
         nl.maxCards = ceiling === undefined ? 0 : ceiling;
         nl.hideAll = !!hideAll;
         nl.availableHeight = avail;
-        nl.notifications = { groups: groupsOf(specs) };
+        nl.notifications = { groups: groupsOf(specs), stacksOf: fakeStacksOf, nowMs: 0 };
+    }
+
+    // Wrap one mock notification as a single-member stack.
+    function st1(o) {
+        return { key: "k", list: [mock(o)], count: o.stack === undefined ? 1 : o.stack,
+                 newest: o.newest === undefined ? 0 : o.newest,
+                 oldest: o.newest === undefined ? 0 : o.newest };
     }
 
     Component.onCompleted: {
@@ -92,18 +116,23 @@ ShellRoot {
         // adds spacing 3 + 16/body line (<=4 lines, ~40 chars per line), then
         // +3+64 for a thumb and +3+19 for an action row.
         var CRIT = NotificationUrgency.Critical;
-        check("h/sensitive", nl._cardHeight(mock({ appName: "A", body: "ignored below full" })), 30);
-        check("h/hidden", nl._cardHeight(mock({ appName: "Secret", body: "x" })), 0);
-        check("h/full-1line", nl._cardHeight(mock({ appName: "A", urgency: CRIT, body: "short" })), 12 + 18 + 3 + 16);
-        check("h/full-nobody", nl._cardHeight(mock({ appName: "A", urgency: CRIT, body: "" })), 30);
+        check("h/sensitive", nl._cardHeight(st1({ appName: "A", body: "ignored below full" })), 30);
+        check("h/hidden", nl._cardHeight(st1({ appName: "Secret", body: "x" })), 0);
+        check("h/full-1line", nl._cardHeight(st1({ appName: "A", urgency: CRIT, body: "short" })), 12 + 18 + 3 + 16);
+        check("h/full-nobody", nl._cardHeight(st1({ appName: "A", urgency: CRIT, body: "" })), 30);
         // 100 chars -> ceil(100/40) = 3 lines
         var b100 = new Array(101).join("x");
-        check("h/full-3line", nl._cardHeight(mock({ appName: "A", urgency: CRIT, body: b100 })), 12 + 18 + 3 + 48);
+        check("h/full-3line", nl._cardHeight(st1({ appName: "A", urgency: CRIT, body: b100 })), 12 + 18 + 3 + 48);
         // 400 chars -> clamped to maximumLineCount 4
         var b400 = new Array(401).join("x");
-        check("h/full-clamped", nl._cardHeight(mock({ appName: "A", urgency: CRIT, body: b400 })), 12 + 18 + 3 + 64);
-        check("h/full-thumb", nl._cardHeight(mock({ appName: "A", urgency: CRIT, body: b100, image: "/tmp/x.png" })), 12 + 18 + 3 + 48 + 3 + 64);
-        check("h/full-actions", nl._cardHeight(mock({ appName: "A", urgency: CRIT, body: b100, actions: [{ text: "go" }] })), 12 + 18 + 3 + 48 + 3 + 19);
+        check("h/full-clamped", nl._cardHeight(st1({ appName: "A", urgency: CRIT, body: b400 })), 12 + 18 + 3 + 64);
+        check("h/full-thumb", nl._cardHeight(st1({ appName: "A", urgency: CRIT, body: b100, image: "/tmp/x.png" })), 12 + 18 + 3 + 48 + 3 + 64);
+        check("h/full-actions", nl._cardHeight(st1({ appName: "A", urgency: CRIT, body: b100, actions: [{ text: "go" }] })), 12 + 18 + 3 + 48 + 3 + 19);
+        // Meta row: charged once when the card carries a count and/or a stamp.
+        check("h/meta-count", nl._cardHeight(st1({ appName: "A", stack: 3 })), 30 + 3 + 15);
+        check("h/meta-stamp", nl._cardHeight(st1({ appName: "A", newest: 1000 })), 30 + 3 + 15);
+        check("h/meta-both", nl._cardHeight(st1({ appName: "A", stack: 3, newest: 1000 })), 30 + 3 + 15);
+        check("h/meta-none", nl._cardHeight(st1({ appName: "A" })), 30);
 
         // ---- the fit ------------------------------------------------------
         // budget = availableHeight - (header 22 + spacing 8) - (footer 18 + spacing 8)
@@ -157,6 +186,15 @@ ShellRoot {
         // 200 -> budget 144: one card (121) fits, a second (+101) does not.
         feed([{ app: "Alpha", n: 5, urgency: CRIT, body: b400 }], 200);
         check("fit/tall-full-one", nl._fitCount, 1);
+
+        // Stacking buys budget: 5 separate sensitive cards need 5 card slots,
+        // but one x5 stack needs one (plus its meta row), so the same budget
+        // covers all 5 notifications instead of dropping 3.
+        feed([{ app: "Alpha", n: 5 }], 150);
+        check("fit/unstacked-drops", nl._overflow, 3);
+        feed([{ app: "Alpha", n: 1, stack: 5 }], 150);
+        check("fit/stacked-keeps", nl._overflow, 0);
+        check("fit/stacked-one-card", nl._fitCount, 1);
 
         console.log(pass === total ? ("FIT-TEST PASS " + pass + "/" + total)
                                    : ("FIT-TEST FAIL " + pass + "/" + total));

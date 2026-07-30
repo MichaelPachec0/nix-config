@@ -7,6 +7,7 @@ import Quickshell.Services.Mpris
 import "../lib" as Lib
 import "../lib/weathericons.js" as WeatherIcons
 import "../lib/weathercond.js" as WeatherCond
+import "../lib/notiftime.js" as NotifTime
 
 Item {
     id: root
@@ -705,6 +706,11 @@ Item {
         availableHeight: Math.max(0, root.notifFloorY - notifBlock.y - 16)
         hideAll: root.notifHideAll
         toggleHideAll: root.toggleNotifHideAll
+        // Injected rather than imported by LockNotifications -- see the stampFn
+        // doc comment there for why (the fit test's import sandbox).
+        stampFn: NotifTime.fmtStamp
+        nowMs: root.notifications ? root.notifications.nowMs : 0
+        hour12: root.clockState ? root.clockState.hour12 : false
     }
 
     // Re-focus the hidden input whenever this surface (re)appears.
