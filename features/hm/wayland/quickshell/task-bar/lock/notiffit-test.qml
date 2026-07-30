@@ -22,11 +22,12 @@ import Quickshell.Services.Notifications
 
 ShellRoot {
     // Rules chosen so classification is trivial and the arithmetic below is
-    // about GEOMETRY, not policy: nothing is trusted, nothing is private, so
-    // every Normal notification is `sensitive` and every Critical one `full`.
+    // about GEOMETRY, not policy: every Normal notification is `sensitive`,
+    // every Critical one `full`, "Secret" is always `hidden`, and "Trusted"
+    // is the one app that can produce an interactive card.
     LockNotifyPolicy {
         id: pol
-        trustedApps: []
+        trustedApps: ["Trusted"]
         privateApps: ["Secret"]
         trustedCategories: []
         defaultMode: "sensitive"
@@ -142,7 +143,22 @@ ShellRoot {
         var mixed = { key: "k", list: [mock({ appName: "A" }), mock({ appName: "Secret" })],
                       count: 2, newest: 0, oldest: 0 };
         check("cls/strictest-hidden", nl._visOf(mixed), "hidden");
-        check("cls/strictest-noactions", nl._classifyStack(mixed).interactive, false);
+
+        // The interactive conjunct: the NEWEST member here is trusted AND has an
+        // action, so `newest.interactive` is true on its own. The stack must
+        // still expose NO action, because another member is private and drags
+        // the whole stack to the hidden tier. This is what gates a no-PAM action
+        // button on a locked screen, so it must be covered by a case that would
+        // FAIL if the `worst.visibility === "full" &&` conjunct were dropped.
+        var mixedTrusted = { key: "k2",
+                             list: [mock({ appName: "Trusted", actions: [{ text: "go" }] }),
+                                    mock({ appName: "Secret" })],
+                             count: 2, newest: 0, oldest: 0 };
+        // Guard the guard: confirm the newest member really is interactive on
+        // its own, so the assertion below cannot go vacuous again if the
+        // fixture's trust rules ever change.
+        check("cls/newest-is-interactive", pol.classify(mixedTrusted.list[0], false).interactive, true);
+        check("cls/strictest-noactions", nl._classifyStack(mixedTrusted).interactive, false);
 
         // ---- the fit ------------------------------------------------------
         // budget = availableHeight - (header 22 + spacing 8) - (footer 18 + spacing 8)
