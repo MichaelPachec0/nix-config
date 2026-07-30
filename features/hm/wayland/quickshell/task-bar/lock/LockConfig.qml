@@ -39,6 +39,14 @@ Singleton {
     property var notifPrivateApps: []
     property var notifTrustedCategories: ["device", "network", "x-systemd*", "hardware"]
 
+    // security signals (Nix quickshellLock.security)
+    property bool secEnable: true
+    property string secOwnerText: ""
+    property bool secScreencastPoll: true
+    property int secPollIntervalSec: 10
+    property bool secShowUptime: true
+    property bool secShowLastUnlock: true
+
     function _parseWmColor(s) {
         var p = (s || "").split("-");
         return (p.length === 4)
@@ -67,6 +75,15 @@ Singleton {
                     if (nf.trustedApps) root.notifTrustedApps = nf.trustedApps;
                     if (nf.privateApps) root.notifPrivateApps = nf.privateApps;
                     if (nf.trustedCategories) root.notifTrustedCategories = nf.trustedCategories;
+                }
+                if (o.security) {
+                    var sc = o.security;
+                    if (sc.enable !== undefined) root.secEnable = !!sc.enable;
+                    if (sc.ownerText !== undefined) root.secOwnerText = sc.ownerText;
+                    if (sc.screencastPoll !== undefined) root.secScreencastPoll = !!sc.screencastPoll;
+                    if (sc.pollIntervalSec !== undefined) root.secPollIntervalSec = sc.pollIntervalSec;
+                    if (sc.showUptime !== undefined) root.secShowUptime = !!sc.showUptime;
+                    if (sc.showLastUnlock !== undefined) root.secShowLastUnlock = !!sc.showLastUnlock;
                 }
                 if (o.watermark) {
                     var w = o.watermark;

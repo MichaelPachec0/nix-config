@@ -121,6 +121,47 @@ in {
     };
   };
 
+  options.quickshellLock.security = {
+    enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Show the security/presence signal column on the lock.";
+    };
+    ownerText = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        Optional "if found" contact line shown on the lock. Anyone who can see
+        the lock screen can read it, which is the point -- so it is empty by
+        default and opt-in.
+      '';
+    };
+    screencastPoll = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Poll PipeWire while locked to detect a screen capture that STARTS during
+        the lock. With this off the lock only reports a capture that was already
+        running when it engaged, and never shows the "unknown" warning.
+      '';
+    };
+    pollIntervalSec = lib.mkOption {
+      type = lib.types.int;
+      default = 10;
+      description = "Seconds between security probe polls while locked.";
+    };
+    showUptime = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Show system uptime on the lock.";
+    };
+    showLastUnlock = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Show when the session was last unlocked.";
+    };
+  };
+
   config = {
     home.packages = [ lockEscape ];
 
@@ -137,6 +178,9 @@ in {
       };
       notifications = {
         inherit (cfg.notifications) enable defaultMode maxCards trustedApps privateApps trustedCategories;
+      };
+      security = {
+        inherit (cfg.security) enable ownerText screencastPoll pollIntervalSec showUptime showLastUnlock;
       };
     };
 
