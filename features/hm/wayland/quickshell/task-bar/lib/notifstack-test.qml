@@ -41,6 +41,10 @@ ShellRoot {
         // A field value cannot forge a separator boundary.
         check("key/noCollision",
               S.stackKey(n({id: 1, appName: "a", desktopEntry: "b"})) === S.stackKey(n({id: 2, appName: "a\x1fb", desktopEntry: ""})), false);
+        // Delimiter injection: a separator byte inside a field value must not be
+        // able to forge a field boundary. Fails on an un-prefixed join.
+        check("key/injection",
+              S.stackKey(n({id: 1, appName: "a", desktopEntry: "b\x1fc"})) === S.stackKey(n({id: 2, appName: "a\x1fb", desktopEntry: "c"})), false);
         // Missing/null fields are tolerated (a Notification may omit them).
         check("key/nullSafe", typeof S.stackKey({id: 1}) === "string", true);
 

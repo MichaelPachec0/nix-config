@@ -5,13 +5,26 @@
 // shared by the lock, hub and toast surfaces.
 .pragma library
 
-// Unit separator (U+001F). Cannot occur in these fields, so joining needs no
-// escaping. Written as an ESCAPE, never a literal control byte: a raw 0x1f in
-// source survives neither copy-paste nor the repo's ASCII-only rule.
+// Unit separator (U+001F). Fields are length-prefixed because their bytes are
+// app-controlled (from the D-Bus Notify call), so a separator byte can appear in
+// them. Prefixing prevents a separator within a field value from forging a
+// boundary: the length pins where each field ends. Written as an ESCAPE, never
+// a literal control byte: a raw 0x1f in source survives neither copy-paste nor
+// the repo's ASCII-only rule.
 var SEP = "\x1f";
 
 function _s(v) {
     return (v === undefined || v === null) ? "" : String(v);
+}
+
+// Length-prefix each field so a separator byte embedded in a field value
+// cannot forge a boundary: the length pins where each field ends, so
+// ("a", "b<SEP>c") and ("a<SEP>b", "c") can no longer produce the same key.
+// These fields come from the D-Bus Notify call and are entirely
+// app-controlled, so this cannot be assumed away.
+function _field(v) {
+    var s = _s(v);
+    return s.length + ":" + s;
 }
 
 // The identity of "this same notification again".
@@ -23,7 +36,7 @@ function _s(v) {
 // those and rendering at one member's tier could expose a private
 // notification's content. Keying on them keeps every stack tier-homogeneous.
 function stackKey(n) {
-    return [_s(n.appName), _s(n.desktopEntry), _s(n.summary), _s(n.body), _s(n.urgency)].join(SEP);
+    return [_field(n.appName), _field(n.desktopEntry), _field(n.summary), _field(n.body), _field(n.urgency)].join(SEP);
 }
 
 // Group `list` into stacks. `seenAt` is NotifService's id -> epoch ms map.
