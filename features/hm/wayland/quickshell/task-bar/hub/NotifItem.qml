@@ -37,14 +37,55 @@ Rectangle {
     // App-set image: already a usable URL (image:// provider for raw D-Bus
     // pixels, or a file/icon URL for image-path). Empty when none was sent.
     readonly property string imageUrl: (root.source && root.source.image) ? String(root.source.image) : ""
-    // App icon resolved to a path. Pass through real paths; resolve names.
-    readonly property string appIconUrl: {
-        if (!root.source || !root.source.appIcon)
+    // App icon resolved to a path, with a FALLBACK CHAIN so a notification that
+    // sends no `app_icon` still shows its originating app's icon instead of the
+    // generic bell:
+    //   1. the notification's own appIcon -- a real path/file:/image: URL passes
+    //      through, a bare name goes through the icon theme;
+    //   2. its `desktop-entry` hint, looked up in DesktopEntries for that app's
+    //      Icon= (this is the step that fixes most icon-less notifications);
+    //   3. appName as a desktop-entry heuristic, then as a bare icon name --
+    //      plenty of apps ship an icon named exactly after themselves, and
+    //      lowercased because theme icon names are conventionally lower case.
+    // Each step is skipped when it resolves to nothing, so a bogus app_icon
+    // falls through rather than pinning the card to a blank. All empty leaves
+    // the bell glyph, which suits a notification better than a generic
+    // executable icon.
+    // NB: mirrored by lock/LockNotifications.qml's _appIconUrl. The lock cannot
+    // import shared code from ../lib (quickshell -p sandboxes a test
+    // entrypoint's imports to its own directory), so keep the two in step.
+    function _themeIcon(name) {
+        if (!name)
             return "";
-        var a = String(root.source.appIcon);
-        if (a.startsWith("/") || a.startsWith("file:") || a.startsWith("image:"))
-            return a;
-        return Quickshell.iconPath(a, "");
+        var s = String(name);
+        if (s.startsWith("/") || s.startsWith("file:") || s.startsWith("image:"))
+            return s;
+        // `true` = CHECK the icon theme and return "" when there is no such
+        // icon. Without it iconPath hands back an image://icon/<name> URL even
+        // for names that do not exist, which would make every fall-through
+        // below dead code (a bogus app_icon would pin the card to a broken
+        // image instead of trying the desktop entry).
+        return Quickshell.iconPath(s, true);
+    }
+    function _entryIcon(hint) {
+        if (!hint)
+            return "";
+        var e = DesktopEntries.heuristicLookup(String(hint));
+        return (e && e.icon) ? root._themeIcon(e.icon) : "";
+    }
+    readonly property string appIconUrl: {
+        if (!root.source)
+            return "";
+        var u = root._themeIcon(root.source.appIcon);
+        if (u !== "")
+            return u;
+        u = root._entryIcon(root.source.desktopEntry);
+        if (u !== "")
+            return u;
+        u = root._entryIcon(root.source.appName);
+        if (u !== "")
+            return u;
+        return root._themeIcon(String(root.source.appName || "").toLowerCase());
     }
     readonly property var actions: root.source ? root.source.actions : []
     // The conventional click-the-body action; not shown as a button.

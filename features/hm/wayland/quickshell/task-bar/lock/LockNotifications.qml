@@ -82,10 +82,50 @@ ColumnLayout {
         var s = String(v);
         if (s.startsWith("/") || s.startsWith("file:") || s.startsWith("image:"))
             return s;
-        return Quickshell.iconPath(s, "");
+        // `true` = CHECK the icon theme and return "" when there is no such
+        // icon. Without it iconPath returns an image://icon/<name> URL even for
+        // names that do not exist, which would make the fall-through in
+        // _appIconUrl dead code.
+        return Quickshell.iconPath(s, true);
     }
     function _iconUrl(appIcon) { return root._resolveIconLike(appIcon); }
     function _imageUrl(image) { return root._resolveIconLike(image); }
+
+    // App icon with a FALLBACK CHAIN so a notification that sends no `app_icon`
+    // still shows its originating app's icon instead of nothing:
+    //   1. the notification's own appIcon;
+    //   2. its `desktop-entry` hint, looked up in DesktopEntries for that app's
+    //      Icon= (the step that fixes most icon-less notifications);
+    //   3. appName as a desktop-entry heuristic, then as a bare icon name
+    //      (lowercased -- theme icon names are conventionally lower case).
+    // PRIVACY: this reads appIcon/desktopEntry/appName only. Those are app
+    // IDENTITY, which the group header already shows as text, never message
+    // content -- so unlike summary/body/image it needs no `_vis` gate. Do not
+    // extend this to read anything from the message itself.
+    // NB: mirrored by hub/NotifItem.qml's appIconUrl. This file cannot import
+    // shared code from ../lib (quickshell -p sandboxes a test entrypoint's
+    // imports to its own directory, and notiffit-test.qml lives here), so keep
+    // the two in step.
+    function _entryIcon(hint) {
+        if (!hint)
+            return "";
+        var e = DesktopEntries.heuristicLookup(String(hint));
+        return (e && e.icon) ? root._resolveIconLike(e.icon) : "";
+    }
+    function _appIconUrl(n) {
+        if (!n)
+            return "";
+        var u = root._resolveIconLike(n.appIcon);
+        if (u !== "")
+            return u;
+        u = root._entryIcon(n.desktopEntry);
+        if (u !== "")
+            return u;
+        u = root._entryIcon(n.appName);
+        if (u !== "")
+            return u;
+        return root._resolveIconLike(String(n.appName || "").toLowerCase());
+    }
 
     // Notifications (not stacks) hidden in a group's stack list -- the "N
     // hidden" line counts what the user is not being shown, and a hidden stack
@@ -344,7 +384,7 @@ ColumnLayout {
                 Layout.alignment: Qt.AlignRight
                 spacing: 6
                 Image {
-                    source: (modelData.list[0] && modelData.list[0].list[0] && modelData.list[0].list[0].appIcon) ? root._iconUrl(modelData.list[0].list[0].appIcon) : ""
+                    source: (modelData.list[0] && modelData.list[0].list[0]) ? root._appIconUrl(modelData.list[0].list[0]) : ""
                     sourceSize.width: 16; sourceSize.height: 16
                     visible: source != ""
                 }
