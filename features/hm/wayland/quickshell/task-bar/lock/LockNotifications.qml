@@ -404,8 +404,11 @@ ColumnLayout {
                         // META ROW: how many identical notifications this card
                         // stands for, and when the newest arrived. Both are
                         // metadata (a count and a time), never content, so they
-                        // are safe at the sensitive tier. The hidden tier draws
-                        // no card at all, so it cannot reach here.
+                        // are safe at the sensitive tier. The hidden tier's card
+                        // is visible:false so this row never paints -- but note
+                        // the bindings still EVALUATE, which is safe only
+                        // because they read a count and a timestamp. Any content
+                        // field added here still needs its own _vis gate.
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 6

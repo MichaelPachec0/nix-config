@@ -134,6 +134,16 @@ ShellRoot {
         check("h/meta-both", nl._cardHeight(st1({ appName: "A", stack: 3, newest: 1000 })), 30 + 3 + 15);
         check("h/meta-none", nl._cardHeight(st1({ appName: "A" })), 30);
 
+        // The strictest-tier backstop: a stack whose members would classify
+        // DIFFERENTLY must render at the tightest tier, and must expose no
+        // action. Both mocks elsewhere build single-member stacks, so this is
+        // the only case that exercises _classifyStack's reduction loop -- the
+        // guard that has to survive future drift in notifstack.js's key.
+        var mixed = { key: "k", list: [mock({ appName: "A" }), mock({ appName: "Secret" })],
+                      count: 2, newest: 0, oldest: 0 };
+        check("cls/strictest-hidden", nl._visOf(mixed), "hidden");
+        check("cls/strictest-noactions", nl._classifyStack(mixed).interactive, false);
+
         // ---- the fit ------------------------------------------------------
         // budget = availableHeight - (header 22 + spacing 8) - (footer 18 + spacing 8)
         //        = availableHeight - 56
