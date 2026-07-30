@@ -324,6 +324,7 @@ Item {
         casts: root.security ? root.security.secCasts : null
         pollEnabled: LockConfig.secScreencastPoll
         probed: root.security ? root.security.secProbed : false
+        graceExpired: root.security ? root.security.secGraceExpired : false
         fails: root.security ? root.security.failsThisLock : 0
         otherUsers: root.security ? root.security.secOtherUsers : 0
         uptimeSec: root.security ? root.security.secUptimeSec : 0

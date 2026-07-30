@@ -45,6 +45,13 @@ Scope {
     // first seconds of every lock after the first.
     property bool secStale: true
 
+    // A probe that fails or hangs never emits updated() (CommandPoll returns
+    // early on a nonzero exit, watchdog kills included), so secStale would latch
+    // true and SILENCE the "could not ask" warning during exactly the failure it
+    // exists to report. Once this grace period passes with no fresh reading, the
+    // state is genuinely unknown, not merely not-yet-known.
+    property bool secGraceExpired: false
+
     // `lockContext.failCount` at the moment this lock engaged. LockContext.reset()
     // does NOT clear failCount, so the counter is cumulative for the process
     // lifetime; subtracting this baseline is what turns it into "attempts during
@@ -73,6 +80,7 @@ Scope {
         root.castAtLock = !!(root.notifications && root.notifications.screencasting);
         root.failBaseline = lockContext.failCount;
         root.secStale = true;
+        root.secGraceExpired = false;
         if (!root.workspaceMode) {
             root.locked = true;
             return;
@@ -221,8 +229,27 @@ Scope {
         }
     }
 
+    // See secGraceExpired above: fires once if a lock stays stale (no probe
+    // result at all) past a couple of poll intervals, so a hung/failing probe
+    // eventually reads as "could not ask" instead of staying silent forever.
+    Timer {
+        interval: Math.max(3, Math.max(1, LockConfig.secPollIntervalSec) * 2) * 1000
+        repeat: false
+        running: root.locked && root.secStale && LockConfig.secEnable
+        onTriggered: root.secGraceExpired = true
+    }
+
     readonly property var _sec: securityPoll.value
-    readonly property var secCasts: root._sec ? root._sec.casts : null
+    // Staleness is gated HERE, at the source, rather than in each consumer:
+    // gating consumers one by one is what let the false alarm through last
+    // round, and any future reader of secCasts would otherwise inherit the
+    // same bug. While `secStale` is true, `_sec` may still hold the PREVIOUS
+    // lock's result (CommandPoll does not clear `value` when `running` flips
+    // false->true), so this reads as null -- "no answer yet" -- until a fresh
+    // reading for THIS lock lands. `sharing` in LockSecurity.qml therefore
+    // needs no staleness term of its own: a stale reading can never leak
+    // through as a false "casts > 0".
+    readonly property var secCasts: (root._sec && !root.secStale) ? root._sec.casts : null
     readonly property int secSessions: root._sec ? root._sec.sessions : 0
     readonly property int secOtherUsers: root._sec ? root._sec.otherUsers : 0
     readonly property int secUptimeSec: root._sec ? root._sec.uptimeSec : 0

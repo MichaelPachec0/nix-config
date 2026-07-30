@@ -62,7 +62,17 @@ ShellRoot {
         // Before the first probe result, "unknown" must stay silent -- otherwise
         // it would flash on every lock and train the user to ignore it.
         sec.probed = false; sec.pollEnabled = true; sec.casts = null; sec.castAtLock = false;
+        sec.graceExpired = false;
         check("share/unprobed-silent", sec.sharingUnknown, false);
+
+        // A probe that never answers must eventually warn, not stay silent:
+        // silence on this row reads as "you are fine", which is the one thing a
+        // blind probe must not imply. (Duplicates the not-yet-expired case above
+        // as "unprobed-silent"; only the newly-expired assertion is added here.)
+        sec.graceExpired = true;
+        check("share/unprobed-warns-late", sec.sharingUnknown, true);
+        sec.graceExpired = false;
+
         sec.probed = true;
         check("share/probed-unknown", sec.sharingUnknown, true);
 

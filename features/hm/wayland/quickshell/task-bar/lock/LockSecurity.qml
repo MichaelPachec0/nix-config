@@ -28,6 +28,9 @@ ColumnLayout {
     // warning would flash on EVERY lock during the pre-first-poll window, and a
     // warning that appears routinely is one the user stops reading.
     property bool probed: false
+    // True once the grace period has passed with no reading at all -- see
+    // secGraceExpired in Lock.qml. Distinguishes "not yet" from "not coming".
+    property bool graceExpired: false
     property int fails: 0
     property int otherUsers: 0
     property int uptimeSec: 0
@@ -47,14 +50,21 @@ ColumnLayout {
     // poll actually answered, hence the explicit null check.
     readonly property bool sharing: root.castAtLock || (root.casts !== null && root.casts > 0)
 
-    // "Could not ask" -- shown ONLY when the poll is enabled, has answered at
-    // least once, and has no answer, and nothing was detected. `probed` gates
-    // out the first moments of every lock, when the poll simply has not run
-    // yet (CommandPoll.value starts null); without it this would flash on
-    // every lock. With the poll off, `casts` is permanently null, so without
-    // the pollEnabled term switching the poll off would pin this warning on
-    // screen forever, which is the opposite of what opting out means.
-    readonly property bool sharingUnknown: root.pollEnabled && root.probed && root.casts === null && !root.sharing
+    // "Could not ask" -- shown when the poll is enabled, nothing was detected,
+    // and either of two failure shapes holds: the probe HAS answered but could
+    // not determine (`probed` true, `casts === null`), or the probe has NEVER
+    // answered and the grace period has run out (`graceExpired`). The second
+    // shape matters as much as the first: a hung or persistently-failing probe
+    // never emits a result, so `probed` alone would stay false and this row
+    // would stay silent for the whole lock -- silence on a security indicator
+    // reads as reassurance, which is exactly wrong during a failure. Before the
+    // grace period expires, a not-yet-probed lock stays silent (not-yet is not
+    // unknown). With the poll off, `casts` is permanently null and `graceExpired`
+    // never rearms, so without the pollEnabled term switching the poll off would
+    // pin this warning on screen forever, which is the opposite of what opting
+    // out means.
+    readonly property bool sharingUnknown: root.pollEnabled && !root.sharing
+        && (root.probed ? root.casts === null : root.graceExpired)
 
     function _fmtUptime(sec) {
         var s = Math.max(0, Math.floor(sec));
