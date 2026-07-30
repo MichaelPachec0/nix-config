@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell.Services.Notifications
+import "../lib/notiftime.js" as NotifTime
 
 // One app's notifications as a group widget. Header: app name (left) + a count
 // badge, an expand/collapse toggle (2+ items), and a wipe-all button. Body:
@@ -21,11 +22,19 @@ Rectangle {
     readonly property int cardH: 50 // must match NotifItem compact height
 
     readonly property var list: group.entry.list
-    readonly property int count: group.list.length
+    // Identical-content stacks (see lib/notifstack.js). Every card below stands
+    // for one STACK, so a chatty app collapses to one card with an "xN" badge
+    // instead of N visually identical ones.
+    readonly property var stacks: group.notif.stacksOf(group.list)
+    // `total` drives the header badge (the user counts notifications, not
+    // stacks); `stackCount` drives the deck geometry and the expand toggle
+    // (they are about how many CARDS there are).
+    readonly property int total: group.list.length
+    readonly property int stackCount: group.stacks.length
     readonly property bool expanded: group.notif.isExpanded(group.entry.app)
-    // Stacked deck only makes sense for 2+; a lone notification renders full so
+    // Stacked deck only makes sense for 2+ cards; a lone card renders full so
     // its body and action buttons are reachable.
-    readonly property bool useDeck: group.count > 1 && !group.expanded
+    readonly property bool useDeck: group.stackCount > 1 && !group.expanded
     readonly property bool hasCritical: {
         for (var i = 0; i < group.list.length; i++)
             if (group.list[i].urgency === NotificationUrgency.Critical)
@@ -70,7 +79,7 @@ Rectangle {
                 elide: Text.ElideRight
             }
             Rectangle {
-                visible: group.count > 1
+                visible: group.total > 1
                 radius: 999
                 color: group.theme.bgItem
                 implicitHeight: 18
@@ -79,7 +88,7 @@ Rectangle {
                 Text {
                     id: cnt
                     anchors.centerIn: parent
-                    text: group.count
+                    text: group.total
                     color: group.theme.textSecondary
                     font.family: group.theme.textFont
                     font.pixelSize: 10
@@ -87,7 +96,7 @@ Rectangle {
                 }
             }
             GroupBtn {
-                visible: group.count > 1
+                visible: group.stackCount > 1
                 glyph: group.expanded ? 0xF0143 : 0xF0140 // chevron up / down
                 onActivated: group.notif.toggleExpanded(group.entry.app)
             }
@@ -109,18 +118,18 @@ Rectangle {
                 }
             }
 
-            // Collapsed: z-stacked deck. Newest (index 0) on top.
+            // Collapsed: z-stacked deck. Newest stack (index 0) on top.
             Item {
                 id: stackBody
                 visible: group.useDeck
                 anchors.left: parent.left
                 anchors.right: parent.right
-                implicitHeight: group.count > 0 ? (group.cardH + (group.count - 1) * group.peekOffset) : 0
+                implicitHeight: group.stackCount > 0 ? (group.cardH + (group.stackCount - 1) * group.peekOffset) : 0
 
                 // Catches clicks on the peeking (non-interactive) cards -> expand.
                 MouseArea {
                     anchors.fill: parent
-                    enabled: group.count > 1
+                    enabled: group.stackCount > 1
                     cursorShape: Qt.PointingHandCursor
                     onClicked: group.notif.toggleExpanded(group.entry.app)
                 }
@@ -129,29 +138,34 @@ Rectangle {
                     // Only the visible branch builds delegates; the hidden branch
                     // gets an empty model so it doesn't instantiate a second full
                     // set of NotifItems (each with its own async images).
-                    model: group.useDeck ? group.list : []
+                    model: group.useDeck ? group.stacks : []
                     NotifItem {
                         id: stackCard
-                        required property var modelData
+                        required property var modelData // a stack
                         required property int index
+                        readonly property var newest: stackCard.modelData.list[0]
                         width: stackBody.width
                         height: group.cardH
                         y: stackCard.index * group.peekOffset
-                        z: group.count - stackCard.index
+                        z: group.stackCount - stackCard.index
                         compact: true
                         interactive: stackCard.index === 0 // only the top card
                         theme: group.theme
-                        source: stackCard.modelData
-                        app: group.notif.keyOf(stackCard.modelData)
-                        summary: stackCard.modelData.summary
-                        body: stackCard.modelData.body
-                        critical: stackCard.modelData.urgency === NotificationUrgency.Critical
-                        onDismissRequested: stackCard.modelData.dismiss()
+                        source: stackCard.newest
+                        app: group.notif.keyOf(stackCard.newest)
+                        summary: stackCard.newest.summary
+                        body: stackCard.newest.body
+                        critical: stackCard.newest.urgency === NotificationUrgency.Critical
+                        stackCount: stackCard.modelData.count
+                        // Reads group.notif.nowMs so the age repaints on the
+                        // shared 30s tick. The hub has no 12/24h setting, so 24h.
+                        stamp: NotifTime.fmtStamp(group.notif.nowMs, stackCard.modelData.newest, false)
+                        onDismissRequested: group.notif.dismissStack(stackCard.modelData)
                     }
                 }
             }
 
-            // Expanded: full vertical list.
+            // Expanded: full vertical list, still one card per stack.
             ColumnLayout {
                 id: expandedCol
                 visible: !group.useDeck
@@ -159,20 +173,23 @@ Rectangle {
                 anchors.right: parent.right
                 spacing: 6
                 Repeater {
-                    model: group.useDeck ? [] : group.list
+                    model: group.useDeck ? [] : group.stacks
                     NotifItem {
                         id: listCard
-                        required property var modelData
+                        required property var modelData // a stack
+                        readonly property var newest: listCard.modelData.list[0]
                         Layout.fillWidth: true
                         compact: false
                         interactive: true
                         theme: group.theme
-                        source: listCard.modelData
-                        app: group.notif.keyOf(listCard.modelData)
-                        summary: listCard.modelData.summary
-                        body: listCard.modelData.body
-                        critical: listCard.modelData.urgency === NotificationUrgency.Critical
-                        onDismissRequested: listCard.modelData.dismiss()
+                        source: listCard.newest
+                        app: group.notif.keyOf(listCard.newest)
+                        summary: listCard.newest.summary
+                        body: listCard.newest.body
+                        critical: listCard.newest.urgency === NotificationUrgency.Critical
+                        stackCount: listCard.modelData.count
+                        stamp: NotifTime.fmtStamp(group.notif.nowMs, listCard.modelData.newest, false)
+                        onDismissRequested: group.notif.dismissStack(listCard.modelData)
                     }
                 }
             }
