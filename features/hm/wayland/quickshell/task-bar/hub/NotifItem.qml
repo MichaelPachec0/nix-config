@@ -23,6 +23,13 @@ Rectangle {
     // stack -- the click falls through to the stack's expand catcher).
     property bool compact: false
     property bool interactive: true
+    // How many identical notifications this card stands for (see
+    // lib/notifstack.js). 1 renders no badge, so existing callers are unchanged.
+    property int stackCount: 1
+    // Pre-formatted arrival time, e.g. "14:32 (2m ago)", from lib/notiftime.js.
+    // Empty renders nothing -- a notification with no recorded arrival stamp
+    // must show no time rather than a wrong one.
+    property string stamp: ""
 
     signal dismissRequested
 
@@ -154,14 +161,35 @@ Rectangle {
             Layout.fillWidth: true
             spacing: 2
 
-            Text {
+            // App name, then the stack count, then the arrival time. The app
+            // name takes the slack so the badge and stamp stay right-aligned.
+            RowLayout {
                 Layout.fillWidth: true
-                text: String(root.app).toUpperCase().replace(/\n/g, ' ')
-                font.family: root.theme.textFont
-                font.pixelSize: 9
-                font.weight: Font.Bold
-                color: root.critical ? root.theme.accentRed : root.theme.textSecondary
-                elide: Text.ElideRight
+                spacing: 6
+                Text {
+                    Layout.fillWidth: true
+                    text: String(root.app).toUpperCase().replace(/\n/g, ' ')
+                    font.family: root.theme.textFont
+                    font.pixelSize: 9
+                    font.weight: Font.Bold
+                    color: root.critical ? root.theme.accentRed : root.theme.textSecondary
+                    elide: Text.ElideRight
+                }
+                Text {
+                    visible: root.stackCount > 1
+                    text: "x" + root.stackCount
+                    font.family: root.theme.textFont
+                    font.pixelSize: 9
+                    font.weight: Font.Bold
+                    color: root.theme.accent
+                }
+                Text {
+                    visible: root.stamp !== ""
+                    text: root.stamp
+                    font.family: root.theme.textFont
+                    font.pixelSize: 9
+                    color: root.theme.textSecondary
+                }
             }
             Text {
                 Layout.fillWidth: true
