@@ -89,6 +89,12 @@ ColumnLayout {
         property string label: ""
         property color tint: root.theme ? root.theme.textSecondary : "#a89984"
         property real rowOpacity: 1.0
+        // `ownerText` is arbitrary user-configured free text with no length
+        // validation anywhere in the chain; without a cap a long value grows
+        // this top-left-anchored column rightward toward the centred password
+        // field. 320 matches the password field's width. Pattern mirrors
+        // LockNotifications.qml's text constraint.
+        Layout.maximumWidth: 320
         spacing: 6
         LockText {
             text: rowRoot.glyph
@@ -98,7 +104,9 @@ ColumnLayout {
             opacity: rowRoot.rowOpacity
         }
         LockText {
+            Layout.fillWidth: true
             text: rowRoot.label
+            elide: Text.ElideRight
             font.pixelSize: 12
             color: rowRoot.tint
             opacity: rowRoot.rowOpacity

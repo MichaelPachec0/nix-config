@@ -38,6 +38,13 @@ Scope {
     // docs/lock-security-signals/spec.md.
     property bool castAtLock: false
 
+    // True from the moment a lock engages until the first probe result for THAT
+    // lock arrives. CommandPoll keeps its last value when `running` goes false
+    // and back true, so without this the column would render the PREVIOUS
+    // lock's readings -- including a stale "screen is being shared" -- for the
+    // first seconds of every lock after the first.
+    property bool secStale: true
+
     // `lockContext.failCount` at the moment this lock engaged. LockContext.reset()
     // does NOT clear failCount, so the counter is cumulative for the process
     // lifetime; subtracting this baseline is what turns it into "attempts during
@@ -65,6 +72,7 @@ Scope {
         // Sample BEFORE anything below arms a capture -- see castAtLock.
         root.castAtLock = !!(root.notifications && root.notifications.screencasting);
         root.failBaseline = lockContext.failCount;
+        root.secStale = true;
         if (!root.workspaceMode) {
             root.locked = true;
             return;
@@ -199,17 +207,36 @@ Scope {
         }
     }
 
+    // Clears the staleness flag once a result for THIS lock lands. Safe against
+    // CommandPoll's identical-output dedup (which skips `updated()` when stdout
+    // repeats): the probe's JSON includes `uptimeSec`, which increments every
+    // second while the poll interval is 10s, so two consecutive readings can
+    // never be byte-identical and `updated()` is guaranteed to fire. Do not
+    // "simplify" this away -- without that guarantee secStale could latch true
+    // forever and the whole column would never appear.
+    Connections {
+        target: securityPoll
+        function onUpdated() {
+            root.secStale = false;
+        }
+    }
+
     readonly property var _sec: securityPoll.value
     readonly property var secCasts: root._sec ? root._sec.casts : null
     readonly property int secSessions: root._sec ? root._sec.sessions : 0
     readonly property int secOtherUsers: root._sec ? root._sec.otherUsers : 0
     readonly property int secUptimeSec: root._sec ? root._sec.uptimeSec : 0
 
-    // True once the probe has returned at least one result. Distinguishes "no
-    // reading yet" (the first moments of a lock) from "the probe answered and
-    // could not determine", which look identical if you only look at secCasts.
-    // The probe always exits 0, so CommandPoll primes even on a null answer.
-    readonly property bool secProbed: root._sec !== null
+    // True once the probe has returned at least one result FOR THIS LOCK.
+    // Distinguishes "no reading yet" (the first moments of a lock) from "the
+    // probe answered and could not determine", which look identical if you
+    // only look at secCasts. The probe always exits 0, so CommandPoll primes
+    // even on a null answer. `!root.secStale` is required in addition to the
+    // null check because CommandPoll does NOT reset `value` to null when
+    // `running` flips false->true, so `_sec` alone would stay non-null across
+    // a re-lock and immediately render the PREVIOUS lock's (possibly stale)
+    // reading -- see secStale above.
+    readonly property bool secProbed: root._sec !== null && !root.secStale
 
     readonly property double lockSecurityLastUnlockMs: lockSecurityState.lastUnlockMs
 
