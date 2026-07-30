@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Services.Notifications
+import "notifstack.js" as NotifStack
 
 // Global notification service: owns the Quickshell NotificationServer (acquires
 // org.freedesktop.Notifications, replacing swaync) and maintains two reactive
@@ -31,6 +32,44 @@ QtObject {
 
     // Expand/collapse state per app, kept here so it survives model rebuilds.
     property var expandedApps: ({})
+
+    // Arrival time per notification id, in epoch ms.
+    //
+    // The Quickshell Notification type carries NO timestamp, so this map is the
+    // only record of when something fired. It MUST be stamped here in
+    // onNotification: this service is the only always-live observer, whereas a
+    // renderer (the lock surface especially) is constructed later and would
+    // stamp its own construction time for every notification already waiting.
+    property var seenAt: ({})
+
+    function timeOf(n) {
+        return (n && svc.seenAt[n.id] > 0) ? svc.seenAt[n.id] : 0;
+    }
+
+    function _stamp(n) {
+        var m = {};
+        for (var k in svc.seenAt)
+            m[k] = svc.seenAt[k];
+        m[n.id] = Date.now();
+        svc.seenAt = m;
+    }
+
+    // Keep `seenAt` to the ids still present in items or toasts. Called from
+    // both addItem (which silently drops past its 100 cap) and removeItem, so
+    // the map cannot outgrow the lists -- same reason _pruneToastExpiry exists.
+    function _pruneSeenAt() {
+        var live = {};
+        var i;
+        for (i = 0; i < svc.items.length; i++)
+            live[svc.items[i].id] = true;
+        for (i = 0; i < svc.toasts.length; i++)
+            live[svc.toasts[i].id] = true;
+        var m = {};
+        for (var k in svc.seenAt)
+            if (live[k])
+                m[k] = svc.seenAt[k];
+        svc.seenAt = m;
+    }
 
     // Toast auto-dismiss for stacks: "perCard" (each card expires on its own) or
     // "stack" (a whole app group expires together). Tunable.
@@ -103,6 +142,36 @@ QtObject {
             };
         });
     }
+
+    // Identical-content stacking (see lib/notifstack.js). Kept as a wrapper so
+    // callers do not have to know about `seenAt`.
+    function stackKey(n) {
+        return NotifStack.stackKey(n);
+    }
+    function stacksOf(list) {
+        return NotifStack.stacksOf(list, svc.seenAt);
+    }
+    // A stack is ONE visual unit, so dismissing it must close every member --
+    // otherwise the hidden duplicates would resurface as a fresh stack.
+    function dismissStack(stack) {
+        var snap = stack.list.slice();
+        for (var i = 0; i < snap.length; i++)
+            snap[i].dismiss();
+    }
+
+    // Shared clock for relative timestamps ("2m ago"). ONE 30s tick for every
+    // surface instead of a timer per card; minute granularity is all the
+    // wording needs. Idle while nothing is showing. Renderers must read this
+    // property inside their text binding, or the age never repaints.
+    property double nowMs: Date.now()
+    property Timer stampTick: Timer {
+        interval: 30000
+        repeat: true
+        triggeredOnStart: true
+        running: svc.items.length > 0 || svc.toasts.length > 0
+        onTriggered: svc.nowMs = Date.now()
+    }
+
     function isExpanded(app) {
         return svc.expandedApps[app] === true;
     }
@@ -135,6 +204,7 @@ QtObject {
         inlineReplySupported: true
         onNotification: function (notification) {
             notification.tracked = true; // keep the object alive past this handler
+            svc._stamp(notification);
             svc.addItem(notification);
             if (!svc.dnd && !svc.screencasting)
                 svc.pushToast(notification);
@@ -155,6 +225,7 @@ QtObject {
         if (l.length > 100)
             l = l.slice(0, 100);
         svc.items = l;
+        svc._pruneSeenAt();
     }
     function removeItem(n) {
         svc.items = svc.items.filter(function (x) {
@@ -170,6 +241,7 @@ QtObject {
             if (present[k])
                 m[k] = svc.expandedApps[k];
         svc.expandedApps = m;
+        svc._pruneSeenAt();
     }
     function pushToast(n) {
         var t = svc.toasts.slice();
