@@ -81,6 +81,8 @@ Scope {
         root.failBaseline = lockContext.failCount;
         root.secStale = true;
         root.secGraceExpired = false;
+        if (LockConfig.secEnable)
+            secFreshness.restart();
         if (!root.workspaceMode) {
             root.locked = true;
             return;
@@ -107,6 +109,7 @@ Scope {
         lockSecurityState.lastUnlockMs = Date.now();           // "last unlock" readout
         unlockSessionProc.exec(["loginctl", "unlock-session"]); // fire unlock.target
         lockContext.reset();
+        secFreshness.stop(); // must not fire against an unlocked session
     }
 
     function wallpaperFor(name) {
@@ -215,7 +218,9 @@ Scope {
         }
     }
 
-    // Clears the staleness flag once a result for THIS lock lands. Safe against
+    // Clears the staleness flag once a result for THIS lock lands, and restarts
+    // the freshness watchdog below -- a fresh reading is exactly what proves the
+    // probe is alive right now, not just at some point in the past. Safe against
     // CommandPoll's identical-output dedup (which skips `updated()` when stdout
     // repeats): the probe's JSON includes `uptimeSec`, which increments every
     // second while the poll interval is 10s, so two consecutive readings can
@@ -226,17 +231,48 @@ Scope {
         target: securityPoll
         function onUpdated() {
             root.secStale = false;
+            secFreshness.restart();
         }
     }
 
-    // See secGraceExpired above: fires once if a lock stays stale (no probe
-    // result at all) past a couple of poll intervals, so a hung/failing probe
-    // eventually reads as "could not ask" instead of staying silent forever.
+    // Watchdog on READING AGE, not lock age: restarted every time a fresh
+    // reading lands (see onUpdated above) and on every fresh lock (see lock()),
+    // so it measures "how long since we last heard anything" in BOTH the
+    // cold-start case (probe has never answered this lock) and the mid-lock
+    // case (probe answered once, then started failing/hanging on every later
+    // tick). A probe that goes bad mid-lock never emits updated() again
+    // (CommandPoll returns early on nonzero exit/watchdog kill), so without
+    // this watchdog `_sec` would freeze on its last-good snapshot forever --
+    // silently missing a capture that starts afterward, or leaving a stale
+    // "Screen is being shared" alarm on screen after the capture stops.
+    //
+    // Deliberately has NO `running:` binding. Timer.restart() assigns
+    // `running`, and an imperative assignment BREAKS a QML property binding --
+    // a bound `running: root.locked && ...` would work until the first
+    // restart() and then silently stop following `locked` back to false,
+    // leaving this timer live after unlock. Driven explicitly instead: armed
+    // in lock() and onUpdated above, disarmed in _release().
+    //
+    // UNTESTED by locksec-test.qml: this is pure Lock.qml wiring (Timer
+    // restart/stop calls across lock()/onUpdated/_release()), not a formula in
+    // LockSecurity.qml, and locksec-test.qml only ever instantiates
+    // LockSecurity directly -- it has no Lock.qml/CommandPoll/Timer in scope to
+    // drive. Verified instead by re-reading every `root.locked = true/false`
+    // assignment in this file: `captureTimer`/`_noteCapture` only ever complete
+    // an in-flight lock() call in workspace mode (lock() has already restarted
+    // this timer before either can fire), so they need no restart/stop of
+    // their own; the only path that sets `root.locked` without going through
+    // lock()/_release() is the QS_LOCK_ESCAPE dev-only fail-open flash in
+    // Component.onCompleted, which is out of this fix's scope (see task-5
+    // fix-round-3 report).
     Timer {
+        id: secFreshness
         interval: Math.max(3, Math.max(1, LockConfig.secPollIntervalSec) * 2) * 1000
         repeat: false
-        running: root.locked && root.secStale && LockConfig.secEnable
-        onTriggered: root.secGraceExpired = true
+        onTriggered: {
+            root.secStale = true;
+            root.secGraceExpired = true;
+        }
     }
 
     readonly property var _sec: securityPoll.value
