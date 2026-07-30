@@ -121,14 +121,20 @@ ShellRoot {
     // Without the clamp, that missed-opening under-count could go negative on
     // the matching `0` and latch `screencasting` false, reintroducing the
     // exact false-all-clear this refcount exists to prevent.
+    //
+    // Qualified `shellRoot.` deliberately: an unqualified assignment to a
+    // property that no longer resolves fails SOFT in QML JS -- the read yields
+    // undefined, Math.max(0, NaN) is NaN, `NaN > 0` is false, and screencasting
+    // latches permanently false. That is silently the same false all-clear this
+    // refcount exists to prevent, so the reference must fail loudly instead.
     property int screencastCount: 0
     Connections {
         target: Hyprland
         function onRawEvent(event) {
             if (event.name === "screencast") {
                 var sharing = event.parse(2)[0] === "1";
-                screencastCount = Math.max(0, screencastCount + (sharing ? 1 : -1));
-                notifSvc.screencasting = screencastCount > 0;
+                shellRoot.screencastCount = Math.max(0, shellRoot.screencastCount + (sharing ? 1 : -1));
+                notifSvc.screencasting = shellRoot.screencastCount > 0;
             }
         }
     }
