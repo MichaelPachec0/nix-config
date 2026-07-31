@@ -65,6 +65,11 @@ ShellRoot {
         var noApp = [node("Stream/Input/Audio", "", "obs", 99)];
         check("mic/appFallback", cap.micsFromNodes(noApp)[0].appName, "obs");
 
+        // A node with no process id must yield null, never 0: `kill 0` signals
+        // the whole process group, and Task 5 puts a kill button on these rows.
+        var noPid = [node("Stream/Input/Audio", "obs", "obs", undefined)];
+        check("mic/nullPid", cap.micsFromNodes(noPid)[0].pid, null);
+
         // ---- casts --------------------------------------------------------
         // No cast -> no rows, whatever the owner/target still say.
         check("cast/none", cap.castsFrom(0, "window", "stale", []).length, 0);

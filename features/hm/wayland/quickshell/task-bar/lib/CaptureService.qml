@@ -24,6 +24,13 @@ QtObject {
 
     // --- inputs -----------------------------------------------------------
     property bool locked: false
+    // Lib.CommandPoll does NOT clear `value` when `running` goes false->true,
+    // so without this the first moments after unlock would render the reading
+    // captured BEFORE the lock as if it were current -- a false "no camera in
+    // use" at exactly the moment the bar becomes visible again. Same hazard
+    // lock/Lock.qml gates with secStale, and the same reason `cameras` is
+    // seeded null rather than [].
+    onLockedChanged: if (svc.locked) svc.cameras = null
     property int castCount: 0
     property string castOwner: ""
     property string castTarget: ""
@@ -49,7 +56,7 @@ QtObject {
                 continue;
             var bin = String(p["application.process.binary"] || "");
             out.push({
-                pid: parseInt(p["application.process.id"], 10) || 0,
+                pid: parseInt(p["application.process.id"], 10) || null,
                 appName: String(p["application.name"] || "") || bin || "unknown",
                 binary: bin
             });
