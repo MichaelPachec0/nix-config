@@ -126,3 +126,40 @@ Deno.test("color: rain/snow are fixed hex, others resolve via theme tokens", () 
   assertEquals(color(theme, "thunder", "info"), "R");
   assertEquals(color(theme, "nws", "info"), "R");
 });
+
+Deno.test("fmtUntil: absent, zero, and already-past deadlines render nothing", () => {
+  const now = new Date(2026, 6, 31, 16, 0, 0).getTime();
+  assertEquals(fmtUntil(now, 0, true), "");
+  assertEquals(fmtUntil(now, undefined, true), "");
+  assertEquals(fmtUntil(now, null, true), "");
+  // An expired alert must vanish, not render "in 0m".
+  assertEquals(fmtUntil(now, now - 1000, true), "");
+  assertEquals(fmtUntil(now, now, true), "");
+});
+
+Deno.test("fmtUntil: clock plus relative, 12h and 24h", () => {
+  const now = new Date(2026, 6, 31, 16, 0, 0).getTime();
+  const sixPm = new Date(2026, 6, 31, 18, 0, 0).getTime();
+  assertEquals(fmtUntil(now, sixPm, true), "6:00 PM (in 2h)");
+  assertEquals(fmtUntil(now, sixPm, false), "18:00 (in 2h)");
+});
+
+Deno.test("fmtUntil: minutes below an hour, hours below a day", () => {
+  const now = new Date(2026, 6, 31, 16, 0, 0).getTime();
+  assertEquals(fmtUntil(now, now + 45 * 60000, false), "16:45 (in 45m)");
+  assertEquals(fmtUntil(now, now + 30 * 1000, false), "16:00 (in under a minute)");
+  assertEquals(fmtUntil(now, now + 3 * 3600000, false), "19:00 (in 3h)");
+});
+
+Deno.test("fmtUntil: a deadline on another day names the day", () => {
+  const now = new Date(2026, 6, 31, 16, 0, 0).getTime(); // Friday
+  const tomorrowEvening = new Date(2026, 7, 1, 18, 0, 0).getTime();
+  // Without the day name "6:00 PM" reads as tonight.
+  assertEquals(fmtUntil(now, tomorrowEvening, true), "Sat 6:00 PM (in 1d)");
+});
+
+Deno.test("fmtUntil: midnight and noon do not collapse in 12h form", () => {
+  const now = new Date(2026, 6, 31, 10, 0, 0).getTime();
+  assertEquals(fmtUntil(now, new Date(2026, 6, 31, 12, 0, 0).getTime(), true), "12:00 PM (in 2h)");
+  assertEquals(fmtUntil(now, new Date(2026, 7, 1, 0, 30, 0).getTime(), true), "Sat 12:30 AM (in 14h)");
+});

@@ -78,3 +78,46 @@ function diffConditions(prevLabels, freshConditions) {
         next: next
     };
 }
+
+// "6:00 PM (in 2h)" for a condition's end time -- the forward-looking twin of
+// notiftime.js's fmtStamp, which clamps the past-facing case to "just now" and
+// so cannot express a deadline. Only NWS alerts carry one; every other kind is
+// derived from the current snapshot and ends whenever the next poll says so.
+//
+// Returns "" for a missing, zero, or already-past deadline. An expired alert
+// should disappear from the list rather than render "in 0m", and a provider
+// that omits the field must not print an epoch-zero date.
+function fmtUntil(nowMs, thenMs, use12h) {
+    if (!(thenMs > 0) || thenMs <= nowMs)
+        return "";
+    var then = new Date(thenMs);
+    var h = then.getHours();
+    var m = then.getMinutes();
+    var clock;
+    if (use12h) {
+        var h12 = h % 12;
+        if (h12 === 0)
+            h12 = 12;
+        clock = h12 + ":" + (m < 10 ? "0" : "") + m + (h < 12 ? " AM" : " PM");
+    } else {
+        clock = (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+    }
+    // Name the day when the deadline is not today, so "6:00 PM" cannot be read
+    // as tonight when it is tomorrow evening.
+    var now = new Date(nowMs);
+    if (now.getFullYear() !== then.getFullYear() || now.getMonth() !== then.getMonth() || now.getDate() !== then.getDate())
+        clock = _DAYS_UNTIL[then.getDay()] + " " + clock;
+
+    var mins = Math.floor((thenMs - nowMs) / 60000);
+    var rel;
+    if (mins < 1)
+        rel = "in under a minute";
+    else if (mins < 60)
+        rel = "in " + mins + "m";
+    else if (mins < 60 * 24)
+        rel = "in " + Math.floor(mins / 60) + "h";
+    else
+        rel = "in " + Math.floor(mins / (60 * 24)) + "d";
+    return clock + " (" + rel + ")";
+}
+var _DAYS_UNTIL = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

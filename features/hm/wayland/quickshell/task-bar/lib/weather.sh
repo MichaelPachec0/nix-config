@@ -159,9 +159,13 @@ detect_conditions() {
   if [ "${R_precipHeavy:-0}" = "1" ] && [ -n "$t" ] && [ "$t" -gt "$COND_HYDRO_TEMP_MIN" ] 2>/dev/null; then
     items+=("{\"kind\":\"hydroplaning\",\"sev\":\"warn\",\"label\":\"Hydroplaning risk (est.)\"}")
   fi
-  # NWS passthrough: one condition per provider alert.
+  # NWS passthrough: one condition per provider alert. `expires` rides along
+  # (epoch, 0 when the provider gave none) because it is the ONLY condition
+  # kind that carries an end time -- "Heat advisory until 6 PM" is knowable,
+  # "Gusts 40 mph" is not. Every other kind below is derived from the current
+  # snapshot and expires whenever the next poll says so, so it emits no field.
   local nws
-  nws=$(printf '%s' "${R_alerts:-[]}" | jq -c '.[]? | {kind:"nws", sev:"severe", label:.title}' 2>/dev/null)
+  nws=$(printf '%s' "${R_alerts:-[]}" | jq -c '.[]? | {kind:"nws", sev:"severe", label:.title, expires:(.expires//0)}' 2>/dev/null)
   local line
   while IFS= read -r line; do [ -n "$line" ] && items+=("$line"); done <<<"$nws"
   local IFS=,
@@ -284,7 +288,12 @@ nowcast_build() {
 emit_rich() {
   local ptype nowcast_default='{"rainSoon":false,"etaMin":null,"source":"none","text":""}'
   ptype=$(precip_type "${R_icon}")
-  printf '{"temp":"%s","icon":"%s","desc":"%s","source":"%s","feels":"%s","humidity":"%s","precip":"%s","precipType":"%s","uv":"%s","wind":"%s","windGust":"%s","windDir":"%s","visibility":"%s","sunrise":"%s","sunset":"%s","place":"%s","forecast":%s,"hourly":%s,"alerts":%s,"nowcast":%s,"conditions":%s}\n' \
+  # asOf: when this record was FETCHED, not when it was read. It is written
+  # into the cache file, so a cache hit (up to CACHE_TTL old) and a stale-cache
+  # fallback (arbitrarily old) both report their true age instead of looking
+  # freshly observed. The popup renders the relative time from this.
+  printf '{"asOf":%s,"temp":"%s","icon":"%s","desc":"%s","source":"%s","feels":"%s","humidity":"%s","precip":"%s","precipType":"%s","uv":"%s","wind":"%s","windGust":"%s","windDir":"%s","visibility":"%s","sunrise":"%s","sunset":"%s","place":"%s","forecast":%s,"hourly":%s,"alerts":%s,"nowcast":%s,"conditions":%s}\n' \
+    "$(date +%s)" \
     "$(json_escape "${R_temp}")" "${R_icon}" "$(json_escape "${R_desc}")" "$1" \
     "$(json_escape "${R_feels}")" "$(json_escape "${R_humidity}")" "$(json_escape "${R_precip}")" "${ptype}" \
     "$(json_escape "${R_uv:-}")" \
@@ -884,5 +893,7 @@ if [ -n "$out" ]; then
 elif [ -f "$CACHE_FILE" ]; then
   cat "$CACHE_FILE" # stale, but better than nothing
 else
-  printf '{"temp":"--","icon":"cloudy","desc":"Offline","source":"none","feels":"","humidity":"","precip":"","precipType":"","uv":"","wind":"","windGust":"","windDir":"","visibility":"","sunrise":"","sunset":"","place":"","forecast":[],"hourly":[],"alerts":[],"nowcast":{"rainSoon":false,"etaMin":null,"source":"none","text":""},"conditions":[]}\n'
+  # asOf 0 = never fetched. NOT the current time: this record carries no
+  # observation at all, and stamping it now would render as "just updated".
+  printf '{"asOf":0,"temp":"--","icon":"cloudy","desc":"Offline","source":"none","feels":"","humidity":"","precip":"","precipType":"","uv":"","wind":"","windGust":"","windDir":"","visibility":"","sunrise":"","sunset":"","place":"","forecast":[],"hourly":[],"alerts":[],"nowcast":{"rainSoon":false,"etaMin":null,"source":"none","text":""},"conditions":[]}\n'
 fi
