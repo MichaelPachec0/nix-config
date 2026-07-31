@@ -47,6 +47,8 @@ Singleton {
     property bool secShowDevices: true
     property bool secShowUptime: true
     property bool secShowLastUnlock: true
+    property bool batEnable: true
+    property int batLowPercent: 20
 
     function _parseWmColor(s) {
         var p = (s || "").split("-");
@@ -86,6 +88,11 @@ Singleton {
                     if (sc.showDevices !== undefined) root.secShowDevices = !!sc.showDevices;
                     if (sc.showUptime !== undefined) root.secShowUptime = !!sc.showUptime;
                     if (sc.showLastUnlock !== undefined) root.secShowLastUnlock = !!sc.showLastUnlock;
+                }
+                if (o.battery) {
+                    var bt = o.battery;
+                    if (bt.enable !== undefined) root.batEnable = !!bt.enable;
+                    if (bt.lowPercent !== undefined) root.batLowPercent = bt.lowPercent;
                 }
                 if (o.watermark) {
                     var w = o.watermark;

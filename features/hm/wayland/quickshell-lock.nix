@@ -173,6 +173,27 @@ in {
     };
   };
 
+  options.quickshellLock.battery = {
+    enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Show the battery block (percent, time remaining, charge rate) at the
+        top-left of the lock, above the security column. Has no effect on a
+        machine with no laptop battery -- the block self-hides there.
+      '';
+    };
+    lowPercent = lib.mkOption {
+      type = lib.types.int;
+      default = 20;
+      description = ''
+        Charge percentage at or below which the battery block tints red. Only
+        while DISCHARGING: on AC at the same percentage is not an alarm, it is
+        a machine that was just plugged in.
+      '';
+    };
+  };
+
   config = {
     home.packages = [ lockEscape ];
 
@@ -192,6 +213,9 @@ in {
       };
       security = {
         inherit (cfg.security) enable ownerText screencastPoll pollIntervalSec showDevices showUptime showLastUnlock;
+      };
+      battery = {
+        inherit (cfg.battery) enable lowPercent;
       };
     };
 

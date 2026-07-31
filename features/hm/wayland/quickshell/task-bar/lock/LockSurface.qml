@@ -322,8 +322,14 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.margins: 28
+        // Carries hasBattery as well as the config flag: this binding REPLACES
+        // the component's own `visible: root.hasBattery` rather than composing
+        // with it, so dropping it here would render an empty block on a
+        // machine with no laptop battery.
+        visible: LockConfig.batEnable && batteryCol.hasBattery
         theme: root.wxTheme
         contentOpacity: root.contentOpacity
+        lowPercent: LockConfig.batLowPercent
     }
 
     LockSecurity {
