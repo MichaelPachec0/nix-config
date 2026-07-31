@@ -4,6 +4,7 @@ import Quickshell
 import "../lib" as Lib
 import "../lib/weathericons.js" as WeatherIcons
 import "../lib/weathercond.js" as WeatherCond
+import "../lib/notiftime.js" as NotifTime
 
 // Current-conditions + forecast popup shown on hover over the bar weather
 // widget. Read-only, so it's a plain non-grab tooltip anchored under the bar.
@@ -64,10 +65,9 @@ PopupWindow {
         return t === "snow" ? "Chance of snow" : (t === "sleet" ? "Chance of sleet" : "Chance of rain");
     }
 
-    // Unified flashing-alert list: driven straight from the shell's semantic
-    // conditions[] (which already folds in NWS alerts as kind "nws"). The
-    // banner below flashes for attention and, when there's more than one,
-    // rotates through them one after the other (alertIdx, advanced by a timer).
+    // Active conditions, severest first: driven straight from the shell's
+    // semantic conditions[] (which already folds in NWS alerts as kind "nws").
+    // Rendered one card per entry, all in view -- see the Repeater below.
     readonly property var alertsAll: {
         var src = (pop.wx && pop.wx.conditions) ? pop.wx.conditions : [];
         return WeatherCond.sortBySeverity(src).map(function (c) {
@@ -75,12 +75,29 @@ PopupWindow {
                 kind: c.kind,
                 title: c.label,
                 sev: c.sev,
-                expires: 0
+                // Only NWS alerts carry one; every other kind is derived from
+                // the current snapshot and ends whenever the next poll says so.
+                expires: c.expires ? (c.expires * 1000) : 0
             };
         });
     }
-    property int alertIdx: 0
-    onAlertsAllChanged: pop.alertIdx = 0 // restart the rotation when the set changes
+
+    // When this reading was FETCHED, from weather.sh's asOf. Not the time the
+    // popup opened: results are cached for 30 min and a stale cache is served
+    // when every provider fails, so the two can be hours apart.
+    readonly property double asOfMs: (pop.wx && pop.wx.asOf) ? (pop.wx.asOf * 1000) : 0
+
+    // Live clock for the relative times. Only ticks while the popup is open --
+    // a 1s timer behind a closed tooltip is pure waste, and the values are
+    // recomputed on show anyway.
+    property double nowMs: 0
+    Timer {
+        interval: 1000
+        repeat: true
+        running: pop.visible
+        triggeredOnStart: true
+        onTriggered: pop.nowMs = Date.now()
+    }
 
     implicitWidth: 250
     implicitHeight: card.implicitHeight
@@ -154,79 +171,81 @@ PopupWindow {
             }
             spacing: 7
 
-            // Alert banner: driven by alertsAll (the shell's semantic conditions[],
-            // which already folds in NWS alerts), shown one at a time. It flashes
-            // for attention and, when there's more than one, rotates through them
-            // one after the other. Read-only -- the popup is a non-grab tooltip, so
-            // there's no tap-to-open.
-            Rectangle {
-                id: alertBanner
-                readonly property var cur: pop.alertsAll.length > 0 ? pop.alertsAll[pop.alertIdx % pop.alertsAll.length] : null
-                visible: cur !== null
-                Layout.fillWidth: true
-                implicitHeight: alertBody.implicitHeight + 10
-                radius: 6
+            // Every active condition gets its OWN card, all in view at once.
+            // They used to share one banner that rotated through them on a
+            // timer, which meant a second advisory was invisible for most of
+            // the time the popup was open -- and the popup is the surface you
+            // open precisely to see everything at once. The bar pill still
+            // cycles, because a pill has room for one.
+            Repeater {
+                model: pop.alertsAll
+                Rectangle {
+                    id: alertCard
+                    required property var modelData
+                    Layout.fillWidth: true
+                    implicitHeight: alertBody.implicitHeight + 10
+                    radius: 6
 
-                // Color keyed off the condition's kind/sev, shared with the rest of
-                // the weather UI (WeatherCond.color).
-                readonly property color sev: cur ? WeatherCond.color(pop.theme, cur.kind, cur.sev) : pop.theme.accentYellow
+                    // Colour keyed off the condition's kind/sev, shared with the
+                    // rest of the weather UI (WeatherCond.color).
+                    readonly property color sev: WeatherCond.color(pop.theme, alertCard.modelData.kind, alertCard.modelData.sev)
 
-                // Flash: pulse the tint + border while an alert is up.
-                property real flash: 0
-                SequentialAnimation on flash {
-                    running: alertBanner.visible
-                    loops: Animation.Infinite
-                    NumberAnimation {
-                        from: 0
-                        to: 1
-                        duration: 650
-                        easing.type: Easing.InOutSine
-                    }
-                    NumberAnimation {
-                        from: 1
-                        to: 0
-                        duration: 650
-                        easing.type: Easing.InOutSine
-                    }
-                }
-                color: Qt.rgba(alertBanner.sev.r, alertBanner.sev.g, alertBanner.sev.b, 0.12 + 0.24 * alertBanner.flash)
-                border.width: 1
-                border.color: Qt.rgba(alertBanner.sev.r, alertBanner.sev.g, alertBanner.sev.b, 0.40 + 0.5 * alertBanner.flash)
+                    // Static tint. The cards no longer flash: several of them
+                    // pulsing at once is noise, and with all of them on screen
+                    // there is nothing left to attract attention TO. The bar
+                    // pill carries the flashing.
+                    color: Qt.rgba(alertCard.sev.r, alertCard.sev.g, alertCard.sev.b, 0.14)
+                    border.width: 1
+                    border.color: Qt.rgba(alertCard.sev.r, alertCard.sev.g, alertCard.sev.b, 0.45)
 
-                // Rotate one after the other (only when there's more than one).
-                Timer {
-                    interval: 3000
-                    repeat: true
-                    running: pop.visible && pop.alertsAll.length > 1
-                    onTriggered: pop.alertIdx = (pop.alertIdx + 1) % pop.alertsAll.length
-                }
+                    Column {
+                        id: alertBody
+                        anchors {
+                            left: parent.left
+                            right: parent.right
+                            verticalCenter: parent.verticalCenter
+                            leftMargin: 8
+                            rightMargin: 8
+                        }
+                        spacing: 1
 
-                Column {
-                    id: alertBody
-                    anchors {
-                        left: parent.left
-                        right: parent.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: 8
-                        rightMargin: 8
-                    }
-                    spacing: 1
-                    Text {
-                        width: parent.width
-                        text: (pop.alertsAll.length > 1 ? ("(" + (pop.alertIdx % pop.alertsAll.length + 1) + "/" + pop.alertsAll.length + ")  ") : "") + (alertBanner.cur ? alertBanner.cur.title : "")
-                        color: pop.theme.textPrimary
-                        font.family: pop.theme.textFont
-                        font.pixelSize: 11
-                        font.weight: Font.DemiBold
-                        wrapMode: Text.WordWrap
-                    }
-                    Text {
-                        width: parent.width
-                        visible: text !== ""
-                        text: (alertBanner.cur && alertBanner.cur.expires) ? ("until " + Qt.formatDateTime(new Date(alertBanner.cur.expires * 1000), "ddd h:mm AP")) : ""
-                        color: pop.theme.textSecondary
-                        font.family: pop.theme.textFont
-                        font.pixelSize: 9
+                        Text {
+                            width: parent.width
+                            text: alertCard.modelData.title
+                            color: pop.theme.textPrimary
+                            font.family: pop.theme.textFont
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
+                            wrapMode: Text.WordWrap
+                        }
+
+                        // When this reading was taken, and how long ago. Shared
+                        // with the notification stamps (NotifTime.fmtStamp) so
+                        // "14:32 (2m ago)" means the same thing everywhere.
+                        Text {
+                            width: parent.width
+                            visible: text !== ""
+                            text: NotifTime.fmtStamp(pop.nowMs, pop.asOfMs, true)
+                            color: pop.theme.textSecondary
+                            font.family: pop.theme.textFont
+                            font.pixelSize: 9
+                        }
+
+                        // Deadline, when the condition has one. Only NWS alerts
+                        // do -- "Heat advisory until 6 PM" is knowable, "Gusts
+                        // 40 mph" is not -- so this row self-hides rather than
+                        // inventing an end time for the derived kinds.
+                        Text {
+                            width: parent.width
+                            visible: text !== ""
+                            text: {
+                                var u = WeatherCond.fmtUntil(pop.nowMs, alertCard.modelData.expires, true);
+                                return u === "" ? "" : ("until " + u);
+                            }
+                            color: pop.theme.textSecondary
+                            font.family: pop.theme.textFont
+                            font.pixelSize: 9
+                        }
                     }
                 }
             }
