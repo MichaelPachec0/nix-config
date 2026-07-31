@@ -311,12 +311,32 @@ Item {
     // fetch failed).
     // Security/presence signals (top-left; weatherCol mirrors this at
     // top-right). Metadata only -- see LockSecurity.qml.
-    LockSecurity {
-        id: securityCol
+    // Battery (top-left, above the security column). Display-only -- no
+    // MouseArea or focus anywhere, the same rule every other lock widget
+    // follows. Self-hides with ZERO HEIGHT on a machine with no laptop
+    // battery, so the security column keeps the exact position it has
+    // without this block.
+    LockBattery {
+        id: batteryCol
         opacity: root.contentOpacity
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.margins: 28
+        theme: root.wxTheme
+        contentOpacity: root.contentOpacity
+    }
+
+    LockSecurity {
+        id: securityCol
+        opacity: root.contentOpacity
+        // Anchored below the battery block rather than to parent.top. With the
+        // battery hidden its height is 0 and its bottom sits at the 28px top
+        // margin, so a 0 top margin here puts this column at exactly the y it
+        // had before the battery existed.
+        anchors.top: batteryCol.bottom
+        anchors.left: parent.left
+        anchors.leftMargin: 28
+        anchors.topMargin: batteryCol.visible ? 10 : 0
         visible: LockConfig.secEnable
         theme: root.wxTheme
         contentOpacity: root.contentOpacity
