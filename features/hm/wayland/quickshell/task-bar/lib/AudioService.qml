@@ -30,6 +30,10 @@ QtObject {
 
     readonly property int volume: (svc.sink && svc.sink.audio) ? Math.round(svc.sink.audio.volume * 100) : 0
     readonly property bool muted: (svc.sink && svc.sink.audio) ? svc.sink.audio.muted : false
+    // Source (microphone) mute, the input mirror of `muted` above. Guarded the
+    // same way: `svc.source` is null until Pipewire.ready, and `.audio` is null
+    // until the PwObjectTracker below binds the node.
+    readonly property bool sourceMuted: (svc.source && svc.source.audio) ? svc.source.audio.muted : false
 
     readonly property var nodes: Pipewire.nodes.values
     readonly property var sinks: svc.nodes.filter(function (n) {
@@ -66,6 +70,14 @@ QtObject {
     function toggleMute() {
         if (svc.sink && svc.sink.audio)
             svc.sink.audio.muted = !svc.sink.audio.muted;
+    }
+    // Mutes the DEFAULT SOURCE, which silences every capturing app at once --
+    // it is a device-level act, not a per-app one. DevicePopup therefore puts
+    // this on the microphone group header and never on an app row, where it
+    // would imply per-app muting.
+    function toggleSourceMute() {
+        if (svc.source && svc.source.audio)
+            svc.source.audio.muted = !svc.source.audio.muted;
     }
 
     // --- Default device selection ------------------------------------------
