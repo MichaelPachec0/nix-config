@@ -48,22 +48,30 @@ PopupWindow {
         pop.openAt(x - pop.cardW / 2);
     }
 
-    // Arm state, keyed by group+pid rather than by row index: the camera model
-    // is rebuilt every 3s and rows can reorder, so an index-keyed arm would jump
-    // to a different process between the arming click and the confirming one.
+    // Arm state, keyed by a per-ROW identity rather than by pid or row index.
     //
-    // The GROUP is part of the key because one process can appear in two groups
-    // at once -- a browser screen-sharing in a video call holds both a
-    // Stream/Input/Audio node (mic row) and the cast row under the SAME pid. A
-    // bare-pid key armed both rows on one click, so the next click on the other
-    // row sent TERM with no confirmation at all.
+    // Not the pid: one process can own several rows at once. A browser sharing
+    // its screen during a video call holds a mic node AND the cast row under the
+    // same pid, and one browser with two call tabs open holds TWO mic nodes,
+    // whose rows are identical in every other field. Two rows sharing an arm key
+    // means clicking one arms both, so the very next click on the other sends
+    // TERM with no confirmation -- the confirmation step silently disappears
+    // exactly when the most windows are open.
+    //
+    // Not the index either: the camera model is rebuilt every 3s and rows can
+    // reorder, so an index-keyed arm would jump to a different process between
+    // the arming click and the confirming one. Each group therefore supplies
+    // something stable and unique to itself -- the PipeWire node id for mics,
+    // the device path for cameras.
     property string armedKey: ""
     property Timer disarmTimer: Timer {
         interval: 3000
         onTriggered: pop.armedKey = ""
     }
     function armOrKill(key, pid) {
-        if (!(pid > 0))
+        // An empty key would collide with the disarmed state and fire on the
+        // FIRST click.
+        if (!(pid > 0) || key === "")
             return;
         if (pop.armedKey !== key) {
             pop.armedKey = key;
@@ -110,10 +118,9 @@ PopupWindow {
         id: ar
         property string appName: ""
         property int pid: 0
-        // "cam" / "mic" / "cast" -- the group this row belongs to, so the same
-        // pid in two groups arms only the row that was clicked.
-        property string kind: ""
-        readonly property bool armed: ar.pid > 0 && (ar.kind + ":" + ar.pid) === pop.armedKey
+        // Identifies THIS row among all rows in the popup (see armedKey).
+        property string rowKey: ""
+        readonly property bool armed: ar.pid > 0 && ar.rowKey !== "" && ar.rowKey === pop.armedKey
         Layout.fillWidth: true
         implicitHeight: arRow.implicitHeight
         Rectangle {
@@ -156,7 +163,7 @@ PopupWindow {
                     Quickshell.execDetached(["kill", "-KILL", String(ar.pid)]);
                     return;
                 }
-                pop.armOrKill(ar.kind + ":" + ar.pid, ar.pid);
+                pop.armOrKill(ar.rowKey, ar.pid);
             }
         }
     }
@@ -189,10 +196,14 @@ PopupWindow {
                 model: pop.capture.cameraActive ? pop.capture.cameras : []
                 AppRow {
                     required property var modelData
-                    kind: "cam"
+                    // One process can hold two cameras at once; the probe emits
+                    // a row per (pid, device), so the device path is what tells
+                    // those rows apart.
+                    rowKey: "cam:" + String(modelData.device) + ":" + String(modelData.pid)
                     // `name` not `comm`: /proc/PID/comm is kernel-truncated to
-                    // 15 chars and renders as "firefox-devedit".
-                    appName: modelData.name || modelData.comm || "unknown"
+                    // 15 chars and renders as "firefox-devedit". The probe
+                    // already backfills name from comm, so no fallback here.
+                    appName: modelData.name || "unknown"
                     pid: modelData.pid || 0
                 }
             }
@@ -237,7 +248,9 @@ PopupWindow {
                 model: pop.capture.micActive ? pop.capture.mics : []
                 AppRow {
                     required property var modelData
-                    kind: "mic"
+                    // The PipeWire node id: unique per stream, and stable across
+                    // the model churn in a way the row's position is not.
+                    rowKey: "mic:" + String(modelData.nodeId)
                     appName: modelData.appName
                     pid: modelData.pid || 0
                 }
@@ -256,7 +269,9 @@ PopupWindow {
                 model: pop.capture.castActive ? pop.capture.casts : []
                 AppRow {
                     required property var modelData
-                    kind: "cast"
+                    // castsFrom collapses every active cast into one row today,
+                    // so index 0 is the whole group.
+                    rowKey: "cast:0"
                     appName: modelData.appName || "unknown app"
                     pid: modelData.pid || 0
                 }
