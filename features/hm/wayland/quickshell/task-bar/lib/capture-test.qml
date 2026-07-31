@@ -152,8 +152,14 @@ ShellRoot {
         cap.locked = true;
         check("locked/noCastGlyph", cap.castActive, false);
         check("locked/noCameraUnknown", cap.cameraUnknown, false);
-        check("locked/noMicGlyph", cap.micActive, false);
         check("locked/pillHidden", cap.anyActive, false);
+        // NO micActive case here on purpose. `mics` derives from the live
+        // Pipewire.nodes list, which a fixture cannot inject, so on a machine
+        // with nothing recording the assertion holds against the UNGATED
+        // implementation too -- it would pass for the wrong reason and cover
+        // nothing. micActive carries the identical `!svc.locked &&` gate as the
+        // two flags above, which are covered (castCount 1 and cameras null both
+        // make the pre-fix code report true).
 
         // Unlocking must restore the same reading, not latch it off.
         cap.locked = false;

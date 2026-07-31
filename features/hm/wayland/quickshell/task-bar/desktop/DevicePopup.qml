@@ -4,13 +4,14 @@ import Quickshell
 import "../lib" as Lib
 
 // Which devices are capturing and which apps are using them. Opened by a CLICK
-// on the media pill's glyph cluster (hover still opens MediaPopup, unchanged).
+// on CaptureWidget's glyph cluster.
 //
 // Kill reuses ProcRow's gesture contract exactly -- left-click arms and swaps
 // the label to "end?", a second click sends TERM, Shift+click sends KILL
-// immediately -- with arm state keyed by group+pid so it survives the 3s poll's
-// model churn without arming two groups' rows for one process at once. ProcRow itself is not reused as a component (its model shape is
-// SysPopup-specific), only its contract, so the gesture transfers.
+// immediately -- with arm state keyed per ROW (see armedKey) so it survives the
+// 3s poll's model churn without ever arming two rows at once. ProcRow itself is
+// not reused as a component (its model shape is SysPopup-specific), only its
+// contract, so the gesture transfers.
 PopupWindow {
     id: pop
 

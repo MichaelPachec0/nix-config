@@ -3,11 +3,11 @@ import Quickshell
 import Quickshell.Services.Pipewire
 
 // Who is capturing right now: microphone, camera, and screencast, with the
-// owning application where it can be determined. Read by the bar's media pill
-// and its DevicePopup. Shell-global -- ONE instance for all monitors, like
-// NotifService. A per-monitor copy would multiply the camera subprocess by the
-// monitor count (see the NetworkService comment in shell.qml for what that
-// cost looks like in practice).
+// owning application where it can be determined. Read by the bar's
+// CaptureWidget and its DevicePopup. Shell-global -- ONE instance for all
+// monitors, like NotifService. A per-monitor copy would multiply the camera
+// subprocess by the monitor count (see the NetworkService comment in shell.qml
+// for what that cost looks like in practice).
 //
 // Three sources, because no single one sees everything:
 //   mic  -- native PipeWire nodes, event-driven, free
