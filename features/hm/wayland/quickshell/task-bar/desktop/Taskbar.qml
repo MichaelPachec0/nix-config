@@ -18,6 +18,7 @@ PanelWindow {
     property QtObject weatherState: null
     property QtObject bt: null
     property QtObject audio: null
+    property QtObject capture: null
     property var submap: null
     property var calState: null
     property var routerSvc: null
@@ -288,6 +289,8 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
+                capture: dock.capture
+                audio: dock.audio
             }
 
             // Audio (native PipeWire): volume glyph + %, click for the mixer.

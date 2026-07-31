@@ -294,6 +294,7 @@ ShellRoot {
                 weatherState: weatherState
                 bt: btSvc
                 audio: audioSvc
+                capture: captureSvc
                 submap: submapSvc
                 calState: calState
                 routerSvc: e5800Svc
