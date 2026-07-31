@@ -289,8 +289,6 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
-                capture: dock.capture
-                audio: dock.audio
             }
 
             // Audio (native PipeWire): volume glyph + %, click for the mixer.
@@ -298,6 +296,16 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
+                audio: dock.audio
+            }
+
+            // Privacy glyphs (camera / mic / screencast), trailing the volume
+            // readout. Collapses to zero width while nothing is capturing.
+            CaptureWidget {
+                Layout.alignment: Qt.AlignVCenter
+                theme: dock.theme
+                barWindow: dock
+                capture: dock.capture
                 audio: dock.audio
             }
         }

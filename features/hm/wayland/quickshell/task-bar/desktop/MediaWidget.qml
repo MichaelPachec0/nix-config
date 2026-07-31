@@ -12,11 +12,6 @@ Item {
 
     required property QtObject theme
     required property var barWindow // the bar PanelWindow, for popup anchoring
-    // Named `capture` while shell.qml's id is `captureSvc`: an own-property
-    // shadows an enclosing-component id across the Variants delegate, so
-    // matching names would silently bind this to its own null property.
-    required property var capture
-    required property var audio
     property int maxTextWidth: 80
     // Drop a not-playing picked player for an active one after this long.
     property int autoSwitchMs: 10000
@@ -63,12 +58,8 @@ Item {
     readonly property string artist: root.player ? (root.player.trackArtist || "") : ""
     readonly property string label: root.artist ? (root.title + "  -  " + root.artist) : root.title
 
-    // The pill must appear for a hot device even with NO media playing --
-    // `visible: root.active` alone collapsed the whole widget, so the capture
-    // glyphs could never show without music.
-    readonly property bool captureActive: root.capture ? root.capture.anyActive : false
-    visible: root.active || root.captureActive
-    implicitWidth: (root.active || root.captureActive) ? row.implicitWidth : 0
+    visible: root.active
+    implicitWidth: root.active ? row.implicitWidth : 0
     implicitHeight: 24
 
     RowLayout {
@@ -76,10 +67,8 @@ Item {
         anchors.fill: parent
         spacing: 6
 
-        // Play / pause toggle. Hidden with no MPRIS player: the widget now also
-        // renders in capture-only mode, where a play glyph would be dead.
+        // Play / pause toggle.
         Lib.BarText {
-            visible: root.hasPlayer
             Layout.alignment: Qt.AlignVCenter
             text: String.fromCodePoint(root.isPlaying ? 0xF04C : 0xF04B)
             font.family: root.theme.iconFont
@@ -148,60 +137,6 @@ Item {
                 }
             }
         }
-
-        // Capture glyphs. Rendered only while their signal is active, so the
-        // bar stays quiet when nothing is capturing. The camera glyph is the
-        // one exception: when the scan could not answer it renders in the
-        // warning tint rather than hiding, because hiding it would both make
-        // this popup unreachable and silently assert the camera is idle.
-        //
-        // Wrapped in a plain Item (not Row) so the click-target MouseArea can
-        // anchors.fill it: Row is a positioner and refuses fill/horizontal
-        // anchors on its children ("Row will not function" at runtime),
-        // which would leave the MouseArea zero-sized and the glyphs
-        // unclickable.
-        Item {
-            id: glyphs
-            Layout.alignment: Qt.AlignVCenter
-            implicitWidth: glyphRow.implicitWidth
-            implicitHeight: glyphRow.implicitHeight
-            visible: root.captureActive
-
-            Row {
-                id: glyphRow
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 5
-
-                Lib.BarText {
-                    visible: root.capture && (root.capture.cameraActive || root.capture.cameraUnknown)
-                    text: String.fromCodePoint(0xF030)
-                    font.family: root.theme.iconFont
-                    font.pixelSize: 12
-                    color: (root.capture && root.capture.cameraUnknown) ? root.theme.accentYellow : root.theme.accentRed
-                }
-                Lib.BarText {
-                    visible: root.capture && root.capture.micActive
-                    text: String.fromCodePoint(0xF130)
-                    font.family: root.theme.iconFont
-                    font.pixelSize: 12
-                    color: root.theme.accentRed
-                }
-                Lib.BarText {
-                    visible: root.capture && root.capture.castActive
-                    text: String.fromCodePoint(0xF06E)
-                    font.family: root.theme.iconFont
-                    font.pixelSize: 12
-                    color: root.theme.accentRed
-                }
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                acceptedButtons: Qt.LeftButton
-                onClicked: devicePopup.toggle()
-            }
-        }
     }
 
     // Hover anywhere on the widget reveals the full-player popup; it stays open
@@ -211,11 +146,8 @@ Item {
         id: widgetHover
     }
     readonly property bool over: widgetHover.hovered || popup.contentHovered
-    // Gated on hasPlayer: in capture-only mode there is no player, and the glyph
-    // click target sits inside the widget, so hovering to reach it would open a
-    // blank player card that then overlaps the DevicePopup.
     onOverChanged: {
-        if (root.over && root.hasPlayer) {
+        if (root.over) {
             hideTimer.stop();
             popup.showPopup();
         } else {
@@ -235,25 +167,5 @@ Item {
         anchorItem: root
         defaultPlayer: root.autoPlayer
         autoSwitchMs: root.autoSwitchMs
-    }
-
-    DevicePopup {
-        id: devicePopup
-        theme: root.theme
-        barWindow: root.barWindow
-        anchorItem: root
-        capture: root.capture
-        audio: root.audio
-    }
-
-    // Close on lock. A grabFocus bar popup open when the session locks has
-    // crashed Hyprland 0.56 (see the hypr-popup-lock-crash notes); the
-    // compositor-side guard is a local patch, so do not rely on it alone.
-    Connections {
-        target: root.capture
-        function onLockedChanged() {
-            if (root.capture.locked)
-                devicePopup.visible = false;
-        }
     }
 }
