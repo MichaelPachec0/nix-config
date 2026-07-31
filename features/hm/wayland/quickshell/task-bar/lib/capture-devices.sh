@@ -3,7 +3,8 @@
 # bar's CaptureService while unlocked:
 #
 #   {"cameras": [{"device": "/dev/video0", "deviceName": "Integrated Camera",
-#                 "pid": 5230, "comm": "firefox-devedition-bin"}]}
+#                 "pid": 5230, "comm": "firefox-devedit",
+#                 "name": "firefox-devedition-bin"}]}
 #
 # `cameras` is null when the scan could NOT run, and [] when it ran and found
 # nothing. null and [] are DIFFERENT answers: [] means "asked, no camera in
@@ -24,56 +25,108 @@
 # fd and measured 16s on this machine, longer than the poll interval. find does
 # the readlink in-process and measures ~53ms. Do not "simplify" this back.
 #
+# `comm` (/proc/PID/comm) is kernel-truncated to 15 characters, so
+# "firefox-devedition-bin" shows up as "firefox-devedit". `name` is the
+# basename of argv[0] read from /proc/PID/cmdline instead, which is not
+# truncated; it falls back to `comm` when cmdline is unreadable or empty
+# (kernel threads have no cmdline). Both fields ship so the caller can pick.
+#
 # Limitation: other users' /proc/PID/fd entries are unreadable, so a capture by
 # a root or other-user process is invisible here. This UNDER-counts and never
 # over-counts, which is the correct direction; running privileged is a worse
 # trade.
 #
-# Reads only; writes nothing.
+# Reads only, plus a throwaway scratch directory used to self-test find's
+# capabilities (see below); removed on exit via trap.
 set -uo pipefail
 
 json_escape() {
     local s=$1
     s=${s//\\/\\\\}
     s=${s//\"/\\\"}
+    # JSON forbids raw control bytes (<0x20) unescaped. /proc/PID/comm is
+    # settable by any process via prctl(PR_SET_NAME) and the v4l2 driver
+    # name is hardware/driver-supplied, so either may contain them. Strip
+    # rather than \u00XX-escape: simpler, and a dropped byte in a label is
+    # harmless. (NUL cannot appear here: bash variables cannot hold it.)
+    s=$(LC_ALL=C tr -d '\001-\037' <<< "$s")
     printf '%s' "$s"
 }
 
 cameras=null
+selftest_dir=""
+cleanup() { [ -n "$selftest_dir" ] && rm -rf "$selftest_dir"; }
+trap cleanup EXIT
+
 if command -v find >/dev/null 2>&1; then
-    entries=""
-    sep=""
-    # Must be initialised before the loop: `set -u` aborts on the first
-    # `case " $seen "` if it is still unset.
-    seen=""
-    # '%h %l' prints "/proc/<pid>/fd /dev/videoN". A process holding the same
-    # device on several fds appears once per fd, so dedup on the pid+device
-    # pair below.
-    while read -r dir dev; do
-        [ -z "$dir" ] && continue
-        pid=${dir#/proc/}
-        pid=${pid%%/*}
-        case "$pid" in
-            '' | *[!0-9]*) continue ;;
-        esac
+    # Capability self-test, on a controlled fixture rather than the real
+    # scan: `command -v find` only proves a binary named find exists, not
+    # that it understands -lname/-printf the way we need (a shadowing
+    # non-GNU find could silently misbehave). We deliberately do NOT gate on
+    # the real /proc scan's own exit status for this: GNU find routinely
+    # exits nonzero when scanning /proc/*/fd purely from `Permission denied`
+    # on other users' entries (see Limitation above) -- expected, and
+    # already tolerated by discarding stderr -- even though it succeeds for
+    # every directory it can read. Gating cameras=null on that exit status
+    # was tried and measured: it reports null on EVERY normal poll on this
+    # multi-user machine, never [], which is worse than the bug it would
+    # fix. This self-test proves capability without that false positive.
+    selftest_dir=$(mktemp -d "${TMPDIR:-/tmp}/capture-devices-selftest.XXXXXX" 2>/dev/null) || selftest_dir=""
+    find_capable=0
+    if [ -n "$selftest_dir" ]; then
+        ln -s /nonexistent-capture-devices-probe-target "$selftest_dir/probe" 2>/dev/null
+        got=$(find "$selftest_dir" -lname '/nonexistent-capture-devices-probe*' -printf '%h %l\n' 2>/dev/null)
+        [ "$got" = "$selftest_dir /nonexistent-capture-devices-probe-target" ] && find_capable=1
+    fi
 
-        key="$pid $dev"
-        case " $seen " in
-            *" $key "*) continue ;;
-        esac
-        seen="$seen $key"
+    if [ "$find_capable" -eq 1 ]; then
+        entries=""
+        sep=""
+        # Must be initialised before the loop: `set -u` aborts on the
+        # first `case " $seen "` if it is still unset.
+        seen=""
+        # '%h %l' prints "/proc/<pid>/fd /dev/videoN". A process holding
+        # the same device on several fds appears once per fd, so dedup on
+        # the pid+device pair below.
+        while read -r dir dev; do
+            [ -z "$dir" ] && continue
+            pid=${dir#/proc/}
+            pid=${pid%%/*}
+            case "$pid" in
+                '' | *[!0-9]*) continue ;;
+            esac
 
-        comm=""
-        [ -r "/proc/$pid/comm" ] && read -r comm < "/proc/$pid/comm"
+            key="$pid $dev"
+            case " $seen " in
+                *" $key "*) continue ;;
+            esac
+            seen="$seen $key"
 
-        name=""
-        base=${dev##*/}
-        [ -r "/sys/class/video4linux/$base/name" ] && read -r name < "/sys/class/video4linux/$base/name"
+            comm=""
+            [ -r "/proc/$pid/comm" ] && read -r comm < "/proc/$pid/comm"
 
-        entries="$entries$sep{\"device\": \"$(json_escape "$dev")\", \"deviceName\": \"$(json_escape "$name")\", \"pid\": $pid, \"comm\": \"$(json_escape "$comm")\"}"
-        sep=", "
-    done < <(find /proc/[0-9]*/fd -lname '/dev/video*' -printf '%h %l\n' 2>/dev/null)
-    cameras="[$entries]"
+            devname=""
+            base=${dev##*/}
+            [ -r "/sys/class/video4linux/$base/name" ] && read -r devname < "/sys/class/video4linux/$base/name"
+
+            # argv[0] via cmdline (NUL-separated) is not kernel-truncated
+            # like comm; fall back to comm when cmdline is unreadable or
+            # empty (e.g. kernel threads have no cmdline at all).
+            argv0=""
+            if [ -r "/proc/$pid/cmdline" ]; then
+                IFS= read -r -d '' argv0 < "/proc/$pid/cmdline" 2>/dev/null
+            fi
+            if [ -n "$argv0" ]; then
+                procname=${argv0##*/}
+            else
+                procname=$comm
+            fi
+
+            entries="$entries$sep{\"device\": \"$(json_escape "$dev")\", \"deviceName\": \"$(json_escape "$devname")\", \"pid\": $pid, \"comm\": \"$(json_escape "$comm")\", \"name\": \"$(json_escape "$procname")\"}"
+            sep=", "
+        done < <(find /proc/[0-9]*/fd -lname '/dev/video*' -printf '%h %l\n' 2>/dev/null)
+        cameras="[$entries]"
+    fi
 fi
 
 printf '{"cameras": %s}\n' "$cameras"
