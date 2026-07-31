@@ -8,9 +8,11 @@ import "../lib/notiftime.js" as NotifTime
 
 // Current-conditions + forecast popup shown on hover over the bar weather
 // widget. Read-only, so it's a plain non-grab tooltip anchored under the bar.
-// Header (glyph + temp + description), current detail rows (feels-like, humidity,
-// wind -- each hidden when the active provider doesn't supply it), then a 3-day
-// forecast strip, with location and provider provenance at the foot.
+// Location chips first (the one clickable thing here, kept against the fixed
+// top edge), then any active condition cards, the header (glyph + temp +
+// description), current detail rows (feels-like, humidity, wind -- each hidden
+// when the active provider doesn't supply it), the hourly strip and the
+// multi-day forecast, with resolved place and provider provenance at the foot.
 PopupWindow {
     id: pop
 
@@ -170,6 +172,19 @@ PopupWindow {
                 margins: 12
             }
             spacing: 7
+
+            // Location chips (selectable; shared with the hub card). FIRST in
+            // the column, not last: this popup hangs downward from the bar, so
+            // its top edge is the only fixed one and everything below the
+            // chips changes height -- alert cards appear and clear, the hourly
+            // strip and forecast vary with what the provider returns. At the
+            // bottom the chips moved under the cursor between one open and the
+            // next, which is a poor place to put the only clickable thing here.
+            Lib.LocationChips {
+                Layout.bottomMargin: 2
+                theme: pop.theme
+                weatherState: pop.weatherState
+            }
 
             // Every active condition gets its OWN card, all in view at once.
             // They used to share one banner that rotated through them on a
@@ -451,13 +466,6 @@ PopupWindow {
                         }
                     }
                 }
-            }
-
-            // Location chips (selectable; shared with the hub card).
-            Lib.LocationChips {
-                Layout.topMargin: 2
-                theme: pop.theme
-                weatherState: pop.weatherState
             }
 
             // Foot: resolved place (full city, state, country) + provider
