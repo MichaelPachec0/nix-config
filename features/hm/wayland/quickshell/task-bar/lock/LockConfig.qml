@@ -44,6 +44,7 @@ Singleton {
     property string secOwnerText: ""
     property bool secScreencastPoll: true
     property int secPollIntervalSec: 10
+    property bool secShowDevices: true
     property bool secShowUptime: true
     property bool secShowLastUnlock: true
 
@@ -82,6 +83,7 @@ Singleton {
                     if (sc.ownerText !== undefined) root.secOwnerText = sc.ownerText;
                     if (sc.screencastPoll !== undefined) root.secScreencastPoll = !!sc.screencastPoll;
                     if (sc.pollIntervalSec !== undefined) root.secPollIntervalSec = sc.pollIntervalSec;
+                    if (sc.showDevices !== undefined) root.secShowDevices = !!sc.showDevices;
                     if (sc.showUptime !== undefined) root.secShowUptime = !!sc.showUptime;
                     if (sc.showLastUnlock !== undefined) root.secShowLastUnlock = !!sc.showLastUnlock;
                 }

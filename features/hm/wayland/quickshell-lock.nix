@@ -150,6 +150,17 @@ in {
       default = 10;
       description = "Seconds between security probe polls while locked.";
     };
+    showDevices = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Show "Camera in use" / "Microphone in use" rows on the lock. This is a
+        SEPARATE signal from screencastPoll: a browser sharing one of its own
+        tabs produces no detectable screen capture at all, so these rows are
+        often the only trace such a session leaves. They do NOT mean the screen
+        is being shared.
+      '';
+    };
     showUptime = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -180,7 +191,7 @@ in {
         inherit (cfg.notifications) enable defaultMode maxCards trustedApps privateApps trustedCategories;
       };
       security = {
-        inherit (cfg.security) enable ownerText screencastPoll pollIntervalSec showUptime showLastUnlock;
+        inherit (cfg.security) enable ownerText screencastPoll pollIntervalSec showDevices showUptime showLastUnlock;
       };
     };
 

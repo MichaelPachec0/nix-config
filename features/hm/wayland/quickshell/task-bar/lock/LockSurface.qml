@@ -330,6 +330,14 @@ Item {
         // probe happens to fail.
         casts: (root.security && LockConfig.secScreencastPoll) ? root.security.secCasts : null
         pollEnabled: LockConfig.secScreencastPoll
+        // NOT gated on secScreencastPoll: that option is about SCREEN capture,
+        // and the camera/mic rows are a different signal from a different
+        // detector (an fd scan and an exact media.class match). Folding them
+        // under the screencast switch would silently drop device coverage for
+        // anyone who opted out of the screen poll alone.
+        cams: root.security ? root.security.secCams : null
+        mics: root.security ? root.security.secMics : null
+        showDevices: LockConfig.secShowDevices
         probed: root.security ? root.security.secProbed : false
         graceExpired: root.security ? root.security.secGraceExpired : false
         fails: root.security ? root.security.failsThisLock : 0

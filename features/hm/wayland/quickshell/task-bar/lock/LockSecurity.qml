@@ -28,6 +28,13 @@ ColumnLayout {
     // warning would flash on EVERY lock during the pre-first-poll window, and a
     // warning that appears routinely is one the user stops reading.
     property bool probed: false
+    // Camera / microphone in use. Ints from the poll, or null = could not ask.
+    // A SEPARATE signal from the screencast rows: these say a device is hot,
+    // NOT that the screen is being shared. Never merge them -- doing so would
+    // claim tab-capture coverage the feature does not have.
+    property var cams: null
+    property var mics: null
+    property bool showDevices: true
     // True once the grace period has passed with no reading at all -- see
     // secGraceExpired in Lock.qml. Distinguishes "not yet" from "not coming".
     property bool graceExpired: false
@@ -67,6 +74,23 @@ ColumnLayout {
     // whole lock, which is the opposite of what opting out means.
     readonly property bool sharingUnknown: root.pollEnabled && !root.sharing
         && (root.probed ? root.casts === null : root.graceExpired)
+
+    // Device rows. The explicit null checks are the same three-state contract
+    // the screencast row uses: `> 0` alone would treat "could not ask" as
+    // "nothing is running", because null > 0 is false.
+    readonly property bool cameraOn: root.showDevices && root.cams !== null && root.cams > 0
+    readonly property bool micOn: root.showDevices && root.mics !== null && root.mics > 0
+
+    // One combined "could not ask" row for the two device probes rather than
+    // one each: they fail together in the common case (no pw-dump, no find),
+    // and two identical warnings stacked on the lock is noise. Gated on
+    // `probed` so it cannot flash during the pre-first-poll window -- the same
+    // reason sharingUnknown is gated. Deliberately NOT suppressed while
+    // cameraOn or micOn is showing: a known camera says nothing about an
+    // unknown mic, and quietly hiding the second failure is precisely the
+    // "silence reads as reassurance" trap this column exists to avoid.
+    readonly property bool devicesUnknown: root.showDevices && root.probed
+        && (root.cams === null || root.mics === null)
 
     function _fmtUptime(sec) {
         var s = Math.max(0, Math.floor(sec));
@@ -135,6 +159,24 @@ ColumnLayout {
         visible: root.sharingUnknown
         glyph: String.fromCodePoint(0xF071)   // warning triangle
         label: "Sharing state unknown"
+        tint: root.theme ? root.theme.accentYellow : "#fabd2f"
+    }
+    SignalRow {
+        visible: root.cameraOn
+        glyph: String.fromCodePoint(0xF030)   // camera
+        label: "Camera in use"
+        tint: root.theme ? root.theme.accentRed : "#fb4934"
+    }
+    SignalRow {
+        visible: root.micOn
+        glyph: String.fromCodePoint(0xF130)   // microphone
+        label: "Microphone in use"
+        tint: root.theme ? root.theme.accentRed : "#fb4934"
+    }
+    SignalRow {
+        visible: root.devicesUnknown
+        glyph: String.fromCodePoint(0xF071)   // warning triangle
+        label: "Camera/mic state unknown"
         tint: root.theme ? root.theme.accentYellow : "#fabd2f"
     }
     SignalRow {

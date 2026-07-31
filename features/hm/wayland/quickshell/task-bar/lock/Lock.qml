@@ -208,6 +208,12 @@ Scope {
                     // null and 0 are different answers and must not be merged:
                     // 0 means "nothing is capturing", null means "could not ask".
                     casts: (o.casts === null || o.casts === undefined) ? null : o.casts,
+                    // Same three-state contract as `casts`, for the same
+                    // reason: an undetectable camera and an idle camera are
+                    // different answers. `|| 0` here would render "no camera
+                    // in use" for a probe that could not look.
+                    cams: (o.cams === null || o.cams === undefined) ? null : o.cams,
+                    mics: (o.mics === null || o.mics === undefined) ? null : o.mics,
                     sessions: o.sessions || 0,
                     otherUsers: o.otherUsers || 0,
                     uptimeSec: o.uptimeSec || 0
@@ -297,6 +303,10 @@ Scope {
     // needs no staleness term of its own: a stale reading can never leak
     // through as a false "casts > 0".
     readonly property var secCasts: (root._sec && !root.secStale) ? root._sec.casts : null
+    // Gated at the source for the same reason as secCasts -- a reading held
+    // over from the PREVIOUS lock must not render as a live camera or mic.
+    readonly property var secCams: (root._sec && !root.secStale) ? root._sec.cams : null
+    readonly property var secMics: (root._sec && !root.secStale) ? root._sec.mics : null
     readonly property int secSessions: root._sec ? root._sec.sessions : 0
     readonly property int secOtherUsers: root._sec ? root._sec.otherUsers : 0
     readonly property int secUptimeSec: root._sec ? root._sec.uptimeSec : 0

@@ -76,6 +76,56 @@ ShellRoot {
         sec.probed = true;
         check("share/probed-unknown", sec.sharingUnknown, true);
 
+        // ---- camera / microphone ----------------------------------------
+        // A different signal from the screencast rows, with the same
+        // three-state contract. Reset the sharing inputs first so a leftover
+        // value cannot make a device case pass for the wrong reason.
+        sec.castAtLock = false; sec.casts = 0; sec.pollEnabled = true;
+        sec.probed = true; sec.showDevices = true;
+
+        sec.cams = 0; sec.mics = 0;
+        check("dev/idle-noCam", sec.cameraOn, false);
+        check("dev/idle-noMic", sec.micOn, false);
+        check("dev/idle-noUnknown", sec.devicesUnknown, false);
+
+        sec.cams = 1;
+        check("dev/camOn", sec.cameraOn, true);
+        check("dev/camOn-micStillOff", sec.micOn, false);
+        sec.mics = 2;
+        check("dev/micOn", sec.micOn, true);
+
+        // null is "could not ask", NOT "nothing running". `null > 0` is false
+        // in JS, so a missing null check would silently render idle.
+        sec.cams = null; sec.mics = 0;
+        check("dev/camNull-notOn", sec.cameraOn, false);
+        check("dev/camNull-unknown", sec.devicesUnknown, true);
+        sec.cams = 0; sec.mics = null;
+        check("dev/micNull-notOn", sec.micOn, false);
+        check("dev/micNull-unknown", sec.devicesUnknown, true);
+
+        // A known-hot device must NOT suppress the unknown row for the other
+        // one: half an answer is not an answer.
+        sec.cams = 1; sec.mics = null;
+        check("dev/camOn-micUnknown-both", sec.cameraOn && sec.devicesUnknown, true);
+
+        // Pre-first-poll: nulls are "not yet", not "unknown".
+        sec.probed = false; sec.cams = null; sec.mics = null;
+        check("dev/unprobed-noUnknown", sec.devicesUnknown, false);
+        sec.probed = true;
+
+        // Opting out hides every device row, including the warning -- the same
+        // rule pollEnabled follows for the screencast rows.
+        sec.showDevices = false; sec.cams = 3; sec.mics = 3;
+        check("dev/off-noCam", sec.cameraOn, false);
+        check("dev/off-noMic", sec.micOn, false);
+        sec.cams = null; sec.mics = null;
+        check("dev/off-noUnknown", sec.devicesUnknown, false);
+        sec.showDevices = true; sec.cams = 0; sec.mics = 0;
+
+        // The device rows must not disturb the screencast verdict.
+        sec.cams = 5; sec.mics = 5;
+        check("dev/noBleedIntoSharing", sec.sharing, false);
+
         // ---- uptime formatting ------------------------------------------
         check("up/0", sec._fmtUptime(0), "just booted");
         check("up/59s", sec._fmtUptime(59), "just booted");
