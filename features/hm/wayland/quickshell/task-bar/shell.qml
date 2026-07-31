@@ -19,6 +19,19 @@ ShellRoot {
         id: notifSvc
     }
 
+    // Who is capturing right now (mic / camera / screencast), read by the bar's
+    // media pill. Id `captureSvc` MUST differ from the `capture` property it
+    // feeds on Taskbar: an own-property shadows the outer-component id across
+    // the Variants delegate, so a same-name binding resolves to the widget's
+    // own null property (see submapSvc / netSvc / powerzStats above).
+    Lib.CaptureService {
+        id: captureSvc
+        locked: lockScreen.locked
+        castCount: shellRoot.screencastCount
+        castOwner: shellRoot.castOwner
+        castTarget: shellRoot.castTarget
+    }
+
     // Global lock: one WlSessionLock manages every output. Instantiated once
     // (not per-screen) -- the surface Component is created per output internally.
     Lock.Lock {
