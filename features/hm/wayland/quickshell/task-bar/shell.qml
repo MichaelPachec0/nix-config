@@ -139,6 +139,39 @@ ShellRoot {
         }
     }
 
+    // Cast attribution, for the bar's capture popup. Hyprland emits BOTH
+    // `screencast` (state,owner) and `screencastv2` (state,owner,title); only
+    // the v2 form carries the window title, and only Hyprland knows it at all
+    // -- PwNode exposes no link information, so a Stream/Input/Video consuming
+    // a SCREEN cannot be told apart from one consuming a CAMERA on the
+    // consumer side.
+    //
+    // parse(3) is required, not parse(2) or a plain split: window titles
+    // routinely contain commas, and parse(3) leaves everything after the second
+    // comma intact in the third field.
+    //
+    // The target is cleared only when the refcount reaches zero, never on an
+    // individual stop event: the lock's own backdrop opens and closes a session
+    // every lock, and clearing on any stop would blank the label while a real
+    // cast continues.
+    property string castOwner: ""
+    property string castTarget: ""
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            if (event.name !== "screencastv2")
+                return;
+            var f = event.parse(3);
+            if (f[0] === "1") {
+                shellRoot.castOwner = f[1] || "";
+                shellRoot.castTarget = f[2] || "";
+            } else if (shellRoot.screencastCount <= 0) {
+                shellRoot.castOwner = "";
+                shellRoot.castTarget = "";
+            }
+        }
+    }
+
     // hy3 group/tab transitions leave Quickshell's *incremental* toplevel model
     // stale for now-hidden windows (their lastIpcObject loses `class`/`workspace`),
     // so iconFor() gets "" and a tab group of N renders as one invisible slot. A
