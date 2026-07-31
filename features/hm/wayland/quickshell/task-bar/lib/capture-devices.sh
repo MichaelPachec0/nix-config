@@ -36,8 +36,7 @@
 # over-counts, which is the correct direction; running privileged is a worse
 # trade.
 #
-# Reads only, plus a throwaway scratch directory used to self-test find's
-# capabilities (see below); removed on exit via trap.
+# Reads only. Writes nothing.
 set -uo pipefail
 
 json_escape() {
@@ -54,9 +53,6 @@ json_escape() {
 }
 
 cameras=null
-selftest_dir=""
-cleanup() { [ -n "$selftest_dir" ] && rm -rf "$selftest_dir"; }
-trap cleanup EXIT
 
 if command -v find >/dev/null 2>&1; then
     # Capability self-test, on a controlled fixture rather than the real
@@ -71,13 +67,14 @@ if command -v find >/dev/null 2>&1; then
     # was tried and measured: it reports null on EVERY normal poll on this
     # multi-user machine, never [], which is worse than the bug it would
     # fix. This self-test proves capability without that false positive.
-    selftest_dir=$(mktemp -d "${TMPDIR:-/tmp}/capture-devices-selftest.XXXXXX" 2>/dev/null) || selftest_dir=""
+    #
+    # The fixture is /proc/self/fd, not a scratch file: it always has at
+    # least fds 0/1/2 as symlinks already, so the same -lname/-printf
+    # discrimination is available with zero writes -- no mktemp, no
+    # ln -s, nothing to clean up.
     find_capable=0
-    if [ -n "$selftest_dir" ]; then
-        ln -s /nonexistent-capture-devices-probe-target "$selftest_dir/probe" 2>/dev/null
-        got=$(find "$selftest_dir" -lname '/nonexistent-capture-devices-probe*' -printf '%h %l\n' 2>/dev/null)
-        [ "$got" = "$selftest_dir /nonexistent-capture-devices-probe-target" ] && find_capable=1
-    fi
+    got=$(find /proc/self/fd -lname '*' -printf 'x\n' 2>/dev/null)
+    [ -n "$got" ] && find_capable=1
 
     if [ "$find_capable" -eq 1 ]; then
         entries=""
