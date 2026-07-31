@@ -24,13 +24,19 @@ QtObject {
 
     // --- inputs -----------------------------------------------------------
     property bool locked: false
-    // Lib.CommandPoll does NOT clear `value` when `running` goes false->true,
-    // so without this the first moments after unlock would render the reading
-    // captured BEFORE the lock as if it were current -- a false "no camera in
-    // use" at exactly the moment the bar becomes visible again. Same hazard
+    // Clearing the reading is not enough on its own: CommandPoll skips
+    // updated() when stdout repeats, and the pre-lock output is still its
+    // dedup baseline -- so the first post-unlock poll, which normally MATCHES
+    // that baseline, would be swallowed and leave `cameras` stuck at null.
+    // Dropping the baseline guarantees the resumed poll re-emits. Same hazard
     // lock/Lock.qml gates with secStale, and the same reason `cameras` is
     // seeded null rather than [].
-    onLockedChanged: if (svc.locked) svc.cameras = null
+    onLockedChanged: {
+        if (!svc.locked)
+            return;
+        svc.cameras = null;
+        camPoll.resetDedup();
+    }
     property int castCount: 0
     property string castOwner: ""
     property string castTarget: ""

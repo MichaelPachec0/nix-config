@@ -14,6 +14,14 @@ ShellRoot {
         id: cap
     }
 
+    // Not started (running: false) -- exists only so the resetDedup() test
+    // below can exercise CommandPoll's dedup fields directly without spawning
+    // a process.
+    CommandPoll {
+        id: pollProbe
+        running: false
+    }
+
     Component.onCompleted: {
         var pass = 0, total = 0;
         function check(name, got, want) {
@@ -104,6 +112,16 @@ ShellRoot {
         cap.cameras = [{ device: "/dev/video0", deviceName: "Integrated Camera", pid: 5230, comm: "firefox-devedit", name: "firefox-devedition-bin" }];
         check("cam/present-active", cap.cameraActive, true);
         check("cam/present-notUnknown", cap.cameraUnknown, false);
+
+        // ---- CommandPoll.resetDedup() --------------------------------------
+        // Round-2 regression: after a caller discards its value and calls
+        // resetDedup(), a repeated stdout must still emit updated(). Without
+        // resetDedup the dedup swallows it and the caller stays stuck.
+        pollProbe.text = "SAME";
+        pollProbe._primed = true;
+        pollProbe.resetDedup();
+        check("poll/resetDedup-primed", pollProbe._primed, false);
+        check("poll/resetDedup-text", pollProbe.text, "");
 
         console.log(pass === total ? ("CAP-TEST PASS " + pass + "/" + total)
                                    : ("CAP-TEST FAIL " + pass + "/" + total));
