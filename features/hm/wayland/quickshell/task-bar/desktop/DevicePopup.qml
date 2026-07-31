@@ -8,8 +8,8 @@ import "../lib" as Lib
 //
 // Kill reuses ProcRow's gesture contract exactly -- left-click arms and swaps
 // the label to "end?", a second click sends TERM, Shift+click sends KILL
-// immediately -- with arm state keyed by pid so it survives the 3s poll's model
-// churn. ProcRow itself is not reused as a component (its model shape is
+// immediately -- with arm state keyed by group+pid so it survives the 3s poll's
+// model churn without arming two groups' rows for one process at once. ProcRow itself is not reused as a component (its model shape is
 // SysPopup-specific), only its contract, so the gesture transfers.
 PopupWindow {
     id: pop
@@ -48,23 +48,29 @@ PopupWindow {
         pop.openAt(x - pop.cardW / 2);
     }
 
-    // Arm state, keyed by pid rather than by row index: the camera model is
-    // rebuilt every 3s and rows can reorder, so an index-keyed arm would jump
+    // Arm state, keyed by group+pid rather than by row index: the camera model
+    // is rebuilt every 3s and rows can reorder, so an index-keyed arm would jump
     // to a different process between the arming click and the confirming one.
-    property int armedPid: -1
+    //
+    // The GROUP is part of the key because one process can appear in two groups
+    // at once -- a browser screen-sharing in a video call holds both a
+    // Stream/Input/Audio node (mic row) and the cast row under the SAME pid. A
+    // bare-pid key armed both rows on one click, so the next click on the other
+    // row sent TERM with no confirmation at all.
+    property string armedKey: ""
     property Timer disarmTimer: Timer {
         interval: 3000
-        onTriggered: pop.armedPid = -1
+        onTriggered: pop.armedKey = ""
     }
-    function armOrKill(pid) {
+    function armOrKill(key, pid) {
         if (!(pid > 0))
             return;
-        if (pop.armedPid !== pid) {
-            pop.armedPid = pid;
+        if (pop.armedKey !== key) {
+            pop.armedKey = key;
             pop.disarmTimer.restart();
         } else {
             Quickshell.execDetached(["kill", "-TERM", String(pid)]);
-            pop.armedPid = -1;
+            pop.armedKey = "";
         }
     }
 
@@ -104,7 +110,10 @@ PopupWindow {
         id: ar
         property string appName: ""
         property int pid: 0
-        readonly property bool armed: ar.pid > 0 && ar.pid === pop.armedPid
+        // "cam" / "mic" / "cast" -- the group this row belongs to, so the same
+        // pid in two groups arms only the row that was clicked.
+        property string kind: ""
+        readonly property bool armed: ar.pid > 0 && (ar.kind + ":" + ar.pid) === pop.armedKey
         Layout.fillWidth: true
         implicitHeight: arRow.implicitHeight
         Rectangle {
@@ -147,7 +156,7 @@ PopupWindow {
                     Quickshell.execDetached(["kill", "-KILL", String(ar.pid)]);
                     return;
                 }
-                pop.armOrKill(ar.pid);
+                pop.armOrKill(ar.kind + ":" + ar.pid, ar.pid);
             }
         }
     }
@@ -180,6 +189,7 @@ PopupWindow {
                 model: pop.capture.cameraActive ? pop.capture.cameras : []
                 AppRow {
                     required property var modelData
+                    kind: "cam"
                     // `name` not `comm`: /proc/PID/comm is kernel-truncated to
                     // 15 chars and renders as "firefox-devedit".
                     appName: modelData.name || modelData.comm || "unknown"
@@ -227,6 +237,7 @@ PopupWindow {
                 model: pop.capture.micActive ? pop.capture.mics : []
                 AppRow {
                     required property var modelData
+                    kind: "mic"
                     appName: modelData.appName
                     pid: modelData.pid || 0
                 }
@@ -245,6 +256,7 @@ PopupWindow {
                 model: pop.capture.castActive ? pop.capture.casts : []
                 AppRow {
                     required property var modelData
+                    kind: "cast"
                     appName: modelData.appName || "unknown app"
                     pid: modelData.pid || 0
                 }

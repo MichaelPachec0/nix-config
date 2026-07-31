@@ -76,8 +76,10 @@ Item {
         anchors.fill: parent
         spacing: 6
 
-        // Play / pause toggle.
+        // Play / pause toggle. Hidden with no MPRIS player: the widget now also
+        // renders in capture-only mode, where a play glyph would be dead.
         Lib.BarText {
+            visible: root.hasPlayer
             Layout.alignment: Qt.AlignVCenter
             text: String.fromCodePoint(root.isPlaying ? 0xF04C : 0xF04B)
             font.family: root.theme.iconFont
@@ -209,8 +211,11 @@ Item {
         id: widgetHover
     }
     readonly property bool over: widgetHover.hovered || popup.contentHovered
+    // Gated on hasPlayer: in capture-only mode there is no player, and the glyph
+    // click target sits inside the widget, so hovering to reach it would open a
+    // blank player card that then overlaps the DevicePopup.
     onOverChanged: {
-        if (root.over) {
+        if (root.over && root.hasPlayer) {
             hideTimer.stop();
             popup.showPopup();
         } else {

@@ -26,7 +26,13 @@ ShellRoot {
     // own null property (see submapSvc / netSvc / powerzStats above).
     Lib.CaptureService {
         id: captureSvc
-        locked: lockScreen.locked
+        // captureArmed as well as locked: Lock.qml starts its backdrop
+        // ScreencopyView (which Hyprland counts as a screencast) 25-250ms
+        // BEFORE it sets locked, and the desktop is still composited in that
+        // window -- so the pill flashed a red recording glyph caused by the
+        // lock's own backdrop on every single lock. captureArmed is cleared
+        // again in Lock.qml's unlock branch, so this adds no lasting state.
+        locked: lockScreen.locked || lockScreen.captureArmed
         castCount: shellRoot.screencastCount
         castOwner: shellRoot.castOwner
         castTarget: shellRoot.castTarget

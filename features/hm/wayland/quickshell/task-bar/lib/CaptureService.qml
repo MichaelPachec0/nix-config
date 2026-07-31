@@ -127,6 +127,19 @@ QtObject {
                 return null;
             }
         }
-        onUpdated: svc.cameras = camPoll.value
+        onUpdated: {
+            // A Process already in flight when the lock landed still exits and
+            // emits here, AFTER resetDedup() ran. Taking its value would undo
+            // the clear, and simply ignoring it would leave it as the dedup
+            // baseline that the first post-unlock poll matches byte-for-byte --
+            // which is exactly the permanent-"unknown" strand a previous fix
+            // round removed. Drop the baseline again so the resumed poll is
+            // guaranteed to emit.
+            if (svc.locked) {
+                camPoll.resetDedup();
+                return;
+            }
+            svc.cameras = camPoll.value;
+        }
     }
 }

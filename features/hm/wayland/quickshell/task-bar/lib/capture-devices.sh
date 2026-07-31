@@ -72,9 +72,17 @@ if command -v find >/dev/null 2>&1; then
     # least fds 0/1/2 as symlinks already, so the same -lname/-printf
     # discrimination is available with zero writes -- no mktemp, no
     # ln -s, nothing to clean up.
+    #
+    # The SHAPE of the output is asserted, not merely its presence. A stub
+    # that prints anything at all and exits 0 passed a non-empty test, and
+    # the scan below then produced "[]" -- the exact false all-clear the
+    # null-vs-[] distinction exists to prevent. Every line of a working
+    # '%h %l' run over /proc/self/fd must start with "/proc/self/fd ".
     find_capable=0
-    got=$(find /proc/self/fd -lname '*' -printf 'x\n' 2>/dev/null)
-    [ -n "$got" ] && find_capable=1
+    got=$(find /proc/self/fd -lname '*' -printf '%h %l\n' 2>/dev/null | head -1)
+    case "$got" in
+        "/proc/self/fd "?*) find_capable=1 ;;
+    esac
 
     if [ "$find_capable" -eq 1 ]; then
         entries=""
