@@ -139,36 +139,41 @@ ShellRoot {
         }
     }
 
-    // Cast attribution, for the bar's capture popup. Hyprland emits BOTH
-    // `screencast` (state,owner) and `screencastv2` (state,owner,title); only
-    // the v2 form carries the window title, and only Hyprland knows it at all
-    // -- PwNode exposes no link information, so a Stream/Input/Video consuming
-    // a SCREEN cannot be told apart from one consuming a CAMERA on the
-    // consumer side.
+    // Active casts, newest last. A STACK rather than a single owner/target
+    // pair, because Hyprland's events carry no session identity: the lock's
+    // own workspace backdrop opens a screencast session on every lock, and a
+    // single pair would let that session's irrelevant values overwrite a real
+    // share's attribution with nothing to restore it afterwards.
     //
-    // parse(3) is required, not parse(2) or a plain split: window titles
-    // routinely contain commas, and parse(3) leaves everything after the second
-    // comma intact in the third field.
+    // Stops are matched LIFO. That is an approximation -- the wire format
+    // gives nothing to correlate a stop with its start -- but it is exact for
+    // the case that actually occurs here: the backdrop's session opens after,
+    // and closes before, any share it overlaps.
     //
-    // The target is cleared only when the refcount reaches zero, never on an
-    // individual stop event: the lock's own backdrop opens and closes a session
-    // every lock, and clearing on any stop would blank the label while a real
-    // cast continues.
-    property string castOwner: ""
-    property string castTarget: ""
+    // Deliberately does NOT consult screencastCount. That counter is
+    // maintained by a different handler on a different event, and gating the
+    // clear on it leaves a stale title behind whenever the two events arrive
+    // in the unexpected order.
+    property var castStack: []
+    readonly property string castOwner: shellRoot.castStack.length > 0 ? shellRoot.castStack[shellRoot.castStack.length - 1].owner : ""
+    readonly property string castTarget: shellRoot.castStack.length > 0 ? shellRoot.castStack[shellRoot.castStack.length - 1].target : ""
     Connections {
         target: Hyprland
         function onRawEvent(event) {
             if (event.name !== "screencastv2")
                 return;
             var f = event.parse(3);
-            if (f[0] === "1") {
-                shellRoot.castOwner = f[1] || "";
-                shellRoot.castTarget = f[2] || "";
-            } else if (shellRoot.screencastCount <= 0) {
-                shellRoot.castOwner = "";
-                shellRoot.castTarget = "";
-            }
+            // Copy-then-reassign: mutating the array in place does not fire a
+            // change notification, so bindings would silently never update.
+            var next = shellRoot.castStack.slice();
+            if (f[0] === "1")
+                next.push({
+                    owner: f[1] || "",
+                    target: f[2] || ""
+                });
+            else
+                next.pop();
+            shellRoot.castStack = next;
         }
     }
 
