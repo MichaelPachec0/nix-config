@@ -35,6 +35,16 @@ Rectangle {
     // instead of a smaller rectangle behind a single widget's content.
     property color pulseColor: "transparent"
     property bool pulseActive: false
+    // Idle gap AFTER each flash, before the next one. Settable so a caller
+    // cycling several alerts through one pill can group them -- a short gap
+    // between the members of a set, a long one after the last. Read when the
+    // pause starts, so a handler for `pulsed` can set the next gap in time.
+    property int pulseGapMs: 4300
+    // Emitted when a flash has fully faded out, before the idle gap. A caller
+    // rotating pulseColor advances HERE rather than on its own timer: an
+    // independent timer drifts against this cycle and swaps the colour
+    // mid-flash, which reads as one stutter instead of two distinct alerts.
+    signal pulsed
 
     readonly property string style: BarStyle.current
     readonly property bool filled: pill.style !== "ghost"
@@ -103,9 +113,16 @@ Rectangle {
                 duration: 480
                 easing.type: Easing.InQuad
             }
-            // Idle gap so the total cycle stays ~5s (220 + 480 + 4300).
+            // Fire AFTER the fade-out, so a caller advancing to the next alert
+            // swaps the colour while the wash is fully transparent.
+            ScriptAction {
+                script: pill.pulsed()
+            }
+            // Idle gap. Default 4300 keeps the single-alert cycle at ~5s
+            // (220 + 480 + 4300); a caller cycling a set shortens it between
+            // members. Read at pause start, i.e. after the signal above.
             PauseAnimation {
-                duration: 4300
+                duration: pill.pulseGapMs
             }
         }
         // Reset when the alert clears mid-flash so no colour is left stranded.

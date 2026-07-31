@@ -469,6 +469,13 @@ PanelWindow {
             // hue; the pill owns the pulse so the colour fills it uniformly.
             pulseColor: weatherWidget.alertColor
             pulseActive: weatherWidget.visible && weatherWidget.alert !== ""
+            // The widget owns the rhythm: it decides how long to wait after
+            // each flash (short between the members of a multi-alert set, long
+            // after the last) and advances to the next alert when told a flash
+            // has finished. Driving that from a timer inside the widget drifted
+            // against this animation and swapped colours mid-flash.
+            pulseGapMs: weatherWidget.pulseGapMs
+            onPulsed: weatherWidget.advancePulse()
 
             // Weather: current condition glyph + temperature; hover for details.
             WeatherWidget {
