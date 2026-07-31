@@ -32,10 +32,56 @@ QtObject {
     // lock/Lock.qml gates with secStale, and the same reason `cameras` is
     // seeded null rather than [].
     onLockedChanged: {
-        if (!svc.locked)
+        if (svc.locked) {
+            svc.cameras = null;
+            camPoll.resetDedup();
+            svc.camSettled = false;
+            svc.castSettled = false;
             return;
-        svc.cameras = null;
-        camPoll.resetDedup();
+        }
+        castSettleTimer.restart();
+    }
+
+    // Settling flags: gating on `locked` alone still flashed both glyphs on the
+    // way OUT of a lock, because the state that made them true outlives the lock
+    // by a little. The camera reading was cleared to null on the way in, so it
+    // reads "unknown" until the resumed poll answers (~53ms); Hyprland has not
+    // yet reported the backdrop's capture as stopped, so the cast still reads
+    // active. Both resolve on their own, but not before the bar is back on
+    // screen, and Pill's 260ms width animation stretches the blip into a
+    // visible wobble.
+    //
+    // camSettled is exact -- it waits for an actual poll result rather than a
+    // duration, the same contract lock/LockSecurity.qml's `probed` uses, and it
+    // suppresses ONLY the unknown warning. A real camera still lights up the
+    // instant the first poll lands. It starts false so the same rule covers
+    // shell startup, where "no answer yet" also is not "unknown".
+    property bool camSettled: false
+    // Backstop, mirroring LockSecurity's graceExpired. camSettled otherwise
+    // waits on a poll result that a missing or broken script never delivers,
+    // and a latched-false camSettled would suppress the unknown warning
+    // permanently -- silence reading as "camera is idle" is the exact failure
+    // this warning exists to prevent. The `running` binding re-arms it at
+    // startup and after every unlock, and stops it once a result lands.
+    property Timer camGraceTimer: Timer {
+        interval: 2500
+        running: !svc.locked && !svc.camSettled
+        onTriggered: svc.camSettled = true
+    }
+    // castSettled has no event to wait for, so it is a duration. Hyprland
+    // derives sharing from frame delivery with a ~500ms idle timeout, so the
+    // stop can trail teardown by that much; 600ms clears it with margin.
+    // Starts TRUE so a shell start with no lock in sight is not suppressed.
+    //
+    // The trade this makes: a screen share that was genuinely running across
+    // the lock stays hidden for those 600ms after unlock. Accepted because the
+    // opposite error is worse for this indicator -- a glyph that cries wolf on
+    // every single unlock is one the user learns to ignore, and the lock's own
+    // security column already reported sharing state moments earlier.
+    property bool castSettled: true
+    property Timer castSettleTimer: Timer {
+        interval: 600
+        onTriggered: svc.castSettled = true
     }
     property int castCount: 0
     property string castOwner: ""
@@ -120,9 +166,9 @@ QtObject {
     // of them on screen for the 25-250ms the desktop is still composited.
     // The lock draws its own security column; the bar reports the DESKTOP.
     readonly property bool micActive: !svc.locked && (svc.mics || []).length > 0
-    readonly property bool castActive: !svc.locked && (svc.casts || []).length > 0
+    readonly property bool castActive: !svc.locked && svc.castSettled && (svc.casts || []).length > 0
     readonly property bool cameraActive: !svc.locked && svc.cameras !== null && svc.cameras.length > 0
-    readonly property bool cameraUnknown: !svc.locked && svc.cameras === null
+    readonly property bool cameraUnknown: !svc.locked && svc.camSettled && svc.cameras === null
     // cameraUnknown counts as "something to show": the pill must stay clickable
     // and visibly uncertain rather than silently claiming the camera is idle.
     readonly property bool anyActive: svc.micActive || svc.castActive
@@ -157,6 +203,9 @@ QtObject {
                 return;
             }
             svc.cameras = camPoll.value;
+            // A result landed, so null now means "unknown" rather than "not
+            // asked yet" and the warning glyph is allowed to speak.
+            svc.camSettled = true;
         }
     }
 }

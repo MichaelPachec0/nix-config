@@ -125,8 +125,15 @@ ShellRoot {
         check("cast/attr-target", attributed[0].target, "ncspot - GitHub");
 
         // ---- unknown vs empty ---------------------------------------------
-        // null means "could not ask" and must NOT read as "no camera".
+        // Before the first poll result, null is "not asked yet" and stays
+        // silent -- otherwise the warning would flash on every shell start and
+        // train the user to ignore it. Same rule as LockSecurity's `probed`.
         cap.cameras = null;
+        check("cam/unsettled-silent", cap.cameraUnknown, false);
+        cap.camSettled = true;
+
+        // Once a result has landed, null means "could not ask" and must NOT
+        // read as "no camera".
         check("cam/null-unknown", cap.cameraUnknown, true);
         check("cam/null-notActive", cap.cameraActive, false);
         check("cam/null-anyActive", cap.anyActive, true);
@@ -161,11 +168,51 @@ ShellRoot {
         // two flags above, which are covered (castCount 1 and cameras null both
         // make the pre-fix code report true).
 
-        // Unlocking must restore the same reading, not latch it off.
+        // ---- settling after unlock -----------------------------------------
+        // Gating on `locked` alone still flashed both glyphs on the way OUT:
+        // the camera reading was cleared to null on the way in and reads
+        // "unknown" until the resumed poll answers, and Hyprland has not yet
+        // reported the backdrop capture as stopped. Both resolve on their own,
+        // but only after the bar is back on screen.
         cap.locked = false;
-        check("unlocked/castGlyphBack", cap.castActive, true);
-        check("unlocked/cameraUnknownBack", cap.cameraUnknown, true);
+        check("unlock/castSuppressed", cap.castActive, false);
+        check("unlock/cameraUnknownSuppressed", cap.cameraUnknown, false);
+        check("unlock/pillStillHidden", cap.anyActive, false);
+
+        // ...and each un-suppresses on its OWN condition, not on a shared one.
+        // The camera waits for a real poll result; the cast waits out Hyprland's
+        // frame-idle timeout.
+        cap.castSettled = true;
+        check("settled/castGlyphBack", cap.castActive, true);
+        check("settled/cameraStillWaiting", cap.cameraUnknown, false);
+        cap.camSettled = true;
+        check("settled/cameraUnknownBack", cap.cameraUnknown, true);
+
+        // A camera actually IN USE is never suppressed -- only the unknown
+        // warning waits. Suppressing a positive reading would be the one error
+        // this indicator must not make.
+        cap.camSettled = false;
+        cap.cameras = [{ device: "/dev/video0", deviceName: "Cam", pid: 5230, name: "firefox" }];
+        check("settled/realCameraNotSuppressed", cap.cameraActive, true);
+
+        // The backstop's re-arm logic. If the probe script is missing or broken
+        // no poll result ever lands, and a camSettled that latched false would
+        // suppress the unknown warning forever -- silence reading as "the
+        // camera is idle" is the precise failure this warning exists to
+        // prevent. Asserts the `running` binding, not the elapsed 2500ms.
+        cap.camSettled = false;
+        check("grace/armedWhileWaiting", cap.camGraceTimer.running, true);
+        cap.camSettled = true;
+        check("grace/disarmedOnceSettled", cap.camGraceTimer.running, false);
+        cap.camSettled = false;
+        cap.locked = true;
+        check("grace/idleWhileLocked", cap.camGraceTimer.running, false);
+        cap.locked = false;
+
         cap.castCount = 0;
+        cap.castSettled = true;
+        cap.camSettled = true;
+        cap.cameras = null;
 
         // ---- CommandPoll.resetDedup() --------------------------------------
         // Round-2 regression: after a caller discards its value and calls
