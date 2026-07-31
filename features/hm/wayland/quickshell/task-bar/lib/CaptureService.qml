@@ -61,7 +61,17 @@ QtObject {
             if (String(p["media.class"] || "") !== "Stream/Input/Audio")
                 continue;
             var bin = String(p["application.process.binary"] || "");
+            // The PipeWire global id, carried through so the popup can tell two
+            // rows apart. One process can hold TWO mic streams at once (two
+            // browser tabs in calls), and those rows are identical in every
+            // other field -- including pid, which is what the popup's arm/kill
+            // gesture used to key on. Two rows sharing an arm key meant clicking
+            // one armed both, so the next click on the other sent TERM with no
+            // confirmation. Falls back to the index only for fixtures; a real
+            // PwNode always carries an id.
+            var nid = (ns[i] && ns[i].id !== undefined && ns[i].id !== null) ? ns[i].id : ("i" + i);
             out.push({
+                nodeId: nid,
                 pid: parseInt(p["application.process.id"], 10) || null,
                 appName: String(p["application.name"] || "") || bin || "unknown",
                 binary: bin
@@ -102,10 +112,17 @@ QtObject {
     // rather than as a false all-clear.
     property var cameras: null
 
-    readonly property bool micActive: (svc.mics || []).length > 0
-    readonly property bool castActive: (svc.casts || []).length > 0
-    readonly property bool cameraActive: svc.cameras !== null && svc.cameras.length > 0
-    readonly property bool cameraUnknown: svc.cameras === null
+    // Every visible signal is gated on `locked`, not merely the camera poll.
+    // Two separate flashes come out of the lock itself, both on a bar the user
+    // is about to stop seeing: the lock's own backdrop ScreencopyView counts as
+    // a screencast to Hyprland (so castActive goes true), and clearing the stale
+    // camera reading makes cameraUnknown go true. Gating only the poll left both
+    // of them on screen for the 25-250ms the desktop is still composited.
+    // The lock draws its own security column; the bar reports the DESKTOP.
+    readonly property bool micActive: !svc.locked && (svc.mics || []).length > 0
+    readonly property bool castActive: !svc.locked && (svc.casts || []).length > 0
+    readonly property bool cameraActive: !svc.locked && svc.cameras !== null && svc.cameras.length > 0
+    readonly property bool cameraUnknown: !svc.locked && svc.cameras === null
     // cameraUnknown counts as "something to show": the pill must stay clickable
     // and visibly uncertain rather than silently claiming the camera is idle.
     readonly property bool anyActive: svc.micActive || svc.castActive

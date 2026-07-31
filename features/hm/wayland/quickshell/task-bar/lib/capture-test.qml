@@ -30,8 +30,11 @@ ShellRoot {
             else console.log("CAP-TEST CASE FAIL: " + name + " got=" + JSON.stringify(got) + " want=" + JSON.stringify(want));
         }
 
-        function node(mc, app, bin, pid) {
+        // `id` mirrors PwNode.id (the PipeWire global id). Omitted by most
+        // fixtures on purpose, so the index fallback stays covered too.
+        function node(mc, app, bin, pid, id) {
             return {
+                id: id,
                 properties: {
                     "media.class": mc,
                     "application.name": app,
@@ -78,6 +81,30 @@ ShellRoot {
         var noPid = [node("Stream/Input/Audio", "obs", "obs", undefined)];
         check("mic/nullPid", cap.micsFromNodes(noPid)[0].pid, null);
 
+        // ---- per-row identity (the unconfirmed-kill regression) ------------
+        // ONE process with TWO mic streams: two browser tabs in calls. The rows
+        // are identical in every field including pid, so a pid-keyed arm state
+        // armed both at once and the next click on the other row sent TERM with
+        // no confirmation. The node id is what keeps them apart.
+        var twoTabs = [
+            node("Stream/Input/Audio", "Firefox", "firefox-bin", 5230, 61),
+            node("Stream/Input/Audio", "Firefox", "firefox-bin", 5230, 62)
+        ];
+        var tt = cap.micsFromNodes(twoTabs);
+        check("mic/sameProcess-count", tt.length, 2);
+        check("mic/sameProcess-samePid", tt[0].pid === tt[1].pid, true);
+        check("mic/sameProcess-distinctKey", tt[0].nodeId !== tt[1].nodeId, true);
+        check("mic/nodeId-fromNode", tt[0].nodeId, 61);
+
+        // Without an id the rows must STILL differ -- falling back to a shared
+        // placeholder would recreate the collision the id exists to prevent.
+        var noIds = [
+            node("Stream/Input/Audio", "Firefox", "firefox-bin", 5230),
+            node("Stream/Input/Audio", "Firefox", "firefox-bin", 5230)
+        ];
+        var ni = cap.micsFromNodes(noIds);
+        check("mic/noId-distinctKey", ni[0].nodeId !== ni[1].nodeId, true);
+
         // ---- casts --------------------------------------------------------
         // No cast -> no rows, whatever the owner/target still say.
         check("cast/none", cap.castsFrom(0, "window", "stale", []).length, 0);
@@ -112,6 +139,27 @@ ShellRoot {
         cap.cameras = [{ device: "/dev/video0", deviceName: "Integrated Camera", pid: 5230, comm: "firefox-devedit", name: "firefox-devedition-bin" }];
         check("cam/present-active", cap.cameraActive, true);
         check("cam/present-notUnknown", cap.cameraUnknown, false);
+
+        // ---- locked gating -------------------------------------------------
+        // The lock's own backdrop ScreencopyView registers as a screencast, and
+        // the lock also clears the stale camera reading -- so without gating the
+        // VISIBLE flags (not merely the poll), every lock flashed a red cast
+        // glyph and a yellow unknown-camera glyph on the bar during the
+        // 25-250ms the desktop is still composited. The lock draws its own
+        // security column; the bar reports the desktop.
+        cap.cameras = null; // what the lock's clear leaves behind
+        cap.castCount = 1;  // what the backdrop capture looks like
+        cap.locked = true;
+        check("locked/noCastGlyph", cap.castActive, false);
+        check("locked/noCameraUnknown", cap.cameraUnknown, false);
+        check("locked/noMicGlyph", cap.micActive, false);
+        check("locked/pillHidden", cap.anyActive, false);
+
+        // Unlocking must restore the same reading, not latch it off.
+        cap.locked = false;
+        check("unlocked/castGlyphBack", cap.castActive, true);
+        check("unlocked/cameraUnknownBack", cap.cameraUnknown, true);
+        cap.castCount = 0;
 
         // ---- CommandPoll.resetDedup() --------------------------------------
         // Round-2 regression: after a caller discards its value and calls
