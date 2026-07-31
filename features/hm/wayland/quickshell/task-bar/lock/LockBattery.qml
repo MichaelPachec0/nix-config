@@ -95,4 +95,84 @@ ColumnLayout {
     function _fmtPct(pct) {
         return Math.round(Math.min(100, Math.max(0, pct)));
     }
+
+    // --- live state -------------------------------------------------------
+    readonly property var dev: UPower.displayDevice
+    readonly property bool hasBattery: root.dev !== null && root.dev.isLaptopBattery
+    readonly property int batState: root.dev ? root.dev.state : UPowerDeviceState.Unknown
+    readonly property int pct: root._fmtPct(root.dev ? root.dev.percentage * 100 : 0)
+    readonly property bool low: root._isLow(root.batState, root.pct, root.lowPercent)
+    readonly property string stateText: root._stateLine(root.batState, root.dev ? root.dev.timeToEmpty : 0, root.dev ? root.dev.timeToFull : 0, root.dev ? root.dev.changeRate : 0)
+
+    readonly property color tint: root.low ? (root.theme ? root.theme.accentRed : "#fb4934") : (root.theme ? root.theme.textSecondary : "#a89984")
+
+    // An invisible QML item still occupies its anchor position, so the height
+    // must collapse too -- otherwise the security column below shifts down by
+    // this block's height on a machine with no laptop battery.
+    visible: root.hasBattery
+    height: root.visible ? root.implicitHeight : 0
+
+    // --- rows -------------------------------------------------------------
+    RowLayout {
+        id: pctRow
+        spacing: 6
+
+        // Drawn battery: body + fill + terminal nub. Geometry mirrors
+        // desktop/BatteryWidget.qml so the bar and the lock read as the same
+        // object.
+        Item {
+            Layout.alignment: Qt.AlignVCenter
+            implicitWidth: 25
+            implicitHeight: 13
+
+            Rectangle {
+                id: batBody
+                width: 22
+                height: 13
+                radius: 3
+                anchors.verticalCenter: parent.verticalCenter
+                color: "transparent"
+                border.width: 1.5
+                border.color: root.tint
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 2
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.max(1, (batBody.width - 4) * root.pct / 100)
+                    height: batBody.height - 4
+                    radius: 1
+                    color: root.tint
+                }
+            }
+
+            // Terminal nub.
+            Rectangle {
+                anchors.left: batBody.right
+                anchors.verticalCenter: batBody.verticalCenter
+                width: 2
+                height: 5
+                radius: 1
+                color: root.tint
+            }
+        }
+
+        LockText {
+            Layout.alignment: Qt.AlignVCenter
+            text: root.pct + "%"
+            font.pixelSize: 12
+            color: root.tint
+        }
+    }
+
+    // Hidden rather than blank when there is nothing to say: an empty row still
+    // reserves height and pushes the security column down for no reason.
+    LockText {
+        Layout.maximumWidth: 320
+        visible: root.stateText.length > 0
+        text: root.stateText
+        elide: Text.ElideRight
+        font.pixelSize: 12
+        color: root.tint
+    }
 }
