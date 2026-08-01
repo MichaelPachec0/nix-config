@@ -99,6 +99,11 @@ ShellRoot {
         check("cell/labelFallback", net._cellText({ supported: true, operator: "T-Mobile", gen: "5G", rsrp: -88 }), "T-Mobile 5G  -88 dBm");
         check("cell/labelNullFallsBack", net._cellText({ supported: true, operator_label: null, operator: "T-Mobile", gen: "5G", rsrp: -88 }), "T-Mobile 5G  -88 dBm");
 
+        // Roaming is marked on the network half by the collector, so the row
+        // needs no rule of its own -- but assert it survives the row rather
+        // than being reformatted away.
+        check("cell/roamingLabel", net._cellText({ supported: true, operator_label: "Mint (R:AT&T)", operator: "AT&T", gen: "4G", rsrp: -95 }), "Mint (R:AT&T) 4G  -95 dBm");
+
         // ---- cellular tint: which metric feeds quality() ---------------------
         // The load-bearing choice. A congested cell reports strong rsrp and
         // poor sinr while throughput collapses, so feeding rsrp here would call

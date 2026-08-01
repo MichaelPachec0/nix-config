@@ -424,3 +424,76 @@ class TestSimOperator(unittest.TestCase):
                              "qeng": TestQeng.SAMPLE})
         self.assertIsNone(st["cellular"]["sim_operator"])
         self.assertEqual(st["cellular"]["operator_label"], "T-Mobile")
+
+
+class TestRoaming(unittest.TestCase):
+    """Roaming comes from the registration state, not from comparing PLMNs.
+
+    An MVNO rides its host's PLMN, so a Mint SIM on T-Mobile would read as
+    roaming under a PLMN comparison; conversely a national roaming agreement
+    can share one. AT+CEREG?'s <stat> is the authoritative answer.
+    """
+
+    def test_parses_home_and_roaming(self):
+        self.assertEqual(L.parse_cereg('\r\n+CEREG: 0,1\r\n\r\nOK\r\n'), "home")
+        self.assertEqual(L.parse_cereg('\r\n+CEREG: 0,5\r\n\r\nOK\r\n'), "roaming")
+
+    def test_parses_the_other_3gpp_states(self):
+        self.assertEqual(L.parse_cereg('\r\n+CEREG: 0,0\r\n\r\nOK\r\n'), "none")
+        self.assertEqual(L.parse_cereg('\r\n+CEREG: 0,2\r\n\r\nOK\r\n'), "searching")
+        self.assertEqual(L.parse_cereg('\r\n+CEREG: 0,3\r\n\r\nOK\r\n'), "denied")
+        self.assertEqual(L.parse_cereg('\r\n+CEREG: 0,4\r\n\r\nOK\r\n'), "unknown")
+
+    def test_parses_extended_form(self):
+        # With <n> set to 2 the modem appends tac/ci/AcT; <stat> stays second.
+        self.assertEqual(
+            L.parse_cereg('\r\n+CEREG: 2,5,"3C6E","1AE01",7\r\n\r\nOK\r\n'), "roaming")
+
+    def test_missing_or_malformed_is_none(self):
+        # None, NOT "home". The caller must not read silence as "definitely
+        # not roaming" -- it means the modem did not answer.
+        self.assertIsNone(L.parse_cereg('\r\nOK\r\n'))
+        self.assertIsNone(L.parse_cereg(''))
+        self.assertIsNone(L.parse_cereg(None))
+        self.assertIsNone(L.parse_cereg('\r\n+CEREG: 0\r\n\r\nOK\r\n'))
+        self.assertIsNone(L.parse_cereg('\r\n+CEREG: 0,x\r\n\r\nOK\r\n'))
+
+    def test_label_marks_the_network_while_roaming(self):
+        self.assertEqual(L.operator_label("Mint", "AT&T", "roaming"), "Mint (R:AT&T)")
+
+    def test_label_unmarked_at_home(self):
+        self.assertEqual(L.operator_label("Mint", "T-Mobile", "home"), "Mint (T-Mobile)")
+
+    def test_unknown_registration_never_claims_roaming(self):
+        # Roaming can cost real money; only show it when actually observed.
+        self.assertEqual(L.operator_label("Mint", "T-Mobile", None), "Mint (T-Mobile)")
+        self.assertEqual(L.operator_label("Mint", "T-Mobile", "unknown"), "Mint (T-Mobile)")
+        self.assertEqual(L.operator_label("Mint", "T-Mobile", "searching"), "Mint (T-Mobile)")
+
+    def test_single_name_roaming_gets_a_bare_marker(self):
+        # "R:" needs something to qualify, so with one name it becomes "(R)".
+        self.assertEqual(L.operator_label(None, "AT&T", "roaming"), "AT&T (R)")
+        self.assertEqual(L.operator_label("Mint", None, "roaming"), "Mint (R)")
+        self.assertEqual(L.operator_label("T-Mobile", "T-Mobile", "roaming"), "T-Mobile (R)")
+
+    def test_no_names_stays_none_even_while_roaming(self):
+        self.assertIsNone(L.operator_label(None, None, "roaming"))
+
+    def test_build_status_exposes_roaming(self):
+        st = L.build_status({"reachable": True,
+                             "signals": [{"network_type": "LTE", "rsrp": -88}],
+                             "qeng": TestQeng.SAMPLE,
+                             "qspn": TestSimOperator.SAMPLE,
+                             "cereg": '\r\n+CEREG: 0,5\r\n\r\nOK\r\n'})
+        self.assertEqual(st["cellular"]["registration"], "roaming")
+        self.assertTrue(st["cellular"]["roaming"])
+        self.assertEqual(st["cellular"]["operator_label"], "Mint (R:T-Mobile)")
+
+    def test_build_status_without_cereg_is_not_roaming(self):
+        st = L.build_status({"reachable": True,
+                             "signals": [{"network_type": "LTE", "rsrp": -88}],
+                             "qeng": TestQeng.SAMPLE,
+                             "qspn": TestSimOperator.SAMPLE})
+        self.assertIsNone(st["cellular"]["registration"])
+        self.assertFalse(st["cellular"]["roaming"])
+        self.assertEqual(st["cellular"]["operator_label"], "Mint (T-Mobile)")

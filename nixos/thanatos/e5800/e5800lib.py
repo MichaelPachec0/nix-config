@@ -118,7 +118,44 @@ def parse_qspn(data):
     return None
 
 
-def operator_label(sim_name, network_name):
+# AT+CEREG? <stat> -> registration state. 3GPP TS 27.007: 0 not registered,
+# 1 registered on the home network, 2 searching, 3 registration denied,
+# 4 unknown, 5 registered while roaming.
+CEREG_STATES = {
+    0: "none", 1: "home", 2: "searching", 3: "denied", 4: "unknown", 5: "roaming",
+}
+
+
+def parse_cereg(data):
+    """Parse an AT+CEREG? response into a registration state word.
+
+    Answers `+CEREG: <n>,<stat>[,...]` where <n> is the unsolicited-result
+    setting and <stat> is what we want. Returns None when absent or
+    unparseable -- the caller must treat that as "not known to be roaming"
+    rather than as "home", and must never claim roaming it did not observe.
+
+    This is the only authoritative roaming signal available. Comparing the
+    registered PLMN against the SIM's own cannot substitute for it: an MVNO
+    rides its host's PLMN, so a Mint SIM on T-Mobile would read as roaming,
+    and conversely a national roaming agreement can share a PLMN.
+    """
+    if not data:
+        return None
+    for raw in str(data).splitlines():
+        line = raw.strip()
+        if not line.startswith("+CEREG:"):
+            continue
+        toks = [t.strip().strip('"') for t in line[len("+CEREG:"):].split(",")]
+        if len(toks) < 2:
+            continue
+        stat = _int_or_none(toks[1])
+        if stat is None:
+            continue
+        return CEREG_STATES.get(stat, "unknown")
+    return None
+
+
+def operator_label(sim_name, network_name, registration=None):
     """Compose the display name from the SIM's brand and the network's.
 
     "Mint (T-Mobile)" when they differ -- an MVNO subscriber is on Mint but
@@ -128,12 +165,24 @@ def operator_label(sim_name, network_name):
     Collapses to one name when they match, so a direct T-Mobile subscriber
     never sees "T-Mobile (T-Mobile)". Falls back to whichever half exists, and
     to None when neither does.
+
+    While roaming the network half is marked: "Mint (R:AT&T)". When there is
+    only one name to show it becomes "AT&T (R)", since "R:" needs something to
+    qualify.
+
+    An unknown registration state is NOT rendered as roaming. Roaming can cost
+    real money, so the flag is only shown when it was actually observed --
+    silence here means "not known to be roaming", never "definitely home".
     """
     sim = (sim_name or "").strip()
     net = (network_name or "").strip()
+    roaming = (registration == "roaming")
     if sim and net and sim.lower() != net.lower():
-        return "{} ({})".format(sim, net)
-    return sim or net or None
+        return "{} ({}{})".format(sim, "R:" if roaming else "", net)
+    one = sim or net
+    if not one:
+        return None
+    return "{} (R)".format(one) if roaming else one
 
 
 def parse_qeng(data):
@@ -362,6 +411,7 @@ def build_status(parts):
     sig = (sig_list or [{}])[0] if sig_list else {}
     serving = parse_qeng(parts.get("qeng"))
     sim_operator = parse_qspn(parts.get("qspn"))
+    registration = parse_cereg(parts.get("cereg"))
     usage = parts.get("usage") or {}
     marker = parts.get("recovery")
     vpn_list = (parts.get("vpn") or {}).get("status_list") or []
@@ -417,9 +467,13 @@ def build_status(parts):
             # The SIM's own brand, which differs from the network for an MVNO
             # (a Mint SIM rides T-Mobile). None when the SIM carries no SPN.
             "sim_operator": sim_operator,
+            # 3GPP registration state: home / roaming / searching / denied /
+            # none / unknown, or None when the modem did not answer.
+            "registration": registration,
+            "roaming": registration == "roaming",
             # What to display: "Mint (T-Mobile)" when they differ, one name
             # when they match, whichever exists when only one does.
-            "operator_label": operator_label(sim_operator, (serving or {}).get("operator")),
+            "operator_label": operator_label(sim_operator, (serving or {}).get("operator"), registration),
         },
         "throughput": {
             "rx": speed.get("speed_rx"),
