@@ -359,3 +359,68 @@ class TestOperator(unittest.TestCase):
                              "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}]})
         self.assertIsNone(st["cellular"]["operator"])
         self.assertIsNone(st["cellular"]["plmn"])
+
+
+class TestSimOperator(unittest.TestCase):
+    """An MVNO's brand lives on the SIM, not in the network registration.
+
+    A Mint SIM reports "Mint" via AT+QSPN while riding T-Mobile's network,
+    which QENG reports as PLMN 310-260. The two are different facts and the
+    display shows both.
+    """
+
+    SAMPLE = '\r\n+QSPN: "Mint","Mint","Mint",0,"310260"\r\n\r\nOK\r\n'
+
+    def test_parses_the_sim_name(self):
+        self.assertEqual(L.parse_qspn(self.SAMPLE), "Mint")
+
+    def test_bare_ok_is_none(self):
+        # Observed on this modem 2026-07-31: a SIM with no SPN record answers
+        # a bare OK. Must be None so the caller falls back to the network name
+        # rather than rendering a blank.
+        self.assertIsNone(L.parse_qspn('\r\nOK\r\n'))
+        self.assertIsNone(L.parse_qspn(''))
+        self.assertIsNone(L.parse_qspn(None))
+
+    def test_empty_leading_fields_fall_through(self):
+        # FNN empty but SNN populated: take the first non-empty of the three
+        # rather than returning "" and losing the name.
+        self.assertEqual(L.parse_qspn('\r\n+QSPN: "","TMO","",0,"310260"\r\n\r\nOK\r\n'), "TMO")
+
+    def test_all_name_fields_empty_is_none(self):
+        self.assertIsNone(L.parse_qspn('\r\n+QSPN: "","","",0,"310260"\r\n\r\nOK\r\n'))
+
+    def test_label_shows_both_when_they_differ(self):
+        self.assertEqual(L.operator_label("Mint", "T-Mobile"), "Mint (T-Mobile)")
+
+    def test_label_collapses_when_they_match(self):
+        # A direct subscriber must never see "T-Mobile (T-Mobile)".
+        self.assertEqual(L.operator_label("T-Mobile", "T-Mobile"), "T-Mobile")
+        self.assertEqual(L.operator_label("T-MOBILE", "T-Mobile"), "T-MOBILE")
+
+    def test_label_falls_back_to_whichever_half_exists(self):
+        self.assertEqual(L.operator_label(None, "T-Mobile"), "T-Mobile")
+        self.assertEqual(L.operator_label("Mint", None), "Mint")
+        self.assertEqual(L.operator_label("", "T-Mobile"), "T-Mobile")
+        self.assertIsNone(L.operator_label(None, None))
+        self.assertIsNone(L.operator_label("", ""))
+
+    def test_label_handles_roaming(self):
+        # The same shape carries a genuinely useful fact when roaming.
+        self.assertEqual(L.operator_label("Mint", "AT&T"), "Mint (AT&T)")
+
+    def test_build_status_composes_the_label(self):
+        st = L.build_status({"reachable": True,
+                             "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}],
+                             "qeng": TestQeng.SAMPLE,
+                             "qspn": self.SAMPLE})
+        self.assertEqual(st["cellular"]["sim_operator"], "Mint")
+        self.assertEqual(st["cellular"]["operator"], "T-Mobile")
+        self.assertEqual(st["cellular"]["operator_label"], "Mint (T-Mobile)")
+
+    def test_build_status_without_qspn_falls_back_to_network(self):
+        st = L.build_status({"reachable": True,
+                             "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}],
+                             "qeng": TestQeng.SAMPLE})
+        self.assertIsNone(st["cellular"]["sim_operator"])
+        self.assertEqual(st["cellular"]["operator_label"], "T-Mobile")

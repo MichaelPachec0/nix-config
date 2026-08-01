@@ -92,8 +92,13 @@ ColumnLayout {
         if (c.supported !== true)
             return "";
         var head = [];
-        if (c.operator)
-            head.push(String(c.operator));
+        // operator_label prefers the SIM's own brand and names the network it
+        // rides when they differ ("Mint (T-Mobile)"). Falls back to the plain
+        // network name on a SIM with no SPN record, and finally to `operator`
+        // for a payload written before the poller carried the label.
+        var who = c.operator_label || c.operator;
+        if (who)
+            head.push(String(who));
         if (c.gen)
             head.push(String(c.gen));
         var left = head.join(" ");

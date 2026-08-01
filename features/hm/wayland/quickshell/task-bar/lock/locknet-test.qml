@@ -88,6 +88,17 @@ ShellRoot {
         check("cell/emptyObject", net._cellText({}), "");
         check("cell/null", net._cellText(null), "");
 
+        // ---- operator label --------------------------------------------------
+        // An MVNO's brand lives on the SIM and its network does not: a Mint SIM
+        // rides T-Mobile, and both halves are worth showing. The collector
+        // composes the string; the row must PREFER it over the bare network
+        // name, or the MVNO name never reaches the screen.
+        check("cell/label", net._cellText({ supported: true, operator_label: "Mint (T-Mobile)", operator: "T-Mobile", gen: "5G", rsrp: -88 }), "Mint (T-Mobile) 5G  -88 dBm");
+        // A payload written before the poller carried the label (or a SIM with
+        // no SPN record) still names the network.
+        check("cell/labelFallback", net._cellText({ supported: true, operator: "T-Mobile", gen: "5G", rsrp: -88 }), "T-Mobile 5G  -88 dBm");
+        check("cell/labelNullFallsBack", net._cellText({ supported: true, operator_label: null, operator: "T-Mobile", gen: "5G", rsrp: -88 }), "T-Mobile 5G  -88 dBm");
+
         // ---- cellular tint: which metric feeds quality() ---------------------
         // The load-bearing choice. A congested cell reports strong rsrp and
         // poor sinr while throughput collapses, so feeding rsrp here would call

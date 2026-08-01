@@ -28,11 +28,14 @@ RECOVER_INTERVAL = 2.0
 RECOVER_TIMEOUT = 120.0
 QENG_INTERVAL = 30.0  # serving-cell bands change slowly; refresh sparingly
 QCAINFO_INTERVAL = 10.0  # SCC activation changes with traffic; refresh often
+QSPN_INTERVAL = 900.0  # the SIM's own name changes only on a SIM swap
 
 # Last good raw QENG payload + when it was last fetched. Kept across cycles so a
 # transient SSH/AT miss does not blank cellular.ca and flicker the widget.
 _QENG_CACHE = None
 _QENG_LAST = 0.0
+_QSPN_CACHE = None
+_QSPN_LAST = 0.0
 
 # Last good raw QCAINFO payload + fetch time, latched like QENG so a transient
 # SSH/AT miss does not blank cellular.ca.
@@ -155,6 +158,28 @@ def _qcainfo():
         return None, False
 
 
+# AT+QSPN via the modem AT passthrough (same channel/escaping as QENG). Reads
+# the Service Provider Name off the SIM, which is where an MVNO carries its own
+# brand: a Mint SIM on T-Mobile's network reports "Mint" here and "310-260"
+# (T-Mobile) through QENG. Firmware with no SPN record on the SIM answers a
+# bare OK, which parse_qspn renders as None -- see the note there.
+_QSPN_CMD = ("ubus call modem.CPU.AT get_result_AT "
+             "'{\"cmd\":\"AT+QSPN\",\"timeout\":5,"
+             "\"source_flag\":0,\"sub_id\":0}'")
+
+
+def _qspn():
+    """SIM service-provider name via AT passthrough.
+    Returns (raw_at_data_or_None, ssh_auth)."""
+    out, rc = _ssh(_QSPN_CMD)
+    if rc == 255:
+        return None, True
+    try:
+        return (json.loads(out) or {}).get("data"), False
+    except (ValueError, json.JSONDecodeError):
+        return None, False
+
+
 def _netdev_bytes():
     """Cumulative rx/tx bytes for the modem uplink netdev via /proc/net/dev on the
     router. Returns ((rx, tx) or None, ssh_auth_failed)."""
@@ -263,6 +288,17 @@ def collect_once():
         if raw and '"PCC"' in raw:
             _QCAINFO_CACHE = raw
     parts["qcainfo"] = _QCAINFO_CACHE
+    # The SIM's own service-provider name. Latched like QENG and refreshed far
+    # more sparingly -- it only changes when the SIM does -- so it costs one AT
+    # round-trip every 15 min rather than one per cycle.
+    global _QSPN_CACHE, _QSPN_LAST
+    qspn_auth = False
+    if not sig_auth and (_QSPN_CACHE is None or ts - _QSPN_LAST >= QSPN_INTERVAL):
+        raw, qspn_auth = _qspn()
+        _QSPN_LAST = ts
+        if raw:
+            _QSPN_CACHE = raw
+    parts["qspn"] = _QSPN_CACHE
     nb, nb_auth = _netdev_bytes()
     if nb is not None:
         st = L.usage_step(_load_state(), nb[0], nb[1], ts, RESET_DAY)
@@ -272,7 +308,8 @@ def collect_once():
     # Reachable at the network layer but SSH rejected (exit 255) => the key no
     # longer works (e.g. router was factory-reset). Surface it so the widget can
     # prompt re-authentication.
-    parts["auth_error"] = bool(sig_auth or nb_auth or qeng_auth or qcainfo_auth)
+    parts["auth_error"] = bool(sig_auth or nb_auth or qeng_auth or qcainfo_auth
+                               or qspn_auth)
     parts["recovery"] = _marker()
     return L.build_status(parts)
 

@@ -30,12 +30,15 @@ def _int_or_none(s):
         return None
 
 
-# MCC-MNC -> network name. Deliberately tiny: this exists because the modem
-# will not tell us the operator by name. AT+COPS? on this firmware answers a
-# bare "+COPS: 5" with no <format>/<oper> fields, and AT+QSPN answers a bare OK,
-# so neither carries a name -- but QENG, which the poller already fetches every
-# cycle for band info, reports the registered PLMN. Extend as needed; an unknown
-# PLMN falls back to its numeric form rather than guessing.
+# MCC-MNC -> NETWORK name. Deliberately tiny: this exists because the modem
+# will not name the registered network directly. AT+COPS? on this firmware
+# answers a bare "+COPS: 5" with no <format>/<oper> fields, so the PLMN that
+# QENG already reports (fetched every cycle for band info) is the only route.
+#
+# This is the network, NOT the subscriber's brand -- AT+QSPN carries that
+# separately, and an MVNO like Mint shares its host's PLMN, which is exactly
+# why a guess here would be wrong. An unknown PLMN falls back to its numeric
+# form rather than guessing. Extend as needed.
 PLMN_NAMES = {
     ("310", "260"): "T-Mobile",
     ("310", "410"): "AT&T",
@@ -88,6 +91,49 @@ def operator_from_plmn(mcc, mnc):
     if plmn is None:
         return None
     return PLMN_NAMES.get((str(mcc), str(mnc)), plmn)
+
+
+def parse_qspn(data):
+    """Parse an AT+QSPN response into the SIM's service-provider name.
+
+    Quectel answers `+QSPN: <FNN>,<SNN>,<SPN>,<alphabet>,<RPLMN>` where FNN is
+    the full network name held on the SIM. This is where an MVNO carries its
+    own brand: a Mint SIM reports "Mint" here while the network it rides is
+    T-Mobile, which QENG reports as PLMN 310-260.
+
+    Returns None when the SIM has no SPN record -- observed on this modem on
+    2026-07-31, which answered a bare "OK" -- so the caller falls back to the
+    network name rather than showing a blank.
+    """
+    if not data:
+        return None
+    for raw in str(data).splitlines():
+        line = raw.strip()
+        if not line.startswith("+QSPN:"):
+            continue
+        toks = [t.strip().strip('"') for t in line[len("+QSPN:"):].split(",")]
+        for t in toks[:3]:  # FNN, then SNN, then SPN
+            if t:
+                return t
+    return None
+
+
+def operator_label(sim_name, network_name):
+    """Compose the display name from the SIM's brand and the network's.
+
+    "Mint (T-Mobile)" when they differ -- an MVNO subscriber is on Mint but
+    riding T-Mobile, and both halves are worth knowing. Roaming makes the same
+    shape useful: a Mint SIM on AT&T reads "Mint (AT&T)".
+
+    Collapses to one name when they match, so a direct T-Mobile subscriber
+    never sees "T-Mobile (T-Mobile)". Falls back to whichever half exists, and
+    to None when neither does.
+    """
+    sim = (sim_name or "").strip()
+    net = (network_name or "").strip()
+    if sim and net and sim.lower() != net.lower():
+        return "{} ({})".format(sim, net)
+    return sim or net or None
 
 
 def parse_qeng(data):
@@ -315,6 +361,7 @@ def build_status(parts):
     sig_list = parts.get("signals")
     sig = (sig_list or [{}])[0] if sig_list else {}
     serving = parse_qeng(parts.get("qeng"))
+    sim_operator = parse_qspn(parts.get("qspn"))
     usage = parts.get("usage") or {}
     marker = parts.get("recovery")
     vpn_list = (parts.get("vpn") or {}).get("status_list") or []
@@ -364,8 +411,15 @@ def build_status(parts):
             # operator arrives via a serving-cell band query. None when QENG did
             # not report a camped cell (idle-uncamped, No Service, or an SSH/AT
             # miss) -- the caller must render nothing, not "Unknown".
+            # The NETWORK the modem is registered to, from the QENG PLMN.
             "operator": (serving or {}).get("operator"),
             "plmn": (serving or {}).get("plmn"),
+            # The SIM's own brand, which differs from the network for an MVNO
+            # (a Mint SIM rides T-Mobile). None when the SIM carries no SPN.
+            "sim_operator": sim_operator,
+            # What to display: "Mint (T-Mobile)" when they differ, one name
+            # when they match, whichever exists when only one does.
+            "operator_label": operator_label(sim_operator, (serving or {}).get("operator")),
         },
         "throughput": {
             "rx": speed.get("speed_rx"),
