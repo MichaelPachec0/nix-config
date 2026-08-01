@@ -8,6 +8,7 @@ import "../lib" as Lib
 import "../lib/weathericons.js" as WeatherIcons
 import "../lib/weathercond.js" as WeatherCond
 import "../lib/notiftime.js" as NotifTime
+import "../lib/routerfmt.js" as RouterFmt
 
 Item {
     id: root
@@ -23,6 +24,9 @@ Item {
     property bool notifHideAll: false // global hide-all panic state, from Lock.qml
     property var toggleNotifHideAll: null // Lock.qml's toggle function for notifHideAll
     property var security: null   // the Lock root, for its security state
+    property var net: null // Lib.NetworkService, threaded from shell.qml via Lock.qml
+    property var router: null // Lib.RouterService, threaded from shell.qml via Lock.qml
+    property var bt: null // Lib.BluetoothService, threaded from shell.qml via Lock.qml
 
     // Lock-in / unlock-out animation, driven by Lock.qml. `revealed` false =
     // sharp backdrop + hidden widgets; true = blurred backdrop + visible
@@ -332,6 +336,27 @@ Item {
         lowPercent: LockConfig.batLowPercent
     }
 
+    // Connectivity (top-left, below the battery block). Display-only -- no
+    // MouseArea or focus anywhere, the same rule every other lock widget
+    // follows. Collapses to zero height when it has nothing to report.
+    LockNetwork {
+        id: networkCol
+        opacity: root.contentOpacity
+        anchors.top: batteryCol.bottom
+        anchors.left: parent.left
+        anchors.leftMargin: 28
+        anchors.topMargin: batteryCol.visible ? 10 : 0
+        theme: root.wxTheme
+        contentOpacity: root.contentOpacity
+        net: root.net
+        router: root.router
+        bt: root.bt
+        // Injected, not imported: lib/ falls outside the config root when
+        // locknet-test.qml is the quickshell -p entrypoint. Same reason as
+        // LockSecurity's stampFn.
+        qualityFn: RouterFmt.quality
+    }
+
     LockSecurity {
         id: securityCol
         opacity: root.contentOpacity
@@ -339,10 +364,10 @@ Item {
         // battery hidden its height is 0 and its bottom sits at the 28px top
         // margin, so a 0 top margin here puts this column at exactly the y it
         // had before the battery existed.
-        anchors.top: batteryCol.bottom
+        anchors.top: networkCol.bottom
         anchors.left: parent.left
         anchors.leftMargin: 28
-        anchors.topMargin: batteryCol.visible ? 10 : 0
+        anchors.topMargin: networkCol.visible ? 10 : 0
         visible: LockConfig.secEnable
         theme: root.wxTheme
         contentOpacity: root.contentOpacity

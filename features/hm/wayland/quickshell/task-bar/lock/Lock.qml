@@ -15,6 +15,9 @@ Scope {
     readonly property var weather: weatherPoll.value // {temp, icon, desc, uv, conditions[], ...} or null
     property var audio: null // Lib.AudioService, threaded from shell.qml
     property var notifications: null // Lib.NotifService, threaded from shell.qml
+    property var net: null // Lib.NetworkService, threaded from shell.qml
+    property var router: null // Lib.RouterService, threaded from shell.qml
+    property var bt: null // Lib.BluetoothService, threaded from shell.qml
 
     // Drives the surfaces' blur/content animation. Set false while the surface
     // is still up so the unlock detransition can play before the compositor
@@ -488,6 +491,9 @@ Scope {
                 weather: root.weather
                 audio: root.audio
                 notifications: root.notifications
+                net: root.net
+                router: root.router
+                bt: root.bt
                 policy: lockNotifyPolicy
                 notifHideAll: root.notifHideAll
                 toggleNotifHideAll: function() { root.notifHideAll = !root.notifHideAll; }

@@ -44,6 +44,13 @@ ShellRoot {
         id: lockScreen
         audio: audioSvc
         notifications: notifSvc
+        // Ids differ from the property names they feed (netSvc->net,
+        // e5800Svc->router, btSvc->bt): an own-property shadows an enclosing
+        // component's id in QML scope resolution, so a same-name binding
+        // silently resolves to the component's own null property.
+        net: netSvc
+        router: e5800Svc
+        bt: btSvc
     }
 
     // Global Bluetooth state (one default adapter, shared by all screens).
