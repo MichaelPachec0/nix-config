@@ -514,7 +514,12 @@ def build_status(parts):
             "model": "GL-" + str(info.get("model", "E5800")).upper().replace("GL-", ""),
             "firmware": info.get("firmware_version", ""),
             "modem": info.get("modem", "Quectel RG650V-NA"),
-            "carrier": parts.get("carrier", ""),
+            # The resolved operator, not a literal: "Mint (T-Mobile)" at home,
+            # "Mint (R:AT&T)" while roaming. Falls back to whatever the caller
+            # passed so an explicit override still wins.
+            "carrier": operator_label(sim_operator,
+                                      (serving or {}).get("operator"),
+                                      registration) or parts.get("carrier", ""),
         },
         "battery": {
             "percent": mcu.get("charge_percent"),

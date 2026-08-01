@@ -304,8 +304,10 @@ def collect_once():
     ts = int(time.time())
     if not _reachable():
         return L.build_status({"ts": ts, "reachable": False})
-    parts = {"ts": ts, "reachable": True, "carrier": "T-Mobile",
-             "reset_day": RESET_DAY}
+    # No hardcoded carrier: device.carrier is derived from the SIM and the
+    # registered network in build_status. A literal here read "T-Mobile" on any
+    # SIM and while roaming on anyone else's network.
+    parts = {"ts": ts, "reachable": True, "reset_day": RESET_DAY}
     try:
         sid = _login()
         parts["get_status"] = _call(sid, "system", "get_status")

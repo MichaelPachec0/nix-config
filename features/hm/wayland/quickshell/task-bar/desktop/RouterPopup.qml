@@ -136,10 +136,49 @@ PopupWindow {
                 spacing: 2
                 RowLayout {
                     spacing: 8
+                    // operator_label carries the SIM's own brand beside the
+                    // network it rides ("Mint (T-Mobile)"), marked "R:" while
+                    // roaming. Falls back to device.carrier, which is now
+                    // derived from the same values rather than hardcoded.
                     Text {
-                        text: (pop.svc.cellular.gen || "?") + "   " + (pop.svc.device.carrier || "")
+                        text: (pop.svc.cellular.gen || "?") + "   "
+                            + (pop.svc.cellular.operator_label || pop.svc.device.carrier || "")
                         font.family: pop.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
                         color: pop.theme.textPrimary
+                    }
+                    // Roaming is worth its own mark, not just a prefix buried
+                    // in the name: it is the state that costs money.
+                    Text {
+                        visible: pop.svc.cellular.roaming === true
+                        text: "ROAMING"
+                        font.family: pop.theme.iconFont; font.pixelSize: 9; font.weight: Font.DemiBold
+                        color: pop.theme.accentYellow
+                    }
+                }
+                // Registration + PLMN: the facts behind the name above. Shown
+                // only once known, so nothing renders "undefined" before the
+                // first AT read lands.
+                RowLayout {
+                    spacing: 12
+                    visible: !!pop.svc.cellular.plmn || !!pop.svc.cellular.registration
+                    Text {
+                        visible: !!pop.svc.cellular.plmn
+                        text: "PLMN " + (pop.svc.cellular.plmn || "")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Text {
+                        visible: !!pop.svc.cellular.registration
+                        text: pop.svc.cellular.registration || ""
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.svc.cellular.roaming === true
+                            ? pop.theme.accentYellow : pop.theme.textSecondary
+                    }
+                    Text {
+                        visible: !!pop.svc.cellular.sim_operator
+                        text: "SIM " + (pop.svc.cellular.sim_operator || "")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
                     }
                 }
                 RowLayout {
