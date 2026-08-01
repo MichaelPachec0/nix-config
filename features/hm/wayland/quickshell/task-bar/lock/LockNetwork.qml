@@ -140,4 +140,89 @@ ColumnLayout {
         }
         return out.join(", ");
     }
+
+    // --- inputs -----------------------------------------------------------
+    property var net: null    // Lib.NetworkService
+    property var router: null // Lib.RouterService
+    property var bt: null     // Lib.BluetoothService
+
+    // --- derived ----------------------------------------------------------
+    readonly property bool linkUp: root.net ? (String(root.net.connState) === "activated") : false
+    readonly property string linkText: root.net ? root._linkText(root.net.primaryType, root.net.connState, root.net.ssid, root.net.signalVal, root.showSsid) : ""
+    readonly property string troubleText: root.net ? root._troubleText(root.net.connectivity, root.linkUp) : ""
+    readonly property string vpnText: root.net ? root._vpnText(root.net.vpns) : ""
+    readonly property var cellular: (root.showRouter && root.router) ? root.router.cellular : null
+    readonly property string cellText: root._cellText(root.cellular)
+    readonly property string cellQuality: root._cellQuality(root.cellular)
+    // Distinct from "no cellular": the router itself is not answering. Gated on
+    // statusSeen so a machine with no E5800 renders nothing, rather than a
+    // permanent failure row -- `reachable` is false before the first read too.
+    readonly property bool routerDown: root.showRouter && root.router !== null && root.router.statusSeen === true && root.router.reachable === false
+    readonly property string btText: (root.showBluetooth && root.bt) ? root._btText(root.bt.connectedDevices) : ""
+
+    readonly property bool hasAny: root.linkText !== "" || root.troubleText !== "" || root.vpnText !== "" || root.cellText !== "" || root.routerDown || root.btText !== ""
+
+    visible: root.hasAny
+    // An invisible QML item still occupies its anchor position, so the height
+    // must collapse too or the security column below shifts down by it.
+    height: root.visible ? root.implicitHeight : 0
+
+    // --- rows -------------------------------------------------------------
+    // NB: children address the row through its own `id`, not `parent` -- this
+    // repo has lost time to QML name resolution picking up an enclosing scope,
+    // and an explicit id cannot. Mirrors LockSecurity's SignalRow.
+    component NetRow: RowLayout {
+        id: rowRoot
+        property string glyph: ""
+        property string label: ""
+        property color tint: root.theme ? root.theme.textSecondary : "#a89984"
+        // Cap mirrors LockSecurity's: this column is anchored top-left and an
+        // arbitrarily long SSID or device name would otherwise grow it
+        // rightward toward the centred password field.
+        Layout.maximumWidth: 320
+        spacing: 6
+        visible: rowRoot.label !== ""
+        LockText {
+            text: rowRoot.glyph
+            font.family: "JetBrainsMono Nerd Font"
+            font.pixelSize: 12
+            color: rowRoot.tint
+        }
+        LockText {
+            Layout.fillWidth: true
+            text: rowRoot.label
+            elide: Text.ElideRight
+            font.pixelSize: 12
+            color: rowRoot.tint
+        }
+    }
+
+    NetRow {
+        glyph: String.fromCodePoint(root.net && String(root.net.primaryType) === "ethernet" ? 0xF0E8 : 0xF1EB)
+        label: root.linkText
+    }
+    // The ONLY red row here. If every row can be red the colour stops meaning
+    // anything, so severity lives on this one alone.
+    NetRow {
+        glyph: String.fromCodePoint(0xF071)
+        label: root.troubleText
+        tint: root.theme ? root.theme.accentRed : "#fb4934"
+    }
+    NetRow {
+        glyph: String.fromCodePoint(0xF084)
+        label: root.vpnText
+    }
+    NetRow {
+        glyph: String.fromCodePoint(0xF012)
+        label: root.cellText
+        tint: root._cellNeedsWarn(root.cellQuality) ? (root.theme ? root.theme.accentYellow : "#fabd2f") : (root.theme ? root.theme.textSecondary : "#a89984")
+    }
+    NetRow {
+        glyph: String.fromCodePoint(0xF071)
+        label: root.routerDown ? "Router unreachable" : ""
+    }
+    NetRow {
+        glyph: String.fromCodePoint(0xF293)
+        label: root.btText
+    }
 }

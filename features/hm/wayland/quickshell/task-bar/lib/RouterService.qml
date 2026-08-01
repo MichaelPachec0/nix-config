@@ -17,6 +17,13 @@ Scope {
 
     property var data: ({})
     readonly property bool reachable: root.data.reachable === true
+    // True once the status file has actually been read. `reachable` is false
+    // BEFORE the first read and on a machine with no E5800 at all, so it
+    // cannot on its own tell "the router is down" from "there is no router" --
+    // a consumer that renders a failure row needs this to avoid claiming the
+    // former whenever the latter is true. Purely additive; nothing existing
+    // changes meaning.
+    property bool statusSeen: false
     // Reachable but SSH key rejected (e.g. router factory-reset) -> prompt re-auth.
     readonly property bool authError: root.data.auth_error === true
     readonly property var cellular: root.data.cellular || ({})
@@ -63,6 +70,9 @@ Scope {
             } catch (e) {
                 root.data = {};
             }
+            // Set in BOTH branches: the file EXISTING is the signal, not
+            // whether its contents parsed. See statusSeen above.
+            root.statusSeen = true;
         }
     }
 
