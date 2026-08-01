@@ -52,6 +52,11 @@ COND_FOG_VIS_MI=1
 COND_HYDRO_TEMP_MIN=40
 
 readonly GEO_CACHE="$CACHE_DIR/geo.json"
+# World-readable handoff for the resolved country code. $HOME is 0700, so the
+# geo cache above is invisible to system services; the e5800 poll service reads
+# this instead to pick among a PLMN's per-territory rows. Only the country code
+# is published -- coordinates and place name stay in the private cache.
+readonly GEO_PUBLIC="${QS_GEO_PUBLIC:-/run/qs-weather/country}"
 readonly GEO_TTL=1800
 # where-am-i: the geoclue demo agent, already whitelisted in geoclue.conf. Found
 # at runtime via the nix store so it survives geoclue version bumps. (A proper
@@ -341,6 +346,19 @@ reverse_geocode() {
   printf '%s' "$r" | jq -r '[(.city // .locality // .principalSubdivision // ""), (.countryCode // "")] | @tsv' 2>/dev/null
 }
 
+# Publish the country code where a system service can read it. Best-effort and
+# never fatal: the directory is created by a tmpfiles rule, and its absence
+# simply means consumers get no hint. Written via a temp file + rename so a
+# reader never sees a partial value.
+publish_country() {
+  [ -n "${1:-}" ] || return 0
+  local d
+  d=$(dirname "$GEO_PUBLIC")
+  [ -d "$d" ] || return 0
+  printf '%s\n' "$1" >"$GEO_PUBLIC.tmp" 2>/dev/null &&
+    mv -f "$GEO_PUBLIC.tmp" "$GEO_PUBLIC" 2>/dev/null || true
+}
+
 # Resolve the live location into LAT/LON/PLACE via geoclue, cached GEO_TTL secs.
 # Returns 1 only with no fix and no cache (caller then falls back to defaults).
 resolve_geo() {
@@ -372,6 +390,7 @@ resolve_geo() {
     COUNTRY="$country"
     jq -n --arg lat "$lat" --arg lon "$lon" --arg place "$place" --arg country "$country" \
       '{lat:$lat,lon:$lon,place:$place,country:$country}' >"$GEO_CACHE" 2>/dev/null
+    publish_country "$country"
     return 0
   fi
   if [ -f "$GEO_CACHE" ]; then # a stale fix beats nothing
@@ -852,6 +871,14 @@ LOC_ID="${1:-geo}"
 # fmt_*_tz helpers so a non-local city's clock times show in its own zone.
 TZNAME="${5:-}"
 CACHE_FILE="$CACHE_DIR/weather-${LOC_ID}.json"
+
+# Republish the country BEFORE the cache short-circuit below. /run is cleared on
+# reboot while the geo cache is not, and a weather cache hit exits early without
+# ever calling resolve_geo -- so publishing only from there would leave
+# consumers hintless for up to CACHE_TTL after every boot.
+if [ -f "$GEO_CACHE" ]; then
+  publish_country "$(jq -r '.country // ""' "$GEO_CACHE" 2>/dev/null)"
+fi
 
 # --- serve fresh per-location cache (skips geolocation entirely) --------------
 if [ -f "$CACHE_FILE" ]; then

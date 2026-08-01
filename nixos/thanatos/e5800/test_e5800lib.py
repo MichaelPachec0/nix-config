@@ -307,13 +307,13 @@ class TestOperator(unittest.TestCase):
     }
 
     def test_known_plmn_resolves_to_a_name(self):
-        self.assertEqual(L.operator_from_plmn("310", "260", table=self.TABLE), "T-Mobile")
-        self.assertEqual(L.operator_from_plmn("310", "410", table=self.TABLE), "AT&T")
+        self.assertEqual(L.operator_from_plmn("310", "260", ["US"], self.TABLE), "T-Mobile")
+        self.assertEqual(L.operator_from_plmn("310", "410", ["US"], self.TABLE), "AT&T")
 
     def test_unknown_plmn_falls_back_to_the_number(self):
         # Not None and not a guess: "which network" is still answered by the
         # number, and MVNOs share a PLMN with their host so a guess would lie.
-        self.assertEqual(L.operator_from_plmn("000", "000", table=self.TABLE), "000-000")
+        self.assertEqual(L.operator_from_plmn("000", "000", ["US"], self.TABLE), "000-000")
 
     def test_missing_plmn_is_none(self):
         self.assertIsNone(L.operator_from_plmn(None, None))
@@ -326,11 +326,11 @@ class TestOperator(unittest.TestCase):
         # digit would resolve one to the other's name.
         self.assertEqual(L.fmt_plmn("310", "26"), "310-26")
         self.assertEqual(L.fmt_plmn("310", "260"), "310-260")
-        self.assertNotEqual(L.operator_from_plmn("310", "26", table=self.TABLE),
-                            L.operator_from_plmn("310", "260", table=self.TABLE))
+        self.assertNotEqual(L.operator_from_plmn("310", "26", ["US"], self.TABLE),
+                            L.operator_from_plmn("310", "260", ["US"], self.TABLE))
 
     def test_qeng_nsa_capture_carries_the_operator(self):
-        r = L.parse_qeng(TestQeng.SAMPLE)
+        r = L.parse_qeng(TestQeng.SAMPLE, ["US"])
         self.assertEqual(r["plmn"], "310-260")
         self.assertEqual(r["operator"], "T-Mobile")
 
@@ -338,7 +338,7 @@ class TestOperator(unittest.TestCase):
         data = ('\r\n+QENG: "servingcell","CONNECT"\r\n'
                 '+QENG: "LTE","FDD",310,410,1762809,322,675,66,4,4,3C6E,'
                 '-88,-18,-51,16,13,-110,-\r\n\r\nOK\r\n')
-        self.assertEqual(L.parse_qeng(data)["operator"], "AT&T")
+        self.assertEqual(L.parse_qeng(data, ["US"])["operator"], "AT&T")
 
     def test_nr5g_only_reads_the_plmn_one_token_earlier(self):
         # NR5G lines have no duplex field, so the PLMN sits at a different
@@ -347,7 +347,7 @@ class TestOperator(unittest.TestCase):
         data = ('\r\n+QENG: "servingcell","NOCONN"\r\n'
                 '+QENG: "NR5G-NSA",310,260,704,-81,22,-10,501390,41,12,1'
                 '\r\n\r\nOK\r\n')
-        r = L.parse_qeng(data)
+        r = L.parse_qeng(data, ["US"])
         self.assertEqual(r["plmn"], "310-260")
         self.assertEqual(r["operator"], "T-Mobile")
 
@@ -357,14 +357,14 @@ class TestOperator(unittest.TestCase):
         self.assertIsNone(L.parse_qeng('\r\n+QENG: "servingcell","NOCONN"\r\n\r\nOK\r\n'))
 
     def test_build_status_lifts_operator_onto_cellular(self):
-        st = L.build_status({"reachable": True,
+        st = L.build_status({"reachable": True, "country_hint": ["US"],
                              "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}],
                              "qeng": TestQeng.SAMPLE})
         self.assertEqual(st["cellular"]["operator"], "T-Mobile")
         self.assertEqual(st["cellular"]["plmn"], "310-260")
 
     def test_build_status_without_qeng_has_no_operator(self):
-        st = L.build_status({"reachable": True,
+        st = L.build_status({"reachable": True, "country_hint": ["US"],
                              "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}]})
         self.assertIsNone(st["cellular"]["operator"])
         self.assertIsNone(st["cellular"]["plmn"])
@@ -419,7 +419,7 @@ class TestSimOperator(unittest.TestCase):
         self.assertEqual(L.operator_label("Mint", "AT&T"), "Mint (AT&T)")
 
     def test_build_status_composes_the_label(self):
-        st = L.build_status({"reachable": True,
+        st = L.build_status({"reachable": True, "country_hint": ["US"],
                              "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}],
                              "qeng": TestQeng.SAMPLE,
                              "qspn": self.SAMPLE})
@@ -428,7 +428,7 @@ class TestSimOperator(unittest.TestCase):
         self.assertEqual(st["cellular"]["operator_label"], "Mint (T-Mobile)")
 
     def test_build_status_without_qspn_falls_back_to_network(self):
-        st = L.build_status({"reachable": True,
+        st = L.build_status({"reachable": True, "country_hint": ["US"],
                              "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}],
                              "qeng": TestQeng.SAMPLE})
         self.assertIsNone(st["cellular"]["sim_operator"])
@@ -489,7 +489,7 @@ class TestRoaming(unittest.TestCase):
         self.assertIsNone(L.operator_label(None, None, "roaming"))
 
     def test_build_status_exposes_roaming(self):
-        st = L.build_status({"reachable": True,
+        st = L.build_status({"reachable": True, "country_hint": ["US"],
                              "signals": [{"network_type": "LTE", "rsrp": -88}],
                              "qeng": TestQeng.SAMPLE,
                              "qspn": TestSimOperator.SAMPLE,
@@ -499,7 +499,7 @@ class TestRoaming(unittest.TestCase):
         self.assertEqual(st["cellular"]["operator_label"], "Mint (R:T-Mobile)")
 
     def test_build_status_without_cereg_is_not_roaming(self):
-        st = L.build_status({"reachable": True,
+        st = L.build_status({"reachable": True, "country_hint": ["US"],
                              "signals": [{"network_type": "LTE", "rsrp": -88}],
                              "qeng": TestQeng.SAMPLE,
                              "qspn": TestSimOperator.SAMPLE})
@@ -572,51 +572,77 @@ class TestPlmnSelection(unittest.TestCase):
 
 
 class TestCountryHint(unittest.TestCase):
-    """The hint comes from tzdata, not geoclue.
+    """The hint comes from the file weather.sh publishes.
 
-    geoclue's Location interface answers with coordinates and no country at all
-    (lat/lon/accuracy/speed/heading/description), and this runs as a system
-    service that cannot reach the user session regardless.
+    Not geoclue: its Location interface answers with coordinates and no country
+    at all. Not tzdata: that reports where the machine is CONFIGURED rather
+    than where it is. There is deliberately no fallback -- see
+    TestUnknownNetwork for what happens without a hint.
     """
 
-    def _tab(self, body):
+    def _file(self, body):
         import tempfile
-        f = tempfile.NamedTemporaryFile("w", suffix=".tab", delete=False)
+        f = tempfile.NamedTemporaryFile("w", delete=False)
         f.write(body)
         f.close()
         return f.name
 
-    TAB = ("# comment\n"
-           "US\t+340308-1181434\tAmerica/Los_Angeles\tPacific\n"
-           "GB,GG,IM,JE\t+513030-0000731\tEurope/London\n")
+    def test_reads_a_country_code(self):
+        self.assertEqual(L.country_hint(self._file("US\n")), ["US"])
+        self.assertEqual(L.country_hint(self._file("gb")), ["GB"])
+        self.assertEqual(L.country_hint(self._file("  JE  \n")), ["JE"])
 
-    def test_single_country_zone(self):
-        import os
-        tab = self._tab(self.TAB)
-        link = tab + ".link"
-        os.symlink("/usr/share/zoneinfo/America/Los_Angeles", link)
-        self.assertEqual(L.country_hint(link, tab), ["US"])
+    def test_missing_file_is_no_hint(self):
+        self.assertEqual(L.country_hint("/nonexistent/country"), [])
 
-    def test_multi_country_zone_keeps_order(self):
-        # Exactly the territory-sharing case the hint exists for; the zone's
-        # first country is its primary and must stay first.
-        import os
-        tab = self._tab(self.TAB)
-        link = tab + ".link2"
-        os.symlink("/usr/share/zoneinfo/Europe/London", link)
-        self.assertEqual(L.country_hint(link, tab), ["GB", "GG", "IM", "JE"])
+    def test_corrupt_or_partial_write_is_no_hint(self):
+        # A torn write must read as "no hint", never as a country -- an
+        # invented one would silently name the wrong operator.
+        self.assertEqual(L.country_hint(self._file("")), [])
+        self.assertEqual(L.country_hint(self._file("U")), [])
+        self.assertEqual(L.country_hint(self._file("USA")), [])
+        self.assertEqual(L.country_hint(self._file("U1")), [])
+        self.assertEqual(L.country_hint(self._file("{\"country\":\"US\"}")), [])
 
-    def test_unknown_zone_is_no_hint(self):
-        import os
-        tab = self._tab(self.TAB)
-        link = tab + ".link3"
-        os.symlink("/usr/share/zoneinfo/Antarctica/Troll", link)
-        # [] means "no hint", NEVER a default country -- a wrong hint would
-        # silently name the wrong operator.
-        self.assertEqual(L.country_hint(link, tab), [])
 
-    def test_missing_files_are_no_hint(self):
-        self.assertEqual(L.country_hint("/nonexistent/localtime", "/nonexistent/tab"), [])
+class TestUnknownNetwork(unittest.TestCase):
+    """With no country hint the network is not named at all.
+
+    Rows for one PLMN can genuinely differ by country, so without knowing where
+    the device is, any name is a guess -- and a confidently wrong carrier reads
+    worse than an honest blank.
+    """
+
+    TABLE = {"310-260": [{"cc": "US", "brand": "T-Mobile", "operator": "T-Mobile US",
+                          "status": "Operational"}]}
+
+    def test_no_hint_yields_na(self):
+        self.assertEqual(L.operator_from_plmn("310", "260", [], self.TABLE), "N/A")
+        self.assertEqual(L.operator_from_plmn("310", "260", None, self.TABLE), "N/A")
+
+    def test_hint_yields_the_name(self):
+        self.assertEqual(L.operator_from_plmn("310", "260", ["US"], self.TABLE), "T-Mobile")
+
+    def test_label_shows_the_sim_brand_beside_na(self):
+        # The SIM's own name comes from AT+QSPN and needs no country, so it
+        # still shows: "Mint ( N/A )" rather than nothing at all.
+        self.assertEqual(L.operator_label("Mint", "N/A"), "Mint (N/A)")
+
+    def test_build_status_with_no_country_shows_na(self):
+        # The end-to-end shape the display uses: the SIM brand still resolves
+        # (AT+QSPN needs no country), the network does not.
+        st = L.build_status({"reachable": True, "country_hint": [],
+                             "signals": [{"network_type": "LTE", "rsrp": -88}],
+                             "qeng": TestQeng.SAMPLE,
+                             "qspn": TestSimOperator.SAMPLE})
+        self.assertEqual(st["cellular"]["operator"], "N/A")
+        self.assertEqual(st["cellular"]["sim_operator"], "Mint")
+        self.assertEqual(st["cellular"]["operator_label"], "Mint (N/A)")
+        # The PLMN itself is a fact and must survive regardless.
+        self.assertEqual(st["cellular"]["plmn"], "310-260")
+
+    def test_missing_plmn_is_still_none(self):
+        self.assertIsNone(L.operator_from_plmn(None, None, ["US"], self.TABLE))
 
 
 class TestPlmnTableFile(unittest.TestCase):
@@ -635,4 +661,4 @@ class TestPlmnTableFile(unittest.TestCase):
     def test_missing_table_degrades_to_the_number(self):
         table = L.load_plmn_table("/nonexistent/plmn-names.json")
         self.assertEqual(table, {})
-        self.assertEqual(L.operator_from_plmn("310", "260", None, table), "310-260")
+        self.assertEqual(L.operator_from_plmn("310", "260", ["US"], table), "310-260")

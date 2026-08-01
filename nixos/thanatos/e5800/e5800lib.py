@@ -70,34 +70,36 @@ def plmn_table():
     return _PLMN_TABLE
 
 
-def country_hint(tz_path="/etc/localtime", tab_path="/etc/zoneinfo/zone1970.tab"):
-    """Ordered country codes for this machine's timezone, e.g. ["US"], or
-    ["GB","GG","IM","JE"] for Europe/London.
+# Where weather.sh publishes the country code it already receives from its
+# reverse-geocode call. $HOME is 0700, so the private geo cache is invisible to
+# this service; that file is the handoff.
+COUNTRY_FILE_ENV = "E5800_COUNTRY_FILE"
+DEFAULT_COUNTRY_FILE = "/run/qs-weather/country"
 
-    Derived from tzdata rather than from geoclue, because geoclue answers with
-    coordinates and no country at all (verified 2026-08-01: its Location
-    interface carries lat/lon/accuracy/speed/heading/description only), and
-    because this runs as a system service that cannot reach the user session
-    anyway. The zone's own country list happens to enumerate exactly the
-    territories that share a PLMN, which is the case the hint exists for.
 
-    Returns [] when the timezone cannot be determined -- the caller must treat
-    that as "no hint", never as a default country.
+def country_hint(path=None):
+    """Country code for this machine, as a one-element ordered hint, or [].
+
+    Read from the file weather.sh publishes -- NOT from geoclue, whose Location
+    interface answers with coordinates and no country at all, and not from
+    tzdata, which reports where the machine is CONFIGURED rather than where it
+    is. The reverse-geocode call behind that file already runs for the weather
+    widget, so this costs no extra request.
+
+    [] means "no hint" and is deliberately not backfilled with a default: an
+    invented country would silently name the wrong operator on a PLMN whose
+    rows genuinely differ by country.
     """
+    path = path or os.environ.get(COUNTRY_FILE_ENV) or DEFAULT_COUNTRY_FILE
     try:
-        zone = os.path.realpath(tz_path).split("/zoneinfo/", 1)[1]
-    except (OSError, IndexError):
-        return []
-    try:
-        with open(tab_path) as f:
-            for line in f:
-                if line.startswith("#"):
-                    continue
-                cols = line.rstrip("\n").split("\t")
-                if len(cols) >= 3 and cols[2] == zone:
-                    return [c for c in cols[0].split(",") if c]
+        with open(path) as f:
+            cc = f.read().strip().upper()
     except OSError:
         return []
+    # Two letters, ISO 3166-1 alpha-2. Anything else is a corrupt or partial
+    # write and must read as "no hint" rather than as a country.
+    if len(cc) == 2 and cc.isalpha():
+        return [cc]
     return []
 
 
@@ -148,17 +150,29 @@ def fmt_plmn(mcc, mnc):
     return "{}-{}".format(mcc, mnc)
 
 
-def operator_from_plmn(mcc, mnc, hint=None, table=None):
-    """(mcc, mnc) -> network name, falling back to the numeric PLMN.
+UNKNOWN_NETWORK = "N/A"
 
-    An unrecognised PLMN yields "310-260"-style text rather than None, because
-    "which network" is still answered by the number. This names the NETWORK,
-    not the subscriber's brand -- an MVNO rides its host's PLMN, so AT+QSPN is
-    what carries "Mint". See parse_qspn.
+
+def operator_from_plmn(mcc, mnc, hint=None, table=None):
+    """(mcc, mnc) -> network name.
+
+    With NO country hint this returns "N/A" rather than guessing. Several rows
+    can share a PLMN and a few genuinely differ by country (270-77 is Proximus
+    in BE and Tango in LU), so without knowing where the device is, naming the
+    network is a guess -- and a confidently wrong carrier name is worse than an
+    honest blank. There is deliberately no fallback hint source.
+
+    With a hint, an unrecognised PLMN yields "310-260"-style text rather than
+    None, because "which network" is still answered by the number.
+
+    This names the NETWORK, not the subscriber's brand -- an MVNO rides its
+    host's PLMN, so AT+QSPN is what carries "Mint". See parse_qspn.
     """
     plmn = fmt_plmn(mcc, mnc)
     if plmn is None:
         return None
+    if not hint:
+        return UNKNOWN_NETWORK
     tbl = plmn_table() if table is None else table
     return pick_plmn_name(tbl.get(plmn), hint) or plmn
 

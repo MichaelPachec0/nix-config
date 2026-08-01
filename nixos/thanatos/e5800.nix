@@ -92,6 +92,25 @@ in
 
     environment.systemPackages = [ pollBin recoverBin provisionBin ];
 
+    # World-readable handoff for the country code that weather.sh resolves via
+
+    # reverse geocoding. $HOME is 0700, so the poll service cannot read the
+
+    # private geo cache; this directory is where the user session drops the
+
+    # country code and where e5800lib reads it to pick among a PLMN's
+
+    # per-territory rows. Owned by the session user because that is the only
+
+    # writer; the service only reads.
+
+    systemd.tmpfiles.rules = [
+
+      "d /run/qs-weather 0755 ${cfg.triggerUser} users -"
+
+    ];
+
+
     systemd.services.e5800-poll = {
       description = "GL-E5800 router status poller";
       wantedBy = [ "multi-user.target" ];
