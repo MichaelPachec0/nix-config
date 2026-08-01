@@ -177,6 +177,37 @@ def operator_from_plmn(mcc, mnc, hint=None, table=None):
     return pick_plmn_name(tbl.get(plmn), hint) or plmn
 
 
+def due_at_call(ts, entries):
+    """Pick the ONE AT passthrough to run this cycle, or None.
+
+    entries: [(name, cache, last_ts, interval)].
+
+    These all share a single modem AT channel reached over the router's SSH,
+    which the surrounding code already describes as flaky under load. Firing
+    several in a burst makes the later ones answer a bare "OK" with no payload
+    -- run standalone the same command answers properly. So at most one goes
+    out per cycle.
+
+    Selection is by how overdue a call is relative to its own interval, not by
+    code order: QCAINFO refreshes every 10s and QSPN every 900s, so a
+    first-come rule would let QCAINFO win every cycle and starve the rest
+    forever. A never-fetched entry (cache None) outranks everything.
+    """
+    best = None
+    best_score = 0.0
+    for name, cache, last, interval in entries:
+        if cache is None:
+            score = float("inf")
+        else:
+            age = ts - last
+            if age < interval:
+                continue
+            score = age / interval if interval else float("inf")
+        if score > best_score:
+            best, best_score = name, score
+    return best
+
+
 def parse_qspn(data):
     """Parse an AT+QSPN response into the SIM's service-provider name.
 

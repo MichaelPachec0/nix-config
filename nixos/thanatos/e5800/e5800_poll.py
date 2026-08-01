@@ -292,9 +292,22 @@ def collect_once():
     # QENG shares the modem AT channel and the router's SSH is flaky under load,
     # so a per-cycle fetch flickers cellular.ca. Retry every cycle only until the
     # first success, then throttle; never overwrite a good value with a miss.
-    global _QENG_CACHE, _QENG_LAST
+    global _QENG_CACHE, _QENG_LAST, _QCAINFO_CACHE, _QCAINFO_LAST
+    global _QSPN_CACHE, _QSPN_LAST, _CEREG_CACHE, _CEREG_LAST
+    # ONE AT passthrough per cycle. All four share a single modem AT channel
+    # over the router's flaky SSH, and a burst makes the later calls answer a
+    # bare "OK" -- the same command run alone answers properly. Chosen by how
+    # overdue each is relative to its own interval, so the 10s QCAINFO cannot
+    # starve the 900s QSPN.
+    at_call = L.due_at_call(ts, [
+        ("qeng", _QENG_CACHE, _QENG_LAST, QENG_INTERVAL),
+        ("qcainfo", _QCAINFO_CACHE, _QCAINFO_LAST, QCAINFO_INTERVAL),
+        ("qspn", _QSPN_CACHE, _QSPN_LAST, QSPN_INTERVAL),
+        ("cereg", _CEREG_CACHE, _CEREG_LAST, CEREG_INTERVAL),
+    ]) if not sig_auth else None
+
     qeng_auth = False
-    if not sig_auth and (_QENG_CACHE is None or ts - _QENG_LAST >= QENG_INTERVAL):
+    if at_call == "qeng":
         raw, qeng_auth = _qeng()
         _QENG_LAST = ts
         # Same guard: parse_qeng returns None for a bare "OK" or an uncamped
@@ -306,10 +319,8 @@ def collect_once():
     # state). Latch like QENG but keyed on a PCC line: a total SSH/AT miss keeps
     # the last value (no blank), while a valid PCC-only idle read is allowed
     # through so the badge honestly drops when SCCs deconfigure (track-real-state).
-    global _QCAINFO_CACHE, _QCAINFO_LAST
     qcainfo_auth = False
-    if not sig_auth and (_QCAINFO_CACHE is None
-                         or ts - _QCAINFO_LAST >= QCAINFO_INTERVAL):
+    if at_call == "qcainfo":
         raw, qcainfo_auth = _qcainfo()
         _QCAINFO_LAST = ts
         if raw and '"PCC"' in raw:
@@ -318,9 +329,8 @@ def collect_once():
     # The SIM's own service-provider name. Latched like QENG and refreshed far
     # more sparingly -- it only changes when the SIM does -- so it costs one AT
     # round-trip every 15 min rather than one per cycle.
-    global _QSPN_CACHE, _QSPN_LAST
     qspn_auth = False
-    if not sig_auth and (_QSPN_CACHE is None or ts - _QSPN_LAST >= QSPN_INTERVAL):
+    if at_call == "qspn":
         raw, qspn_auth = _qspn()
         _QSPN_LAST = ts
         # Latch only a response that actually PARSES, not merely a non-empty
@@ -333,9 +343,8 @@ def collect_once():
     parts["qspn"] = _QSPN_CACHE
     # Registration state, for the roaming flag. Latched like the rest; it
     # changes on cell reselection rather than continuously.
-    global _CEREG_CACHE, _CEREG_LAST
     cereg_auth = False
-    if not sig_auth and (_CEREG_CACHE is None or ts - _CEREG_LAST >= CEREG_INTERVAL):
+    if at_call == "cereg":
         raw, cereg_auth = _cereg()
         _CEREG_LAST = ts
         # Same guard as QSPN above: a bare "OK" must not latch.
