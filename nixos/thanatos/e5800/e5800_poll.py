@@ -297,7 +297,9 @@ def collect_once():
     if not sig_auth and (_QENG_CACHE is None or ts - _QENG_LAST >= QENG_INTERVAL):
         raw, qeng_auth = _qeng()
         _QENG_LAST = ts
-        if raw:
+        # Same guard: parse_qeng returns None for a bare "OK" or an uncamped
+        # read, and latching that would blank the bands and the operator.
+        if raw and L.parse_qeng(raw):
             _QENG_CACHE = raw
     parts["qeng"] = _QENG_CACHE
     # QCAINFO carries the full aggregation (PCC + all SCCs with activation
@@ -321,7 +323,12 @@ def collect_once():
     if not sig_auth and (_QSPN_CACHE is None or ts - _QSPN_LAST >= QSPN_INTERVAL):
         raw, qspn_auth = _qspn()
         _QSPN_LAST = ts
-        if raw:
+        # Latch only a response that actually PARSES, not merely a non-empty
+        # one. The modem intermittently answers a bare "OK" with no +QSPN: line
+        # -- truthy, so a plain `if raw` pinned that useless value for the full
+        # interval and reported no SIM operator for 15 minutes. Gating on the
+        # parser keeps the guard from drifting away from what it protects.
+        if raw and L.parse_qspn(raw):
             _QSPN_CACHE = raw
     parts["qspn"] = _QSPN_CACHE
     # Registration state, for the roaming flag. Latched like the rest; it
@@ -331,7 +338,8 @@ def collect_once():
     if not sig_auth and (_CEREG_CACHE is None or ts - _CEREG_LAST >= CEREG_INTERVAL):
         raw, cereg_auth = _cereg()
         _CEREG_LAST = ts
-        if raw:
+        # Same guard as QSPN above: a bare "OK" must not latch.
+        if raw and L.parse_cereg(raw):
             _CEREG_CACHE = raw
     parts["cereg"] = _CEREG_CACHE
     nb, nb_auth = _netdev_bytes()
