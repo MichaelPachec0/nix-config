@@ -30,6 +30,66 @@ def _int_or_none(s):
         return None
 
 
+# MCC-MNC -> network name. Deliberately tiny: this exists because the modem
+# will not tell us the operator by name. AT+COPS? on this firmware answers a
+# bare "+COPS: 5" with no <format>/<oper> fields, and AT+QSPN answers a bare OK,
+# so neither carries a name -- but QENG, which the poller already fetches every
+# cycle for band info, reports the registered PLMN. Extend as needed; an unknown
+# PLMN falls back to its numeric form rather than guessing.
+PLMN_NAMES = {
+    ("310", "260"): "T-Mobile",
+    ("310", "410"): "AT&T",
+    ("311", "480"): "Verizon",
+    ("310", "120"): "Sprint",
+    ("312", "530"): "Sprint",
+    ("310", "030"): "AT&T",
+    ("310", "150"): "AT&T",
+    ("310", "170"): "AT&T",
+    ("310", "200"): "T-Mobile",
+    ("310", "210"): "T-Mobile",
+    ("310", "220"): "T-Mobile",
+    ("310", "230"): "T-Mobile",
+    ("310", "240"): "T-Mobile",
+    ("310", "250"): "T-Mobile",
+    ("310", "270"): "T-Mobile",
+    ("310", "310"): "T-Mobile",
+    ("310", "660"): "T-Mobile",
+    ("310", "800"): "T-Mobile",
+    ("311", "660"): "Metro",
+    ("312", "250"): "Verizon",
+    ("302", "220"): "Telus",
+    ("302", "610"): "Bell",
+    ("302", "720"): "Rogers",
+    ("334", "020"): "Telcel",
+}
+
+
+def fmt_plmn(mcc, mnc):
+    """(mcc, mnc) -> "310-260", or None when either part is missing.
+
+    MNC is kept as the modem reported it. Two- and three-digit MNCs are
+    genuinely different networks (MNC 26 is not MNC 260), so this must not
+    pad or strip digits.
+    """
+    if not mcc or not mnc:
+        return None
+    return "{}-{}".format(mcc, mnc)
+
+
+def operator_from_plmn(mcc, mnc):
+    """(mcc, mnc) -> operator name, falling back to the numeric PLMN.
+
+    Returns None only when the PLMN itself is unknown. An unrecognised PLMN
+    yields "310-260"-style text rather than None, because "which network" is
+    still answered by the number -- and rather than a guess, because MVNOs
+    share MCC/MNC with their host network and cannot be told apart here.
+    """
+    plmn = fmt_plmn(mcc, mnc)
+    if plmn is None:
+        return None
+    return PLMN_NAMES.get((str(mcc), str(mnc)), plmn)
+
+
 def parse_qeng(data):
     """Parse an AT+QENG="servingcell" response into serving-cell band info.
 
@@ -48,6 +108,7 @@ def parse_qeng(data):
         return None
     state = None
     cells = []
+    mcc = mnc = None
     for raw in str(data).splitlines():
         line = raw.strip()
         if not line.startswith("+QENG:"):
@@ -57,10 +118,19 @@ def parse_qeng(data):
         if head == "servingcell":
             state = toks[1] if len(toks) > 1 else None
         elif head == "LTE" and len(toks) > 7:
+            # The registered PLMN sits right after the duplex mode. It is the
+            # only place the operator is knowable at all -- see PLMN_NAMES.
+            if mcc is None and len(toks) > 3:
+                mcc, mnc = toks[2] or None, toks[3] or None
             b = _int_or_none(toks[7])
             if b is not None:
                 cells.append({"rat": "LTE", "band": b, "label": "B" + str(b)})
         elif head.startswith("NR5G") and len(toks) > 8:
+            # NR5G lines carry the PLMN one token earlier than LTE (no duplex
+            # field). Only consulted when there is no LTE anchor line, so an
+            # NSA reading reports the anchor's PLMN.
+            if mcc is None and len(toks) > 2:
+                mcc, mnc = toks[1] or None, toks[2] or None
             b = _int_or_none(toks[8])
             if b is not None:
                 cells.append({"rat": head, "band": b, "label": "n" + str(b)})
@@ -81,6 +151,8 @@ def parse_qeng(data):
         "count": len(cells),
         "bands": [c["label"] for c in cells],
         "cells": cells,
+        "plmn": fmt_plmn(mcc, mnc),
+        "operator": operator_from_plmn(mcc, mnc),
     }
 
 
@@ -242,6 +314,7 @@ def build_status(parts):
     info = parts.get("info") or {}
     sig_list = parts.get("signals")
     sig = (sig_list or [{}])[0] if sig_list else {}
+    serving = parse_qeng(parts.get("qeng"))
     usage = parts.get("usage") or {}
     marker = parts.get("recovery")
     vpn_list = (parts.get("vpn") or {}).get("status_list") or []
@@ -286,7 +359,13 @@ def build_status(parts):
             "sinr": sig.get("sinr"),
             "slot": sig.get("slot"),
             "ca": parse_qcainfo(parts.get("qcainfo")),
-            "serving": parse_qeng(parts.get("qeng")),
+            "serving": serving,
+            # Lifted out of `serving` so consumers do not have to know that the
+            # operator arrives via a serving-cell band query. None when QENG did
+            # not report a camped cell (idle-uncamped, No Service, or an SSH/AT
+            # miss) -- the caller must render nothing, not "Unknown".
+            "operator": (serving or {}).get("operator"),
+            "plmn": (serving or {}).get("plmn"),
         },
         "throughput": {
             "rx": speed.get("speed_rx"),

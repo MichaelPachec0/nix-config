@@ -286,3 +286,76 @@ class TestRecover(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestOperator(unittest.TestCase):
+    """The operator name is only knowable from QENG's PLMN.
+
+    AT+COPS? on this firmware answers a bare "+COPS: 5" with no <format>/<oper>
+    fields, and AT+QSPN answers a bare OK -- verified against the live modem on
+    2026-07-31. QENG, already fetched every cycle for band info, reports the
+    registered PLMN, so no extra AT round-trip is needed.
+    """
+
+    def test_known_plmn_resolves_to_a_name(self):
+        self.assertEqual(L.operator_from_plmn("310", "260"), "T-Mobile")
+        self.assertEqual(L.operator_from_plmn("310", "410"), "AT&T")
+
+    def test_unknown_plmn_falls_back_to_the_number(self):
+        # Not None and not a guess: "which network" is still answered by the
+        # number, and MVNOs share a PLMN with their host so a guess would lie.
+        self.assertEqual(L.operator_from_plmn("999", "999"), "999-999")
+
+    def test_missing_plmn_is_none(self):
+        self.assertIsNone(L.operator_from_plmn(None, None))
+        self.assertIsNone(L.operator_from_plmn("310", None))
+        self.assertIsNone(L.operator_from_plmn(None, "260"))
+        self.assertIsNone(L.operator_from_plmn("", ""))
+
+    def test_mnc_digits_are_not_normalised(self):
+        # MNC 26 and MNC 260 are different networks; padding or stripping a
+        # digit would resolve one to the other's name.
+        self.assertEqual(L.fmt_plmn("310", "26"), "310-26")
+        self.assertEqual(L.fmt_plmn("310", "260"), "310-260")
+        self.assertNotEqual(L.operator_from_plmn("310", "26"),
+                            L.operator_from_plmn("310", "260"))
+
+    def test_qeng_nsa_capture_carries_the_operator(self):
+        r = L.parse_qeng(TestQeng.SAMPLE)
+        self.assertEqual(r["plmn"], "310-260")
+        self.assertEqual(r["operator"], "T-Mobile")
+
+    def test_qeng_lte_only_carries_the_operator(self):
+        data = ('\r\n+QENG: "servingcell","CONNECT"\r\n'
+                '+QENG: "LTE","FDD",310,410,1762809,322,675,66,4,4,3C6E,'
+                '-88,-18,-51,16,13,-110,-\r\n\r\nOK\r\n')
+        self.assertEqual(L.parse_qeng(data)["operator"], "AT&T")
+
+    def test_nr5g_only_reads_the_plmn_one_token_earlier(self):
+        # NR5G lines have no duplex field, so the PLMN sits at a different
+        # index than on LTE lines. Reading the LTE offset here would yield the
+        # cell id as the MNC and silently produce a wrong network.
+        data = ('\r\n+QENG: "servingcell","NOCONN"\r\n'
+                '+QENG: "NR5G-NSA",310,260,704,-81,22,-10,501390,41,12,1'
+                '\r\n\r\nOK\r\n')
+        r = L.parse_qeng(data)
+        self.assertEqual(r["plmn"], "310-260")
+        self.assertEqual(r["operator"], "T-Mobile")
+
+    def test_no_serving_cell_yields_no_operator(self):
+        # parse_qeng returns None outright when nothing is camped, so the
+        # status builder must render nothing rather than "Unknown".
+        self.assertIsNone(L.parse_qeng('\r\n+QENG: "servingcell","NOCONN"\r\n\r\nOK\r\n'))
+
+    def test_build_status_lifts_operator_onto_cellular(self):
+        st = L.build_status({"reachable": True,
+                             "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}],
+                             "qeng": TestQeng.SAMPLE})
+        self.assertEqual(st["cellular"]["operator"], "T-Mobile")
+        self.assertEqual(st["cellular"]["plmn"], "310-260")
+
+    def test_build_status_without_qeng_has_no_operator(self):
+        st = L.build_status({"reachable": True,
+                             "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}]})
+        self.assertIsNone(st["cellular"]["operator"])
+        self.assertIsNone(st["cellular"]["plmn"])
