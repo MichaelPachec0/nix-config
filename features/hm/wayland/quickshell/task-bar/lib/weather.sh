@@ -329,18 +329,22 @@ pirate_key() { read_key "${PIRATEWEATHER_API_KEY:-}" "${PIRATEWEATHER_API_KEY_FI
 
 # --- geolocation (geoclue via the where-am-i agent) ---------------------------
 
-# Reverse-geocode lat/lon to a place name (BigDataCloud, free, no key).
+# Reverse-geocode lat/lon to "<place>\t<countryCode>" (BigDataCloud, free, no
+# key). The country rides along because the response already carries it and the
+# call already happens -- geoclue itself answers with coordinates and no country
+# at all, so this request is the only place a country code is available without
+# adding a dependency. Either field may be empty; the caller must not invent one.
 reverse_geocode() {
   local r
   r=$(curl -sf --max-time 5 \
     "https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=$1&longitude=$2&localityLanguage=en" 2>/dev/null) || return 0
-  printf '%s' "$r" | jq -r '.city // .locality // .principalSubdivision // ""' 2>/dev/null
+  printf '%s' "$r" | jq -r '[(.city // .locality // .principalSubdivision // ""), (.countryCode // "")] | @tsv' 2>/dev/null
 }
 
 # Resolve the live location into LAT/LON/PLACE via geoclue, cached GEO_TTL secs.
 # Returns 1 only with no fix and no cache (caller then falls back to defaults).
 resolve_geo() {
-  local now mtime out lat lon place
+  local now mtime out lat lon place geo country
   if [ -f "$GEO_CACHE" ]; then
     now=$(date +%s)
     mtime=$(stat -c %Y "$GEO_CACHE" 2>/dev/null || echo 0)
@@ -348,6 +352,7 @@ resolve_geo() {
       LAT=$(jq -r '.lat // empty' "$GEO_CACHE")
       LON=$(jq -r '.lon // empty' "$GEO_CACHE")
       PLACE=$(jq -r '.place // ""' "$GEO_CACHE")
+      COUNTRY=$(jq -r '.country // ""' "$GEO_CACHE")
       [ -n "$LAT" ] && [ -n "$LON" ] && return 0
     fi
   fi
@@ -357,18 +362,23 @@ resolve_geo() {
     lon=$(printf '%s' "$out" | awk -F: '/Longitude/{v=$2; gsub(/[^0-9.\-]/,"",v); print v; exit}')
   fi
   if [ -n "${lat:-}" ] && [ -n "${lon:-}" ]; then
-    place=$(reverse_geocode "$lat" "$lon")
+    geo=$(reverse_geocode "$lat" "$lon")
+    place=${geo%%	*}
+    country=""
+    case "$geo" in *"$(printf '\t')"*) country=${geo##*	} ;; esac
     LAT="$lat"
     LON="$lon"
     PLACE="$place"
-    jq -n --arg lat "$lat" --arg lon "$lon" --arg place "$place" \
-      '{lat:$lat,lon:$lon,place:$place}' >"$GEO_CACHE" 2>/dev/null
+    COUNTRY="$country"
+    jq -n --arg lat "$lat" --arg lon "$lon" --arg place "$place" --arg country "$country" \
+      '{lat:$lat,lon:$lon,place:$place,country:$country}' >"$GEO_CACHE" 2>/dev/null
     return 0
   fi
   if [ -f "$GEO_CACHE" ]; then # a stale fix beats nothing
     LAT=$(jq -r '.lat // empty' "$GEO_CACHE")
     LON=$(jq -r '.lon // empty' "$GEO_CACHE")
     PLACE=$(jq -r '.place // ""' "$GEO_CACHE")
+    COUNTRY=$(jq -r '.country // ""' "$GEO_CACHE")
     [ -n "$LAT" ] && [ -n "$LON" ] && return 0
   fi
   return 1

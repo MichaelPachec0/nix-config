@@ -297,14 +297,23 @@ class TestOperator(unittest.TestCase):
     registered PLMN, so no extra AT round-trip is needed.
     """
 
+    # Injected rather than read from the vendored table, so these assert the
+    # RULES and cannot break when upstream data changes.
+    TABLE = {
+        "310-260": [{"cc": "US", "brand": "T-Mobile", "operator": "T-Mobile US",
+                     "status": "Operational"}],
+        "310-410": [{"cc": "US", "brand": "AT&T", "operator": "AT&T Mobility",
+                     "status": "Operational"}],
+    }
+
     def test_known_plmn_resolves_to_a_name(self):
-        self.assertEqual(L.operator_from_plmn("310", "260"), "T-Mobile")
-        self.assertEqual(L.operator_from_plmn("310", "410"), "AT&T")
+        self.assertEqual(L.operator_from_plmn("310", "260", table=self.TABLE), "T-Mobile")
+        self.assertEqual(L.operator_from_plmn("310", "410", table=self.TABLE), "AT&T")
 
     def test_unknown_plmn_falls_back_to_the_number(self):
         # Not None and not a guess: "which network" is still answered by the
         # number, and MVNOs share a PLMN with their host so a guess would lie.
-        self.assertEqual(L.operator_from_plmn("999", "999"), "999-999")
+        self.assertEqual(L.operator_from_plmn("000", "000", table=self.TABLE), "000-000")
 
     def test_missing_plmn_is_none(self):
         self.assertIsNone(L.operator_from_plmn(None, None))
@@ -317,8 +326,8 @@ class TestOperator(unittest.TestCase):
         # digit would resolve one to the other's name.
         self.assertEqual(L.fmt_plmn("310", "26"), "310-26")
         self.assertEqual(L.fmt_plmn("310", "260"), "310-260")
-        self.assertNotEqual(L.operator_from_plmn("310", "26"),
-                            L.operator_from_plmn("310", "260"))
+        self.assertNotEqual(L.operator_from_plmn("310", "26", table=self.TABLE),
+                            L.operator_from_plmn("310", "260", table=self.TABLE))
 
     def test_qeng_nsa_capture_carries_the_operator(self):
         r = L.parse_qeng(TestQeng.SAMPLE)
@@ -497,3 +506,133 @@ class TestRoaming(unittest.TestCase):
         self.assertIsNone(st["cellular"]["registration"])
         self.assertFalse(st["cellular"]["roaming"])
         self.assertEqual(st["cellular"]["operator_label"], "Mint (T-Mobile)")
+
+
+class TestPlmnSelection(unittest.TestCase):
+    """Several rows for one PLMN are usually ONE network listed per territory.
+
+    234-50 is JT across Guernsey, Jersey and the UK -- not duplicates. A few
+    genuinely differ by country, which is what the hint resolves.
+    """
+
+    JT = [{"cc": "GB", "brand": "JT", "operator": "JT Group Limited", "status": "Operational"},
+          {"cc": "GG", "brand": "JT", "operator": "JT Group Limited", "status": "Operational"},
+          {"cc": "JE", "brand": "JT", "operator": "JT Group Limited", "status": "Operational"}]
+    # 270-77: genuinely different operators sharing a PLMN across two countries.
+    LUX = [{"cc": "BE", "brand": "", "operator": "Proximus Luxembourg S.A.", "status": "Unknown"},
+           {"cc": "LU", "brand": "Tango", "operator": "Tango SA", "status": "Operational"}]
+
+    def test_same_network_across_territories_needs_no_hint(self):
+        self.assertEqual(L.pick_plmn_name(self.JT), "JT")
+        self.assertEqual(L.pick_plmn_name(self.JT, ["GG"]), "JT")
+
+    def test_hint_selects_among_genuinely_different_operators(self):
+        self.assertEqual(L.pick_plmn_name(self.LUX, ["LU"]), "Tango")
+        self.assertEqual(L.pick_plmn_name(self.LUX, ["BE"]), "Proximus Luxembourg S.A.")
+
+    def test_hint_order_decides_when_several_match(self):
+        # Europe/London yields GB,GG,IM,JE -- all four match, so the zone's own
+        # primary country must win rather than alphabetical order.
+        rows = [{"cc": "GB", "brand": "Umbrella", "operator": "", "status": "Operational"},
+                {"cc": "IM", "brand": "Local", "operator": "", "status": "Operational"}]
+        self.assertEqual(L.pick_plmn_name(rows, ["GB", "GG", "IM", "JE"]), "Umbrella")
+        self.assertEqual(L.pick_plmn_name(rows, ["IM", "GB"]), "Local")
+
+    def test_unmatched_hint_is_ignored_not_filtering(self):
+        # THE safety property: roaming abroad with a home-country hint must
+        # fall through to normal ranking, never lose the name.
+        self.assertEqual(L.pick_plmn_name(self.LUX, ["US"]), "Tango")
+        self.assertEqual(L.pick_plmn_name(self.JT, ["US", "CA"]), "JT")
+
+    def test_operational_preferred_over_defunct(self):
+        rows = [{"cc": "GB", "brand": "Dead", "operator": "", "status": "Not operational"},
+                {"cc": "GB", "brand": "Live", "operator": "", "status": "Operational"}]
+        self.assertEqual(L.pick_plmn_name(rows), "Live")
+
+    def test_operator_used_when_brand_is_empty(self):
+        # A third of upstream rows carry no brand; dropping to None there would
+        # lose a name that is present.
+        rows = [{"cc": "US", "brand": "", "operator": "Some Telecom", "status": "Operational"}]
+        self.assertEqual(L.pick_plmn_name(rows), "Some Telecom")
+
+    def test_nameless_rows_are_skipped_entirely(self):
+        rows = [{"cc": "US", "brand": "", "operator": "", "status": "Operational"},
+                {"cc": "CA", "brand": "Real", "operator": "", "status": "Unknown"}]
+        self.assertEqual(L.pick_plmn_name(rows), "Real")
+
+    def test_no_rows_is_none(self):
+        self.assertIsNone(L.pick_plmn_name([]))
+        self.assertIsNone(L.pick_plmn_name(None))
+        self.assertIsNone(L.pick_plmn_name([{"cc": "US", "brand": "", "operator": ""}]))
+
+    def test_selection_is_deterministic(self):
+        rows = [{"cc": "ZZ", "brand": "B", "operator": "", "status": "Operational"},
+                {"cc": "AA", "brand": "A", "operator": "", "status": "Operational"}]
+        self.assertEqual(L.pick_plmn_name(rows), L.pick_plmn_name(list(reversed(rows))))
+
+
+class TestCountryHint(unittest.TestCase):
+    """The hint comes from tzdata, not geoclue.
+
+    geoclue's Location interface answers with coordinates and no country at all
+    (lat/lon/accuracy/speed/heading/description), and this runs as a system
+    service that cannot reach the user session regardless.
+    """
+
+    def _tab(self, body):
+        import tempfile
+        f = tempfile.NamedTemporaryFile("w", suffix=".tab", delete=False)
+        f.write(body)
+        f.close()
+        return f.name
+
+    TAB = ("# comment\n"
+           "US\t+340308-1181434\tAmerica/Los_Angeles\tPacific\n"
+           "GB,GG,IM,JE\t+513030-0000731\tEurope/London\n")
+
+    def test_single_country_zone(self):
+        import os
+        tab = self._tab(self.TAB)
+        link = tab + ".link"
+        os.symlink("/usr/share/zoneinfo/America/Los_Angeles", link)
+        self.assertEqual(L.country_hint(link, tab), ["US"])
+
+    def test_multi_country_zone_keeps_order(self):
+        # Exactly the territory-sharing case the hint exists for; the zone's
+        # first country is its primary and must stay first.
+        import os
+        tab = self._tab(self.TAB)
+        link = tab + ".link2"
+        os.symlink("/usr/share/zoneinfo/Europe/London", link)
+        self.assertEqual(L.country_hint(link, tab), ["GB", "GG", "IM", "JE"])
+
+    def test_unknown_zone_is_no_hint(self):
+        import os
+        tab = self._tab(self.TAB)
+        link = tab + ".link3"
+        os.symlink("/usr/share/zoneinfo/Antarctica/Troll", link)
+        # [] means "no hint", NEVER a default country -- a wrong hint would
+        # silently name the wrong operator.
+        self.assertEqual(L.country_hint(link, tab), [])
+
+    def test_missing_files_are_no_hint(self):
+        self.assertEqual(L.country_hint("/nonexistent/localtime", "/nonexistent/tab"), [])
+
+
+class TestPlmnTableFile(unittest.TestCase):
+    """Smoke test against the vendored table actually shipped."""
+
+    def test_vendored_table_loads_and_resolves(self):
+        import os
+        path = os.path.join(os.path.dirname(os.path.abspath(L.__file__)),
+                            "plmn-names.json")
+        table = L.load_plmn_table(path)
+        self.assertGreater(len(table), 3000)
+        self.assertEqual(L.operator_from_plmn("310", "260", ["US"], table), "T-Mobile")
+        self.assertEqual(L.operator_from_plmn("310", "410", ["US"], table), "AT&T")
+        self.assertEqual(L.operator_from_plmn("234", "15", ["GB"], table), "Vodafone UK")
+
+    def test_missing_table_degrades_to_the_number(self):
+        table = L.load_plmn_table("/nonexistent/plmn-names.json")
+        self.assertEqual(table, {})
+        self.assertEqual(L.operator_from_plmn("310", "260", None, table), "310-260")
