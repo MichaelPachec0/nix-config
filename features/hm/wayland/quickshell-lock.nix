@@ -194,6 +194,44 @@ in {
     };
   };
 
+  options.quickshellLock.network = {
+    enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Show the connectivity block (link, internet reachability, VPN, cellular
+        uplink, Bluetooth) at the top-left of the lock, below the battery.
+      '';
+    };
+    showSsid = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Show the Wi-Fi network NAME on the lock. With this off the row reads
+        "Connected" and KEEPS the signal percentage -- the number is not
+        identifying. The lock is the one surface a stranger can read without
+        authenticating, and an SSID names a home or office network.
+      '';
+    };
+    showRouter = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Show the E5800 cellular uplink rows (operator, generation, signal) and
+        the router-unreachable warning. No effect where no status file exists.
+      '';
+    };
+    showBluetooth = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Show connected Bluetooth device names on the lock. Off hides the row
+        entirely rather than anonymising it -- "1 device connected" is not
+        worth a row, and device names are often personal.
+      '';
+    };
+  };
+
   config = {
     home.packages = [ lockEscape ];
 
@@ -216,6 +254,9 @@ in {
       };
       battery = {
         inherit (cfg.battery) enable lowPercent;
+      };
+      network = {
+        inherit (cfg.network) enable showSsid showRouter showBluetooth;
       };
     };
 

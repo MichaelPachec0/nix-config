@@ -355,6 +355,13 @@ Item {
         // locknet-test.qml is the quickshell -p entrypoint. Same reason as
         // LockSecurity's stampFn.
         qualityFn: RouterFmt.quality
+        // Carries hasAny as well as the config flag: an outer binding REPLACES
+        // the component's own `visible: root.hasAny` rather than composing with
+        // it, so dropping it would render an empty block.
+        visible: LockConfig.netEnable && networkCol.hasAny
+        showSsid: LockConfig.netShowSsid
+        showRouter: LockConfig.netShowRouter
+        showBluetooth: LockConfig.netShowBluetooth
     }
 
     LockSecurity {

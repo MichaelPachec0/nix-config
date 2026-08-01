@@ -47,8 +47,16 @@ Singleton {
     property bool secShowDevices: true
     property bool secShowUptime: true
     property bool secShowLastUnlock: true
+
+    // battery block (Nix quickshellLock.battery)
     property bool batEnable: true
     property int batLowPercent: 20
+
+    // connectivity block (Nix quickshellLock.network)
+    property bool netEnable: true
+    property bool netShowSsid: true
+    property bool netShowRouter: true
+    property bool netShowBluetooth: true
 
     function _parseWmColor(s) {
         var p = (s || "").split("-");
@@ -93,6 +101,13 @@ Singleton {
                     var bt = o.battery;
                     if (bt.enable !== undefined) root.batEnable = !!bt.enable;
                     if (bt.lowPercent !== undefined) root.batLowPercent = bt.lowPercent;
+                }
+                if (o.network) {
+                    var nw = o.network;
+                    if (nw.enable !== undefined) root.netEnable = !!nw.enable;
+                    if (nw.showSsid !== undefined) root.netShowSsid = !!nw.showSsid;
+                    if (nw.showRouter !== undefined) root.netShowRouter = !!nw.showRouter;
+                    if (nw.showBluetooth !== undefined) root.netShowBluetooth = !!nw.showBluetooth;
                 }
                 if (o.watermark) {
                     var w = o.watermark;
