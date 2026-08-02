@@ -133,103 +133,133 @@ PanelWindow {
         theme: dock.theme
     }
 
+    // Clearance kept between the left pill and the right-hand cluster.
+    property int pillGutter: 12
+
+    // How much width the focused-window title may take before it runs under the
+    // right-hand pills.
+    //
+    // The three bar rows are anchored independently (left / centre / right), so
+    // the layout engine does NOT keep them apart -- a long title simply drew
+    // underneath the media pill. This is the constraint that was missing.
+    //
+    // Deliberately built from leftCore.width and rightRow.x, neither of which
+    // depends on the title: making it depend on the pill's own width instead
+    // would be a binding loop, since the pill is sized BY the title.
+    readonly property real titleRoom: rightRow.x - leftRow.x - leftCore.width
+        - leftPill.pad * 2 - leftPill.gap - dock.pillGutter
+
     // Left: workspaces + window icons, wrapped in a pill so it gets the same
     // glass fill / shadow / text treatment as the right-side clusters.
     RowLayout {
+        id: leftRow
         anchors.left: parent.left
         anchors.leftMargin: 10
         anchors.verticalCenter: parent.verticalCenter
         spacing: 8
 
         Lib.Pill {
+            id: leftPill
             Layout.alignment: Qt.AlignVCenter
             theme: dock.theme
+            // Tighter than the default 8: this pill holds far more items than
+            // any right-hand cluster (one chip per workspace, one tile per
+            // window, then the title), so the default gap compounds and pushes
+            // the pill into the media cluster.
+            gap: 6
 
-            Repeater {
-                model: dock.monitorWorkspaces
-                Rectangle {
-                    id: ws
-                    required property var modelData
-                    readonly property bool active: modelData.id === dock.activeWs
-                    implicitWidth: active ? 34 : 26
-                    implicitHeight: 22
-                    radius: 11
-                    color: active ? dock.theme.accent : dock.theme.bgItem
-                    Behavior on implicitWidth {
-                        NumberAnimation {
-                            duration: 150
-                            easing.type: Easing.OutBack
-                        }
-                    }
-                    Lib.BarText {
-                        anchors.centerIn: parent
-                        text: ws.modelData.id
-                        color: ws.active ? dock.theme.textOnAccent : dock.theme.textSecondary
-                        font.family: dock.theme.iconFont
-                        font.pixelSize: 11
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: Hyprland.dispatch("hl.dsp.focus({ workspace = " + ws.modelData.id + " })")
-                    }
-                }
-            }
-
-            // Divider (only when the active workspace has windows)
-            Rectangle {
-                visible: dock.hasWindows
-                Layout.preferredWidth: 1
-                Layout.preferredHeight: 18
-                color: dock.theme.border
-            }
-
-            // Windows on the active workspace -- real app icons, click to focus.
-            // Nested row so icon size + gap are independent of the workspace chips.
+            // Everything the title has to fit AROUND. Grouped so its width can be
+            // measured without involving the title -- see dock.titleRoom.
             RowLayout {
-                spacing: 0 // tiles already pad ~10px between glyphs; raise for more air
+                id: leftCore
+                spacing: leftPill.gap
+
                 Repeater {
-                    model: Hyprland.toplevels
-                    MouseArea {
-                        id: win
+                    model: dock.monitorWorkspaces
+                    Rectangle {
+                        id: ws
                         required property var modelData
-                        readonly property bool onActive: (modelData.workspace?.id ?? -2) === dock.activeWs
-                        readonly property bool isActive: modelData === Hyprland.activeToplevel
-                        readonly property string cls: modelData.lastIpcObject?.class ?? ""
-                        readonly property string addr: {
-                            var a = (modelData.address && modelData.address.length > 0) ? modelData.address : (modelData.lastIpcObject?.address ?? "");
-                            return (a.indexOf("0x") === 0) ? a : ("0x" + a);
-                        }
-                        visible: onActive
-                        implicitWidth: 26 // tile size (icon + padding == effective spacing)
-                        implicitHeight: 26
-                        onClicked: Hyprland.dispatch('hl.dsp.focus({ window = "address:' + win.addr + '" })')
-
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: 6
-                            color: win.isActive ? dock.theme.bgItemHover : "transparent"
-
-                            Image {
-                                anchors.centerIn: parent
-                                width: 16 // icon glyph size
-                                height: 16
-                                sourceSize.width: 32
-                                sourceSize.height: 32
-                                source: dock.iconFor(win.cls)
+                        readonly property bool active: modelData.id === dock.activeWs
+                        implicitWidth: active ? 30 : 22
+                        implicitHeight: 20
+                        radius: 10
+                        color: active ? dock.theme.accent : dock.theme.bgItem
+                        Behavior on implicitWidth {
+                            NumberAnimation {
+                                duration: 150
+                                easing.type: Easing.OutBack
                             }
+                        }
+                        Lib.BarText {
+                            anchors.centerIn: parent
+                            text: ws.modelData.id
+                            color: ws.active ? dock.theme.textOnAccent : dock.theme.textSecondary
+                            font.family: dock.theme.iconFont
+                            font.pixelSize: 11
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: Hyprland.dispatch("hl.dsp.focus({ workspace = " + ws.modelData.id + " })")
+                        }
+                    }
+                }
+
+                // Divider (only when the active workspace has windows)
+                Rectangle {
+                    visible: dock.hasWindows
+                    Layout.preferredWidth: 1
+                    Layout.preferredHeight: 18
+                    color: dock.theme.border
+                }
+
+                // Windows on the active workspace -- real app icons, click to focus.
+                // Nested row so icon size + gap are independent of the workspace chips.
+                RowLayout {
+                    spacing: 0 // tiles already pad ~10px between glyphs; raise for more air
+                    Repeater {
+                        model: Hyprland.toplevels
+                        MouseArea {
+                            id: win
+                            required property var modelData
+                            readonly property bool onActive: (modelData.workspace?.id ?? -2) === dock.activeWs
+                            readonly property bool isActive: modelData === Hyprland.activeToplevel
+                            readonly property string cls: modelData.lastIpcObject?.class ?? ""
+                            readonly property string addr: {
+                                var a = (modelData.address && modelData.address.length > 0) ? modelData.address : (modelData.lastIpcObject?.address ?? "");
+                                return (a.indexOf("0x") === 0) ? a : ("0x" + a);
+                            }
+                            visible: onActive
+                            implicitWidth: 22 // tile size (icon + padding == effective spacing)
+                            implicitHeight: 22
+                            onClicked: Hyprland.dispatch('hl.dsp.focus({ window = "address:' + win.addr + '" })')
+
                             Rectangle {
-                                visible: win.isActive
-                                anchors.bottom: parent.bottom
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                width: 12
-                                height: 2
-                                radius: 1
-                                color: dock.theme.accent
+                                anchors.fill: parent
+                                radius: 6
+                                color: win.isActive ? dock.theme.bgItemHover : "transparent"
+
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 14 // icon glyph size
+                                    height: 14
+                                    sourceSize.width: 32
+                                    sourceSize.height: 32
+                                    source: dock.iconFor(win.cls)
+                                }
+                                Rectangle {
+                                    visible: win.isActive
+                                    anchors.bottom: parent.bottom
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: 10
+                                    height: 2
+                                    radius: 1
+                                    color: dock.theme.accent
+                                }
                             }
                         }
                     }
                 }
-            }
+            } // leftCore
 
             // Focused window title (elided), after the app icons. Scoped to this
             // monitor's active workspace so multi-monitor bars don't all mirror the
@@ -241,10 +271,15 @@ PanelWindow {
                 id: focusedTitle
                 readonly property var active: Hyprland.activeToplevel
                 Layout.alignment: Qt.AlignVCenter
-                Layout.maximumWidth: 240
+                // Whichever is tighter: the readability cap, or the room that
+                // actually exists before the right-hand cluster.
+                Layout.maximumWidth: Math.min(240, Math.max(0, dock.titleRoom))
                 visible: focusedTitle.active !== null
                     && (focusedTitle.active.workspace?.id ?? -2) === dock.activeWs
                     && focusedTitle.text.length > 0
+                    // Below this the title is all ellipsis and no information;
+                    // dropping it gives the icons the space instead.
+                    && dock.titleRoom >= 48
                 text: focusedTitle.active?.title ?? ""
                 elide: Text.ElideRight
                 color: dock.theme.textPrimary
@@ -267,6 +302,7 @@ PanelWindow {
     // dividers are gone -- each pill IS the grouping. Bar stays opaque until the
     // transparent-bar step; pills use the translucent bgPill token either way.
     RowLayout {
+        id: rightRow
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
