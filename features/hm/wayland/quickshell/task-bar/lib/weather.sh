@@ -58,6 +58,30 @@ readonly GEO_CACHE="$CACHE_DIR/geo.json"
 # is published -- coordinates and place name stay in the private cache.
 readonly GEO_PUBLIC="${QS_GEO_PUBLIC:-/run/qs-weather/country}"
 readonly GEO_TTL=1800
+# Last-resume marker, written by the NixOS resume hook
+# (powerManagement.resumeCommands in features/nixos/desktop/common). A cache
+# entry older than this was produced before the machine last woke, and the
+# machine most likely moved while it was asleep.
+#
+# This is not redundant with the TTLs: a suspend LONGER than 1800s already
+# expires them naturally. What it catches is the short hop -- close the lid,
+# drive across town, open it 20 minutes later -- where both caches are still
+# nominally fresh and both describe the old city.
+readonly WAKE_STAMP="${QS_WAKE_STAMP:-/run/qs-wake/stamp}"
+
+# True when $1 was last written before the most recent resume.
+#
+# No stamp means no resume since boot (/run is a tmpfs), which is NOT a wake --
+# answering true there would force a refetch on every single invocation on a
+# machine that has never slept.
+predates_wake() {
+  local wake entry
+  [ -f "$WAKE_STAMP" ] || return 1
+  [ -f "$1" ] || return 1
+  wake=$(stat -c %Y "$WAKE_STAMP" 2>/dev/null || echo 0)
+  entry=$(stat -c %Y "$1" 2>/dev/null || echo 0)
+  [ "$wake" -gt "$entry" ]
+}
 # where-am-i: the geoclue demo agent, already whitelisted in geoclue.conf. Found
 # at runtime via the nix store so it survives geoclue version bumps. (A proper
 # PATH wrapper in the nix config is a planned follow-up.)
@@ -366,7 +390,11 @@ resolve_geo() {
   if [ -f "$GEO_CACHE" ]; then
     now=$(date +%s)
     mtime=$(stat -c %Y "$GEO_CACHE" 2>/dev/null || echo 0)
-    if [ $((now - mtime)) -lt "$GEO_TTL" ]; then
+    # A fix taken before the last resume is exactly the case this cache must
+    # not serve: it is a confident answer to "where am I" from the previous
+    # location. The stale-fix fallback further down still keeps it as a last
+    # resort if geoclue cannot produce anything better.
+    if [ $((now - mtime)) -lt "$GEO_TTL" ] && ! predates_wake "$GEO_CACHE"; then
       LAT=$(jq -r '.lat // empty' "$GEO_CACHE")
       LON=$(jq -r '.lon // empty' "$GEO_CACHE")
       PLACE=$(jq -r '.place // ""' "$GEO_CACHE")
@@ -884,7 +912,16 @@ fi
 if [ -f "$CACHE_FILE" ]; then
   now=$(date +%s)
   mtime=$(stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0)
-  if [ $((now - mtime)) -lt "$CACHE_TTL" ]; then
+  fresh=0
+  [ $((now - mtime)) -lt "$CACHE_TTL" ] && fresh=1
+  # Only the CURRENT-location cache is invalidated by a resume. A fixed city
+  # chip is pinned to coordinates that do not move: Los Angeles' weather does
+  # not become wrong because this machine travelled, and expiring it here would
+  # turn every wake into one API call per chip for no gain.
+  if [ "$LOC_ID" = "geo" ] && predates_wake "$CACHE_FILE"; then
+    fresh=0
+  fi
+  if [ "$fresh" = 1 ]; then
     cat "$CACHE_FILE"
     exit 0
   fi

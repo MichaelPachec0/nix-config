@@ -87,6 +87,30 @@ Item {
     // updates this tick).
     onLocChanged: Qt.callLater(poll.poll)
 
+    // Lib.WakeService, threaded down from shell.qml via Taskbar.
+    property var wakeSvc: null
+
+    // A suspend is the one event that reliably invalidates WHERE we are, and
+    // the poll interval is 30 minutes -- long enough to sit in a new city
+    // showing the old one's weather until the next tick happens to land.
+    // weather.sh independently expires its own caches against the same stamp,
+    // so this only decides WHEN the refetch happens, never what it returns.
+    //
+    // resetDedup() because CommandPoll suppresses a result byte-identical to
+    // the previous one: waking where you fell asleep would otherwise skip
+    // updated(), and the fetch timestamp the popup shows would never advance.
+    Connections {
+        target: root.wakeSvc
+        function onWoke() {
+            poll.resetDedup();
+            poll.poll();
+            if (curPoll.running) {
+                curPoll.resetDedup();
+                curPoll.poll();
+            }
+        }
+    }
+
     Lib.CommandPoll {
         id: poll
         interval: 1800000 // 30 min; weather.sh caches the same window

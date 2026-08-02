@@ -28,6 +28,28 @@ in {
     ];
     fonts.fontDir.enable = true;
     security.rtkit.enable = true;
+
+    # Wake stamp: a world-readable marker of the last resume, so any session
+    # tool can ask "was this cache written before the machine last moved?".
+    #
+    # resumeCommands runs in the preStop of NixOS's sleep-actions.service, which
+    # is stopped when the system comes back -- so this executes on resume, not
+    # on the way down.
+    #
+    # /run is a tmpfs, so an ABSENT stamp means "no resume since boot", which is
+    # the correct answer for a freshly booted machine and must not be read as a
+    # wake. The epoch is written into the file as well as carried by its mtime:
+    # consumers that watch for content changes need a value that actually
+    # differs, and a bare touch leaves an empty file unchanged.
+    #
+    # Written via a temp file and renamed so a reader can never catch a
+    # half-written stamp; the rename is atomic within the tmpfs.
+    powerManagement.resumeCommands = ''
+      ${pkgs.coreutils}/bin/mkdir -m 0755 -p /run/qs-wake
+      ${pkgs.coreutils}/bin/date +%s > /run/qs-wake/stamp.tmp
+      ${pkgs.coreutils}/bin/chmod 0644 /run/qs-wake/stamp.tmp
+      ${pkgs.coreutils}/bin/mv -f /run/qs-wake/stamp.tmp /run/qs-wake/stamp
+    '';
     services.pipewire = {
       enable = true;
       audio.enable = true;

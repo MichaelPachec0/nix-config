@@ -100,6 +100,13 @@ ShellRoot {
         id: e5800Svc
     }
 
+    // Last-resume publisher. One reader for all screens. The id differs from
+    // the Taskbar `wakeSvc` property it feeds, for the same shadowing reason as
+    // e5800Svc->routerSvc directly above.
+    Lib.WakeService {
+        id: resumeMonitor
+    }
+
     // Shared CPU/RAM poller, read by every bar + hub header. One /proc reader for
     // all screens (was one per monitor).
     Lib.SysStats {
@@ -315,6 +322,7 @@ ShellRoot {
                 inhibit: inhibitSvc
                 powerz: powerzStats
                 ecPd: ecPdSvc
+                wakeSvc: resumeMonitor
             }
 
             // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a

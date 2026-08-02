@@ -22,6 +22,9 @@ PanelWindow {
     property var submap: null
     property var calState: null
     property var routerSvc: null
+    // Lib.WakeService, hoisted in shell.qml. Forwarded to the widgets that have
+    // something to re-read after a suspend.
+    property var wakeSvc: null
     property var net: null      // shared NetworkService (hoisted to ShellRoot)
     property var inhibit: null  // shared InhibitService (hoisted to ShellRoot)
     property var powerz: null   // shared PowerZStats (hoisted to ShellRoot)
@@ -484,6 +487,7 @@ PanelWindow {
                 theme: dock.theme
                 barWindow: dock
                 weatherState: dock.weatherState
+                wakeSvc: dock.wakeSvc
             }
         }
 
