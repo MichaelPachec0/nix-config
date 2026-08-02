@@ -483,6 +483,89 @@ class TestDebugAtInfo(unittest.TestCase):
             "Mint (T-Mobile)")
 
 
+class TestNeighbours(unittest.TestCase):
+    """AT+QENG="neighbourcell". Real capture: serving PCID 322 plus three
+    genuine neighbours, all weaker."""
+    SAMPLE = (
+        '\r\n+QENG: "neighbourcell intra","LTE",66786,322,-11,-99,-66,-,-,-,-,-,-\r\n'
+        '+QENG: "neighbourcell intra","LTE",66786,356,-18,-104,-76,-,-,-,-,-,-\r\n'
+        '+QENG: "neighbourcell intra","LTE",66786,355,-17,-103,-76,-,-,-,-,-,-\r\n'
+        '+QENG: "neighbourcell intra","LTE",66786,145,-17,-105,-76,-,-,-,-,-,-\r\n'
+        '\r\nOK\r\n')
+
+    def test_serving_cell_is_excluded(self):
+        # QENG lists the serving cell among its own intra-frequency
+        # neighbours. Leaving it in makes "best neighbour" always the cell
+        # already camped on, which is the comparison the list exists to make.
+        r = L.parse_qeng_neighbours(self.SAMPLE, serving_pcid=322)
+        self.assertEqual(r["count"], 3)
+        self.assertNotIn(322, [c["pcid"] for c in r["cells"]])
+        self.assertEqual(r["best_rsrp"], -103)
+
+    def test_without_the_serving_pcid_nothing_is_filtered(self):
+        r = L.parse_qeng_neighbours(self.SAMPLE)
+        self.assertEqual(r["count"], 4)
+        self.assertEqual(r["best_rsrp"], -99)
+
+    def test_sorted_strongest_first(self):
+        cells = L.parse_qeng_neighbours(self.SAMPLE, 322)["cells"]
+        self.assertEqual([c["rsrp"] for c in cells], [-103, -104, -105])
+
+    def test_cells_without_rsrp_are_kept_but_sort_last(self):
+        # "-" is common in the trailing fields. A cell we cannot rank still
+        # exists, so dropping it would undercount the neighbourhood.
+        data = ('+QENG: "neighbourcell intra","LTE",66786,10,-17,-,-,-\r\n'
+                '+QENG: "neighbourcell intra","LTE",66786,11,-17,-103,-76,-\r\n')
+        r = L.parse_qeng_neighbours(data)
+        self.assertEqual(r["count"], 2)
+        self.assertEqual(r["cells"][0]["rsrp"], -103)
+        self.assertIsNone(r["cells"][1]["rsrp"])
+        self.assertEqual(r["best_rsrp"], -103)
+
+    def test_empty_and_serving_only_return_none(self):
+        self.assertIsNone(L.parse_qeng_neighbours(None))
+        self.assertIsNone(L.parse_qeng_neighbours(""))
+        self.assertIsNone(L.parse_qeng_neighbours("\r\nOK\r\n"))
+        # A response containing only the serving cell has no neighbours.
+        one = '+QENG: "neighbourcell intra","LTE",66786,322,-11,-99,-66,-\r\n'
+        self.assertIsNone(L.parse_qeng_neighbours(one, serving_pcid=322))
+
+    def test_servingcell_lines_are_not_mistaken_for_neighbours(self):
+        self.assertIsNone(L.parse_qeng_neighbours(TestDebugAtInfo.QENG))
+
+    def test_build_status_filters_using_the_serving_pcid(self):
+        st = L.build_status({
+            "reachable": True, "country_hint": ["US"],
+            "qeng": TestDebugAtInfo.QENG,        # serving PCID 322
+            "qeng_nbr": self.SAMPLE,
+        })
+        self.assertEqual(st["cellular"]["serving"]["pcid"], 322)
+        self.assertEqual(st["cellular"]["neighbours"]["count"], 3)
+
+    def test_serving_cell_identity_is_carried(self):
+        st = L.build_status({"reachable": True, "country_hint": ["US"],
+                             "qeng": TestDebugAtInfo.QENG})
+        self.assertEqual(st["cellular"]["serving"]["cellid"], "1762803")
+        self.assertEqual(st["cellular"]["serving"]["tac"], "3C6E")
+
+    def test_anchor_rsrp_is_the_lte_one_not_the_nr_leg(self):
+        # The comparison "is a neighbour stronger than us" is only meaningful
+        # against the LTE anchor: the neighbour list is LTE, and the QENG NR
+        # line reports -88 for the same instant the LTE line reports -99.
+        # Using the NR value would declare a -103 neighbour weaker when it is
+        # actually stronger than the anchor it would replace.
+        serving = L.parse_qeng(TestDebugAtInfo.QENG, ["US"])
+        self.assertEqual(serving["rsrp"], -99)
+
+    def test_a_stronger_neighbour_is_detectable(self):
+        nbr = ('+QENG: "neighbourcell intra","LTE",66786,322,-11,-99,-66,-\r\n'
+               '+QENG: "neighbourcell intra","LTE",66786,999,-9,-84,-60,-\r\n')
+        st = L.build_status({"reachable": True, "country_hint": ["US"],
+                             "qeng": TestDebugAtInfo.QENG, "qeng_nbr": nbr})
+        self.assertGreater(st["cellular"]["neighbours"]["best_rsrp"],
+                           st["cellular"]["serving"]["rsrp"])
+
+
 class TestBattery(unittest.TestCase):
     """mcu status + mcu get_warning. Real captures."""
     STATUS = json.dumps({

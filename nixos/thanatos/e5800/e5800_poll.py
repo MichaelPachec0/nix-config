@@ -64,6 +64,7 @@ MCU_INTERVAL = 60.0
 _QENG_CACHE = None
 _CEREG_CACHE = None
 _QCAINFO_CACHE = None
+_QENG_NBR_CACHE = None
 _DEBUG_AT_LAST = 0.0
 
 # The SIM's brand, straight from cellular.sim status -- no longer parsed out of
@@ -232,6 +233,9 @@ _SIM_STATUS_CMD = "ubus call cellular.sim status '{\"bus\":\"cpu\"}'"
 _AT_QENG = "AT+QENG=\"servingcell\""
 _AT_QCAINFO = "AT+QCAINFO"
 _AT_CEREG = "AT+CEREG?"
+# Neighbour cells the modem could hand off to. Free -- same debug_at_info
+# response as the three above.
+_AT_QENG_NBR = "AT+QENG=\"neighbourcell\""
 
 
 
@@ -329,6 +333,7 @@ def collect_once():
     # batch: QSPN changes on a SIM swap and QCAINFO with traffic, so there is
     # no reason to ask for both every cycle even when they are free to carry.
     global _QENG_CACHE, _QCAINFO_CACHE, _CEREG_CACHE, _DEBUG_AT_LAST
+    global _QENG_NBR_CACHE
     global _SIM_CACHE, _SIM_LAST, _MCU_CACHE, _WARN_CACHE, _MCU_LAST
 
     steps = [("signals", "ubus call cellular.collect get_signals '{\"bus\":\"x\"}'"),
@@ -386,9 +391,14 @@ def collect_once():
         if L.parse_cereg(_cereg_raw):
             _CEREG_CACHE = _cereg_raw
 
+        _nbr_raw = at.get(_AT_QENG_NBR, "")
+        if L.parse_qeng_neighbours(_nbr_raw):
+            _QENG_NBR_CACHE = _nbr_raw
+
     parts["qeng"] = _QENG_CACHE
     parts["qcainfo"] = _QCAINFO_CACHE
     parts["cereg"] = _CEREG_CACHE
+    parts["qeng_nbr"] = _QENG_NBR_CACHE
 
     if "simstatus" in got:
         _SIM_LAST = ts

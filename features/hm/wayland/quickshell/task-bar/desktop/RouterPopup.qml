@@ -44,6 +44,21 @@ PopupWindow {
         return v !== null && v !== undefined && !isNaN(v);
     }
 
+    // A neighbour stronger than the serving cell means the modem is camped on
+    // a worse cell than one it can see. Compared against the LTE anchor's RSRP
+    // from QENG rather than cellular.rsrp, which reports the NR leg -- an NR
+    // RSRP against an LTE neighbour's is not a comparison.
+    readonly property bool betterNeighbour: {
+        var n = pop.svc.cellular.neighbours;
+        var s = pop.svc.cellular.serving;
+        if (!n || !s || !pop.hasVal(n.best_rsrp))
+            return false;
+        var lte = (s.cells || []).filter(function (c) { return c.rat === "LTE"; });
+        if (lte.length === 0 || !pop.hasVal(s.rsrp))
+            return false;
+        return n.best_rsrp > s.rsrp;
+    }
+
     readonly property bool lowBattery: pop.hasVal(pop.svc.battery.percent)
         && pop.hasVal(pop.svc.battery.warn_capacity)
         && pop.svc.battery.percent <= pop.svc.battery.warn_capacity
@@ -264,13 +279,47 @@ PopupWindow {
                     }
                     Item { Layout.fillWidth: true }
                 }
-                // Serving cell (from AT+QENG="servingcell").
-                Text {
+                // Serving cell (from AT+QENG="servingcell"), plus its identity.
+                // Cell id and TAC are here because a CHANGE in either is a
+                // handover -- the value itself is only a landmark.
+                RowLayout {
+                    id: servingRow
                     property var serving: pop.svc.cellular.serving
-                    visible: !!serving
-                    text: serving ? ("Serving  " + (serving.bands || []).join(" + ")) : ""
-                    font.family: pop.theme.iconFont; font.pixelSize: 10
-                    color: pop.theme.textSecondary
+                    property var nbr: pop.svc.cellular.neighbours
+                    visible: !!servingRow.serving
+                    Layout.fillWidth: true
+                    spacing: 12
+                    Text {
+                        text: servingRow.serving
+                            ? ("Serving  " + (servingRow.serving.bands || []).join(" + ")) : ""
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Text {
+                        visible: !!(servingRow.serving && servingRow.serving.cellid)
+                        text: servingRow.serving
+                            ? ("cell " + servingRow.serving.cellid
+                               + (servingRow.serving.tac ? ("  TAC " + servingRow.serving.tac) : ""))
+                            : ""
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Item { Layout.fillWidth: true }
+                    // Neighbours, with the serving cell already filtered out.
+                    // Yellow when one is stronger than the cell we are camped
+                    // on, which is the only actionable reading here -- a list
+                    // of weaker cells is just noise.
+                    Text {
+                        visible: !!servingRow.nbr
+                        text: servingRow.nbr
+                            ? (servingRow.nbr.count + " nbr"
+                               + (pop.hasVal(servingRow.nbr.best_rsrp)
+                                  ? ("  best " + servingRow.nbr.best_rsrp) : ""))
+                            : ""
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.betterNeighbour ? pop.theme.accentYellow
+                                                   : pop.theme.textSecondary
+                    }
                 }
             }
 
@@ -412,6 +461,18 @@ PopupWindow {
                 Text {
                     text: "CPU " + (pop.svc.system.cpu_temp || "--") + "C   load "
                         + ((pop.svc.system.load || [])[0] || "--")
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
+                // Free memory, not used: the number that answers "is the web
+                // UI about to crawl". buff/cache is reclaimable so it counts
+                // as free, matching what the router itself reports.
+                Text {
+                    visible: pop.hasVal(pop.svc.system.mem_total)
+                        && pop.hasVal(pop.svc.system.mem_free)
+                    text: "mem " + RouterFmt.fmtBytes((pop.svc.system.mem_free || 0)
+                                                      + (pop.svc.system.mem_buff || 0))
+                        + " free"
                     font.family: pop.theme.iconFont; font.pixelSize: 10
                     color: pop.theme.textSecondary
                 }

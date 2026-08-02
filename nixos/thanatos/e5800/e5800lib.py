@@ -501,6 +501,8 @@ def parse_qeng(data, hint=None):
     state = None
     cells = []
     mcc = mnc = None
+    cellid = tac = pcid = None
+    lte_rsrp = None
     for raw in str(data).splitlines():
         line = raw.strip()
         if not line.startswith("+QENG:"):
@@ -514,6 +516,18 @@ def parse_qeng(data, hint=None):
             # only place the operator is knowable at all -- see PLMN_NAMES.
             if mcc is None and len(toks) > 3:
                 mcc, mnc = toks[2] or None, toks[3] or None
+            # Cell identity, from the same line. cellID is token 4 and TAC is
+            # token 10; both are hex-ish strings the firmware does not
+            # zero-pad, so they are kept verbatim rather than parsed. A change
+            # in either is a handover, which is the only reason to show them.
+            if cellid is None:
+                cellid = toks[4] or None
+                pcid = _int_or_none(toks[5])
+                # RSRP of the LTE anchor, token 11. Kept separate from
+                # cellular.rsrp, which reports the NR leg: comparing an NR
+                # RSRP against an LTE neighbour's is not a comparison.
+                lte_rsrp = _int_or_none(toks[11]) if len(toks) > 11 else None
+                tac = toks[10] if len(toks) > 10 and toks[10] not in ("", "-") else None
             b = _int_or_none(toks[7])
             if b is not None:
                 cells.append({"rat": "LTE", "band": b, "label": "B" + str(b)})
@@ -545,7 +559,68 @@ def parse_qeng(data, hint=None):
         "cells": cells,
         "plmn": fmt_plmn(mcc, mnc),
         "operator": operator_from_plmn(mcc, mnc, hint),
+        # Serving-cell identity. Present only on an LTE line, so an SA-only
+        # reading leaves both None rather than inventing them.
+        "cellid": cellid,
+        "tac": tac,
+        # Physical cell id of the serving LTE cell. Needed to tell the serving
+        # cell apart from the neighbours, which QENG lists it among.
+        "pcid": pcid,
+        # Anchor RSRP, for comparison against neighbour cells.
+        "rsrp": lte_rsrp,
     }
+
+
+def parse_qeng_neighbours(data, serving_pcid=None):
+    """Parse AT+QENG="neighbourcell" into the cells this one could hand off to.
+
+    Lines look like:
+        +QENG: "neighbourcell intra","LTE",<EARFCN>,<PCID>,<RSRQ>,<RSRP>,
+               <RSSI>,<SINR>,...
+
+    The SERVING cell appears in this list too -- it is intra-frequency with
+    itself -- so `serving_pcid` filters it out. Without that, the "best
+    neighbour" is always the cell already camped on, and the comparison that
+    makes the list worth showing becomes meaningless.
+
+    Returns None when nothing parses, else:
+        {"cells": [{rat, earfcn, pcid, rsrq, rsrp, rssi}, ...] sorted strongest
+         first, "count": n, "best_rsrp": <int|None>}
+
+    Trailing fields are frequently "-" on this firmware, so every numeric is
+    optional and a cell with no RSRP still counts -- it exists, we just cannot
+    rank it.
+    """
+    if not data:
+        return None
+    cells = []
+    for raw in str(data).splitlines():
+        line = raw.strip()
+        if not line.startswith("+QENG:"):
+            continue
+        toks = [t.strip().strip('"') for t in line[len("+QENG:"):].split(",")]
+        if not toks or not toks[0].startswith("neighbourcell"):
+            continue
+        if len(toks) < 6:
+            continue
+        pcid = _int_or_none(toks[3])
+        if serving_pcid is not None and pcid == serving_pcid:
+            continue
+        cells.append({
+            "rat": toks[1] or None,
+            "earfcn": _int_or_none(toks[2]),
+            "pcid": pcid,
+            "rsrq": _int_or_none(toks[4]),
+            "rsrp": _int_or_none(toks[5]),
+            "rssi": _int_or_none(toks[6]) if len(toks) > 6 else None,
+        })
+    if not cells:
+        return None
+    # Strongest first. Cells with no RSRP sort last rather than being dropped
+    # or treated as infinitely weak.
+    cells.sort(key=lambda c: (c["rsrp"] is None, -(c["rsrp"] or 0)))
+    best = next((c["rsrp"] for c in cells if c["rsrp"] is not None), None)
+    return {"cells": cells, "count": len(cells), "best_rsrp": best}
 
 
 def _parse_ca_band(s):
@@ -793,6 +868,11 @@ def build_status(parts):
             "slot": sig.get("slot"),
             "ca": parse_qcainfo(parts.get("qcainfo")),
             "serving": serving,
+            # Cells the modem could hand off to, with the serving cell filtered
+            # out. One materially stronger than the serving cell is the case
+            # worth seeing.
+            "neighbours": parse_qeng_neighbours(parts.get("qeng_nbr"),
+                                                (serving or {}).get("pcid")),
             # Lifted out of `serving` so consumers do not have to know that the
             # operator arrives via a serving-cell band query. None when QENG did
             # not report a camped cell (idle-uncamped, No Service, or an SSH/AT
