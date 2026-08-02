@@ -483,6 +483,93 @@ class TestDebugAtInfo(unittest.TestCase):
             "Mint (T-Mobile)")
 
 
+class TestBattery(unittest.TestCase):
+    """mcu status + mcu get_warning. Real captures."""
+    STATUS = json.dumps({
+        "abnormal": False, "abnormal_type": 0, "charge_cnt": 28,
+        "charge_percent": 80, "charging_status": 1, "fastcharge": False,
+        "temperature": "39.0",
+    })
+    WARNING = json.dumps({
+        "capacity": {"enable": False, "interval": 5, "value": 10,
+                     "warned": False},
+        "temp_high": {"enable": False, "interval": 5, "value": 50,
+                      "warned": False},
+        "temp_low": {"enable": False, "interval": 5, "value": -10,
+                     "warned": False},
+    })
+
+    def test_status_fields(self):
+        r = L.parse_mcu_status(self.STATUS)
+        self.assertEqual(r["percent"], 80)
+        self.assertEqual(r["cycles"], 28)
+        self.assertTrue(r["charging"])
+        self.assertFalse(r["abnormal"])
+
+    def test_temperature_string_becomes_a_number(self):
+        # The firmware sends "39.0" as a string in the same object where
+        # charge_percent is an int. Leaving it a string breaks any comparison
+        # against the numeric warning threshold.
+        r = L.parse_mcu_status(self.STATUS)
+        self.assertEqual(r["temp"], 39)
+        self.assertIsInstance(r["temp"], (int, float))
+        self.assertLess(r["temp"], 50)
+
+    def test_thresholds_keep_their_enable_flag_separate(self):
+        # Both ship disabled. The value must survive that, or the popup
+        # inherits the router's silence and stays green at 51C.
+        w = L.parse_mcu_warning(self.WARNING)
+        self.assertEqual(w["temp_high"], 50)
+        self.assertFalse(w["temp_high_enabled"])
+        self.assertEqual(w["capacity"], 10)
+        self.assertFalse(w["capacity_enabled"])
+
+    def test_garbage_and_empty_are_survivable(self):
+        for bad in ("", None, "not json", "[]"):
+            self.assertIsNone(L.parse_mcu_status(bad))
+            self.assertIsNone(L.parse_mcu_warning(bad))
+
+    def test_build_status_prefers_ubus_and_gains_wear(self):
+        st = L.build_status({
+            "reachable": True,
+            "mcu": L.parse_mcu_status(self.STATUS),
+            "mcu_warning": L.parse_mcu_warning(self.WARNING),
+        })
+        b = st["battery"]
+        self.assertEqual(b["percent"], 80)
+        self.assertEqual(b["cycles"], 28)
+        self.assertEqual(b["temp"], 39)
+        self.assertEqual(b["warn_temp"], 50)
+
+    def test_web_values_still_populate_before_the_first_ubus_read(self):
+        st = L.build_status({
+            "reachable": True,
+            "get_status": {"system": {"mcu": {"charge_percent": 71,
+                                              "charging_status": 0,
+                                              "temperature": "41.5"}}},
+        })
+        b = st["battery"]
+        self.assertEqual(b["percent"], 71)
+        self.assertEqual(b["temp"], 41.5)
+        self.assertIsNone(b["cycles"])
+
+    def test_a_real_zero_is_not_treated_as_missing(self):
+        # Battery percent, temperature and cycle count are all legitimately
+        # zero. Chaining the two sources with `or` would fall through to the
+        # web value exactly when the ubus reading said 0 -- reporting a flat
+        # battery as whatever the other source last said.
+        st = L.build_status({
+            "reachable": True,
+            "mcu": L.parse_mcu_status(json.dumps({
+                "charge_percent": 0, "temperature": "0", "charge_cnt": 0})),
+            "get_status": {"system": {"mcu": {"charge_percent": 80,
+                                              "temperature": "39.0"}}},
+        })
+        self.assertEqual(st["battery"]["percent"], 0)
+        self.assertEqual(st["battery"]["temp"], 0)
+        self.assertEqual(st["battery"]["cycles"], 0)
+
+
 class TestIfaceStatus(unittest.TestCase):
     """network.interface.modem_cpu status -- the uplink's own facts.
 

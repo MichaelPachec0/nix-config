@@ -225,6 +225,96 @@ def parse_debug_at(data):
     return out
 
 
+def _first(*vals):
+    """First value that is not None. Distinct from `or`: a real 0 must win.
+
+    Battery percent, temperature and cycle counts are all legitimately zero,
+    so chaining these with `or` would silently fall through to the next source
+    exactly when the reading mattered.
+    """
+    for v in vals:
+        if v is not None:
+            return v
+    return None
+
+
+def _num(v):
+    """Best-effort number from a value the firmware may send as a string.
+
+    `mcu status` reports temperature as "39.0" but charge_percent as 80, in the
+    same object. Returns None rather than 0 for anything unusable, so a missing
+    reading never renders as a real zero.
+    """
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return int(f) if f == int(f) else f
+
+
+def parse_mcu_status(data):
+    """Battery facts from a `mcu status` payload.
+
+    `charge_percent` is the number to show. The raw fuel-gauge value published
+    in mudimodem's battery.jsonl as `cap` reads ~9 points lower for the same
+    state because GL applies a linear fit before display; showing both puts an
+    80 next to a 71 and reads as a bug. This is also the number the GL web UI
+    shows, so it matches what the user sees elsewhere.
+
+    Returns None when the payload is unusable.
+    """
+    if not data:
+        return None
+    try:
+        obj = json.loads(data)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+    return {
+        "percent": _num(obj.get("charge_percent")),
+        "temp": _num(obj.get("temperature")),
+        "cycles": _num(obj.get("charge_cnt")),
+        "charging": bool(obj.get("charging_status")),
+        "fastcharge": bool(obj.get("fastcharge")),
+        "abnormal": bool(obj.get("abnormal")),
+    }
+
+
+def parse_mcu_warning(data):
+    """The MCU's own warning thresholds from `mcu get_warning`.
+
+    Both thresholds ship DISABLED on this router (`enable: false`), which is
+    why `enabled` is reported separately from the value rather than gating it.
+    A consumer that inherited `enable` would stay silent and green at 51C --
+    the router not alerting is not a reason for the popup not to.
+
+    Returns None when the payload is unusable, and leaves any individual
+    threshold None when absent.
+    """
+    if not data:
+        return None
+    try:
+        obj = json.loads(data)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+    out = {}
+    for key, name in (("temp_high", "temp_high"), ("temp_low", "temp_low"),
+                      ("capacity", "capacity")):
+        block = obj.get(key)
+        if not isinstance(block, dict):
+            out[name] = None
+            out[name + "_enabled"] = False
+            continue
+        out[name] = _num(block.get("value"))
+        out[name + "_enabled"] = bool(block.get("enable"))
+    return out
+
+
 def parse_iface_status(data):
     """Uplink facts from a `network.interface.modem_cpu status` payload.
 
@@ -623,6 +713,8 @@ def build_status(parts):
     sim_operator = parts.get("sim_operator") or parse_qspn(parts.get("qspn"))
     registration = parse_cereg(parts.get("cereg"))
     iface = parts.get("iface") or {}
+    mcubus = parts.get("mcu") or {}
+    warn = parts.get("mcu_warning") or {}
     usage = parts.get("usage") or {}
     marker = parts.get("recovery")
     vpn_list = (parts.get("vpn") or {}).get("status_list") or []
@@ -644,12 +736,27 @@ def build_status(parts):
                                       (serving or {}).get("operator"),
                                       registration) or parts.get("carrier", ""),
         },
+        # `mcu status` over ubus is preferred over the web-RPC mirror of the
+        # same block: it carries the charge cycle count and the abnormal flag,
+        # which the web payload does not. The web values remain the fallback so
+        # the block still populates before the first ubus read lands.
         "battery": {
-            "percent": mcu.get("charge_percent"),
-            "charging": bool(mcu.get("charging_status")),
+            "percent": _first(mcubus.get("percent"), mcu.get("charge_percent")),
+            "charging": bool(_first(mcubus.get("charging"),
+                                    mcu.get("charging_status"))),
             "plugged": bool(parts.get("plugged")),
-            "fastcharge": bool(mcu.get("fastcharge")),
-            "temp": mcu.get("temperature"),
+            "fastcharge": bool(_first(mcubus.get("fastcharge"),
+                                      mcu.get("fastcharge"))),
+            "temp": _first(mcubus.get("temp"), _num(mcu.get("temperature"))),
+            # Wear. Only ubus reports it.
+            "cycles": mcubus.get("cycles"),
+            "abnormal": bool(mcubus.get("abnormal")),
+            # The MCU's thresholds, with their enable flags carried separately.
+            # Both ship disabled; see parse_mcu_warning.
+            "warn_temp": warn.get("temp_high"),
+            "warn_temp_enabled": bool(warn.get("temp_high_enabled")),
+            "warn_capacity": warn.get("capacity"),
+            "warn_capacity_enabled": bool(warn.get("capacity_enabled")),
         },
         "uplink": {
             "interface": up.get("interface"),

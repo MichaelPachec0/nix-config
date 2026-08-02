@@ -46,6 +46,16 @@ REBOOT_TIMEOUT = 240.0
 # that load.
 DEBUG_AT_INTERVAL = 30.0
 SIM_INTERVAL = 900.0  # the SIM's own name changes only on a SIM swap
+# How soon to try again when a reading has never landed. Gating solely on
+# "cache is empty" retries every 4s cycle forever on a router that cannot
+# answer, which defeats the interval; gating solely on elapsed time makes a
+# failed first read wait the full 900s before the operator name can appear.
+SIM_RETRY = 30.0
+# Battery level moves slowly and the MCU's warning thresholds are static
+# config, so neither belongs on the 4s cycle. The web-RPC mirror already
+# carries a percent every cycle; these two add cycle count, the abnormal flag
+# and the thresholds.
+MCU_INTERVAL = 60.0
 
 # Last good raw QENG payload + when the batch that carries it last ran. Kept
 # across cycles so a transient SSH/AT miss does not blank cellular.ca and
@@ -61,6 +71,10 @@ _DEBUG_AT_LAST = 0.0
 # SPN record.
 _SIM_CACHE = None
 _SIM_LAST = 0.0
+
+_MCU_CACHE = None
+_WARN_CACHE = None
+_MCU_LAST = 0.0
 
 
 def _read(path):
@@ -315,7 +329,7 @@ def collect_once():
     # batch: QSPN changes on a SIM swap and QCAINFO with traffic, so there is
     # no reason to ask for both every cycle even when they are free to carry.
     global _QENG_CACHE, _QCAINFO_CACHE, _CEREG_CACHE, _DEBUG_AT_LAST
-    global _SIM_CACHE, _SIM_LAST
+    global _SIM_CACHE, _SIM_LAST, _MCU_CACHE, _WARN_CACHE, _MCU_LAST
 
     steps = [("signals", "ubus call cellular.collect get_signals '{\"bus\":\"x\"}'"),
              # The uplink interface itself: how long since it dialled, plus the
@@ -325,9 +339,12 @@ def collect_once():
     at_due = _DEBUG_AT_LAST == 0.0 or ts - _DEBUG_AT_LAST >= DEBUG_AT_INTERVAL
     if at_due:
         steps.append(("atinfo", _DEBUG_AT_CMD))
-    sim_due = _SIM_CACHE is None or ts - _SIM_LAST >= SIM_INTERVAL
-    if sim_due:
+    sim_gap = SIM_INTERVAL if _SIM_CACHE else SIM_RETRY
+    if _SIM_LAST == 0.0 or ts - _SIM_LAST >= sim_gap:
         steps.append(("simstatus", _SIM_STATUS_CMD))
+    if _MCU_LAST == 0.0 or ts - _MCU_LAST >= MCU_INTERVAL:
+        steps.append(("mcu", "ubus call mcu status"))
+        steps.append(("mcuwarn", "ubus call mcu get_warning"))
     # NOT replaced by cellular.collect get_traffic. That method reports a single
     # combined `traffic_total` per slot, which would collapse the rx/tx split
     # the popup shows. /proc/net/dev is a plain file read and never touches the
@@ -379,6 +396,20 @@ def collect_once():
         if _sim_name:
             _SIM_CACHE = _sim_name
     parts["sim_operator"] = _SIM_CACHE
+
+    # Latched like the AT readings: the thresholds and the status arrive in the
+    # same window but from different calls, so one failing must not blank the
+    # other's last good value.
+    if "mcu" in got or "mcuwarn" in got:
+        _MCU_LAST = ts
+        _mcu = L.parse_mcu_status(got.get("mcu"))
+        if _mcu:
+            _MCU_CACHE = _mcu
+        _warn = L.parse_mcu_warning(got.get("mcuwarn"))
+        if _warn:
+            _WARN_CACHE = _warn
+    parts["mcu"] = _MCU_CACHE
+    parts["mcu_warning"] = _WARN_CACHE
 
     nb = _parse_netdev(got.get("netdev"))
     if nb is not None:

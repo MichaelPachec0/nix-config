@@ -37,6 +37,30 @@ PopupWindow {
              : q === "fair" ? pop.theme.accentYellow : pop.theme.accentRed;
     }
 
+    // An absent reading arrives from JSON as null, and `null` is neither
+    // undefined nor NaN -- string-concatenating it yields "null%". Every
+    // numeric field below is optional, so they all route through this.
+    function hasVal(v) {
+        return v !== null && v !== undefined && !isNaN(v);
+    }
+
+    readonly property bool lowBattery: pop.hasVal(pop.svc.battery.percent)
+        && pop.hasVal(pop.svc.battery.warn_capacity)
+        && pop.svc.battery.percent <= pop.svc.battery.warn_capacity
+
+    // Tint from the MCU's own high-temperature threshold, IGNORING its enable
+    // flag. Both warnings ship disabled on this router, so inheriting `enable`
+    // would leave the popup green at 51C -- the router declining to alert is
+    // not a reason for the popup to stay quiet. Yellow enters 10C below the
+    // threshold so the number is actionable before it is a warning.
+    function tempColor(t, warn) {
+        if (!pop.hasVal(t) || !pop.hasVal(warn))
+            return pop.theme.textSecondary;
+        if (t >= warn)
+            return pop.theme.accentRed;
+        return t >= warn - 10 ? pop.theme.accentYellow : pop.theme.textSecondary;
+    }
+
     Rectangle {
         id: card
         implicitWidth: 380
@@ -84,10 +108,16 @@ PopupWindow {
                         color: pop.svc.uplink.online ? pop.theme.accentGreen : pop.theme.accentRed
                     }
                 }
+                // `!== undefined` alone was not enough: an absent reading
+                // arrives from JSON as null, not undefined, and rendered
+                // literally as "null%".
                 Text {
-                    text: (pop.svc.battery.percent !== undefined ? pop.svc.battery.percent + "%" : "--")
+                    text: pop.hasVal(pop.svc.battery.percent)
+                        ? (pop.svc.battery.percent + "%") : "--"
                     font.family: pop.theme.iconFont; font.pixelSize: 12
-                    color: pop.svc.battery.charging ? pop.theme.accentGreen : pop.theme.textPrimary
+                    color: pop.svc.battery.charging ? pop.theme.accentGreen
+                         : pop.lowBattery ? pop.theme.accentRed
+                         : pop.theme.textPrimary
                 }
             }
 
@@ -261,6 +291,55 @@ PopupWindow {
                                                        + (pop.svc.dataUsage.cycle_tx || 0))
                     font.family: pop.theme.iconFont; font.pixelSize: 11
                     color: pop.theme.textSecondary
+                }
+            }
+
+            // --- Battery ---
+            // This is a battery-powered router and the popup showed nothing
+            // but a bare percentage in the header. Temperature, wear and the
+            // abnormal flag all come from `mcu status`.
+            RowLayout {
+                visible: pop.svc.reachable && (pop.hasVal(pop.svc.battery.temp)
+                         || pop.hasVal(pop.svc.battery.cycles))
+                Layout.fillWidth: true
+                spacing: 12
+                Text {
+                    text: String.fromCharCode(pop.svc.battery.charging ? 0xF0E7 // bolt
+                                                                       : 0xF241) // battery-half
+                    font.family: pop.theme.faFont; font.pixelSize: 10
+                    color: pop.svc.battery.charging ? pop.theme.accentGreen
+                                                    : pop.theme.textSecondary
+                }
+                Text {
+                    text: pop.svc.battery.charging
+                        ? (pop.svc.battery.fastcharge ? "fast charging" : "charging")
+                        : (pop.svc.battery.plugged ? "plugged" : "on battery")
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
+                Text {
+                    visible: pop.hasVal(pop.svc.battery.temp)
+                    text: pop.svc.battery.temp + "C"
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.tempColor(pop.svc.battery.temp,
+                                         pop.svc.battery.warn_temp)
+                }
+                Item { Layout.fillWidth: true }
+                // Charge cycles: wear, not state. Worth knowing on a device
+                // that lives on its battery.
+                Text {
+                    visible: pop.hasVal(pop.svc.battery.cycles)
+                    text: pop.svc.battery.cycles + " cycles"
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
+                // The MCU's own fault flag. Rare enough that it earns red.
+                Text {
+                    visible: pop.svc.battery.abnormal === true
+                    text: "ABNORMAL"
+                    font.family: pop.theme.iconFont; font.pixelSize: 9
+                    font.weight: Font.DemiBold
+                    color: pop.theme.accentRed
                 }
             }
 
