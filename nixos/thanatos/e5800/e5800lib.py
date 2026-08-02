@@ -356,17 +356,18 @@ def parse_iface_status(data):
     }
 
 
-def parse_sim_carrier(data):
-    """The SIM's brand from a `cellular.sim status` payload, else None.
+def parse_sim_status(data):
+    """The active SIM's row from a `cellular.sim status` payload, else None.
 
-    Replaces AT+QSPN, which this modem answers with a bare OK because the SIM
-    carries no SPN record -- an AT round trip spent to learn nothing. `carrier`
-    here is the SIM's own name ("Mint"), NOT the network it rides; the network
+    `carrier` replaces AT+QSPN, which this modem answers with a bare OK because
+    the SIM carries no SPN record -- an AT round trip spent to learn nothing.
+    It is the SIM's own name ("Mint"), NOT the network it rides; the network
     still comes from the QENG PLMN through the vendored table.
 
-    Takes the first slot reporting a name. The router is dual-SIM and its
-    samples follow `current_sim_slot`, so on a box with two live SIMs this is
-    the "selected SIM", not necessarily the one carrying data.
+    Takes the first slot reporting a name, since the second slot is present but
+    empty on this router. The box is dual-SIM and its samples follow
+    `current_sim_slot`, so with two live SIMs this is the "selected SIM", not
+    necessarily the one carrying data.
     """
     if not data:
         return None
@@ -381,7 +382,11 @@ def parse_sim_carrier(data):
             continue
         name = (sim.get("carrier") or "").strip()
         if name:
-            return name
+            return {
+                "carrier": name,
+                "apn": (sim.get("apn") or "").strip() or None,
+                "slot": sim.get("slot"),
+            }
     return None
 
 
@@ -802,6 +807,9 @@ def build_status(parts):
             # none / unknown, or None when the modem did not answer.
             "registration": registration,
             "roaming": registration == "roaming",
+            # The bearer the SIM is configured to dial. Comes from
+            # cellular.sim status, already fetched for the brand above.
+            "apn": parts.get("apn"),
             # What to display: "Mint (T-Mobile)" when they differ, one name
             # when they match, whichever exists when only one does.
             "operator_label": operator_label(sim_operator, (serving or {}).get("operator"), registration),

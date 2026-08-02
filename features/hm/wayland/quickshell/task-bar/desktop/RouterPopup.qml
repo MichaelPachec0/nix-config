@@ -294,6 +294,62 @@ PopupWindow {
                 }
             }
 
+            // --- Connection facts ---
+            // What the uplink actually got: the bearer it dialled and the lease
+            // behind it. All of this comes from calls already being made -- the
+            // APN rides along in cellular.sim status, the rest in the
+            // network.interface.modem_cpu status read that carries the uptime.
+            ColumnLayout {
+                visible: pop.svc.reachable && (!!pop.svc.cellular.apn
+                         || !!pop.svc.uplink.ip)
+                Layout.fillWidth: true
+                spacing: 2
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    Text {
+                        visible: !!pop.svc.cellular.apn
+                        text: "APN  " + (pop.svc.cellular.apn || "")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        visible: !!pop.svc.uplink.device
+                        text: pop.svc.uplink.device || ""
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    visible: !!pop.svc.uplink.ip
+                    Text {
+                        text: "IP  " + (pop.svc.uplink.ip || "")
+                            + (pop.hasVal(pop.svc.uplink.mask)
+                               ? ("/" + pop.svc.uplink.mask) : "")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        visible: !!pop.svc.uplink.gateway
+                        text: "gw " + (pop.svc.uplink.gateway || "")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    visible: (pop.svc.uplink.dns || []).length > 0
+                    text: "DNS  " + (pop.svc.uplink.dns || []).join("  ")
+                    elide: Text.ElideRight
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
+            }
+
             // --- Battery ---
             // This is a battery-powered router and the popup showed nothing
             // but a bare percentage in the header. Temperature, wear and the

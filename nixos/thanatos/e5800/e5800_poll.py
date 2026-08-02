@@ -392,10 +392,11 @@ def collect_once():
 
     if "simstatus" in got:
         _SIM_LAST = ts
-        _sim_name = L.parse_sim_carrier(got["simstatus"])
-        if _sim_name:
-            _SIM_CACHE = _sim_name
-    parts["sim_operator"] = _SIM_CACHE
+        _sim = L.parse_sim_status(got["simstatus"])
+        if _sim:
+            _SIM_CACHE = _sim
+    parts["sim_operator"] = (_SIM_CACHE or {}).get("carrier")
+    parts["apn"] = (_SIM_CACHE or {}).get("apn")
 
     # Latched like the AT readings: the thresholds and the status arrive in the
     # same window but from different calls, so one failing must not blank the

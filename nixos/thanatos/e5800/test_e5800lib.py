@@ -643,23 +643,40 @@ class TestSimCarrier(unittest.TestCase):
     ]})
 
     def test_reads_the_populated_slot(self):
-        self.assertEqual(L.parse_sim_carrier(self.SAMPLE), "Mint")
+        self.assertEqual(L.parse_sim_status(self.SAMPLE)["carrier"], "Mint")
 
     def test_empty_slots_are_skipped_not_returned_blank(self):
         # Slot ordering is not guaranteed; an empty slot listed first must not
         # shadow the live one.
         payload = json.dumps({"sims": [{"slot": "2", "carrier": ""},
                                        {"slot": "1", "carrier": "Mint"}]})
-        self.assertEqual(L.parse_sim_carrier(payload), "Mint")
+        self.assertEqual(L.parse_sim_status(payload)["carrier"], "Mint")
+
+    def test_apn_comes_from_the_same_row(self):
+        # No extra call: the bearer is in the payload already fetched for the
+        # brand.
+        r = L.parse_sim_status(self.SAMPLE)
+        self.assertEqual(r["apn"], "fast.t-mobile.com")
+        self.assertEqual(r["slot"], "1")
+
+    def test_blank_apn_is_none_not_empty_string(self):
+        # An empty string renders as a stray label with nothing after it.
+        r = L.parse_sim_status(json.dumps({"sims": [
+            {"slot": "1", "carrier": "Mint", "apn": ""}]}))
+        self.assertIsNone(r["apn"])
+
+    def test_build_status_carries_the_apn(self):
+        st = L.build_status({"reachable": True, "apn": "fast.t-mobile.com"})
+        self.assertEqual(st["cellular"]["apn"], "fast.t-mobile.com")
 
     def test_no_sim_yields_none_not_a_blank_name(self):
-        self.assertIsNone(L.parse_sim_carrier(json.dumps({"sims": [
+        self.assertIsNone(L.parse_sim_status(json.dumps({"sims": [
             {"slot": "1", "carrier": ""}]})))
 
     def test_garbage_and_empty_are_survivable(self):
         for bad in ("", None, "not json", "[]", json.dumps({}),
                     json.dumps({"sims": ["nope"]})):
-            self.assertIsNone(L.parse_sim_carrier(bad))
+            self.assertIsNone(L.parse_sim_status(bad))
 
     def test_build_status_prefers_the_direct_name_over_qspn(self):
         st = L.build_status({
