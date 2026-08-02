@@ -282,8 +282,22 @@ class TestRecover(unittest.TestCase):
                             for c in R.RECOVER_CMDS["airplane"]))
         self.assertTrue(any("set_airplane_mode" in c and "false" in c
                             for c in R.RECOVER_CMDS["airplane"]))
-        # reboot is the AT+CFUN=1,1 radio reset
-        self.assertTrue(any("CFUN=1,1" in c for c in R.RECOVER_CMDS["reboot"]))
+        # reboot is a full Linux reboot of the router, not a modem reset
+        self.assertEqual(R.RECOVER_CMDS["reboot"], ["ubus call system reboot"])
+
+    def test_no_recovery_action_opens_the_at_channel(self):
+        """The rule the whole migration exists to enforce.
+
+        modem.CPU.AT is /dev/smd9, owned by cellular_manager's AT process.
+        Writing to it from here shares the channel with GL's own poller, which
+        answers with crossed responses. `reboot` violated this until 2026-08-01
+        by sending AT+CFUN=1,1; this fails if any action reintroduces it.
+        """
+        import e5800_recover as R
+        for action, cmds in R.RECOVER_CMDS.items():
+            for c in cmds:
+                self.assertNotIn("modem.CPU.AT", c, action)
+                self.assertNotIn("AT+", c, action)
 
 
 if __name__ == "__main__":

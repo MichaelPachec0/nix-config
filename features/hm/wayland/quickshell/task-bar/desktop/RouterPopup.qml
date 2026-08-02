@@ -332,7 +332,7 @@ PopupWindow {
                     model: [
                         { label: "Redial", action: "redial" },
                         { label: "Airplane", action: "airplane" },
-                        { label: "Reboot", action: "reboot" }
+                        { label: "Reboot router", action: "reboot" }
                     ]
                     delegate: Rectangle {
                         id: btn

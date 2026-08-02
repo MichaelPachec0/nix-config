@@ -131,7 +131,7 @@ in
 
     systemd.services.e5800-redial = recoverUnit "redial";
     systemd.services.e5800-airplane = recoverUnit "airplane";
-    systemd.services.e5800-reboot-modem = recoverUnit "reboot";
+    systemd.services.e5800-reboot-router = recoverUnit "reboot";
 
     security.polkit.extraConfig = ''
       polkit.addRule(function(action, subject) {
@@ -140,7 +140,7 @@ in
           var unit = action.lookup("unit");
           if (unit == "e5800-redial.service" ||
               unit == "e5800-airplane.service" ||
-              unit == "e5800-reboot-modem.service") {
+              unit == "e5800-reboot-router.service") {
             return polkit.Result.YES;
           }
         }

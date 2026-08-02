@@ -29,6 +29,10 @@ SSH_INTERVAL = 20.0
 SSH_TIMEOUT = 45
 RECOVER_INTERVAL = 2.0
 RECOVER_TIMEOUT = 120.0
+# A reboot is now the whole router, not just the modem, and the box takes
+# 60-90s to come back -- long enough that the window sized for a modem reset
+# would report "timeout" while it was still booting normally.
+REBOOT_TIMEOUT = 240.0
 # One debug_at_info call now carries QENG, QCAINFO and CEREG together, so the
 # three separate intervals they used to have collapse into this one.
 #
@@ -394,8 +398,10 @@ def loop():
         # Recovery constant-check + settle/timeout handling.
         if marker is not None:
             started = marker.get("started", int(time.time()))
+            budget = (REBOOT_TIMEOUT if marker.get("action") == "reboot"
+                      else RECOVER_TIMEOUT)
             online_streak = 0
-            while time.time() - started < RECOVER_TIMEOUT:
+            while time.time() - started < budget:
                 time.sleep(RECOVER_INTERVAL)
                 s = collect_once()
                 _write(s)

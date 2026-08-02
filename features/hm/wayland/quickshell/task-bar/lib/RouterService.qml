@@ -52,7 +52,7 @@ Scope {
         root._latch = true;
         latchTimer.restart();
         starter.exec(["systemctl", "start", "e5800-" +
-            (action === "reboot" ? "reboot-modem" : action) + ".service"]);
+            (action === "reboot" ? "reboot-router" : action) + ".service"]);
     }
 
     Process { id: starter }
