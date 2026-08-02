@@ -177,6 +177,83 @@ def operator_from_plmn(mcc, mnc, hint=None, table=None):
     return pick_plmn_name(tbl.get(plmn), hint) or plmn
 
 
+def parse_debug_at(data):
+    """Split a `cellular.network debug_at_info` response into {command: raw AT}.
+
+    This is how every AT-derived reading now arrives. debug_at_info is a ubus
+    method on cellular_manager, which OWNS the modem's AT process, so the
+    commands run behind GL's own lock rather than racing it. Writing to
+    modem.CPU.AT ourselves shares the channel with GL's poller and returns
+    CROSSED responses -- another command's reply arriving for yours, which is
+    undetectable from the reply alone. That is why nothing here talks to
+    modem.CPU.AT any more.
+
+    Input is the ubus call's stdout:
+
+        {"msgs":[{"cmd":"AT+CEREG?","result":"\\r\\n+CEREG: 0,1\\r\\n\\r\\nOK\\r\\n"},
+                 ...], "ret":0, "resp":"Success"}
+
+    Returns {} on anything unusable -- unparseable JSON, a non-zero `ret`, or a
+    missing msgs list -- so a failed call latches nothing and every cached
+    reading survives, exactly as a failed single-command read used to.
+
+    The AT text carries real CRLFs only after JSON decoding, so callers get
+    strings the existing parsers can consume directly. First non-empty result
+    per command wins: a later duplicate cannot clobber a good earlier reading.
+    """
+    if not data:
+        return {}
+    try:
+        obj = json.loads(data)
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(obj, dict) or obj.get("ret") not in (0, None):
+        return {}
+    msgs = obj.get("msgs")
+    if not isinstance(msgs, list):
+        return {}
+    out = {}
+    for m in msgs:
+        if not isinstance(m, dict):
+            continue
+        cmd = m.get("cmd")
+        res = m.get("result")
+        if not cmd or not res:
+            continue
+        if cmd not in out:
+            out[cmd] = res
+    return out
+
+
+def parse_sim_carrier(data):
+    """The SIM's brand from a `cellular.sim status` payload, else None.
+
+    Replaces AT+QSPN, which this modem answers with a bare OK because the SIM
+    carries no SPN record -- an AT round trip spent to learn nothing. `carrier`
+    here is the SIM's own name ("Mint"), NOT the network it rides; the network
+    still comes from the QENG PLMN through the vendored table.
+
+    Takes the first slot reporting a name. The router is dual-SIM and its
+    samples follow `current_sim_slot`, so on a box with two live SIMs this is
+    the "selected SIM", not necessarily the one carrying data.
+    """
+    if not data:
+        return None
+    try:
+        obj = json.loads(data)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+    for sim in obj.get("sims") or []:
+        if not isinstance(sim, dict):
+            continue
+        name = (sim.get("carrier") or "").strip()
+        if name:
+            return name
+    return None
+
+
 def parse_qspn(data):
     """Parse an AT+QSPN response into the SIM's service-provider name.
 
@@ -498,7 +575,11 @@ def build_status(parts):
     if hint is None:
         hint = country_hint()
     serving = parse_qeng(parts.get("qeng"), hint)
-    sim_operator = parse_qspn(parts.get("qspn"))
+    # The poller now reads the SIM's brand straight from cellular.sim status,
+    # so an explicit name wins. parse_qspn stays as the fallback: it is still
+    # correct for a SIM that does carry an SPN record, and keeps older callers
+    # and fixtures that supply raw QSPN working unchanged.
+    sim_operator = parts.get("sim_operator") or parse_qspn(parts.get("qspn"))
     registration = parse_cereg(parts.get("cereg"))
     usage = parts.get("usage") or {}
     marker = parts.get("recovery")

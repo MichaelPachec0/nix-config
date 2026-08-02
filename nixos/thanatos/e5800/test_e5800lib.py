@@ -1,4 +1,6 @@
+import json
 import unittest
+
 import e5800lib as L
 
 
@@ -368,6 +370,152 @@ class TestOperator(unittest.TestCase):
                              "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}]})
         self.assertIsNone(st["cellular"]["operator"])
         self.assertIsNone(st["cellular"]["plmn"])
+
+
+class TestDebugAtInfo(unittest.TestCase):
+    """cellular.network debug_at_info is the arbitrated AT path.
+
+    Real capture from the RG650V-NA on 2026-08-01, trimmed to the commands the
+    poller consumes. The full response carries 32.
+    """
+    QENG = ("\r\n+QENG: \"servingcell\",\"NOCONN\"\r\n"
+            "+QENG: \"LTE\",\"FDD\",310,260,1762803,322,66786,66,5,5,"
+            "3C6E,-99,-11,-66,11,12,50,-\r\n"
+            "+QENG: \"NR5G-NSA\",310,260,704,-88,23,-10,501390,41,12,1"
+            "\r\n\r\nOK\r\n")
+    SAMPLE = json.dumps({
+        "msgs": [
+            {"cmd": "ATI",
+             "result": "\r\nQuectel\r\nRG650V-NA\r\n\r\nOK\r\n"},
+            {"cmd": "AT+CEREG?", "result": "\r\n+CEREG: 0,1\r\n\r\nOK\r\n"},
+            {"cmd": "AT+COPS?",
+             "result": "\r\n+COPS: 0,0,\"Mint\",13\r\n\r\nOK\r\n"},
+            {"cmd": "AT+QCAINFO",
+             "result": "\r\n+QCAINFO: \"PCC\",66786,100,\"LTE BAND 66\","
+                       "1,322,-99,-11,-66,3\r\n"
+                       "+QCAINFO: \"SCC\",501390,12,\"NR5G BAND 41\",704\r\n"
+                       "\r\nOK\r\n"},
+            {"cmd": "AT+QENG=\"servingcell\"", "result": QENG},
+        ],
+        "ret": 0,
+        "resp": "Success",
+    })
+
+    def test_splits_by_command(self):
+        got = L.parse_debug_at(self.SAMPLE)
+        self.assertIn("AT+CEREG?", got)
+        self.assertIn("AT+QCAINFO", got)
+        self.assertIn('AT+QENG="servingcell"', got)
+
+    def test_results_feed_the_existing_parsers_unchanged(self):
+        # The whole point of the migration: same raw AT text arrives by a
+        # different route, so no parser needed rewriting.
+        got = L.parse_debug_at(self.SAMPLE)
+        self.assertEqual(L.parse_cereg(got["AT+CEREG?"]), "home")
+        serving = L.parse_qeng(got['AT+QENG="servingcell"'], ["US"])
+        self.assertEqual(serving["bands"], ["B66", "n41"])
+        self.assertEqual(serving["plmn"], "310-260")
+        self.assertEqual(serving["operator"], "T-Mobile")
+        self.assertEqual(L.parse_qcainfo(got["AT+QCAINFO"])["count"], 2)
+
+    def test_failed_call_yields_nothing_so_caches_survive(self):
+        # A non-zero ret must latch NOTHING. Returning partial data here would
+        # let a failed call overwrite good cached readings.
+        self.assertEqual(
+            L.parse_debug_at(json.dumps({"resp": "Parameter missing", "ret": 15})),
+            {})
+
+    def test_nonzero_ret_is_rejected_even_when_msgs_are_present(self):
+        # The `ret` check must carry its own weight. A rejected call that still
+        # returns a msgs list is the case that matters: the missing-msgs shape
+        # above is also caught by the type check, so it cannot prove this.
+        got = L.parse_debug_at(json.dumps({
+            "ret": 15,
+            "resp": "Parameter missing",
+            "msgs": [{"cmd": "AT+CEREG?", "result": "\r\nERROR\r\n"}],
+        }))
+        self.assertEqual(got, {})
+
+    def test_garbage_and_empty_are_survivable(self):
+        for bad in ("", None, "not json", "[]", json.dumps({"ret": 0})):
+            self.assertEqual(L.parse_debug_at(bad), {})
+
+    def test_entries_without_a_result_are_dropped(self):
+        got = L.parse_debug_at(json.dumps({"ret": 0, "msgs": [
+            {"cmd": "AT+CEREG?", "result": ""},
+            {"cmd": "AT+QCAINFO"},
+            {"result": "orphan"},
+            "not a dict",
+        ]}))
+        self.assertEqual(got, {})
+
+    def test_first_non_empty_result_wins(self):
+        got = L.parse_debug_at(json.dumps({"ret": 0, "msgs": [
+            {"cmd": "AT+CEREG?", "result": "\r\n+CEREG: 0,5\r\n\r\nOK\r\n"},
+            {"cmd": "AT+CEREG?", "result": "\r\nERROR\r\n"},
+        ]}))
+        self.assertEqual(L.parse_cereg(got["AT+CEREG?"]), "roaming")
+
+    def test_cops_is_not_a_network_name_source(self):
+        # +COPS returns the SPN ("Mint"), not the registered network, so the
+        # network half of operator_label must keep coming from the QENG PLMN.
+        # Guarding this because COPS looks like the obvious shortcut.
+        got = L.parse_debug_at(self.SAMPLE)
+        self.assertIn('"Mint"', got["AT+COPS?"])
+        serving = L.parse_qeng(got['AT+QENG="servingcell"'], ["US"])
+        self.assertEqual(
+            L.operator_label("Mint", serving["operator"],
+                             L.parse_cereg(got["AT+CEREG?"])),
+            "Mint (T-Mobile)")
+
+
+class TestSimCarrier(unittest.TestCase):
+    """cellular.sim status replaces AT+QSPN as the source of the SIM's brand."""
+    SAMPLE = json.dumps({"sims": [
+        {"slot": "1", "carrier": "Mint", "iccid": "8901240367198032843F",
+         "apn": "fast.t-mobile.com", "status": 6, "strength": 4},
+        {"slot": "2", "carrier": "", "iccid": "", "status": 0},
+    ]})
+
+    def test_reads_the_populated_slot(self):
+        self.assertEqual(L.parse_sim_carrier(self.SAMPLE), "Mint")
+
+    def test_empty_slots_are_skipped_not_returned_blank(self):
+        # Slot ordering is not guaranteed; an empty slot listed first must not
+        # shadow the live one.
+        payload = json.dumps({"sims": [{"slot": "2", "carrier": ""},
+                                       {"slot": "1", "carrier": "Mint"}]})
+        self.assertEqual(L.parse_sim_carrier(payload), "Mint")
+
+    def test_no_sim_yields_none_not_a_blank_name(self):
+        self.assertIsNone(L.parse_sim_carrier(json.dumps({"sims": [
+            {"slot": "1", "carrier": ""}]})))
+
+    def test_garbage_and_empty_are_survivable(self):
+        for bad in ("", None, "not json", "[]", json.dumps({}),
+                    json.dumps({"sims": ["nope"]})):
+            self.assertIsNone(L.parse_sim_carrier(bad))
+
+    def test_build_status_prefers_the_direct_name_over_qspn(self):
+        st = L.build_status({
+            "reachable": True, "country_hint": ["US"],
+            "sim_operator": "Mint",
+            "signals": [{"network_type": "NR5G-NSA"}],
+            "qeng": TestDebugAtInfo.QENG,
+        })
+        self.assertEqual(st["cellular"]["sim_operator"], "Mint")
+        self.assertEqual(st["cellular"]["operator_label"], "Mint (T-Mobile)")
+
+    def test_qspn_still_works_when_no_direct_name_is_supplied(self):
+        # The AT path is retired, not deleted -- a SIM that does carry an SPN
+        # record must keep resolving, and existing fixtures must keep passing.
+        st = L.build_status({
+            "reachable": True, "country_hint": ["US"],
+            "qspn": "\r\n+QSPN: \"Ultra\",\"Ultra\",\"\",0,\"310260\"\r\n\r\nOK\r\n",
+            "signals": [{"network_type": "NR5G-NSA"}],
+            "qeng": TestDebugAtInfo.QENG,
+        })
+        self.assertEqual(st["cellular"]["operator_label"], "Ultra (T-Mobile)")
 
 
 class TestSimOperator(unittest.TestCase):

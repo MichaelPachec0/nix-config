@@ -29,24 +29,34 @@ SSH_INTERVAL = 20.0
 SSH_TIMEOUT = 45
 RECOVER_INTERVAL = 2.0
 RECOVER_TIMEOUT = 120.0
-QENG_INTERVAL = 30.0  # serving-cell bands change slowly; refresh sparingly
-QCAINFO_INTERVAL = 10.0  # SCC activation changes with traffic; refresh often
-QSPN_INTERVAL = 900.0  # the SIM's own name changes only on a SIM swap
-CEREG_INTERVAL = 60.0  # registration state changes on cell reselect, not per cycle
+# One debug_at_info call now carries QENG, QCAINFO and CEREG together, so the
+# three separate intervals they used to have collapse into this one.
+#
+# 30s is a deliberate compromise. Those commands used to be gated individually
+# (QENG 30s, CEREG 60s, QCAINFO 10s), but debug_at_info is all-or-nothing --
+# its signature is {bus, slot} with no command filter -- so every call runs all
+# 32 AT commands the firmware puts in that batch. Keeping QCAINFO's old 10s
+# would mean ~192 AT commands a minute against the ~9 we issue today. 30s costs
+# some carrier-aggregation responsiveness and buys back registration freshness,
+# at ~64/minute. Do not lower it without measuring what the modem does under
+# that load.
+DEBUG_AT_INTERVAL = 30.0
+SIM_INTERVAL = 900.0  # the SIM's own name changes only on a SIM swap
 
-# Last good raw QENG payload + when it was last fetched. Kept across cycles so a
-# transient SSH/AT miss does not blank cellular.ca and flicker the widget.
+# Last good raw QENG payload + when the batch that carries it last ran. Kept
+# across cycles so a transient SSH/AT miss does not blank cellular.ca and
+# flicker the widget. Latched per reading rather than per call: one command
+# inside the batch can come back empty while the others are good.
 _QENG_CACHE = None
-_QENG_LAST = 0.0
-_QSPN_CACHE = None
-_QSPN_LAST = 0.0
 _CEREG_CACHE = None
-_CEREG_LAST = 0.0
-
-# Last good raw QCAINFO payload + fetch time, latched like QENG so a transient
-# SSH/AT miss does not blank cellular.ca.
 _QCAINFO_CACHE = None
-_QCAINFO_LAST = 0.0
+_DEBUG_AT_LAST = 0.0
+
+# The SIM's brand, straight from cellular.sim status -- no longer parsed out of
+# AT+QSPN, which this modem answers with a bare OK because the SIM carries no
+# SPN record.
+_SIM_CACHE = None
+_SIM_LAST = 0.0
 
 
 def _read(path):
@@ -167,22 +177,6 @@ def _ssh_batch(steps):
     return result, False
 
 
-def _at_data(out):
-    """Unwrap a modem.CPU.AT response into its raw AT text.
-
-    The passthrough answers {"data": "<raw AT>", "channel_status": true}; the
-    AT text carries real CRLFs only AFTER json decoding, so every parser must
-    be handed `.data` rather than the envelope. Returns "" when the call failed
-    or returned nothing.
-    """
-    if not out:
-        return ""
-    try:
-        return (json.loads(out) or {}).get("data") or ""
-    except (ValueError, json.JSONDecodeError):
-        return ""
-
-
 def _parse_signals(out):
     """Interpret the get_signals payload from the batched session."""
     if not out:
@@ -193,45 +187,33 @@ def _parse_signals(out):
         return None
 
 
-# AT+QENG="servingcell" via the modem AT passthrough. The inner quotes around
-# servingcell must survive the JSON string (\") and the remote shell's single
-# quotes, hence the double-escaping. get_result_AT returns {"data": <raw AT>}.
-_QENG_CMD = ("ubus call modem.CPU.AT get_result_AT "
-             "'{\"cmd\":\"AT+QENG=\\\"servingcell\\\"\","
-             "\"timeout\":5,\"source_flag\":0,\"sub_id\":0}'")
+# Every AT reading now arrives through cellular_manager's own debug_at_info,
+# which runs the commands behind the lock held by the process that owns
+# /dev/smd9. Writing to modem.CPU.AT ourselves -- which is what the four
+# separate commands here used to do -- shares that channel with GL's gl_modem
+# poller, and under contention the modem answers with CROSSED responses:
+# another command's reply arriving for yours, indistinguishable from a real
+# answer. One call now returns 32 AT results; we consume three of them.
+_DEBUG_AT_CMD = ("ubus call cellular.network debug_at_info "
+                 "'{\"bus\":\"cpu\",\"slot\":1}'")
 
+# The SIM's brand. Replaces AT+QSPN entirely: this modem's SIM carries no SPN
+# record and answered a bare OK, while cellular.sim status reports "Mint".
+_SIM_STATUS_CMD = "ubus call cellular.sim status '{\"bus\":\"cpu\"}'"
 
-
-
-# AT+QCAINFO via the modem AT passthrough (same channel/escaping as QENG). Lists
-# the PCC + every SCC with activation state -> the full carrier-aggregation view.
-_QCAINFO_CMD = ("ubus call modem.CPU.AT get_result_AT "
-                "'{\"cmd\":\"AT+QCAINFO\",\"timeout\":5,"
-                "\"source_flag\":0,\"sub_id\":0}'")
-
-
-
-
-# AT+QSPN via the modem AT passthrough (same channel/escaping as QENG). Reads
-# the Service Provider Name off the SIM, which is where an MVNO carries its own
-# brand: a Mint SIM on T-Mobile's network reports "Mint" here and "310-260"
-# (T-Mobile) through QENG. Firmware with no SPN record on the SIM answers a
-# bare OK, which parse_qspn renders as None -- see the note there.
-_QSPN_CMD = ("ubus call modem.CPU.AT get_result_AT "
-             "'{\"cmd\":\"AT+QSPN\",\"timeout\":5,"
-             "\"source_flag\":0,\"sub_id\":0}'")
-
-
-
-
-# AT+CEREG? via the modem AT passthrough (same channel/escaping as QENG). The
-# EPS registration state, whose <stat> is the only authoritative roaming signal:
-# 1 = registered on the home network, 5 = registered while roaming. Comparing
-# PLMNs cannot answer this -- an MVNO rides its host's PLMN, so Mint on T-Mobile
-# would look like roaming, and a national roaming agreement can share one.
-_CEREG_CMD = ("ubus call modem.CPU.AT get_result_AT "
-              "'{\"cmd\":\"AT+CEREG?\",\"timeout\":5,"
-              "\"source_flag\":0,\"sub_id\":0}'")
+# Keys into the debug_at_info result. These must match the firmware's `cmd`
+# strings byte for byte -- including the inner quotes on QENG -- or the reading
+# silently goes missing and the cache never refreshes.
+#
+# QENG: the camped serving cells, which populate even in RRC idle ("NOCONN"),
+#   and the source of the registered PLMN.
+# QCAINFO: the PCC plus every SCC -> the full carrier-aggregation view.
+# CEREG: the EPS registration state, whose <stat> is the only authoritative
+#   roaming signal (1 = home, 5 = roaming). Comparing PLMNs cannot answer this:
+#   an MVNO rides its host's PLMN, so Mint on T-Mobile would read as roaming.
+_AT_QENG = "AT+QENG=\"servingcell\""
+_AT_QCAINFO = "AT+QCAINFO"
+_AT_CEREG = "AT+CEREG?"
 
 
 
@@ -328,20 +310,20 @@ def collect_once():
     # Interval gating still applies, but only to decide what goes INTO the
     # batch: QSPN changes on a SIM swap and QCAINFO with traffic, so there is
     # no reason to ask for both every cycle even when they are free to carry.
-    global _QENG_CACHE, _QENG_LAST, _QCAINFO_CACHE, _QCAINFO_LAST
-    global _QSPN_CACHE, _QSPN_LAST, _CEREG_CACHE, _CEREG_LAST
+    global _QENG_CACHE, _QCAINFO_CACHE, _CEREG_CACHE, _DEBUG_AT_LAST
+    global _SIM_CACHE, _SIM_LAST
 
     steps = [("signals", "ubus call cellular.collect get_signals '{\"bus\":\"x\"}'")]
-    at_due = []
-    if _QENG_CACHE is None or ts - _QENG_LAST >= QENG_INTERVAL:
-        at_due.append(("qeng", _QENG_CMD))
-    if _QCAINFO_CACHE is None or ts - _QCAINFO_LAST >= QCAINFO_INTERVAL:
-        at_due.append(("qcainfo", _QCAINFO_CMD))
-    if _QSPN_CACHE is None or ts - _QSPN_LAST >= QSPN_INTERVAL:
-        at_due.append(("qspn", _QSPN_CMD))
-    if _CEREG_CACHE is None or ts - _CEREG_LAST >= CEREG_INTERVAL:
-        at_due.append(("cereg", _CEREG_CMD))
-    steps.extend(at_due)
+    at_due = _DEBUG_AT_LAST == 0.0 or ts - _DEBUG_AT_LAST >= DEBUG_AT_INTERVAL
+    if at_due:
+        steps.append(("atinfo", _DEBUG_AT_CMD))
+    sim_due = _SIM_CACHE is None or ts - _SIM_LAST >= SIM_INTERVAL
+    if sim_due:
+        steps.append(("simstatus", _SIM_STATUS_CMD))
+    # NOT replaced by cellular.collect get_traffic. That method reports a single
+    # combined `traffic_total` per slot, which would collapse the rx/tx split
+    # the popup shows. /proc/net/dev is a plain file read and never touches the
+    # AT channel, so there is nothing to gain by trading data away for it.
     steps.append(("netdev", "cat /proc/net/dev"))
 
     got, ssh_auth = _ssh_batch(steps)
@@ -349,40 +331,45 @@ def collect_once():
     sig = _parse_signals(got.get("signals"))
     parts["signals"] = sig
 
-    # Latch every AT reading on whether it PARSES, not on whether the response
-    # was merely non-empty. The modem answers a bare "OK" often enough that a
-    # plain truthiness check cached that as a good value and then refused to
-    # retry for the whole interval -- which is what left sim_operator null.
-    if "qeng" in got:
-        _QENG_LAST = ts
-        _qeng_raw = _at_data(got["qeng"])
+    # Latch each reading on whether it PARSES, not on whether the response was
+    # merely non-empty. The modem answers a bare "OK" often enough that a plain
+    # truthiness check cached that as a good value and then refused to retry for
+    # the whole interval -- which is what left sim_operator null.
+    #
+    # The three readings are latched independently even though they arrive in
+    # one call: any single command inside the batch can come back empty or
+    # ERROR while its neighbours are fine, and one bad line must not blank the
+    # rest. A wholly failed call yields {} and latches nothing, so every cached
+    # value survives exactly as it did when these were separate commands.
+    if "atinfo" in got:
+        _DEBUG_AT_LAST = ts
+        at = L.parse_debug_at(got["atinfo"])
+
+        _qeng_raw = at.get(_AT_QENG, "")
         if L.parse_qeng(_qeng_raw):
             _QENG_CACHE = _qeng_raw
-    parts["qeng"] = _QENG_CACHE
 
-    # QCAINFO keys on a PCC line rather than a parser: a valid PCC-only idle
-    # read must be allowed through so the badge honestly drops when SCCs
-    # deconfigure, while a total miss keeps the last value.
-    if "qcainfo" in got:
-        _QCAINFO_LAST = ts
-        _qcainfo_raw = _at_data(got["qcainfo"])
+        # QCAINFO keys on a PCC line rather than a parser: a valid PCC-only idle
+        # read must be allowed through so the badge honestly drops when SCCs
+        # deconfigure, while a total miss keeps the last value.
+        _qcainfo_raw = at.get(_AT_QCAINFO, "")
         if '"PCC"' in _qcainfo_raw:
             _QCAINFO_CACHE = _qcainfo_raw
-    parts["qcainfo"] = _QCAINFO_CACHE
 
-    if "qspn" in got:
-        _QSPN_LAST = ts
-        _qspn_raw = _at_data(got["qspn"])
-        if L.parse_qspn(_qspn_raw):
-            _QSPN_CACHE = _qspn_raw
-    parts["qspn"] = _QSPN_CACHE
-
-    if "cereg" in got:
-        _CEREG_LAST = ts
-        _cereg_raw = _at_data(got["cereg"])
+        _cereg_raw = at.get(_AT_CEREG, "")
         if L.parse_cereg(_cereg_raw):
             _CEREG_CACHE = _cereg_raw
+
+    parts["qeng"] = _QENG_CACHE
+    parts["qcainfo"] = _QCAINFO_CACHE
     parts["cereg"] = _CEREG_CACHE
+
+    if "simstatus" in got:
+        _SIM_LAST = ts
+        _sim_name = L.parse_sim_carrier(got["simstatus"])
+        if _sim_name:
+            _SIM_CACHE = _sim_name
+    parts["sim_operator"] = _SIM_CACHE
 
     nb = _parse_netdev(got.get("netdev"))
     if nb is not None:
