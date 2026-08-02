@@ -76,9 +76,26 @@ PopupWindow {
         return t >= warn - 10 ? pop.theme.accentYellow : pop.theme.textSecondary;
     }
 
+    // Minimum keeps the card from shrinking to the width of a sparse payload
+    // (a router that is merely reachable renders two short lines); maximum
+    // keeps a long DNS list or APN from stretching it across the screen.
+    readonly property int minCardWidth: 380
+    readonly property int maxCardWidth: 560
+
     Rectangle {
         id: card
-        implicitWidth: 380
+        // Grow to fit the widest row rather than clipping it. The card was
+        // pinned at 380 while `col` was anchored to its edges, so any row wider
+        // than 356 was silently cut off -- Rectangle does not clip, so the text
+        // painted outside the window and the compositor discarded it, which
+        // looked like the information was simply missing.
+        //
+        // No binding loop: a Layout's implicitWidth is derived from its
+        // children's implicit sizes, not from its own assigned width. That is
+        // also why nothing here may use Flow, whose implicitWidth DOES depend
+        // on the width it is given.
+        implicitWidth: Math.max(pop.minCardWidth,
+                                Math.min(pop.maxCardWidth, col.implicitWidth + 24))
         implicitHeight: col.implicitHeight + 24
         radius: pop.theme.radiusOuter
         color: pop.theme.bgCard
@@ -186,6 +203,8 @@ PopupWindow {
                     // roaming. Falls back to device.carrier, which is now
                     // derived from the same values rather than hardcoded.
                     Text {
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
                         text: (pop.svc.cellular.gen || "?") + "   "
                             + (pop.svc.cellular.operator_label || pop.svc.device.carrier || "")
                         font.family: pop.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
@@ -282,6 +301,11 @@ PopupWindow {
                 // Serving cell (from AT+QENG="servingcell"), plus its identity.
                 // Cell id and TAC are here because a CHANGE in either is a
                 // handover -- the value itself is only a landmark.
+                // Bands and neighbours share a line; the cell identity gets its
+                // own. Three chips of this length on one row overflowed even a
+                // widened card, and the identity is the least glanceable of
+                // them -- it is a landmark you compare against later, not a
+                // number you read every time.
                 RowLayout {
                     id: servingRow
                     property var serving: pop.svc.cellular.serving
@@ -290,21 +314,13 @@ PopupWindow {
                     Layout.fillWidth: true
                     spacing: 12
                     Text {
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
                         text: servingRow.serving
                             ? ("Serving  " + (servingRow.serving.bands || []).join(" + ")) : ""
                         font.family: pop.theme.iconFont; font.pixelSize: 10
                         color: pop.theme.textSecondary
                     }
-                    Text {
-                        visible: !!(servingRow.serving && servingRow.serving.cellid)
-                        text: servingRow.serving
-                            ? ("cell " + servingRow.serving.cellid
-                               + (servingRow.serving.tac ? ("  TAC " + servingRow.serving.tac) : ""))
-                            : ""
-                        font.family: pop.theme.iconFont; font.pixelSize: 10
-                        color: pop.theme.textSecondary
-                    }
-                    Item { Layout.fillWidth: true }
                     // Neighbours, with the serving cell already filtered out.
                     // Yellow when one is stronger than the cell we are camped
                     // on, which is the only actionable reading here -- a list
@@ -320,6 +336,17 @@ PopupWindow {
                         color: pop.betterNeighbour ? pop.theme.accentYellow
                                                    : pop.theme.textSecondary
                     }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                    visible: !!(servingRow.serving && servingRow.serving.cellid)
+                    text: servingRow.serving
+                        ? ("cell " + servingRow.serving.cellid
+                           + (servingRow.serving.tac ? ("   TAC " + servingRow.serving.tac) : ""))
+                        : ""
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
                 }
             }
 
@@ -357,12 +384,13 @@ PopupWindow {
                     Layout.fillWidth: true
                     spacing: 12
                     Text {
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
                         visible: !!pop.svc.cellular.apn
                         text: "APN  " + (pop.svc.cellular.apn || "")
                         font.family: pop.theme.iconFont; font.pixelSize: 10
                         color: pop.theme.textSecondary
                     }
-                    Item { Layout.fillWidth: true }
                     Text {
                         visible: !!pop.svc.uplink.device
                         text: pop.svc.uplink.device || ""
@@ -389,11 +417,21 @@ PopupWindow {
                         color: pop.theme.textSecondary
                     }
                 }
+                // Wraps rather than elides: this is a LIST, and a resolver you
+                // cannot see is the same as one that is not reported. The other
+                // long fields elide because they are single tokens, where
+                // wrapping mid-string reads worse than a visible cut.
+                //
+                // preferredWidth 0 keeps it from inflating the card: its
+                // implicit width is the whole unwrapped list, which with IPv6
+                // resolvers would pin the popup to the clamp on every render.
+                // fillWidth still hands it the full column to wrap into.
                 Text {
                     Layout.fillWidth: true
+                    Layout.preferredWidth: 0
                     visible: (pop.svc.uplink.dns || []).length > 0
-                    text: "DNS  " + (pop.svc.uplink.dns || []).join("  ")
-                    elide: Text.ElideRight
+                    text: "DNS  " + (pop.svc.uplink.dns || []).join("   ")
+                    wrapMode: Text.WordWrap
                     font.family: pop.theme.iconFont; font.pixelSize: 10
                     color: pop.theme.textSecondary
                 }
@@ -454,38 +492,50 @@ PopupWindow {
             // The GAP between them is the signal -- a link that keeps
             // redialling sits far below the system uptime while a stable one
             // tracks it, and neither number alone carries that.
-            RowLayout {
+            // Four chips on one row was the widest line in the card and the
+            // first thing to overflow. Split: load and memory answer "is the
+            // router struggling", the two uptimes answer "is the link stable".
+            ColumnLayout {
                 visible: pop.svc.reachable
                 Layout.fillWidth: true
-                spacing: 12
-                Text {
-                    text: "CPU " + (pop.svc.system.cpu_temp || "--") + "C   load "
-                        + ((pop.svc.system.load || [])[0] || "--")
-                    font.family: pop.theme.iconFont; font.pixelSize: 10
-                    color: pop.theme.textSecondary
+                spacing: 2
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    Text {
+                        text: "CPU " + (pop.svc.system.cpu_temp || "--") + "C   load "
+                            + ((pop.svc.system.load || [])[0] || "--")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Item { Layout.fillWidth: true }
+                    // Free memory, not used: the number that answers "is the
+                    // web UI about to crawl". buff/cache is reclaimable so it
+                    // counts as free, matching what the router itself reports.
+                    Text {
+                        visible: pop.hasVal(pop.svc.system.mem_total)
+                            && pop.hasVal(pop.svc.system.mem_free)
+                        text: "mem " + RouterFmt.fmtBytes((pop.svc.system.mem_free || 0)
+                                                          + (pop.svc.system.mem_buff || 0))
+                            + " free"
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
                 }
-                // Free memory, not used: the number that answers "is the web
-                // UI about to crawl". buff/cache is reclaimable so it counts
-                // as free, matching what the router itself reports.
-                Text {
-                    visible: pop.hasVal(pop.svc.system.mem_total)
-                        && pop.hasVal(pop.svc.system.mem_free)
-                    text: "mem " + RouterFmt.fmtBytes((pop.svc.system.mem_free || 0)
-                                                      + (pop.svc.system.mem_buff || 0))
-                        + " free"
-                    font.family: pop.theme.iconFont; font.pixelSize: 10
-                    color: pop.theme.textSecondary
-                }
-                Item { Layout.fillWidth: true }
-                Text {
-                    text: "sys " + RouterFmt.fmtDuration(pop.svc.system.uptime)
-                    font.family: pop.theme.iconFont; font.pixelSize: 10
-                    color: pop.theme.textSecondary
-                }
-                Text {
-                    text: "modem " + RouterFmt.fmtDuration(pop.svc.uplink.uptime)
-                    font.family: pop.theme.iconFont; font.pixelSize: 10
-                    color: pop.theme.textSecondary
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    Text {
+                        text: "up  sys " + RouterFmt.fmtDuration(pop.svc.system.uptime)
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: "modem " + RouterFmt.fmtDuration(pop.svc.uplink.uptime)
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
                 }
             }
 
