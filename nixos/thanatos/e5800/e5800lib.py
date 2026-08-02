@@ -225,6 +225,47 @@ def parse_debug_at(data):
     return out
 
 
+def parse_iface_status(data):
+    """Uplink facts from a `network.interface.modem_cpu status` payload.
+
+    `uptime` here is seconds since the modem last DIALLED, which is a different
+    number from the router's own uptime and the reason both are worth showing:
+    a link that keeps redialling reads far below the system uptime, while a
+    stable one tracks it. Neither carries that on its own.
+
+    Returns None when the payload is unusable, else a dict whose values are
+    individually None when absent -- a partially-populated interface (dialling,
+    or up with no lease yet) must still yield what it does know.
+    """
+    if not data:
+        return None
+    try:
+        obj = json.loads(data)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+    addrs = obj.get("ipv4-address") or []
+    first = addrs[0] if addrs and isinstance(addrs[0], dict) else {}
+    # The gateway is the nexthop of the DEFAULT route, not simply the first
+    # route: this interface also carries per-host /32 routes for each DNS
+    # server, and any of those could sort first.
+    gateway = None
+    for r in obj.get("route") or []:
+        if isinstance(r, dict) and r.get("mask") == 0 and r.get("target") == "0.0.0.0":
+            gateway = r.get("nexthop")
+            break
+    return {
+        "uptime": obj.get("uptime"),
+        "up": bool(obj.get("up")),
+        "device": obj.get("l3_device"),
+        "ip": first.get("address"),
+        "mask": first.get("mask"),
+        "gateway": gateway,
+        "dns": [d for d in (obj.get("dns-server") or []) if d],
+    }
+
+
 def parse_sim_carrier(data):
     """The SIM's brand from a `cellular.sim status` payload, else None.
 
@@ -581,6 +622,7 @@ def build_status(parts):
     # and fixtures that supply raw QSPN working unchanged.
     sim_operator = parts.get("sim_operator") or parse_qspn(parts.get("qspn"))
     registration = parse_cereg(parts.get("cereg"))
+    iface = parts.get("iface") or {}
     usage = parts.get("usage") or {}
     marker = parts.get("recovery")
     vpn_list = (parts.get("vpn") or {}).get("status_list") or []
@@ -613,6 +655,14 @@ def build_status(parts):
             "interface": up.get("interface"),
             "online": bool(up.get("online")),
             "up": bool(up.get("up")),
+            # Seconds since the modem last dialled -- distinct from
+            # system.uptime, which is how long the router has been powered.
+            "uptime": iface.get("uptime"),
+            "device": iface.get("device"),
+            "ip": iface.get("ip"),
+            "mask": iface.get("mask"),
+            "gateway": iface.get("gateway"),
+            "dns": iface.get("dns") or [],
         },
         "recovery": {
             "active": marker is not None,

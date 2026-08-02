@@ -48,3 +48,26 @@ Deno.test("fmtBytes", () => {
   assertEquals(fmtBytes(0), "0 B");
   assertEquals(fmtBytes(4700000000), "4.4 GB");
 });
+
+Deno.test("fmtDuration picks two units, largest first", () => {
+  assertEquals(fmtDuration(276164), "3d 4h");   // router uptime
+  assertEquals(fmtDuration(12663), "3h 31m");   // modem uptime since dial
+  assertEquals(fmtDuration(2700), "45m");
+  assertEquals(fmtDuration(12), "12s");
+});
+
+Deno.test("fmtDuration drops a zero smaller unit", () => {
+  assertEquals(fmtDuration(172800), "2d");      // not "2d 0h"
+  assertEquals(fmtDuration(7200), "2h");        // not "2h 0m"
+});
+
+Deno.test("fmtDuration reports no reading, not a fresh boot", () => {
+  // "0s" here would read as a device that just came up, which is the opposite
+  // of "we have not been told". The two uptimes share a line, so a missing one
+  // must be visibly missing.
+  assertEquals(fmtDuration(null), "--");
+  assertEquals(fmtDuration(undefined), "--");
+  assertEquals(fmtDuration(-1), "--");
+  assertEquals(fmtDuration("nope"), "--");
+  assertEquals(fmtDuration(0), "0s");           // a real zero IS a fresh boot
+});

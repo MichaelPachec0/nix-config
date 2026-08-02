@@ -317,7 +317,11 @@ def collect_once():
     global _QENG_CACHE, _QCAINFO_CACHE, _CEREG_CACHE, _DEBUG_AT_LAST
     global _SIM_CACHE, _SIM_LAST
 
-    steps = [("signals", "ubus call cellular.collect get_signals '{\"bus\":\"x\"}'")]
+    steps = [("signals", "ubus call cellular.collect get_signals '{\"bus\":\"x\"}'"),
+             # The uplink interface itself: how long since it dialled, plus the
+             # lease it got. Every cycle -- it is a netifd status read and never
+             # touches the modem.
+             ("iface", "ubus call network.interface.modem_cpu status")]
     at_due = _DEBUG_AT_LAST == 0.0 or ts - _DEBUG_AT_LAST >= DEBUG_AT_INTERVAL
     if at_due:
         steps.append(("atinfo", _DEBUG_AT_CMD))
@@ -334,6 +338,7 @@ def collect_once():
 
     sig = _parse_signals(got.get("signals"))
     parts["signals"] = sig
+    parts["iface"] = L.parse_iface_status(got.get("iface"))
 
     # Latch each reading on whether it PARSES, not on whether the response was
     # merely non-empty. The modem answers a bare "OK" often enough that a plain

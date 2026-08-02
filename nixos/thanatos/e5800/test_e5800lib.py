@@ -483,6 +483,70 @@ class TestDebugAtInfo(unittest.TestCase):
             "Mint (T-Mobile)")
 
 
+class TestIfaceStatus(unittest.TestCase):
+    """network.interface.modem_cpu status -- the uplink's own facts.
+
+    Real capture, trimmed. The route list matters: the DNS servers each get a
+    /32 route on this interface, so the default route has to be selected rather
+    than assumed to be first.
+    """
+    SAMPLE = json.dumps({
+        "up": True, "uptime": 12663, "l3_device": "rmnet_data0",
+        "proto": "rmnet",
+        "ipv4-address": [{"address": "48.18.141.141", "mask": 30}],
+        "dns-server": ["10.177.0.34", "10.177.0.210"],
+        "route": [
+            {"target": "10.177.0.34", "mask": 32, "nexthop": "0.0.0.0"},
+            {"target": "10.177.0.210", "mask": 32, "nexthop": "0.0.0.0"},
+            {"target": "0.0.0.0", "mask": 0, "nexthop": "48.18.141.142",
+             "mtu": 1500},
+        ],
+    })
+
+    def test_reads_the_uplink_facts(self):
+        r = L.parse_iface_status(self.SAMPLE)
+        self.assertEqual(r["uptime"], 12663)
+        self.assertEqual(r["device"], "rmnet_data0")
+        self.assertEqual(r["ip"], "48.18.141.141")
+        self.assertEqual(r["mask"], 30)
+        self.assertEqual(r["dns"], ["10.177.0.34", "10.177.0.210"])
+        self.assertTrue(r["up"])
+
+    def test_gateway_is_the_default_route_not_the_first_one(self):
+        # The /32 DNS routes are listed first and their nexthop is 0.0.0.0.
+        # Taking route[0] would report the gateway as 0.0.0.0.
+        self.assertEqual(L.parse_iface_status(self.SAMPLE)["gateway"],
+                         "48.18.141.142")
+
+    def test_partial_interface_still_yields_what_it_knows(self):
+        # Dialling, or up with no lease yet: uptime is real, addressing is not.
+        r = L.parse_iface_status(json.dumps({"up": False, "uptime": 4}))
+        self.assertEqual(r["uptime"], 4)
+        self.assertIsNone(r["ip"])
+        self.assertIsNone(r["gateway"])
+        self.assertEqual(r["dns"], [])
+
+    def test_garbage_and_empty_are_survivable(self):
+        for bad in ("", None, "not json", "[]"):
+            self.assertIsNone(L.parse_iface_status(bad))
+
+    def test_build_status_keeps_the_two_uptimes_separate(self):
+        # system.uptime is the router's; uplink.uptime is the modem's. Conflating
+        # them would hide exactly the redial the pair exists to expose.
+        st = L.build_status({
+            "reachable": True,
+            "get_status": {"system": {"uptime": 276164}},
+            "iface": L.parse_iface_status(self.SAMPLE),
+        })
+        self.assertEqual(st["system"]["uptime"], 276164)
+        self.assertEqual(st["uplink"]["uptime"], 12663)
+
+    def test_absent_iface_leaves_uplink_uptime_none_not_zero(self):
+        # Zero would render as a link that just dialled this instant.
+        st = L.build_status({"reachable": True})
+        self.assertIsNone(st["uplink"]["uptime"])
+
+
 class TestSimCarrier(unittest.TestCase):
     """cellular.sim status replaces AT+QSPN as the source of the SIM's brand."""
     SAMPLE = json.dumps({"sims": [

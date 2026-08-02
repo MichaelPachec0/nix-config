@@ -265,13 +265,32 @@ PopupWindow {
             }
 
             // --- Health ---
-            Text {
+            // Two uptimes, deliberately. `system` is how long the router has
+            // been powered; `modem` is how long since the uplink last dialled.
+            // The GAP between them is the signal -- a link that keeps
+            // redialling sits far below the system uptime while a stable one
+            // tracks it, and neither number alone carries that.
+            RowLayout {
                 visible: pop.svc.reachable
-                text: "CPU " + (pop.svc.system.cpu_temp || "--") + "C   load "
-                    + ((pop.svc.system.load || [])[0] || "--") + "   up "
-                    + Math.floor((pop.svc.system.uptime || 0) / 3600) + "h"
-                font.family: pop.theme.iconFont; font.pixelSize: 10
-                color: pop.theme.textSecondary
+                Layout.fillWidth: true
+                spacing: 12
+                Text {
+                    text: "CPU " + (pop.svc.system.cpu_temp || "--") + "C   load "
+                        + ((pop.svc.system.load || [])[0] || "--")
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    text: "sys " + RouterFmt.fmtDuration(pop.svc.system.uptime)
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
+                Text {
+                    text: "modem " + RouterFmt.fmtDuration(pop.svc.uplink.uptime)
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
             }
 
             // --- WiFi (one token per radio, green when active; guest shown as "g") + VPN ---
