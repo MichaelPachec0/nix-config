@@ -63,22 +63,60 @@ Rectangle {
         NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
     }
     radius: height / 2
-    color: pill.filled ? pill.theme.bgPill : "transparent"
-    border.width: 1
+    // Ring width as a plain value rather than something read back off
+    // border.width: the frosted branch below draws its ring in `capsule` and
+    // leaves the root's own border off, which would collapse pulse's inset to 0.
+    readonly property int ringWidth: 1
+    color: (pill.filled && !pill.frostedText) ? pill.theme.bgPill : "transparent"
+    border.width: pill.frostedText ? 0 : pill.ringWidth
     border.color: pill.ringColor
 
-    // Outer pass: DROP shadow. frosted = soft straight-down elevation of the glass
-    // capsule; ghost / ghost-glass = a tighter down-right drop for the text. Its
-    // reach is kept above the inner halo's so nesting never clips it.
-    layer.enabled: true
+    // Outer pass: DROP shadow. Its reach is kept above the inner halo's so
+    // nesting never clips it.
+    //
+    // ghost / ghost-glass want a tighter down-right drop for the TEXT, so the
+    // shadow pass has to contain the content and stays here on the root.
+    //
+    // frosted wants a soft straight-down elevation of the glass CAPSULE, which
+    // is a function of the capsule's geometry -- not of what is written inside
+    // it. Layering the root swept the live content into that pass anyway, so
+    // every 1px marquee step re-rasterised the whole pill and re-ran a
+    // blurMax:14 blur over it. Measured via qt.quick.dirty: 15 label moves/sec
+    // produced 73 layer re-renders/sec, and dropping the layer halved both the
+    // frame count (32-35 -> 16 fps) and quickshell's CPU (8-10% -> 4.5%).
+    // frosted therefore casts from `capsule`, whose texture only invalidates
+    // when the pill resizes.
+    layer.enabled: !pill.frostedText
     layer.effect: MultiEffect {
         autoPaddingEnabled: true
         shadowEnabled: true
-        shadowColor: pill.frostedText ? Qt.rgba(0, 0, 0, 0.8) : Qt.rgba(0, 0, 0, 0.85)
-        shadowBlur: pill.frostedText ? 0.6 : 0.4
-        blurMax: pill.frostedText ? 14 : 10
-        shadowVerticalOffset: pill.frostedText ? 4 : 2
-        shadowHorizontalOffset: pill.frostedText ? 0 : 2
+        shadowColor: Qt.rgba(0, 0, 0, 0.85)
+        shadowBlur: 0.4
+        blurMax: 10
+        shadowVerticalOffset: 2
+        shadowHorizontalOffset: 2
+    }
+
+    // frosted's fill + ring. Declared first so it sits under the pulse and the
+    // content, and it is the ONLY thing inside frosted's shadow pass.
+    Rectangle {
+        id: capsule
+        visible: pill.frostedText
+        anchors.fill: parent
+        radius: pill.radius
+        color: pill.theme.bgPill
+        border.width: pill.ringWidth
+        border.color: pill.ringColor
+        layer.enabled: pill.frostedText
+        layer.effect: MultiEffect {
+            autoPaddingEnabled: true
+            shadowEnabled: true
+            shadowColor: Qt.rgba(0, 0, 0, 0.8)
+            shadowBlur: 0.6
+            blurMax: 14
+            shadowVerticalOffset: 4
+            shadowHorizontalOffset: 0
+        }
     }
 
     // Alert pulse fill: a capsule-shaped wash that fades in/out while pulseActive.
@@ -88,8 +126,8 @@ Rectangle {
     Rectangle {
         id: pulse
         anchors.fill: parent
-        anchors.margins: pill.border.width
-        radius: pill.radius - pill.border.width
+        anchors.margins: pill.ringWidth
+        radius: pill.radius - pill.ringWidth
         color: pill.pulseColor
         opacity: 0
         visible: pill.pulseActive || opacity > 0
