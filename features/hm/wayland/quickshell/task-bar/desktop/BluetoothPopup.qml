@@ -167,7 +167,11 @@ PopupWindow {
                         font.pixelSize: 13
                         color: pop.bt.discovering ? pop.theme.accent : pop.theme.textSecondary
                         SequentialAnimation on opacity {
-                            running: pop.bt.discovering
+                            // `discovering` is shared adapter state, but this
+                            // popup is instantiated per screen. Without the
+                            // pop.visible term the OTHER monitor's hidden copy
+                            // pulses at full rate for the whole scan.
+                            running: pop.visible && pop.bt.discovering
                             loops: Animation.Infinite
                             NumberAnimation {
                                 to: 0.35
