@@ -734,11 +734,11 @@
         "pyproject-nix": "pyproject-nix"
       },
       "locked": {
-        "lastModified": 1784958892,
-        "narHash": "sha256-emoL2T6LlAKmIG+/FfVoP26eAGyUMhIWsfOxPZoHyIs=",
+        "lastModified": 1785669835,
+        "narHash": "sha256-jpGBbPhf0oOCbG1Y9Wj9+z0tktRfpSlMBguQk97cxyQ=",
         "owner": "MichaelPachec0",
         "repo": "flake-playground",
-        "rev": "ddf05174214359ce45b11ba07065d1ba8b9e851c",
+        "rev": "09e6ccfb8e2a1916bb502d69bb45797a786bd600",
         "type": "github"
       },
       "original": {
@@ -1468,11 +1468,11 @@
         "rust-overlay": "rust-overlay_3"
       },
       "locked": {
-        "lastModified": 1784327620,
-        "narHash": "sha256-4Oa7MZO036RsWusnbs6hT2U4o3WEiQZXx29OE4Whst8=",
+        "lastModified": 1785397209,
+        "narHash": "sha256-BRw/qNsuXnIIifktvpTVRksU8JXiJohAFA/uMT8OZ5c=",
         "owner": "MichaelPachec0",
         "repo": "ncspot",
-        "rev": "81eb7707b1d1e8be7d7aa842fd3eb757c6c8ba3e",
+        "rev": "98a61a01c28b638ebf3e903de43932762064f6cf",
         "type": "github"
       },
       "original": {
