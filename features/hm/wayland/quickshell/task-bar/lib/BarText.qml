@@ -62,4 +62,28 @@ Text {
             color: Qt.rgba(0, 0, 0, barText.liftAlpha)
         }
     }
+
+    // Soft halo behind the whole extrusion.
+    //
+    // Text.Outline was the cheap first attempt and is the wrong shape: it is a
+    // crisp 1px rim, which reads as a wireframe around the shadow at zoom and as
+    // nothing at all at 1:1. Scaling a single low-alpha copy up instead gives a
+    // genuine soft edge, because the glyphs are resampled rather than outlined --
+    // still one extra draw, still no offscreen blur pass.
+    Text {
+        z: -2 // behind every extrusion step
+        visible: BarStyle.glyphLifted && BarStyle.glyphGlowAlpha > 0
+        x: barText.liftX
+        y: barText.lift
+        width: barText.width
+        height: barText.height
+        text: barText.text
+        font: barText.font
+        elide: barText.elide
+        horizontalAlignment: barText.horizontalAlignment
+        verticalAlignment: barText.verticalAlignment
+        transformOrigin: Item.Center
+        scale: 1.0 + BarStyle.glyphGlowSpread
+        color: Qt.rgba(BarStyle.glyphGlowColor.r, BarStyle.glyphGlowColor.g, BarStyle.glyphGlowColor.b, BarStyle.glyphGlowAlpha)
+    }
 }
