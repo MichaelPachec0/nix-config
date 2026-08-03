@@ -73,14 +73,14 @@ Item {
                     // alias. A bare reference silently resolves to nothing and throws
                     // "BarStyle is not defined" per delegate, per frame.
                     Repeater {
-                        model: Lib.BarStyle.glyphLifted ? Lib.BarStyle.glyphLift : 0
+                        model: Lib.BarStyle.glyphLifted ? Lib.BarStyle.glyphLiftSteps : 0
                         delegate: Rectangle {
                             required property int index
                             // index 0 = deepest, created first so nearer steps stack on it.
-                            readonly property int step: Lib.BarStyle.glyphLift - index
+                            readonly property int step: Lib.BarStyle.glyphLiftSteps - index
                             z: -1
-                            x: Math.round(step * Lib.BarStyle.glyphLiftX / Lib.BarStyle.glyphLift)
-                            y: step
+                            x: Math.round(step * Lib.BarStyle.glyphLiftX / Lib.BarStyle.glyphLiftSteps)
+                            y: Math.round(step * Lib.BarStyle.glyphLiftY / Lib.BarStyle.glyphLiftSteps)
                             width: bar.width
                             height: bar.height
                             radius: bar.radius
@@ -92,10 +92,10 @@ Item {
                             // accumulated alpha in ONE draw where the text gets it from
                             // eight overlapping ones, hence the 2x.
                             Rectangle {
-                                visible: index === 0 && Lib.BarStyle.glyphGlowAlpha > 0
+                                visible: index === 0 && Lib.BarStyle.glyphGlowEnabled && Lib.BarStyle.glyphGlowAlpha > 0
                                 z: -1
                                 x: -Lib.BarStyle.glyphGlowSpread + Lib.BarStyle.glyphGlowOffsetX
-                                y: -Lib.BarStyle.glyphGlowSpread
+                                y: -Lib.BarStyle.glyphGlowSpread + Lib.BarStyle.glyphGlowOffsetY
                                 width: parent.width + 2 * Lib.BarStyle.glyphGlowSpread
                                 height: parent.height + 2 * Lib.BarStyle.glyphGlowSpread
                                 radius: parent.radius + Lib.BarStyle.glyphGlowSpread

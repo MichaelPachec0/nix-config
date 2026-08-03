@@ -35,8 +35,9 @@ Text {
     //
     // Defaults come from BarStyle so hand-drawn glyphs elsewhere (the router's
     // signal bars) sit on the same depth plane; override per call site if needed.
-    property int lift: BarStyle.glyphLift
     property int liftX: BarStyle.glyphLiftX
+    property int liftY: BarStyle.glyphLiftY
+    readonly property int liftSteps: BarStyle.glyphLiftSteps
     property real liftAlpha: BarStyle.glyphLiftAlpha
 
     // Children with NEGATIVE z draw behind their parent's own content, which is
@@ -44,14 +45,14 @@ Text {
     // Among equal-z siblings the draw order is creation order, so index 0 must
     // be the DEEPEST step: it is created first and everything stacks on top.
     Repeater {
-        model: BarStyle.glyphLifted ? barText.lift : 0
+        model: BarStyle.glyphLifted ? barText.liftSteps : 0
         delegate: Text {
             required property int index
-            readonly property int step: barText.lift - index
+            readonly property int step: barText.liftSteps - index
 
             z: -1
-            x: Math.round(step * barText.liftX / barText.lift)
-            y: step
+            x: Math.round(step * barText.liftX / barText.liftSteps)
+            y: Math.round(step * barText.liftY / barText.liftSteps)
             width: barText.width
             height: barText.height
             text: barText.text
@@ -81,14 +82,14 @@ Text {
     readonly property var glowOffsets: [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]
 
     Repeater {
-        model: (BarStyle.glyphLifted && BarStyle.glyphGlowAlpha > 0) ? barText.glowOffsets.length : 0
+        model: (BarStyle.glyphLifted && BarStyle.glyphGlowEnabled && BarStyle.glyphGlowAlpha > 0) ? barText.glowOffsets.length : 0
         delegate: Text {
             required property int index
             // Centred on the MIDDLE of the extrusion, not its deepest step, so
             // the glow wraps the whole body evenly instead of pooling at one end.
             z: -2
             x: Math.round(barText.liftX / 2) + BarStyle.glyphGlowOffsetX + barText.glowOffsets[index][0] * BarStyle.glyphGlowSpread
-            y: Math.round(barText.lift / 2) + barText.glowOffsets[index][1] * BarStyle.glyphGlowSpread
+            y: Math.round(barText.liftY / 2) + BarStyle.glyphGlowOffsetY + barText.glowOffsets[index][1] * BarStyle.glyphGlowSpread
             width: barText.width
             height: barText.height
             text: barText.text
