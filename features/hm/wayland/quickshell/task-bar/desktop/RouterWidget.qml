@@ -52,14 +52,35 @@ Item {
                     radius: 1
                     property int fill: RouterFmt.barFill(root.svc.cellular.strength)
                     // Empty segments: a solid dim grey (the pill's ring color), NOT a
-                    // translucent one. The pill casts a per-glyph drop shadow from each
-                    // child's alpha; at low alpha the dark shadow overpowers the bar and
-                    // it reads as sitting *below* the shadow. Full opacity keeps the empty
-                    // track on the same depth plane as the colored (opaque) bars; the
-                    // dim hue -- not transparency -- is what reads as "off".
+                    // translucent one. These cast their own drop below, and at low alpha
+                    // that dark copy shows through and the bar reads as sitting *below*
+                    // its own shadow. Full opacity keeps the empty track on the same
+                    // depth plane as the colored bars; the dim hue -- not transparency --
+                    // is what reads as "off".
                     color: index < fill
                         ? root.qColor(RouterFmt.quality("rsrp", root.svc.cellular.rsrp))
                         : root.theme.border
+
+                    // Match Lib.BarText's raised look. These bars are Rectangles, not
+                    // glyphs, so they get none of Text.Raised or BarText's lift -- and
+                    // since Pill's frosted shadow pass now covers only the capsule (not
+                    // its content), nothing else casts for them either. Same technique as
+                    // BarText: a copy at negative z, which draws behind the parent's own
+                    // content, offset by the shared BarStyle depth.
+                    // Lib.BarStyle, not a bare BarStyle: the singleton lives in ../lib,
+                    // so outside that directory it is only reachable through the import
+                    // alias. A bare reference silently resolves to nothing and throws
+                    // "BarStyle is not defined" per delegate, per frame.
+                    Rectangle {
+                        z: -1
+                        visible: Lib.BarStyle.glyphLifted
+                        x: 1
+                        y: Lib.BarStyle.glyphLift
+                        width: parent.width
+                        height: parent.height
+                        radius: parent.radius
+                        color: Qt.rgba(0, 0, 0, Lib.BarStyle.glyphLiftAlpha)
+                    }
                 }
             }
         }

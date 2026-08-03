@@ -12,6 +12,17 @@ Singleton {
 
     property string current: "frosted"
 
+    // Shared depth for the frosted raised look, so anything that is NOT a
+    // Lib.BarText (the router's signal-bar Rectangles, say) can cast the same
+    // drop and stay on one depth plane with the glyphs. Read by BarText.lift and
+    // by any hand-drawn glyph that wants to match.
+    //
+    // Only meaningful in frosted: ghost / ghost-glass use Text.Outline, a full
+    // halo for legibility over raw wallpaper, which a directional drop fights.
+    readonly property int glyphLift: 3
+    readonly property real glyphLiftAlpha: 1.0
+    readonly property bool glyphLifted: root.current === "frosted"
+
     readonly property string _stateDir: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/quickshell"
 
     FileView {

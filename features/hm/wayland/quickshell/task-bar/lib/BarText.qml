@@ -29,8 +29,10 @@ Text {
     // change, which is exactly the cost just removed from Pill. A duplicate Text
     // is a plain extra draw with no render-target switch, and glyph rasterisation
     // is cached per (font, glyph) so the second copy reuses the first's atlas.
-    property int lift: 3
-    property real liftAlpha: 1.0
+    // Defaults come from BarStyle so hand-drawn glyphs elsewhere (the router's
+    // signal bars) sit on the same depth plane; override per call site if needed.
+    property int lift: BarStyle.glyphLift
+    property real liftAlpha: BarStyle.glyphLiftAlpha
 
     // A child with NEGATIVE z draws behind its parent's own content, which is
     // what lets this sit under the glyphs while still inheriting from them.
