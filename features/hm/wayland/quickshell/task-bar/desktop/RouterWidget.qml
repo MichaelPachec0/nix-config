@@ -45,6 +45,7 @@ Item {
             Repeater {
                 model: 5
                 delegate: Rectangle {
+                    id: bar
                     required property int index
                     width: 3
                     height: 4 + index * 2
@@ -71,15 +72,20 @@ Item {
                     // so outside that directory it is only reachable through the import
                     // alias. A bare reference silently resolves to nothing and throws
                     // "BarStyle is not defined" per delegate, per frame.
-                    Rectangle {
-                        z: -1
-                        visible: Lib.BarStyle.glyphLifted
-                        x: 1
-                        y: Lib.BarStyle.glyphLift
-                        width: parent.width
-                        height: parent.height
-                        radius: parent.radius
-                        color: Qt.rgba(0, 0, 0, Lib.BarStyle.glyphLiftAlpha)
+                    Repeater {
+                        model: Lib.BarStyle.glyphLifted ? Lib.BarStyle.glyphLift : 0
+                        delegate: Rectangle {
+                            required property int index
+                            // index 0 = deepest, created first so nearer steps stack on it.
+                            readonly property int step: Lib.BarStyle.glyphLift - index
+                            z: -1
+                            x: Math.round(step * Lib.BarStyle.glyphLiftX / Lib.BarStyle.glyphLift)
+                            y: step
+                            width: bar.width
+                            height: bar.height
+                            radius: bar.radius
+                            color: Qt.rgba(0, 0, 0, Lib.BarStyle.glyphLiftAlpha)
+                        }
                     }
                 }
             }

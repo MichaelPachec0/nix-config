@@ -19,7 +19,12 @@ Singleton {
     //
     // Only meaningful in frosted: ghost / ghost-glass use Text.Outline, a full
     // halo for legibility over raw wallpaper, which a directional drop fights.
+    // Depth in px AND the number of extrusion steps: one copy per pixel, so the
+    // body is solid rather than a detached second image.
     readonly property int glyphLift: 3
+    // Horizontal component of the extrusion vector. Kept below glyphLift so the
+    // body runs mostly straight down, matching Text.Raised's own direction.
+    readonly property int glyphLiftX: 1
     readonly property real glyphLiftAlpha: 1.0
     readonly property bool glyphLifted: root.current === "frosted"
 
