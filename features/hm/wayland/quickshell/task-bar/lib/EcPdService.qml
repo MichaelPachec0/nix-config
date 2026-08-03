@@ -30,6 +30,10 @@ Scope {
         : (root.pd ? ("PD, " + root.negotiated + " W")
                    : "non-PD 5 V")
 
+    // Whether the status file is actually there. Drives the poll cadence below
+    // only -- `present` above is a different question (is a charger attached).
+    property bool _fileSeen: false
+
     FileView {
         id: file
         path: root.statusPath
@@ -37,17 +41,30 @@ Scope {
         printErrors: false
         onFileChanged: reload()
         Component.onCompleted: reload()
+        onLoadFailed: root._fileSeen = false
         onLoaded: {
             try {
                 root.data = JSON.parse(file.text());
             } catch (e) {
                 root.data = {};
             }
+            // The file EXISTING is the signal, not whether it parsed -- same
+            // reasoning as RouterService.statusSeen.
+            root._fileSeen = true;
         }
     }
+    // The poll service rewrites status.json atomically (temp + rename), which
+    // breaks a plain file watch, and the file may not exist when the bar starts.
+    // So this reload is a poll, not a redundant second watcher.
+    //
+    // It is however absent *indefinitely* wherever the producer is off, which is
+    // the default: services.ecPd is disabled (flake.nix) because polling EC RAM
+    // storms the EC's GPE and starves the keyboard matrix. Re-arming a 2s reload
+    // forever against a path that will never appear is pure waste, so back off
+    // while it is missing; the service cadence resumes the moment it loads.
     Timer {
         running: true
-        interval: 2000
+        interval: root._fileSeen ? 2000 : 30000
         repeat: true
         onTriggered: file.reload()
     }
