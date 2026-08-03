@@ -97,6 +97,7 @@ Item {
             readonly property bool overflow: marquee.scrollDist > 0
             // ms per pixel: higher = slower. ~11 px/s.
             readonly property int scrollDur: Math.max(2000, marquee.scrollDist * 90)
+            readonly property int endPauseMs: 1400
 
             Lib.BarText {
                 id: label
@@ -105,35 +106,67 @@ Item {
                 font.family: root.theme.iconFont
                 font.pixelSize: 11
                 color: root.theme.textPrimary
-                onTextChanged: x = 0
+                onTextChanged: marquee.resetScroll()
             }
 
-            SequentialAnimation {
+            // Marquee stepping, deliberately NOT a NumberAnimation.
+            //
+            // A QtQuick animation drives the scene-graph animation clock, so the
+            // render thread wakes on every vblank for the animation's whole
+            // duration. This marquee runs while ANY media plays -- with a long
+            // title, scrollDur is ~12.6s a sweep against 1400ms end pauses, a
+            // ~90% duty cycle -- and the bar is instantiated per screen
+            // (Variants over Quickshell.screens in shell.qml), so the cost is
+            // paid once per monitor. On top of that the bar layer is blurred
+            // (the "frost the bar" layer_rule in hyprland.nix), so every frame
+            // also makes the compositor re-run its blur passes over the bar.
+            // Measured: quickshell at 26.5% CPU with a track playing vs 2.8%
+            // paused, on a 120Hz output.
+            //
+            // Stepping x from a timer instead caps that at stepMs regardless of
+            // refresh rate. The InOutQuad easing is applied by hand so the
+            // motion still matches the sibling marquees. Elapsed time is
+            // accumulated from the fixed interval rather than read off a clock:
+            // a late tick then slows the scroll fractionally instead of jumping
+            // the label, which is the nicer failure mode for a decoration.
+            readonly property int stepMs: 66 // ~15fps
+            // 0 = pause at start, 1 = scroll out, 2 = pause at end, 3 = scroll back
+            property int phase: 0
+            property int elapsed: 0
+
+            function resetScroll() {
+                phase = 0;
+                elapsed = 0;
+                label.x = 0;
+            }
+
+            // InOutQuad, matching easing.type: Easing.InOutQuad.
+            function ease(t) {
+                return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+            }
+
+            Timer {
+                interval: marquee.stepMs
+                repeat: true
                 running: marquee.overflow && root.isPlaying
-                loops: Animation.Infinite
                 onRunningChanged: if (!running)
-                    label.x = 0
-                PauseAnimation {
-                    duration: 1400
-                }
-                NumberAnimation {
-                    target: label
-                    property: "x"
-                    from: 0
-                    to: -marquee.scrollDist
-                    duration: marquee.scrollDur
-                    easing.type: Easing.InOutQuad
-                }
-                PauseAnimation {
-                    duration: 1400
-                }
-                NumberAnimation {
-                    target: label
-                    property: "x"
-                    from: -marquee.scrollDist
-                    to: 0
-                    duration: marquee.scrollDur
-                    easing.type: Easing.InOutQuad
+                    marquee.resetScroll()
+                onTriggered: {
+                    marquee.elapsed += marquee.stepMs;
+                    if (marquee.phase === 0 || marquee.phase === 2) {
+                        if (marquee.elapsed >= marquee.endPauseMs) {
+                            marquee.phase = (marquee.phase + 1) % 4;
+                            marquee.elapsed = 0;
+                        }
+                        return;
+                    }
+                    const t = Math.min(1, marquee.elapsed / marquee.scrollDur);
+                    const eased = marquee.ease(t);
+                    label.x = marquee.phase === 1 ? -marquee.scrollDist * eased : -marquee.scrollDist * (1 - eased);
+                    if (t >= 1) {
+                        marquee.phase = (marquee.phase + 1) % 4;
+                        marquee.elapsed = 0;
+                    }
                 }
             }
         }
