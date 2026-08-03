@@ -226,6 +226,12 @@ ShellRoot {
             case "closewindow":
             case "movewindowv2":
             case "activewindowv2":
+            // Taskbar.surfaceVisible reads each toplevel's fullscreen flag to
+            // decide whether this bar is covered, so it needs the same refresh.
+            // `fullscreen` is its own event, but it is NOT emitted when a
+            // fullscreen window simply closes -- that is closewindow, already
+            // above. Both paths must land here or the bar stays gated off.
+            case "fullscreen":
                 toplevelRefresh.restart();
                 break;
             }

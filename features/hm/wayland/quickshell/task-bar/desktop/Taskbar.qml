@@ -63,6 +63,30 @@ PanelWindow {
         return out;
     }
 
+    // False while a fullscreen window covers this bar. Hyprland fades the layer
+    // to alpha 0 but keeps delivering frame callbacks, so an indefinite
+    // animation left running here paints at the monitor's refresh rate into a
+    // surface nobody can see -- measured at 112 fps on a hidden 120Hz bar,
+    // roughly half the cost of the media marquee.
+    //
+    // Widgets gate their looping animations on this. They still loop forever;
+    // they just stop while there is nothing to look at.
+    //
+    // Read off the toplevels rather than activeWorkspace.hasfullscreen so this
+    // rides the refresh machinery that already exists: shell.qml runs a
+    // debounced refreshToplevels() on openwindow/closewindow/movewindowv2/
+    // activewindowv2/fullscreen, and toplevel lastIpcObject reactivity is
+    // already relied on below (the tab strip reads .class from it). Measured
+    // end to end: gate engages ~0.6s after a fullscreen window maps and
+    // releases ~0.6s after it goes away.
+    readonly property bool surfaceVisible: {
+        var list = Hyprland.toplevels?.values ?? [];
+        for (var i = 0; i < list.length; i++)
+            if ((list[i].workspace?.id ?? -2) === dock.activeWs && (list[i].lastIpcObject?.fullscreen ?? 0) > 0)
+                return false;
+        return true;
+    }
+
     // Reactive: true when any toplevel is on the active workspace.
     readonly property bool hasWindows: {
         var list = Hyprland.toplevels?.values ?? [];
@@ -507,7 +531,10 @@ PanelWindow {
             // Notable weather (heat/rain) washes the whole capsule with the alert
             // hue; the pill owns the pulse so the colour fills it uniformly.
             pulseColor: weatherWidget.alertColor
-            pulseActive: weatherWidget.visible && weatherWidget.alert !== ""
+            // surfaceVisible keeps the flashing indefinite (an alert can stand
+            // for hours) without painting it into a bar hidden behind a
+            // fullscreen window.
+            pulseActive: weatherWidget.visible && weatherWidget.alert !== "" && dock.surfaceVisible
             // The widget owns the rhythm: it decides how long to wait after
             // each flash (short between the members of a multi-alert set, long
             // after the last) and advances to the next alert when told a flash

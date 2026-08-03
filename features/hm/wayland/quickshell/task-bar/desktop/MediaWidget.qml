@@ -148,7 +148,10 @@ Item {
             Timer {
                 interval: marquee.stepMs
                 repeat: true
-                running: marquee.overflow && root.isPlaying
+                // surfaceVisible: don't scroll into a bar that a fullscreen
+                // window is covering -- the frame callbacks keep coming, so the
+                // stepping would render at full rate for nothing.
+                running: marquee.overflow && root.isPlaying && root.barWindow.surfaceVisible
                 onRunningChanged: if (!running)
                     marquee.resetScroll()
                 onTriggered: {
