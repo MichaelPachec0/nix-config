@@ -555,9 +555,9 @@ in {
             decoration = {
               rounding = 8;
               active_opacity = 1.0;
-              inactive_opacity = 0.9;
+              inactive_opacity = 0.95;
               dim_inactive = true;
-              dim_strength = 0.18;
+              dim_strength = 0.25;
               dim_around = 0.6;
 
               blur = {
@@ -566,16 +566,19 @@ in {
                 # quickshell bar. Blur strength is global in Hyprland (layerrule
                 # only toggles blur on/off, no per-layer size), so this also
                 # deepens window/popup blur.
-                size = 8;
+                size = 2;
                 # Heavy blur (4 passes + xray) only on strong-GPU hosts (thanatos);
                 # everything else falls back to a lighter 3-pass, no-xray blur.
                 passes =
                   if config.gpu.strong.enable
-                  then 4
-                  else 3;
+                  then 3
+                  else 2;
                 new_optimizations = true;
                 xray = config.gpu.strong.enable;
                 popups = true;
+                vibrancy = 0.6;
+                brightness = 0.7;
+                contrast = 1.75;
               };
 
               shadow = {
