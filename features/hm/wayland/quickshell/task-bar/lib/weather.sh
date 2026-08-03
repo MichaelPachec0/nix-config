@@ -103,12 +103,31 @@ fi
 
 # --- small helpers ------------------------------------------------------------
 
-round() { awk '{printf "%d", ($1<0?$1-0.5:$1+0.5)}'; }
-# round() emits "0" for empty input; round_opt keeps empty empty (for optional
-# fields like gust/UV that a provider may not supply -> the popup then hides them).
-round_opt() { [ -n "$1" ] && printf '%s' "$1" | round; }
-c_to_f() { awk -v c="$1" 'BEGIN{if(c==""){exit}; f=c*9/5+32; printf "%d",(f<0?f-0.5:f+0.5)}'; }
-ms_to_mph() { awk -v v="$1" 'BEGIN{if(v==""){exit}; printf "%d", v*2.2369362920544+0.5}'; }
+# jq prelude prepended to every provider query. These replace what used to be
+# four shell helpers (round / round_opt / c_to_f / ms_to_mph), each of which
+# forked an awk per value:
+#
+#   r    null -> "", else round half away from zero (jq's round and the old
+#        awk `($1<0?$1-0.5:$1+0.5)` agree on every case, .5 and negatives too)
+#   cf   Celsius -> Fahrenheit, rounded the same way (met.no is metric)
+#   mph  m/s -> mph, truncating v*k+0.5 as the old awk did
+#
+# An empty value stays empty rather than becoming 0: the popup hides a row whose
+# field is "", and a provider that simply does not report gust or UV must not be
+# rendered as reporting zero.
+#
+# Why this shape: each provider ran one `jq` PER FIELD, and the day/hour strips
+# ran a handful per row -- Open-Meteo alone spawned 118 processes per refresh.
+# Pulling every field in one pass makes the extraction POSITIONAL, so it has to
+# be total: each field must emit exactly one line or every read below it shifts
+# by one. Hence `// "" | tostring` throughout, never jq's `empty`, which emits
+# no line at all.
+readonly JQ_DEFS='def r: if . == null then "" else (round|tostring) end; def cf: if . == null then "" else ((. * 9 / 5 + 32)|round|tostring) end; def mph: if . == null then "" else ((. * 2.2369362920544 + 0.5)|floor|tostring) end;'
+
+# Row separator for the multi-field strips. The ASCII unit separator, NOT a tab:
+# tab is an IFS *whitespace* character, so bash's `read` collapses runs of them
+# and one empty middle field would silently eat the next one.
+readonly US=$'\x1f'
 
 # degrees -> 16-point compass (empty in -> empty out).
 deg_compass() {
@@ -533,22 +552,34 @@ wttr_icon() {
 # --- providers (each populates R_* and prints one emit_rich line) -------------
 
 fetch_owm() {
-  local key night id resp fc_src days i d hi lo fid
+  local key night resp fc_src f d hi lo fid
   key=$(owm_key) || return 1
   [ -n "$key" ] || return 1
   resp=$(curl -sf --max-time 6 \
     "https://api.openweathermap.org/data/2.5/weather?lat=${LAT}&lon=${LON}&units=imperial&appid=${key}") || return 1
-  id=$(printf '%s' "$resp" | jq -r '.weather[0].id // empty')
-  [ -n "$id" ] || return 1
   if is_night; then night=1; else night=0; fi
-  R_temp=$(printf '%s' "$resp" | jq -r '.main.temp // empty' | round)
-  R_icon=$(owm_icon "$id" "$night")
-  R_desc=$(cap "$(printf '%s' "$resp" | jq -r '.weather[0].description // "Unknown"')")
-  R_feels=$(printf '%s' "$resp" | jq -r '.main.feels_like // empty' | round)
-  R_humidity=$(printf '%s' "$resp" | jq -r '.main.humidity // empty')
-  R_wind=$(printf '%s' "$resp" | jq -r '.wind.speed // empty' | round)
-  R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.wind.deg // empty')")
-  R_visibility=$(awk -v m="$(printf '%s' "$resp" | jq -r '.visibility // empty')" 'BEGIN{if(m=="")exit; printf "%d", m/1609+0.5}')
+
+  # One pass for every scalar; field ORDER is the contract with the reads below.
+  mapfile -t f < <(printf '%s' "$resp" | jq -r "$JQ_DEFS"'
+    (.weather[0].id // "" | tostring), (.main.temp|r),
+    (.weather[0].description // "Unknown"), (.main.feels_like|r),
+    (.main.humidity // "" | tostring), (.wind.speed|r), (.wind.deg // "" | tostring),
+    (if .visibility == null then "" else ((.visibility / 1609 + 0.5)|floor|tostring) end),
+    (.wind.gust|r), (.sys.sunrise // "" | tostring), (.sys.sunset // "" | tostring)')
+  [ -n "${f[0]:-}" ] || return 1
+
+  R_icon=$(owm_icon "${f[0]}" "$night")
+  R_temp="${f[1]:-}"
+  R_desc=$(cap "${f[2]:-}")
+  R_feels="${f[3]:-}"
+  R_humidity="${f[4]:-}"
+  R_wind="${f[5]:-}"
+  R_windDir=$(deg_compass "${f[6]:-}")
+  R_visibility="${f[7]:-}"
+  R_windGust="${f[8]:-}"
+  R_sunrise=$(fmt_clock_dual "${f[9]:-}")
+  R_sunset=$(fmt_clock_dual "${f[10]:-}")
+  # Free /weather has no UV index; left empty.
 
   # Forecast via the free 5-day/3-hour endpoint, aggregated to daily.
   fc_reset
@@ -557,31 +588,20 @@ fetch_owm() {
   # Chance of rain: PoP of the nearest 3-hour window (the current endpoint has
   # none). OWM reports pop as 0-1 -> percent.
   R_precip=""
-  [ -n "$fc_src" ] && R_precip=$(printf '%s' "$fc_src" | jq -r 'if (.list[0].pop|type)=="number" then (.list[0].pop*100|round) else empty end')
   if [ -n "$fc_src" ]; then
-    days=$(printf '%s' "$fc_src" | jq -c '
+    R_precip=$(printf '%s' "$fc_src" | jq -r 'if (.list[0].pop|type) == "number" then (.list[0].pop*100|round|tostring) else "" end')
+    while IFS="$US" read -r d hi lo fid; do
+      [ -n "$d" ] || continue
+      fc_add "$(weekday "$d")" "$(owm_icon "$fid" 0)" "$hi" "$lo"
+    done < <(printf '%s' "$fc_src" | jq -r "$JQ_DEFS"'
       [ .list[] | {d:(.dt_txt[0:10]), t:.main.temp, id:.weather[0].id, h:(.dt_txt[11:13])} ]
       | group_by(.d)
       | map({day:.[0].d, hi:(map(.t)|max), lo:(map(.t)|min),
              id:(([.[]|select(.h=="12")|.id][0]) // .[0].id)})
-      | .[0:7]' 2>/dev/null)
-    if [ -n "$days" ]; then
-      for i in 0 1 2 3 4 5 6; do
-        d=$(printf '%s' "$days" | jq -r ".[$i].day // empty")
-        [ -n "$d" ] || break
-        hi=$(printf '%s' "$days" | jq -r ".[$i].hi" | round)
-        lo=$(printf '%s' "$days" | jq -r ".[$i].lo" | round)
-        fid=$(printf '%s' "$days" | jq -r ".[$i].id")
-        fc_add "$(weekday "$d")" "$(owm_icon "$fid" 0)" "$hi" "$lo"
-      done
-    fi
+      | .[0:7][]
+      | [.day, (.hi|r), (.lo|r), (.id // "" | tostring)] | join("\u001f")' 2>/dev/null)
   fi
   fc_build
-
-  R_windGust=$(round_opt "$(printf '%s' "$resp" | jq -r '.wind.gust // empty')")
-  R_sunrise=$(fmt_clock_dual "$(printf '%s' "$resp" | jq -r '.sys.sunrise // empty')")
-  R_sunset=$(fmt_clock_dual "$(printf '%s' "$resp" | jq -r '.sys.sunset // empty')")
-  # Free /weather has no UV index; left empty.
 
   # Hourly fallback nowcast: rain likely if the next 1-2 hours cross the PoP bar.
   # owm builds no R_hr (no hourly strip), so this degrades to rainSoon=false.
@@ -599,66 +619,69 @@ fetch_owm() {
 }
 
 fetch_pirate() {
-  local key resp days i t hi lo fic hours htemp hic hpp hlabel huv
+  local key resp f t hi lo fic htemp hic hpp hlabel huv
   key=$(pirate_key) || return 1
   [ -n "$key" ] || return 1
   resp=$(curl -sf --max-time 6 \
     "https://api.pirateweather.net/forecast/${key}/${LAT},${LON}?units=us&exclude=alerts&icon=pirate") || return 1
-  [ "$(printf '%s' "$resp" | jq -r '.currently.icon // empty')" != "" ] || return 1
-  R_temp=$(printf '%s' "$resp" | jq -r '.currently.temperature // empty' | round)
-  R_icon=$(pirate_icon "$(printf '%s' "$resp" | jq -r '.currently.icon')")
-  R_desc=$(printf '%s' "$resp" | jq -r '.currently.summary // "Unknown"')
-  R_feels=$(printf '%s' "$resp" | jq -r '.currently.apparentTemperature // empty' | round)
-  R_humidity=$(printf '%s' "$resp" | jq -r 'if .currently.humidity then (.currently.humidity*100|round) else empty end')
-  R_precip=$(printf '%s' "$resp" | jq -r 'if (.currently.precipProbability|type)=="number" then (.currently.precipProbability*100|round) else empty end')
-  R_wind=$(printf '%s' "$resp" | jq -r '.currently.windSpeed // empty' | round)
-  R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.currently.windBearing // empty')")
-  R_visibility=$(round_opt "$(printf '%s' "$resp" | jq -r '.currently.visibility // empty')")
+
+  # One pass for every scalar; field ORDER is the contract with the reads below.
+  # humidity and precipProbability arrive as 0-1 fractions, so they scale here.
+  mapfile -t f < <(printf '%s' "$resp" | jq -r "$JQ_DEFS"'
+    (.currently.icon // ""), (.currently.temperature|r), (.currently.summary // "Unknown"),
+    (.currently.apparentTemperature|r),
+    (if .currently.humidity then (.currently.humidity*100|round|tostring) else "" end),
+    (if (.currently.precipProbability|type) == "number" then (.currently.precipProbability*100|round|tostring) else "" end),
+    (.currently.windSpeed|r), (.currently.windBearing // "" | tostring),
+    (.currently.visibility|r), (.currently.uvIndex|r), (.currently.windGust|r),
+    (if (.currently.precipIntensity // 0) >= 0.3 then "1" else "0" end),
+    (.daily.data[0].sunriseTime // "" | tostring), (.daily.data[0].sunsetTime // "" | tostring),
+    (([.minutely.data // [] | to_entries[] | select(.value.precipProbability >= 0.5) | .key] | first) // "" | tostring)')
+  [ -n "${f[0]:-}" ] || return 1
+  R_icon=$(pirate_icon "${f[0]}")
+  R_temp="${f[1]:-}"
+  R_desc="${f[2]:-}"
+  R_feels="${f[3]:-}"
+  R_humidity="${f[4]:-}"
+  R_precip="${f[5]:-}"
+  R_wind="${f[6]:-}"
+  R_windDir=$(deg_compass "${f[7]:-}")
+  R_visibility="${f[8]:-}"
+  R_uv="${f[9]:-}"
+  R_windGust="${f[10]:-}"
+  R_precipHeavy="${f[11]:-0}"
+  R_sunrise=$(fmt_clock_dual "${f[12]:-}")
+  R_sunset=$(fmt_clock_dual "${f[13]:-}")
 
   fc_reset
-  days=$(printf '%s' "$resp" | jq -c '[.daily.data[] | {t:.time, hi:.temperatureHigh, lo:.temperatureLow, ic:.icon}] | .[0:7]' 2>/dev/null)
-  if [ -n "$days" ] && [ "$days" != "null" ]; then
-    for i in 0 1 2 3 4 5 6; do
-      t=$(printf '%s' "$days" | jq -r ".[$i].t // empty")
-      [ -n "$t" ] || break
-      hi=$(printf '%s' "$days" | jq -r ".[$i].hi" | round)
-      lo=$(printf '%s' "$days" | jq -r ".[$i].lo" | round)
-      fic=$(pirate_icon "$(printf '%s' "$days" | jq -r ".[$i].ic")")
-      fc_add "$(date -d "@$t" +%a 2>/dev/null || echo '?')" "$fic" "$hi" "$lo"
-    done
-  fi
+  while IFS="$US" read -r t hi lo fic; do
+    [ -n "$t" ] || continue
+    fc_add "$(date -d "@$t" +%a 2>/dev/null || echo '?')" "$(pirate_icon "$fic")" "$hi" "$lo"
+  done < <(printf '%s' "$resp" | jq -r "$JQ_DEFS"'
+    .daily.data[0:7][]
+    | [(.time // "" | tostring), (.temperatureHigh|r), (.temperatureLow|r), (.icon // "")]
+    | join("\u001f")' 2>/dev/null)
   fc_build
 
   # Next 12 hours: label (e.g. 3PM), icon (night variants kept), temp, precip%.
   hr_reset
-  hours=$(printf '%s' "$resp" | jq -c '[.hourly.data[] | {t:.time, tp:.temperature, ic:.icon, pp:.precipProbability, uv:.uvIndex}] | .[0:12]' 2>/dev/null)
-  if [ -n "$hours" ] && [ "$hours" != "null" ]; then
-    for i in 0 1 2 3 4 5 6 7 8 9 10 11; do
-      t=$(printf '%s' "$hours" | jq -r ".[$i].t // empty")
-      [ -n "$t" ] || break
-      htemp=$(printf '%s' "$hours" | jq -r ".[$i].tp // empty" | round)
-      hic=$(pirate_icon "$(printf '%s' "$hours" | jq -r ".[$i].ic")")
-      hpp=$(printf '%s' "$hours" | jq -r "if (.[$i].pp|type)==\"number\" then (.[$i].pp*100|round) else empty end")
-      huv=$(round_opt "$(printf '%s' "$hours" | jq -r ".[$i].uv // empty")")
-      hlabel=$(fmt_hour_tz "@$t")
-      hr_add "$hlabel" "$hic" "$htemp" "$hpp" "$huv"
-    done
-  fi
+  while IFS="$US" read -r t htemp hic hpp huv; do
+    [ -n "$t" ] || continue
+    hlabel=$(fmt_hour_tz "@$t")
+    hr_add "$hlabel" "$(pirate_icon "$hic")" "$htemp" "$hpp" "$huv"
+  done < <(printf '%s' "$resp" | jq -r "$JQ_DEFS"'
+    .hourly.data[0:12][]
+    | [(.time // "" | tostring), (.temperature|r), (.icon // ""),
+       (if (.precipProbability|type) == "number" then (.precipProbability*100|round|tostring) else "" end),
+       (.uvIndex|r)]
+    | join("\u001f")' 2>/dev/null)
   hr_build
 
   # Minutely nowcast: first minute in the next hour whose precip prob crosses 50%.
   R_nowcastSrc=minutely
-  R_nowcastEta=$(printf '%s' "$resp" | jq -r '
-    ([.minutely.data // [] | to_entries[] | select(.value.precipProbability >= 0.5) | .key] | first) // empty')
+  R_nowcastEta="${f[14]:-}"
   if [ -n "$R_nowcastEta" ]; then R_rainSoon=1; else R_rainSoon=0; R_nowcastEta=""; fi
-  # Heavy precip now (in/hr) for the hydroplaning heuristic.
-  R_precipHeavy=$(printf '%s' "$resp" | jq -r 'if (.currently.precipIntensity // 0) >= 0.3 then "1" else "0" end')
   nowcast_build
-
-  R_uv=$(round_opt "$(printf '%s' "$resp" | jq -r '.currently.uvIndex // empty')")
-  R_windGust=$(round_opt "$(printf '%s' "$resp" | jq -r '.currently.windGust // empty')")
-  R_sunrise=$(fmt_clock_dual "$(printf '%s' "$resp" | jq -r '.daily.data[0].sunriseTime // empty')")
-  R_sunset=$(fmt_clock_dual "$(printf '%s' "$resp" | jq -r '.daily.data[0].sunsetTime // empty')")
   # NWS watches/warnings (Pirate-only). Keep expires as epoch; the popup formats
   # it. `.alerts[]?` tolerates the field being absent when there are none.
   R_alerts=$(printf '%s' "$resp" | jq -c '[.alerts[]? | {title:(.title//""), severity:(.severity//""), expires:(.expires//0)}]' 2>/dev/null)
@@ -668,42 +691,48 @@ fetch_pirate() {
 }
 
 fetch_metno() {
-  local ua resp sym days n i d hi lo fsym t hours htemp hic hpp hlabel sunresp
+  local ua resp f d hi lo fsym t htemp hpp hlabel sunresp
   ua="${WEATHER_USER_AGENT:-quickshell-weather/1.0 michaelpacheco@protonmail.com}"
   resp=$(curl -sf --max-time 6 -H "User-Agent: $ua" \
     "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${LAT}&lon=${LON}") || return 1
-  [ "$(printf '%s' "$resp" | jq -r '.properties.timeseries[0].data.instant.details.air_temperature // empty')" != "" ] || return 1
 
-  R_temp=$(c_to_f "$(printf '%s' "$resp" | jq -r '.properties.timeseries[0].data.instant.details.air_temperature')")
-  sym=$(printf '%s' "$resp" | jq -r '(.properties.timeseries[0].data.next_1_hours.summary.symbol_code // .properties.timeseries[0].data.next_6_hours.summary.symbol_code) // "cloudy"')
-  R_icon=$(metno_icon "$sym")
+  # One pass for every scalar; field ORDER is the contract with the reads below.
+  # met.no is metric, so C->F and m/s->mph happen in jq (cf / mph).
+  mapfile -t f < <(printf '%s' "$resp" | jq -r "$JQ_DEFS"'
+    .properties.timeseries[0].data as $d
+    | ($d.instant.details.air_temperature // "" | tostring),
+      ($d.instant.details.air_temperature|cf),
+      (($d.next_1_hours.summary.symbol_code // $d.next_6_hours.summary.symbol_code) // "cloudy"),
+      ($d.instant.details.relative_humidity|r),
+      ($d.instant.details.wind_speed|mph),
+      ($d.instant.details.wind_from_direction // "" | tostring),
+      ($d.instant.details.wind_speed_of_gust|mph)')
+  [ -n "${f[0]:-}" ] || return 1
+
+  R_temp="${f[1]:-}"
+  R_icon=$(metno_icon "${f[2]:-cloudy}")
   R_desc=$(desc_from_key "$R_icon")
   R_feels="" # met.no compact has no apparent temperature
   R_precip="" # met.no probability_of_precipitation is null outside the Nordics
-  R_humidity=$(printf '%s' "$resp" | jq -r '.properties.timeseries[0].data.instant.details.relative_humidity // empty' | round)
-  R_wind=$(ms_to_mph "$(printf '%s' "$resp" | jq -r '.properties.timeseries[0].data.instant.details.wind_speed // empty')")
-  R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.properties.timeseries[0].data.instant.details.wind_from_direction // empty')")
+  R_humidity="${f[3]:-}"
+  R_wind="${f[4]:-}"
+  R_windDir=$(deg_compass "${f[5]:-}")
+  R_windGust="${f[6]:-}"
 
   # Daily forecast: group the hourly timeseries by date, min/max + midday symbol.
   fc_reset
-  days=$(printf '%s' "$resp" | jq -c '
+  while IFS="$US" read -r d hi lo fsym; do
+    [ -n "$d" ] || continue
+    fc_add "$(weekday "$d")" "$(metno_icon "$fsym")" "$hi" "$lo"
+  done < <(printf '%s' "$resp" | jq -r "$JQ_DEFS"'
     [ .properties.timeseries[]
       | {d:(.time[0:10]), t:.data.instant.details.air_temperature,
          sym:((.data.next_6_hours.summary.symbol_code // .data.next_1_hours.summary.symbol_code) // "")} ]
     | group_by(.d)
     | map({day:.[0].d, hi:(map(.t)|max), lo:(map(.t)|min),
            sym:([.[]|.sym|select(.!="")] | if length>0 then .[(length/2|floor)] else "cloudy" end)})
-    | .[0:7]' 2>/dev/null)
-  if [ -n "$days" ]; then
-    n=$(printf '%s' "$days" | jq 'length')
-    for ((i = 0; i < n && i < 7; i++)); do
-      d=$(printf '%s' "$days" | jq -r ".[$i].day")
-      hi=$(c_to_f "$(printf '%s' "$days" | jq -r ".[$i].hi")")
-      lo=$(c_to_f "$(printf '%s' "$days" | jq -r ".[$i].lo")")
-      fsym=$(printf '%s' "$days" | jq -r ".[$i].sym")
-      fc_add "$(weekday "$d")" "$(metno_icon "$fsym")" "$hi" "$lo"
-    done
-  fi
+    | .[0:7][]
+    | [.day, (.hi|cf), (.lo|cf), .sym] | join("\u001f")' 2>/dev/null)
   fc_build
 
   # Next 12 hourly steps (the timeseries is hourly near-term). Times are UTC, so
@@ -711,34 +740,28 @@ fetch_metno() {
   # 6h) symbol; precip% only when met.no supplies it (null outside the Nordics,
   # which the strip then hides).
   hr_reset
-  hours=$(printf '%s' "$resp" | jq -c '
-    [ .properties.timeseries[]
-      | {t:.time, tp:.data.instant.details.air_temperature,
-         sym:((.data.next_1_hours.summary.symbol_code // .data.next_6_hours.summary.symbol_code) // "cloudy"),
-         pp:(.data.next_1_hours.details.probability_of_precipitation // null)} ]
-    | .[0:12]' 2>/dev/null)
-  if [ -n "$hours" ] && [ "$hours" != "null" ]; then
-    for i in 0 1 2 3 4 5 6 7 8 9 10 11; do
-      t=$(printf '%s' "$hours" | jq -r ".[$i].t // empty")
-      [ -n "$t" ] || break
-      htemp=$(c_to_f "$(printf '%s' "$hours" | jq -r ".[$i].tp // empty")")
-      hic=$(metno_icon "$(printf '%s' "$hours" | jq -r ".[$i].sym")")
-      hpp=$(printf '%s' "$hours" | jq -r "if (.[$i].pp|type)==\"number\" then (.[$i].pp|round) else empty end")
-      hlabel=$(fmt_hour_tz "$t")
-      hr_add "$hlabel" "$hic" "$htemp" "$hpp" ""
-    done
-  fi
+  while IFS="$US" read -r t htemp fsym hpp; do
+    [ -n "$t" ] || continue
+    hlabel=$(fmt_hour_tz "$t")
+    hr_add "$hlabel" "$(metno_icon "$fsym")" "$htemp" "$hpp" ""
+  done < <(printf '%s' "$resp" | jq -r "$JQ_DEFS"'
+    .properties.timeseries[0:12][]
+    | [ .time, (.data.instant.details.air_temperature|cf),
+        ((.data.next_1_hours.summary.symbol_code // .data.next_6_hours.summary.symbol_code) // "cloudy"),
+        (.data.next_1_hours.details.probability_of_precipitation
+         | if type == "number" then (round|tostring) else "" end) ]
+    | join("\u001f")' 2>/dev/null)
   hr_build
 
-  R_windGust=$(ms_to_mph "$(printf '%s' "$resp" | jq -r '.properties.timeseries[0].data.instant.details.wind_speed_of_gust // empty')")
   # met.no compact carries no sunrise/sunset or UV; pull sun times from the
   # dedicated Sunrise 3.0 API (one extra call, only when met.no is the active
   # provider). UV is left empty (only the heavier "complete" variant has it).
   sunresp=$(curl -sf --max-time 6 -H "User-Agent: $ua" \
     "https://api.met.no/weatherapi/sunrise/3.0/sun?lat=${LAT}&lon=${LON}&date=$(date +%F)")
   if [ -n "$sunresp" ]; then
-    R_sunrise=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$sunresp" | jq -r '.properties.sunrise.time // empty')")")
-    R_sunset=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$sunresp" | jq -r '.properties.sunset.time // empty')")")
+    mapfile -t f < <(printf '%s' "$sunresp" | jq -r '.properties.sunrise.time // "", .properties.sunset.time // ""')
+    R_sunrise=$(fmt_clock_dual "$(iso_epoch "${f[0]:-}")")
+    R_sunset=$(fmt_clock_dual "$(iso_epoch "${f[1]:-}")")
   fi
 
   # Hourly fallback nowcast: rain likely if the next 1-2 hours cross the PoP bar.
@@ -756,70 +779,70 @@ fetch_metno() {
 }
 
 fetch_openmeteo() {
-  local resp code isday night days i d hi lo fcode t hours hnow htemp hnight hic hpp hlabel huv
+  local resp night f d hi lo fcode t hnight hic hpp hlabel huv htemp
   resp=$(curl -sf --max-time 6 \
     "https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,weather_code,is_day,wind_speed_10m,wind_direction_10m,uv_index,wind_gusts_10m,visibility&hourly=temperature_2m,weather_code,precipitation_probability,is_day,uv_index&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=7") || return 1
-  code=$(printf '%s' "$resp" | jq -r '.current.weather_code // empty')
-  [ -n "$code" ] || return 1
-  isday=$(printf '%s' "$resp" | jq -r '.current.is_day // 1')
-  [ "$isday" = "0" ] && night=1 || night=0
 
-  R_temp=$(printf '%s' "$resp" | jq -r '.current.temperature_2m // empty' | round)
-  R_icon=$(openmeteo_icon "$code" "$night")
+  # One pass for every scalar. Field ORDER here is the contract with the reads
+  # below -- keep them together.
+  mapfile -t f < <(printf '%s' "$resp" | jq -r "$JQ_DEFS"'
+    .current
+    | (.weather_code // "" | tostring), (.is_day // 1 | tostring), (.temperature_2m|r),
+      (.apparent_temperature|r), (.relative_humidity_2m|r),
+      (.precipitation_probability // "" | tostring), (.wind_speed_10m|r),
+      (.wind_direction_10m // "" | tostring),
+      (if .visibility == null then "" else ((.visibility / 1609 + 0.5)|floor|tostring) end),
+      (.uv_index|r), (.wind_gusts_10m|r), (.time // "")')
+  [ -n "${f[0]:-}" ] || return 1
+  [ "${f[1]:-1}" = "0" ] && night=1 || night=0
+
+  R_temp="${f[2]:-}"
+  R_icon=$(openmeteo_icon "${f[0]}" "$night")
   R_desc=$(desc_from_key "$R_icon")
-  R_feels=$(printf '%s' "$resp" | jq -r '.current.apparent_temperature // empty' | round)
-  R_humidity=$(printf '%s' "$resp" | jq -r '.current.relative_humidity_2m // empty' | round)
-  R_precip=$(printf '%s' "$resp" | jq -r '.current.precipitation_probability // empty') # already percent
-  R_wind=$(printf '%s' "$resp" | jq -r '.current.wind_speed_10m // empty' | round)
-  R_windDir=$(deg_compass "$(printf '%s' "$resp" | jq -r '.current.wind_direction_10m // empty')")
-  R_visibility=$(awk -v m="$(printf '%s' "$resp" | jq -r '.current.visibility // empty')" 'BEGIN{if(m=="")exit; printf "%d", m/1609+0.5}')
+  R_feels="${f[3]:-}"
+  R_humidity="${f[4]:-}"
+  R_precip="${f[5]:-}" # already percent
+  R_wind="${f[6]:-}"
+  R_windDir=$(deg_compass "${f[7]:-}")
+  R_visibility="${f[8]:-}"
+  R_uv="${f[9]:-}"
+  R_windGust="${f[10]:-}"
 
+  # One pass for the 7-day strip: the daily arrays are parallel, so transpose
+  # them and emit one tab-separated row per day.
   fc_reset
-  days=$(printf '%s' "$resp" | jq -c '[.daily.time, .daily.weather_code, .daily.temperature_2m_max, .daily.temperature_2m_min] | transpose | .[0:7]' 2>/dev/null)
-  if [ -n "$days" ] && [ "$days" != "null" ]; then
-    for i in 0 1 2 3 4 5 6; do
-      d=$(printf '%s' "$days" | jq -r ".[$i][0] // empty")
-      [ -n "$d" ] || break
-      fcode=$(printf '%s' "$days" | jq -r ".[$i][1]")
-      hi=$(printf '%s' "$days" | jq -r ".[$i][2]" | round)
-      lo=$(printf '%s' "$days" | jq -r ".[$i][3]" | round)
-      fc_add "$(weekday "$d")" "$(openmeteo_icon "$fcode" 0)" "$hi" "$lo"
-    done
-  fi
+  while IFS="$US" read -r d fcode hi lo; do
+    [ -n "$d" ] || continue
+    fc_add "$(weekday "$d")" "$(openmeteo_icon "$fcode" 0)" "$hi" "$lo"
+  done < <(printf '%s' "$resp" | jq -r "$JQ_DEFS"'
+    [.daily.time, .daily.weather_code, .daily.temperature_2m_max, .daily.temperature_2m_min]
+    | transpose | .[0:7] | .[]
+    | [(.[0] // ""), (.[1] // "" | tostring), (.[2]|r), (.[3]|r)] | join("\u001f")' 2>/dev/null)
   fc_build
 
-  # Next 12 hours from the current interval forward. The hourly arrays are
-  # parallel, so transpose them into per-hour objects, drop past hours
-  # (.t < the current interval), and keep 12. Per-hour is_day picks the icon's
-  # day/night variant; precipitation_probability is already a percent.
+  # Next 12 hours from the current interval forward. Same transpose, then drop
+  # past hours (.t < the current interval) and keep 12. Per-hour is_day picks
+  # the icon's day/night variant; precipitation_probability is already percent.
+  #
+  # Floor $now to the hour so the CURRENT hour's slot survives the filter:
+  # .current.time carries minutes, and a raw >= would drop it and start the
+  # strip an hour late.
   hr_reset
-  hnow=$(printf '%s' "$resp" | jq -r '.current.time // empty')
-  # Floor to the hour so the current hour's slot is kept (.current.time carries
-  # minutes; a raw >= would drop it and start the strip at the next hour).
-  [ -n "$hnow" ] && hnow="${hnow:0:13}:00"
-  hours=$(printf '%s' "$resp" | jq -c --arg now "$hnow" '
+  while IFS="$US" read -r t htemp hnight fcode hpp huv; do
+    [ -n "$t" ] || continue
+    hic=$(openmeteo_icon "$fcode" "$hnight")
+    hlabel=$(fmt_hour_tz "$t")
+    hr_add "$hlabel" "$hic" "$htemp" "$hpp" "$huv"
+  done < <(printf '%s' "$resp" | jq -r --arg now "${f[11]:0:13}${f[11]:+:00}" "$JQ_DEFS"'
     [ [.hourly.time, .hourly.temperature_2m, .hourly.weather_code, .hourly.precipitation_probability, .hourly.is_day, .hourly.uv_index]
       | transpose | .[] | {t:.[0], tp:.[1], wc:.[2], pp:.[3], day:.[4], uv:.[5]} ]
-    | map(select(.t >= $now)) | .[0:12]' 2>/dev/null)
-  if [ -n "$hours" ] && [ "$hours" != "null" ]; then
-    for i in 0 1 2 3 4 5 6 7 8 9 10 11; do
-      t=$(printf '%s' "$hours" | jq -r ".[$i].t // empty")
-      [ -n "$t" ] || break
-      htemp=$(printf '%s' "$hours" | jq -r ".[$i].tp // empty" | round)
-      hnight=$(printf '%s' "$hours" | jq -r "if .[$i].day==0 then 1 else 0 end")
-      hic=$(openmeteo_icon "$(printf '%s' "$hours" | jq -r ".[$i].wc")" "$hnight")
-      hpp=$(printf '%s' "$hours" | jq -r ".[$i].pp // empty")
-      huv=$(round_opt "$(printf '%s' "$hours" | jq -r ".[$i].uv // empty")")
-      hlabel=$(fmt_hour_tz "$t")
-      hr_add "$hlabel" "$hic" "$htemp" "$hpp" "$huv"
-    done
-  fi
+    | map(select(.t >= $now)) | .[0:12] | .[]
+    | [.t, (.tp|r), (if .day == 0 then "1" else "0" end), (.wc // "" | tostring), (.pp // "" | tostring), (.uv|r)] | join("\u001f")' 2>/dev/null)
   hr_build
 
-  R_uv=$(round_opt "$(printf '%s' "$resp" | jq -r '.current.uv_index // empty')")
-  R_windGust=$(round_opt "$(printf '%s' "$resp" | jq -r '.current.wind_gusts_10m // empty')")
-  R_sunrise=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$resp" | jq -r '.daily.sunrise[0] // empty')")")
-  R_sunset=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$resp" | jq -r '.daily.sunset[0] // empty')")")
+  mapfile -t f < <(printf '%s' "$resp" | jq -r '.daily.sunrise[0] // "", .daily.sunset[0] // ""')
+  R_sunrise=$(fmt_clock_dual "$(iso_epoch "${f[0]:-}")")
+  R_sunset=$(fmt_clock_dual "$(iso_epoch "${f[1]:-}")")
 
   # Hourly fallback nowcast: rain likely if the next 1-2 hours cross the PoP bar.
   R_nowcastSrc=hourly
@@ -836,43 +859,51 @@ fetch_openmeteo() {
 }
 
 fetch_wttr() {
-  local resp night code days i d hi lo fcode
+  local resp night f d hi lo fcode
   resp=$(curl -sf --max-time 6 "https://wttr.in/${LAT},${LON}?format=j1") || return 1
-  code=$(printf '%s' "$resp" | jq -r '.current_condition[0].weatherCode // empty')
-  [ -n "$code" ] || return 1
   if is_night; then night=1; else night=0; fi
 
-  R_temp=$(printf '%s' "$resp" | jq -r '.current_condition[0].temp_F // empty')
-  R_icon=$(wttr_icon "$code" "$night")
-  R_desc=$(printf '%s' "$resp" | jq -r '.current_condition[0].weatherDesc[0].value // "Unknown"')
-  R_feels=$(printf '%s' "$resp" | jq -r '.current_condition[0].FeelsLikeF // empty')
-  R_humidity=$(printf '%s' "$resp" | jq -r '.current_condition[0].humidity // empty')
-  # Chance of rain: nearest 3-hourly slot (wttr has none on current_condition).
-  R_precip=$(printf '%s' "$resp" | jq -r --argjson s "$((10#$(date +%H) / 3))" '.weather[0].hourly[$s].chanceofrain // empty')
-  R_wind=$(printf '%s' "$resp" | jq -r '.current_condition[0].windspeedMiles // empty')
-  R_windDir=$(printf '%s' "$resp" | jq -r '.current_condition[0].winddir16Point // empty')
-  R_visibility=$(round_opt "$(printf '%s' "$resp" | jq -r '.current_condition[0].visibilityMiles // empty')")
+  # One pass for every scalar; field ORDER is the contract with the reads below.
+  # $s is the nearest 3-hourly slot: wttr's current_condition carries neither
+  # chance-of-rain nor gust, so both come from there.
+  mapfile -t f < <(printf '%s' "$resp" | jq -r --argjson s "$((10#$(date +%H) / 3))" "$JQ_DEFS"'
+    (.current_condition[0] // {}) as $c
+    | (.weather[0] // {}) as $w
+    | ($c.weatherCode // ""), ($c.temp_F // ""),
+      ($c.weatherDesc[0].value // "Unknown"), ($c.FeelsLikeF // ""),
+      ($c.humidity // ""), ($w.hourly[$s].chanceofrain // ""),
+      ($c.windspeedMiles // ""), ($c.winddir16Point // ""),
+      ($c.visibilityMiles | if . == null or . == "" then "" else (tonumber|round|tostring) end),
+      ($c.uvIndex | if . == null or . == "" then "" else (tonumber|round|tostring) end),
+      ($w.hourly[$s].WindGustMiles | if . == null or . == "" then "" else (tonumber|round|tostring) end),
+      (if $w.astronomy[0].sunrise then ($w.date + " " + $w.astronomy[0].sunrise) else "" end),
+      (if $w.astronomy[0].sunset then ($w.date + " " + $w.astronomy[0].sunset) else "" end)')
+  [ -n "${f[0]:-}" ] || return 1
+
+  R_temp="${f[1]:-}"
+  R_icon=$(wttr_icon "${f[0]}" "$night")
+  R_desc="${f[2]:-}"
+  R_feels="${f[3]:-}"
+  R_humidity="${f[4]:-}"
+  R_precip="${f[5]:-}"
+  R_wind="${f[6]:-}"
+  R_windDir="${f[7]:-}"
+  R_visibility="${f[8]:-}"
+  R_uv="${f[9]:-}"
+  R_windGust="${f[10]:-}"
+  R_sunrise=$(fmt_clock_dual "$(iso_epoch "${f[11]:-}")")
+  R_sunset=$(fmt_clock_dual "$(iso_epoch "${f[12]:-}")")
 
   fc_reset
-  days=$(printf '%s' "$resp" | jq -c '[.weather[] | {d:.date, hi:.maxtempF, lo:.mintempF, code:(.hourly[4].weatherCode // .hourly[0].weatherCode)}] | .[0:7]' 2>/dev/null)
-  if [ -n "$days" ] && [ "$days" != "null" ]; then
-    for i in 0 1 2 3 4 5 6; do
-      d=$(printf '%s' "$days" | jq -r ".[$i].d // empty")
-      [ -n "$d" ] || break
-      hi=$(printf '%s' "$days" | jq -r ".[$i].hi")
-      lo=$(printf '%s' "$days" | jq -r ".[$i].lo")
-      fcode=$(printf '%s' "$days" | jq -r ".[$i].code")
-      fc_add "$(weekday "$d")" "$(wttr_icon "$fcode" 0)" "$hi" "$lo"
-    done
-  fi
+  while IFS="$US" read -r d hi lo fcode; do
+    [ -n "$d" ] || continue
+    fc_add "$(weekday "$d")" "$(wttr_icon "$fcode" 0)" "$hi" "$lo"
+  done < <(printf '%s' "$resp" | jq -r '
+    .weather[0:7][]
+    | [(.date // ""), (.maxtempF // ""), (.mintempF // ""),
+       ((.hourly[4].weatherCode // .hourly[0].weatherCode) // "")]
+    | join("\u001f")' 2>/dev/null)
   fc_build
-
-  R_uv=$(round_opt "$(printf '%s' "$resp" | jq -r '.current_condition[0].uvIndex // empty')")
-  # wttr has no gust on current_condition; take the nearest 3-hourly slot (same
-  # index the chance-of-rain uses).
-  R_windGust=$(round_opt "$(printf '%s' "$resp" | jq -r --argjson s "$((10#$(date +%H) / 3))" '.weather[0].hourly[$s].WindGustMiles // empty')")
-  R_sunrise=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$resp" | jq -r 'if .weather[0].astronomy[0].sunrise then (.weather[0].date) + " " + (.weather[0].astronomy[0].sunrise) else empty end')")")
-  R_sunset=$(fmt_clock_dual "$(iso_epoch "$(printf '%s' "$resp" | jq -r 'if .weather[0].astronomy[0].sunset then (.weather[0].date) + " " + (.weather[0].astronomy[0].sunset) else empty end')")")
 
   # Hourly fallback nowcast: rain likely if the next 1-2 hours cross the PoP bar.
   # wttr builds no R_hr (no hourly strip), so this degrades to rainSoon=false.
