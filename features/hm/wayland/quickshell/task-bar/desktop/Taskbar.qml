@@ -295,9 +295,29 @@ PanelWindow {
                 id: focusedTitle
                 readonly property var active: Hyprland.activeToplevel
                 Layout.alignment: Qt.AlignVCenter
-                // Whichever is tighter: the readability cap, or the room that
-                // actually exists before the right-hand cluster.
-                Layout.maximumWidth: Math.min(240, Math.max(0, dock.titleRoom))
+                // Grow into the room between the left pill's icons and the
+                // right-hand cluster, but keep hugging the text when it is short:
+                // a long title expands to the whole gap (less dock.pillGutter,
+                // which titleRoom already subtracts) and elides at the edge, while
+                // a short one leaves the wallpaper showing rather than padding the
+                // pill out with empty glass.
+                //
+                // implicitWidth is the UNELIDED natural text width and does not
+                // depend on the width assigned here (no wrapMode), so reading it
+                // back is not a loop. The rest is safe for the same reason the
+                // older hard cap was:
+                // titleRoom is built from leftCore.width and rightRow.x, and
+                // rightRow is anchored to the bar's right edge, so its x depends
+                // on its OWN width -- never on this pill's.
+                //
+                // This also makes the left pill's width a function of what is on
+                // the RIGHT rather than of the title text, so it stops resizing on
+                // every browser-tab/terminal title change; it now only springs
+                // when a right-hand pill appears or disappears (e.g. the ModePill
+                // on the group/resize submaps), which the Pill's implicitWidth
+                // Behavior animates.
+                Layout.preferredWidth: Math.min(focusedTitle.implicitWidth, Math.max(0, dock.titleRoom))
+                Layout.maximumWidth: Math.max(0, dock.titleRoom)
                 visible: focusedTitle.active !== null
                     && (focusedTitle.active.workspace?.id ?? -2) === dock.activeWs
                     && focusedTitle.text.length > 0
