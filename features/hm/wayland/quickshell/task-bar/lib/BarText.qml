@@ -63,27 +63,40 @@ Text {
         }
     }
 
-    // Soft halo behind the whole extrusion.
+    // Soft halo behind the extrusion, as copies nudged out in all eight
+    // directions from the body's midpoint.
     //
-    // Text.Outline was the cheap first attempt and is the wrong shape: it is a
-    // crisp 1px rim, which reads as a wireframe around the shadow at zoom and as
-    // nothing at all at 1:1. Scaling a single low-alpha copy up instead gives a
-    // genuine soft edge, because the glyphs are resampled rather than outlined --
-    // still one extra draw, still no offscreen blur pass.
-    Text {
-        z: -2 // behind every extrusion step
-        visible: BarStyle.glyphLifted && BarStyle.glyphGlowAlpha > 0
-        x: barText.liftX
-        y: barText.lift
-        width: barText.width
-        height: barText.height
-        text: barText.text
-        font: barText.font
-        elide: barText.elide
-        horizontalAlignment: barText.horizontalAlignment
-        verticalAlignment: barText.verticalAlignment
-        transformOrigin: Item.Center
-        scale: 1.0 + BarStyle.glyphGlowSpread
-        color: Qt.rgba(BarStyle.glyphGlowColor.r, BarStyle.glyphGlowColor.g, BarStyle.glyphGlowColor.b, BarStyle.glyphGlowAlpha)
+    // Two rejected approaches, both worth not repeating:
+    //   Text.Outline -- a crisp 1px rim. Reads as a wireframe traced around the
+    //     shadow at zoom and as nothing at 1:1; raising alpha only sharpens the
+    //     wireframe.
+    //   one scaled-up copy -- scaling happens about the item's BOX centre, and
+    //     the box is wider than the glyphs whenever a caller sets an explicit
+    //     width (the window title). Glyphs left of that centre get pushed
+    //     further left, so the halo drifted up and to the left of the text.
+    //
+    // Eight offsets around a centre are symmetric by construction, so the halo
+    // cannot drift regardless of alignment or box width. Still no offscreen blur
+    // pass; each copy is a plain draw reusing the face's glyph-atlas entries.
+    readonly property var glowOffsets: [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]
+
+    Repeater {
+        model: (BarStyle.glyphLifted && BarStyle.glyphGlowAlpha > 0) ? barText.glowOffsets.length : 0
+        delegate: Text {
+            required property int index
+            // Centred on the MIDDLE of the extrusion, not its deepest step, so
+            // the glow wraps the whole body evenly instead of pooling at one end.
+            z: -2
+            x: Math.round(barText.liftX / 2) + BarStyle.glyphGlowOffsetX + barText.glowOffsets[index][0] * BarStyle.glyphGlowSpread
+            y: Math.round(barText.lift / 2) + barText.glowOffsets[index][1] * BarStyle.glyphGlowSpread
+            width: barText.width
+            height: barText.height
+            text: barText.text
+            font: barText.font
+            elide: barText.elide
+            horizontalAlignment: barText.horizontalAlignment
+            verticalAlignment: barText.verticalAlignment
+            color: Qt.rgba(BarStyle.glyphGlowColor.r, BarStyle.glyphGlowColor.g, BarStyle.glyphGlowColor.b, BarStyle.glyphGlowAlpha)
+        }
     }
 }

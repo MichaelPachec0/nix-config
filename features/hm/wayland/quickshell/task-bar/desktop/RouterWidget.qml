@@ -86,17 +86,20 @@ Item {
                             radius: bar.radius
                             color: Qt.rgba(0, 0, 0, Lib.BarStyle.glyphLiftAlpha)
 
-                            // Halo on the deepest step only, matching BarText: Rectangles
-                            // have no Text.Outline, so inflate a copy by 1px behind it.
+                            // Halo on the deepest step only, matching BarText. A solid
+                            // shape needs no eight-way spread -- one inflated copy already
+                            // has a clean symmetric edge -- but that means it gets the
+                            // accumulated alpha in ONE draw where the text gets it from
+                            // eight overlapping ones, hence the 2x.
                             Rectangle {
                                 visible: index === 0 && Lib.BarStyle.glyphGlowAlpha > 0
                                 z: -1
-                                x: -1
-                                y: -1
-                                width: parent.width + 2
-                                height: parent.height + 2
-                                radius: parent.radius + 1
-                                color: Qt.rgba(Lib.BarStyle.glyphGlowColor.r, Lib.BarStyle.glyphGlowColor.g, Lib.BarStyle.glyphGlowColor.b, Lib.BarStyle.glyphGlowAlpha)
+                                x: -Lib.BarStyle.glyphGlowSpread + Lib.BarStyle.glyphGlowOffsetX
+                                y: -Lib.BarStyle.glyphGlowSpread
+                                width: parent.width + 2 * Lib.BarStyle.glyphGlowSpread
+                                height: parent.height + 2 * Lib.BarStyle.glyphGlowSpread
+                                radius: parent.radius + Lib.BarStyle.glyphGlowSpread
+                                color: Qt.rgba(Lib.BarStyle.glyphGlowColor.r, Lib.BarStyle.glyphGlowColor.g, Lib.BarStyle.glyphGlowColor.b, Math.min(1, Lib.BarStyle.glyphGlowAlpha * 2))
                             }
                         }
                     }

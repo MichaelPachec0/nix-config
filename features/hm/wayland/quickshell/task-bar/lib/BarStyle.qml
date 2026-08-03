@@ -29,16 +29,24 @@ Singleton {
     readonly property real glyphLiftAlpha: 1.0
 
     // Faint halo behind the extruded body, so the shadow does not end on a hard
-    // line against the pill. Drawn as ONE scaled-up low-alpha copy behind
-    // everything -- resampling the glyphs is what makes the edge soft. No
-    // offscreen blur pass, so it stays a single extra draw per label.
+    // line against the pill. Drawn as copies nudged out in eight directions from
+    // the body's midpoint -- symmetric by construction, so it cannot drift off
+    // to one side the way a scaled copy does. No offscreen blur pass.
     //
-    // glyphGlowSpread is the scale-up: 0.10 = 110%, which at an 11px font is
-    // roughly a pixel of bleed on each side. Push it far and the halo stops
-    // tracking the glyph shapes and just looks like bigger text behind.
+    // glyphGlowSpread is the offset in PIXELS (not a scale factor). Keep it at
+    // 1: past that the copies separate into distinct ghosts instead of reading
+    // as one soft edge.
+    //
+    // glyphGlowAlpha is PER COPY. Eight of them overlap, so the visible edge
+    // lands near 1-2x this value -- which is why it is far lower than it looks.
+    //
+    // glyphGlowOffsetX biases the whole halo sideways, on top of the centring.
+    // The extrusion runs down-RIGHT, so a purely centred halo sits slightly
+    // behind its left edge; a positive bias pushes it back under the body.
     readonly property color glyphGlowColor: "#ffffff"
-    readonly property real glyphGlowAlpha: 0.16
-    readonly property real glyphGlowSpread: 0.10
+    readonly property real glyphGlowAlpha: 0.06
+    readonly property real glyphGlowSpread: 1
+    readonly property int glyphGlowOffsetX: 1
     readonly property bool glyphLifted: root.current === "frosted"
 
     readonly property string _stateDir: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/quickshell"
