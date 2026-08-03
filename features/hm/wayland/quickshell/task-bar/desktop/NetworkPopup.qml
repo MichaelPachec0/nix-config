@@ -11,12 +11,9 @@ import "../lib" as Lib
 // the right (ApInfoPopup); saved networks get a Forget button there. The panel
 // lives inside this window so it shares the focus grab (a separate popup window
 // never receives hover/clicks while this menu holds the grab).
-PopupWindow {
+Lib.BasePopup {
     id: pop
 
-    required property QtObject theme
-    required property var anchorItem
-    required property var barWindow
     required property var net // Lib.NetworkService
     property var networks: []
 
@@ -47,34 +44,21 @@ PopupWindow {
     // entirely; the height bound (260) always fits the detail panel.
     implicitWidth: pop.listW + 4 + pop.infoW
     implicitHeight: Math.max(card.implicitHeight, 260)
-    color: "transparent"
-    visible: false
     grabFocus: true
     onVisibleChanged: if (!pop.visible) {
         pop.hoverAp = null;
         pop.pwSsid = "";
     }
 
-    anchor.window: pop.barWindow
-    anchor.edges: Edges.Bottom
-    // Pin the left edge and grow rightward when the detail panel appears, so the
-    // list never re-centers / shifts once rendered (gravity without a horizontal
-    // component centers the popup, moving the list when the window widens).
-    anchor.gravity: Edges.Bottom | Edges.Right
-
     function toggle() {
         if (pop.visible) {
             pop.visible = false;
             return;
         }
-        // Center the list under the widget (as before), but pin that left edge
-        // so the window only grows rightward for the panel -- the list never
-        // moves once shown. (Left edge = list center - listW/2.)
-        var x = pop.anchorItem.mapToItem(null, 0, 0).x;
-        pop.anchor.rect.x = x - pop.listW / 2;
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
+        // Center the LIST under the widget, but pin that left edge so the window
+        // only grows rightward for the detail panel -- the list never moves once
+        // shown. Not clamped, as before. (Left edge = list center - listW/2.)
+        pop.placeAt(pop.anchorItem.mapToItem(null, 0, 0).x - pop.listW / 2);
         pop.selectedTab = pop.net.defaultTab();
         pop.visible = true;
     }

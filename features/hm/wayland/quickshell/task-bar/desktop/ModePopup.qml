@@ -1,34 +1,19 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import "../lib" as Lib
 
 // Hover key-hints for the active submap, anchored under the mode pill (RouterPopup
 // idiom). Read-only, grabFocus:false. contentHovered drives the pill's hide-bridge.
-PopupWindow {
+Lib.BasePopup {
     id: pop
-    required property QtObject theme
-    required property var barWindow
-    required property var anchorItem
     required property var svc
 
-    property bool contentHovered: cardHover.hovered
+    contentHovered: cardHover.hovered
 
     implicitWidth: card.implicitWidth
     implicitHeight: card.implicitHeight
-    color: "transparent"
-    visible: false
     grabFocus: false
-    anchor.window: pop.barWindow
-
-    function reclamp() {
-        var x = pop.anchorItem.mapToItem(null, 0, 0).x;
-        pop.anchor.rect.x = Math.max(4, Math.min(x, pop.barWindow.width - pop.implicitWidth - 8));
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
-    }
-    function show() { if (!pop.visible) { pop.reclamp(); pop.visible = true; } }
-    function hide() { pop.visible = false; }
 
     Rectangle {
         id: card

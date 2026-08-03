@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import "../lib" as Lib
 import "../hub" as Hub
 
 // Calendar popup shown on hover over the bar date widget. Read-only glance +
@@ -8,38 +9,23 @@ import "../hub" as Hub
 // WeatherPopup). Header row: prev/title/next + today-dot + [1][3][12] segmented
 // layout picker. Body: the calendar for the current layout. Hover-only dismiss;
 // contentHovered lets the cursor travel into the popup to click controls.
-PopupWindow {
+Lib.BasePopup {
     id: pop
 
-    required property QtObject theme
-    required property var barWindow
-    required property var anchorItem
     required property var calState
 
     property date today: new Date()
     property date focusDate: new Date()
-    property bool contentHovered: cardHover.hovered
+    contentHovered: cardHover.hovered
 
     implicitWidth: card.implicitWidth
     implicitHeight: card.implicitHeight
     // Re-clamp when the layout switch resizes the popup while it is open, so a
     // wide layout (year) does not overflow the bar's right edge.
     onImplicitWidthChanged: if (pop.visible) Qt.callLater(pop.reclamp)
-    color: "transparent"
-    visible: false
     grabFocus: false
 
-    anchor.window: pop.barWindow
-    anchor.edges: Edges.Bottom
-    anchor.gravity: Edges.Bottom | Edges.Right
-
-    function reclamp() {
-        var x = pop.anchorItem.mapToItem(null, 0, 0).x;
-        pop.anchor.rect.x = Math.max(4, Math.min(x, pop.barWindow.width - pop.implicitWidth - 8));
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
-    }
+    // Re-seed "today" on every open: the popup outlives midnight.
     function show() {
         if (pop.visible)
             return;
@@ -47,9 +33,6 @@ PopupWindow {
         pop.focusDate = new Date();
         pop.reclamp();
         pop.visible = true;
-    }
-    function hide() {
-        pop.visible = false;
     }
 
     // Page by the visible span: 1 month (single), 3 months (three-up), 1 year.

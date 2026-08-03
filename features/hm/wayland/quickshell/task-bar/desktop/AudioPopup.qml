@@ -8,31 +8,20 @@ import "../lib" as Lib
 // fixed-width card, pinned-left Bottom|Right gravity. This minimal version has
 // the master volume slider + mute; OUTPUT/INPUT device sections (Task 5) and the
 // per-app mixer (Task 6) are added later.
-PopupWindow {
+Lib.BasePopup {
     id: pop
 
-    required property QtObject theme
-    required property var anchorItem
-    required property var barWindow
     required property var audio // Lib.AudioService
 
     readonly property int cardW: 280
 
     implicitWidth: pop.cardW
     implicitHeight: Math.max(card.implicitHeight, 1)
-    color: "transparent"
-    visible: false
     grabFocus: true
 
-    anchor.window: pop.barWindow
-    anchor.edges: Edges.Bottom
-    anchor.gravity: Edges.Bottom | Edges.Right
-
+    // Positioned by the widget's own x, not by anchorItem: unclamped, as before.
     function openAt(px) {
-        pop.anchor.rect.x = px;
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
+        pop.placeAt(px);
         pop.visible = true;
     }
     function toggle() {

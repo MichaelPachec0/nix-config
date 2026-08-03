@@ -3,18 +3,16 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Bluetooth
+import "../lib" as Lib
 
 // Bluetooth device menu. Mirrors WifiPopup: a grabFocus PopupWindow of FIXED
 // size (listW + 4 + infoW) so the detail panel's space is always reserved and
 // the list never re-centers; pinned-left Bottom|Right gravity. Header carries
 // the power + discovery toggles. Device sections + detail panel are added in
 // later tasks.
-PopupWindow {
+Lib.BasePopup {
     id: pop
 
-    required property QtObject theme
-    required property var anchorItem
-    required property var barWindow
     required property var bt // Lib.BluetoothService
 
     property var hoverDev: null // device the pointer is over (for the detail panel)
@@ -47,20 +45,12 @@ PopupWindow {
     // must not clip. Bottom edge grows away from the (list-side) cursor, so this
     // doesn't trigger the hover-leave race the fixed WIDTH guards against.
     implicitHeight: Math.max(card.implicitHeight, detail.implicitHeight, 200)
-    color: "transparent"
-    visible: false
     grabFocus: true
 
-    anchor.window: pop.barWindow
-    anchor.edges: Edges.Bottom
-    anchor.gravity: Edges.Bottom | Edges.Right // pin left edge, grow rightward
-
-    // Open with the list's left edge at `px` (bar-window coordinates).
+    // Open with the list's left edge at `px` (bar-window coordinates). Not
+    // clamped, as before.
     function openAt(px) {
-        pop.anchor.rect.x = px;
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
+        pop.placeAt(px);
         pop.visible = true;
     }
     function toggle() {

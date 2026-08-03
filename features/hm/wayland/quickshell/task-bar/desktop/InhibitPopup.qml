@@ -13,39 +13,16 @@ import "../lib/inhibitlogic.js" as InhibitLogic
 // inhibitor's default; indefinite shows as an icon-width infinity), a lock that
 // couples the two (individual switches disable while locked), then three context
 // blocks: the idle-lock policy, power/drain, and other active inhibitors.
-PopupWindow {
+Lib.BasePopup {
     id: pop
 
-    required property QtObject theme
-    required property var barWindow
-    required property var anchorItem
     required property var svc
 
-    property bool contentHovered: cardHover.hovered
+    contentHovered: cardHover.hovered
 
     implicitWidth: 320
     implicitHeight: col.implicitHeight + 24
-    color: "transparent"
-    visible: false
 
-    anchor.window: pop.barWindow
-
-    function reclamp() {
-        var x = pop.anchorItem.mapToItem(null, 0, 0).x;
-        pop.anchor.rect.x = Math.max(4, Math.min(x, pop.barWindow.width - pop.implicitWidth - 8));
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
-    }
-    function show() {
-        if (!pop.visible) {
-            pop.reclamp();
-            pop.visible = true;
-        }
-    }
-    function hide() {
-        pop.visible = false;
-    }
     function toggle() {
         if (pop.visible)
             pop.hide();

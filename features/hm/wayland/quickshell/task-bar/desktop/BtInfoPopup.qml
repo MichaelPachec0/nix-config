@@ -10,12 +10,9 @@ import "../lib" as Lib
 // go through the shared BluetoothService (single serial pbpctrl owner). Stays
 // open while hovered (debounced) so the controls are usable; grabFocus:false so
 // it never steals focus (pointer-only controls).
-PopupWindow {
+Lib.BasePopup {
     id: tip
 
-    required property QtObject theme
-    required property var anchorItem
-    required property var barWindow
     required property var bt
 
     readonly property var dev: tip.bt.primaryAudio
@@ -86,13 +83,7 @@ PopupWindow {
 
     implicitWidth: 240
     implicitHeight: Math.max(card.implicitHeight, 1)
-    color: "transparent"
-    visible: false
     grabFocus: false
-
-    anchor.window: tip.barWindow
-    anchor.edges: Edges.Bottom
-    anchor.gravity: Edges.Bottom | Edges.Right
 
     // Drive the service's audio polling only while we're open.
     Binding {
@@ -112,12 +103,10 @@ PopupWindow {
         onTriggered: tip.hide()
     }
 
+    // Centered under the icon, and re-places on every open (unlike the base
+    // show(), which is a no-op while already visible).
     function show() {
-        var wc = tip.anchorItem.mapToItem(null, tip.anchorItem.width / 2, 0).x;
-        tip.anchor.rect.x = Math.round(wc - tip.implicitWidth / 2);
-        tip.anchor.rect.y = tip.barWindow.height + 4;
-        tip.anchor.rect.width = 0;
-        tip.anchor.rect.height = 0;
+        tip.reclampCentered();
         tip.visible = true;
     }
     function hide() {

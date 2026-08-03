@@ -12,12 +12,9 @@ import "../lib" as Lib
 // 3s poll's model churn without ever arming two rows at once. ProcRow itself is
 // not reused as a component (its model shape is SysPopup-specific), only its
 // contract, so the gesture transfers.
-PopupWindow {
+Lib.BasePopup {
     id: pop
 
-    required property QtObject theme
-    required property var anchorItem
-    required property var barWindow
     required property var capture // Lib.CaptureService
     required property var audio   // Lib.AudioService
 
@@ -25,19 +22,11 @@ PopupWindow {
 
     implicitWidth: pop.cardW
     implicitHeight: Math.max(card.implicitHeight, 1)
-    color: "transparent"
-    visible: false
     grabFocus: true
 
-    anchor.window: pop.barWindow
-    anchor.edges: Edges.Bottom
-    anchor.gravity: Edges.Bottom | Edges.Right
-
+    // Positioned by the widget's own x, not by anchorItem: unclamped, as before.
     function openAt(px) {
-        pop.anchor.rect.x = px;
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
+        pop.placeAt(px);
         pop.visible = true;
     }
     function toggle() {

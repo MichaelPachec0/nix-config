@@ -9,12 +9,9 @@ import "../lib" as Lib
 // prev/play-pause/next. A separate non-grab window so it takes clicks/drag; the
 // widget keeps it alive via hovered/contentHovered. Player is injected by the
 // widget (already picked), so no re-selection here.
-PopupWindow {
+Lib.BasePopup {
     id: pop
 
-    required property QtObject theme
-    required property var barWindow
-    required property var anchorItem
     // defaultPlayer is the bar widget's auto-pick; `player` is the source the
     // popup controls. Selection policy: `player` follows the auto-pick UNTIL the
     // user clicks a chip (userPicked = true), after which it STAYS on that choice
@@ -62,8 +59,9 @@ PopupWindow {
     }
 
     // True while the cursor is over the popup -- the widget reads this to keep it
-    // open while moving between the bar and the popup.
-    property bool contentHovered: false
+    // open while moving between the bar and the popup. Set imperatively by the
+    // card's HoverHandler below rather than bound, so it stays a plain override.
+    contentHovered: false
 
     // Tabs: 0 = Now Playing, 1 = Queue, 2 = Playlists. effTab falls back to Now
     // Playing if the active tab's interface is unsupported for the current player.
@@ -80,30 +78,16 @@ PopupWindow {
 
     implicitWidth: 280
     implicitHeight: card.implicitHeight
-    color: "transparent"
-    visible: false
     grabFocus: false
 
-    anchor.window: pop.barWindow
-    anchor.edges: Edges.Bottom
-    anchor.gravity: Edges.Bottom | Edges.Right
-
+    // Not named show(): the widget calls this, and it seeds the player first.
     function showPopup() {
         if (pop.visible)
             return;
         // Keep the user's chip choice; only seed from the auto-pick if unset.
         if (!pop.userPicked && pop.player === null)
             pop.player = pop.defaultPlayer;
-        var x = pop.anchorItem.mapToItem(null, 0, 0).x;
-        // Keep the whole popup on-screen (clamp the left edge).
-        pop.anchor.rect.x = Math.max(4, Math.min(x, pop.barWindow.width - pop.implicitWidth - 8));
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
-        pop.visible = true;
-    }
-    function hide() {
-        pop.visible = false;
+        pop.show();
     }
 
     // --- time ---

@@ -13,18 +13,15 @@ import "../lib/notiftime.js" as NotifTime
 // description), current detail rows (feels-like, humidity, wind -- each hidden
 // when the active provider doesn't supply it), the hourly strip and the
 // multi-day forecast, with resolved place and provider provenance at the foot.
-PopupWindow {
+Lib.BasePopup {
     id: pop
 
-    required property QtObject theme
-    required property var barWindow
-    required property var anchorItem
     required property var weatherState
     property var wx: null // {temp, icon, desc, source, feels, humidity, precip, wind, windDir, place, forecast[], hourly[]}
 
     // Tracks hover over the popup card so the widget can keep it open (chips
     // inside need to stay clickable when the cursor leaves the bar widget).
-    property bool contentHovered: cardHover.hovered
+    contentHovered: cardHover.hovered
 
     readonly property string deg: String.fromCodePoint(0x00B0)
     readonly property string feels: (pop.wx && pop.wx.feels) ? pop.wx.feels : ""
@@ -103,27 +100,7 @@ PopupWindow {
 
     implicitWidth: 250
     implicitHeight: card.implicitHeight
-    color: "transparent"
-    visible: false
     grabFocus: false
-
-    anchor.window: pop.barWindow
-    anchor.edges: Edges.Bottom
-    anchor.gravity: Edges.Bottom | Edges.Right
-
-    function show() {
-        if (pop.visible)
-            return;
-        var x = pop.anchorItem.mapToItem(null, 0, 0).x;
-        pop.anchor.rect.x = Math.max(4, Math.min(x, pop.barWindow.width - pop.implicitWidth - 8));
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
-        pop.visible = true;
-    }
-    function hide() {
-        pop.visible = false;
-    }
 
     // One "label ........ value" line; hidden when value is empty. valueColor
     // lets a row tint its value (e.g. UV severity); defaults to the primary text.

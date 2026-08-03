@@ -10,12 +10,9 @@ import "../lib" as Lib
 // which exposes everything UPower knows (energy/design, voltage, charge cycles,
 // technology, charge-limit thresholds, vendor/model/serial). UPower is
 // world-readable on the system bus, so no extra D-Bus permissions are needed.
-PopupWindow {
+Lib.BasePopup {
     id: pop
 
-    required property QtObject theme
-    required property var barWindow
-    required property var anchorItem
     property var powerz: null   // shared PowerZStats; popupOpen gates its poll
     property var ecPd: null   // host-side charger/PD state (EcPdService)
 
@@ -28,22 +25,14 @@ PopupWindow {
 
     implicitWidth: 260
     implicitHeight: card.implicitHeight
-    color: "transparent"
-    visible: false
     grabFocus: false
 
-    anchor.window: pop.barWindow
-    anchor.edges: Edges.Bottom
-    anchor.gravity: Edges.Bottom | Edges.Right
-
+    // The USB meter is polled only while this popup is up, so open/close also
+    // gate PowerZStats.
     function show() {
         if (pop.visible)
             return;
-        var x = pop.anchorItem.mapToItem(null, 0, 0).x;
-        pop.anchor.rect.x = Math.max(4, Math.min(x, pop.barWindow.width - pop.implicitWidth - 8));
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
+        pop.reclamp();
         pop.visible = true;
         if (pop.powerz)
             pop.powerz.popupOpen = true;
