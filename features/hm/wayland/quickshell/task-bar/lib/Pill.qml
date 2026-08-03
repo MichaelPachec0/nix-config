@@ -146,10 +146,14 @@ Rectangle {
         //
         // Stepping opacity touches the scene only during the ~700ms flash and
         // leaves the gap completely idle -- the timer's interval becomes the gap
-        // itself, so it wakes once rather than ~130 times. Each property write
-        // costs ~2 frames (measured: a second frame is scheduled immediately
-        // after the first), so stepMs 33 renders at roughly 60fps while
-        // flashing, ~14% of the time, instead of 120fps continuously.
+        // itself, so it wakes once rather than ~130 times. stepMs 33 therefore
+        // renders at ~30fps while flashing, ~14% of the time, instead of the
+        // display's full refresh rate continuously.
+        //
+        // (An earlier revision of this comment claimed each write cost ~2 frames.
+        // That was the whole-pill shadow layer being invalidated by the write,
+        // not a property of the write -- see the capsule/layer note above, which
+        // fixed it for frosted.)
         readonly property int stepMs: 33
         readonly property int riseMs: 220
         readonly property int fallMs: 480
@@ -224,6 +228,14 @@ Rectangle {
     Item {
         id: contentWrap
         anchors.fill: parent
+        // Reveal the content THROUGH the capsule as it opens. The row lays out at
+        // its full target width the instant the content changes, but the capsule
+        // itself arrives over the implicitWidth Behavior below -- so without this
+        // the text drew at full length outside a capsule that was still growing
+        // into place, reading as "text first, pill catches up". Clipping to the
+        // animating bounds inverts that: the capsule leads and wipes the text in
+        // (and back out again as it closes).
+        clip: true
 
         RowLayout {
             id: row
