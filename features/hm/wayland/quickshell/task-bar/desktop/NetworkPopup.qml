@@ -279,7 +279,10 @@ Lib.BasePopup {
     Rectangle {
         id: card
         width: pop.listW
-        implicitHeight: col.implicitHeight + 16
+        // +20, matching the ColumnLayout's 10px margins on both sides. It was
+        // +16, which left the bottom of the list 4px tighter than the header
+        // (ApInfoPopup, copied from this card, had the same gap).
+        implicitHeight: col.implicitHeight + 20
         radius: 11
         color: pop.theme.bgCard
         border.width: 1
