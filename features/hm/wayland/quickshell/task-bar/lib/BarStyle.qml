@@ -25,7 +25,7 @@ Singleton {
     readonly property int glyphLift: 4
     // Horizontal component of the extrusion vector. Kept below glyphLift so the
     // body runs mostly straight down, matching Text.Raised's own direction.
-    readonly property int glyphLiftX: 1
+    readonly property int glyphLiftX: 2
     readonly property real glyphLiftAlpha: 1.0
 
     // Faint halo behind the extruded body, so the shadow does not end on a hard
@@ -44,9 +44,9 @@ Singleton {
     // The extrusion runs down-RIGHT, so a purely centred halo sits slightly
     // behind its left edge; a positive bias pushes it back under the body.
     readonly property color glyphGlowColor: "#ffffff"
-    readonly property real glyphGlowAlpha: 0.06
+    readonly property real glyphGlowAlpha: 0.10
     readonly property real glyphGlowSpread: 1
-    readonly property int glyphGlowOffsetX: 1
+    readonly property int glyphGlowOffsetX: 2
     readonly property bool glyphLifted: root.current === "frosted"
 
     readonly property string _stateDir: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/quickshell"
