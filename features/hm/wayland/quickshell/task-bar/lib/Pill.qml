@@ -94,35 +94,80 @@ Rectangle {
         opacity: 0
         visible: pill.pulseActive || opacity > 0
 
-        SequentialAnimation {
-            id: pulseAnim
+        // Stepped from a timer, deliberately NOT a SequentialAnimation.
+        //
+        // Qt's threaded render loop advances the animation driver from the
+        // render loop itself, so while ANY animation is running it renders every
+        // vblank -- whether or not anything changed. The idle gap below is most
+        // of the cycle and changes nothing, but it still rendered: in a frame
+        // log of the media marquee (same shape, 1400ms pauses) there were 3 gaps
+        // in the 1200-1599ms range across the whole capture, where one per pause
+        // would have produced dozens. Median inter-frame gap was 8ms, i.e. 120Hz
+        // sustained. An alert can stand for hours, so this pulse held a visible
+        // bar at its full refresh rate indefinitely.
+        //
+        // Stepping opacity touches the scene only during the ~700ms flash and
+        // leaves the gap completely idle -- the timer's interval becomes the gap
+        // itself, so it wakes once rather than ~130 times. Each property write
+        // costs ~2 frames (measured: a second frame is scheduled immediately
+        // after the first), so stepMs 33 renders at roughly 60fps while
+        // flashing, ~14% of the time, instead of 120fps continuously.
+        readonly property int stepMs: 33
+        readonly property int riseMs: 220
+        readonly property int fallMs: 480
+        readonly property real peak: 0.55
+        // 0 = fade in, 1 = fade out, 2 = idle gap
+        property int phase: 0
+        property int elapsed: 0
+        // Latched when the gap starts, matching the old PauseAnimation, whose
+        // duration was read at pause start (i.e. after pulsed() below).
+        property int gapMs: pill.pulseGapMs
+
+        // Easing.OutQuad / Easing.InQuad, matching the animations this replaced.
+        function outQuad(t) {
+            return 1 - (1 - t) * (1 - t);
+        }
+        function inQuad(t) {
+            return t * t;
+        }
+        function resetPulse() {
+            pulse.phase = 0;
+            pulse.elapsed = 0;
+            pulse.opacity = 0;
+        }
+
+        Timer {
+            // In the gap the timer IS the pause: one wake-up, no repaint.
+            interval: pulse.phase === 2 ? pulse.gapMs : pulse.stepMs
+            repeat: true
             running: pill.pulseActive
-            loops: Animation.Infinite
-            NumberAnimation {
-                target: pulse
-                property: "opacity"
-                from: 0
-                to: 0.55
-                duration: 220
-                easing.type: Easing.OutQuad
-            }
-            NumberAnimation {
-                target: pulse
-                property: "opacity"
-                to: 0
-                duration: 480
-                easing.type: Easing.InQuad
-            }
-            // Fire AFTER the fade-out, so a caller advancing to the next alert
-            // swaps the colour while the wash is fully transparent.
-            ScriptAction {
-                script: pill.pulsed()
-            }
-            // Idle gap. Default 4300 keeps the single-alert cycle at ~5s
-            // (220 + 480 + 4300); a caller cycling a set shortens it between
-            // members. Read at pause start, i.e. after the signal above.
-            PauseAnimation {
-                duration: pill.pulseGapMs
+            onTriggered: {
+                if (pulse.phase === 2) {
+                    pulse.phase = 0;
+                    pulse.elapsed = 0;
+                    return;
+                }
+                pulse.elapsed += pulse.stepMs;
+                if (pulse.phase === 0) {
+                    const tIn = Math.min(1, pulse.elapsed / pulse.riseMs);
+                    pulse.opacity = pulse.peak * pulse.outQuad(tIn);
+                    if (tIn >= 1) {
+                        pulse.phase = 1;
+                        pulse.elapsed = 0;
+                    }
+                    return;
+                }
+                const tOut = Math.min(1, pulse.elapsed / pulse.fallMs);
+                pulse.opacity = pulse.peak * (1 - pulse.inQuad(tOut));
+                if (tOut >= 1) {
+                    pulse.opacity = 0;
+                    // Fire AFTER the fade-out, so a caller advancing to the next
+                    // alert swaps the colour while the wash is fully transparent.
+                    pill.pulsed();
+                    pulse.gapMs = pill.pulseGapMs;
+                    pulse.phase = 2;
+                    pulse.elapsed = 0;
+                }
             }
         }
         // Reset when the alert clears mid-flash so no colour is left stranded.
@@ -130,7 +175,7 @@ Rectangle {
             target: pill
             function onPulseActiveChanged() {
                 if (!pill.pulseActive)
-                    pulse.opacity = 0;
+                    pulse.resetPulse();
             }
         }
     }
