@@ -80,14 +80,16 @@ Lib.BasePopup {
     implicitHeight: card.implicitHeight
     grabFocus: false
 
-    // Not named show(): the widget calls this, and it seeds the player first.
-    function showPopup() {
+    // Overrides the base show() to seed the player first, so every bar popup
+    // opens through the same show() and Lib.HoverBridge needs no special case.
+    function show() {
         if (pop.visible)
             return;
         // Keep the user's chip choice; only seed from the auto-pick if unset.
         if (!pop.userPicked && pop.player === null)
             pop.player = pop.defaultPlayer;
-        pop.show();
+        pop.reclamp();
+        pop.visible = true;
     }
 
     // --- time ---

@@ -46,20 +46,9 @@ Item {
     }
 
     // Hover persistence: open while the cursor is over the widget OR the popup.
-    readonly property bool over: mouse.containsMouse || popup.contentHovered
-    onOverChanged: {
-        if (root.over) {
-            hideTimer.stop();
-            popup.show();
-        } else {
-            hideTimer.restart();
-        }
-    }
-    Timer {
-        id: hideTimer
-        interval: 250
-        onTriggered: if (!root.over)
-            popup.hide()
+    Lib.HoverBridge {
+        popup: popup
+        widgetHovered: mouse.containsMouse
     }
 
     CalendarPopup {

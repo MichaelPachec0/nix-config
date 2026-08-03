@@ -181,19 +181,9 @@ Item {
     HoverHandler {
         id: widgetHover
     }
-    readonly property bool over: widgetHover.hovered || popup.contentHovered
-    onOverChanged: {
-        if (root.over) {
-            hideTimer.stop();
-            popup.showPopup();
-        } else {
-            hideTimer.restart();
-        }
-    }
-    Timer {
-        id: hideTimer
-        interval: 250
-        onTriggered: popup.hide()
+    Lib.HoverBridge {
+        popup: popup
+        widgetHovered: widgetHover.hovered
     }
 
     MediaPopup {

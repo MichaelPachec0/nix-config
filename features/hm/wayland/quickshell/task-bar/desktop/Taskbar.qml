@@ -497,33 +497,16 @@ PanelWindow {
 
                 HoverHandler {
                     id: statsHover
-                    onHoveredChanged: {
-                        if (statsHover.hovered) {
-                            if (dock.stats)
-                                dock.stats.wantDetail = true;
-                            sysPopup.show();
-                        } else {
-                            statsHideTimer.restart();
-                        }
-                    }
                 }
-                Timer {
-                    id: statsHideTimer
-                    interval: 250
-                    onTriggered: if (!statsHover.hovered && !sysPopup.contentHovered) {
-                        sysPopup.hide();
-                        if (dock.stats)
-                            dock.stats.wantDetail = false;
-                    }
-                }
-                // Hide-bridge: leaving the popup surface directly (not back across
-                // the stats widget) must also re-arm the hide timer.
-                Connections {
-                    target: sysPopup
-                    function onContentHoveredChanged() {
-                        if (!sysPopup.contentHovered && !statsHover.hovered)
-                            statsHideTimer.restart();
-                    }
+                // The detail poll costs real work, so it runs only while the
+                // popup is actually up.
+                Lib.HoverBridge {
+                    popup: sysPopup
+                    widgetHovered: statsHover.hovered
+                    onOpened: if (dock.stats)
+                        dock.stats.wantDetail = true
+                    onClosed: if (dock.stats)
+                        dock.stats.wantDetail = false
                 }
                 SysPopup {
                     id: sysPopup
@@ -663,21 +646,10 @@ PanelWindow {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: dock.h12 = !dock.h12
-                    onContainsMouseChanged: clockMouse.containsMouse ? clockPop.show() : clockHideTimer.restart()
                 }
-                Timer {
-                    id: clockHideTimer
-                    interval: 250
-                    onTriggered: if (!clockMouse.containsMouse && !clockPop.contentHovered) clockPop.hide()
-                }
-                // Hide-bridge: leaving the popup surface directly (not back across
-                // the clock widget) must also re-arm the hide timer.
-                Connections {
-                    target: clockPop
-                    function onContentHoveredChanged() {
-                        if (!clockPop.contentHovered && !clockMouse.containsMouse)
-                            clockHideTimer.restart();
-                    }
+                Lib.HoverBridge {
+                    popup: clockPop
+                    widgetHovered: clockMouse.containsMouse
                 }
                 ClockPopup {
                     id: clockPop

@@ -197,20 +197,9 @@ Item {
     HoverHandler {
         id: widgetHover
     }
-    readonly property bool over: widgetHover.hovered || popup.contentHovered
-    onOverChanged: {
-        if (root.over) {
-            hideTimer.stop();
-            popup.show();
-        } else {
-            hideTimer.restart();
-        }
-    }
-    Timer {
-        id: hideTimer
-        interval: 250
-        onTriggered: if (!root.over)
-            popup.hide()
+    Lib.HoverBridge {
+        popup: popup
+        widgetHovered: widgetHover.hovered
     }
 
     WeatherPopup {
