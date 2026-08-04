@@ -345,6 +345,7 @@ ShellRoot {
                 weatherState: weatherState
                 notif: notifSvc
                 powerz: powerzStats
+                net: netSvc
                 Component.onCompleted: shellRoot.hubsByMonitor[v.modelData.name] = hub
             }
 

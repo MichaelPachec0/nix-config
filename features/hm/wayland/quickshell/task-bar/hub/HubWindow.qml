@@ -20,6 +20,7 @@ PanelWindow {
     property QtObject weatherState: null
     property QtObject notif: null
     property var powerz: null   // shared PowerZStats; hubOpen gates its poll
+    property var net: null      // shared NetworkService (hoisted to ShellRoot)
 
     // "full" = hub + notifications; "notif" = notifications only.
     property string mode: "full"
@@ -212,6 +213,7 @@ PanelWindow {
                             theme: win.theme
                             active: win.visible && win.mode === "full"
                             notif: win.notif
+                            net: win.net
                             onCloseRequested: win.close()
                         }
                         BatteryCard {

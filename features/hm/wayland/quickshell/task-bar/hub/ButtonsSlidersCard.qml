@@ -14,9 +14,40 @@ Lib.Card {
 
     property bool active: true
     property var notif: null // Lib.NotifService (for the DND toggle)
+    property var net: null // shared Lib.NetworkService, hoisted to ShellRoot
     signal closeRequested
 
     readonly property string _libDir: Quickshell.env("HOME") + "/.config/quickshell/task-bar/lib"
+
+    // Radio + SSID come off the shared NetworkService rather than two polls of
+    // this card's own. Those polls ran wifi-enabled.sh (2.5s) and
+    // wifi-active-ssid.sh (5s) -- both re-asking nmcli for state net-status.sh
+    // already reports every 4s for the bar. Reading it here also means the
+    // toggle is correct the instant the hub opens, instead of after its first
+    // tick. Named wifiEnabled/wifiLabel, NOT wifiOn/wifiSSID: an own property
+    // sharing a name with an enclosing id resolves to the property and silently
+    // self-references.
+    readonly property bool wifiEnabled: Boolean(root.net && root.net.wifiRadio)
+    readonly property string wifiLabel: {
+        var s = (root.net && root.net.ssid) ? String(root.net.ssid) : "";
+        if (s === "")
+            return "WiFi";
+        return s.length > 10 ? s.slice(0, 10) : s;
+    }
+
+    // `nmcli radio wifi` is fire-and-forget, and NetworkService's own tick is
+    // 4s -- slower than the 2.5s poll this card used to run, so the switch would
+    // have felt laggier after the change. Re-poll once shortly after the toggle
+    // instead. Deliberately NOT an optimistic local flip plus an immediate
+    // re-poll: execDetached has not even reached NetworkManager by the time a
+    // poll started in the same frame reads status back, so the confirming read
+    // returns the OLD value and the switch visibly snaps back before settling.
+    property Timer radioSettle: Timer {
+        interval: 600
+        repeat: false
+        onTriggered: if (root.net)
+            root.net.refresh()
+    }
 
     // Keep the default sink tracked so its audio.volume/muted stay live.
     PwObjectTracker {
@@ -35,25 +66,6 @@ Lib.Card {
         }
         onUpdated: if (!briS.pressed)
             briS.value = value
-    }
-    Lib.CommandPoll {
-        id: wifiOn
-        interval: 2500
-        running: root.active
-        command: [root._libDir + "/wifi-enabled.sh"]
-        parse: function (o) {
-            return String(o).trim() === "enabled";
-        }
-    }
-    Lib.CommandPoll {
-        id: wifiSSID
-        interval: 5000
-        running: root.active
-        command: [root._libDir + "/wifi-active-ssid.sh"]
-        parse: function (o) {
-            var s = String(o).trim() || "WiFi";
-            return s.length > 10 ? s.slice(0, 10) : s;
-        }
     }
     Lib.CommandPoll {
         id: btOn
@@ -80,11 +92,14 @@ Lib.Card {
             Lib.ExpressiveButton {
                 Layout.fillHeight: true
                 theme: root.theme
-                icon: wifiOn.value ? String.fromCodePoint(0xF05A9) // wifi
+                icon: root.wifiEnabled ? String.fromCodePoint(0xF05A9) // wifi
                  : String.fromCodePoint(0xF05AA) // wifi-off
-                label: String(wifiSSID.value || "WiFi")
-                active: Boolean(wifiOn.value)
-                onClicked: Quickshell.execDetached(["nmcli", "radio", "wifi", wifiOn.value ? "off" : "on"])
+                label: root.wifiLabel
+                active: root.wifiEnabled
+                onClicked: {
+                    Quickshell.execDetached(["nmcli", "radio", "wifi", root.wifiEnabled ? "off" : "on"]);
+                    root.radioSettle.restart();
+                }
                 onRightClicked: {
                     root.closeRequested();
                     Quickshell.execDetached(["nm-connection-editor"]);
