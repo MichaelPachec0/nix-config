@@ -240,6 +240,39 @@
           ../overlays/hyprland-screencopy-dead-output-crash.patch
         ];
     });
+    # xdg-desktop-portal-hyprland past its v1.4.0 tag, for 71ae1a3a
+    # "screencopy: don't send bad transform information over wire"
+    # (ref hyprwm/hyprland#15714): the portal used to forward the output's
+    # transform verbatim, so a screencast could be handed a transform that does
+    # not describe the buffer it came with. It now reports NORMAL for region
+    # captures, and for output captures only keeps the transform when the frame
+    # dimensions are actually swapped relative to the output.
+    #
+    # Deliberately paired with the 0.56.1 compositor above, which PREDATES
+    # #15714 and so still renders transformed buffers. The heuristic is written
+    # to straddle both (its own comment: "always fall back to new... 180 will be
+    # wrong on old hl"), and on non-rotated outputs -- every monitor here -- both
+    # branches yield NORMAL, so the pairing is a no-op today and correct once the
+    # compositor moves past 0.56.x. Revisit if a display is ever rotated.
+    #
+    # The portal takes `hyprland` only to put it on the share-picker's PATH, so
+    # it follows the patched compositor above with no extra wiring.
+    xdg-desktop-portal-hyprland = prev.xdg-desktop-portal-hyprland.overrideAttrs (old: {
+      version = "1.4.0-unstable-b653ab5";
+      src = prev.fetchFromGitHub {
+        owner = "hyprwm";
+        repo = "xdg-desktop-portal-hyprland";
+        rev = "b653ab53a435e92cc00f34771e6823bc59f2f740";
+        hash = "sha256-sNIGmqZJiOM/lCWUuslV53zuk/p5sGCRcS3kHKfxQvA=";
+      };
+      # The packaged changelog interpolates v${version} into a releases URL,
+      # which does not exist for a between-tags pin.
+      meta =
+        (old.meta or {})
+        // {
+          changelog = "https://github.com/hyprwm/xdg-desktop-portal-hyprland/compare/v1.4.0...b653ab53a435e92cc00f34771e6823bc59f2f740";
+        };
+    });
     # Patch Quickshell: the forked PAM subprocess frees the caller's
     # `pam_response**` out-param (a stack address) on any IPC write failure, so
     # a shell that dies while a PAM child is still blocked in pam_fprintd turns
