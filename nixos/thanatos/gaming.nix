@@ -103,7 +103,11 @@ in {
   # SteamOS value; prevents crashes/stutter in many DX12/Proton titles.
   boot.kernel.sysctl."vm.max_map_count" = 2147483642;
   # Separate list; NixOS concatenates with amd.nix's own boot.kernelParams.
-  boot.kernelParams = ["amd_pstate=active" "split_lock_detect=off"];
+  # amd_pstate=active was dropped: this is a Ryzen 7 PRO 4750U (Zen2/Renoir),
+  # /proc/cpuinfo has no `cppc` flag, and the driver in use is acpi-cpufreq --
+  # amd_pstate never bound, so the parameter was a no-op. schedutil on
+  # acpi-cpufreq is the correct pairing on Renoir.
+  boot.kernelParams = ["split_lock_detect=off"];
   # Shared nyx config sets this false; mkForce keeps the override thanatos-only.
   services.pipewire.lowLatency.enable = lib.mkForce true;
 
