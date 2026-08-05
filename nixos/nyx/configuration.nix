@@ -310,6 +310,23 @@ in {
     };
     systemd.services."zerotierone" = {after = ["dhcpcd.service"];};
 
+    # The user session bus inherits systemd's legacy soft RLIMIT_NOFILE of 1024,
+    # because dbus-broker's own user unit (shipped by the package) sets no
+    # LimitNOFILE -- unlike the NixOS *system* dbus-broker unit, which gets
+    # LimitNOFILE=16384. dbus-broker costs 2 fds per connected peer, so the user
+    # bus dies at roughly 460 concurrent peers, and it dies *fatally*: an
+    # accept() that returns EMFILE is an unrecoverable error there
+    # (sockopt_get_peerpidfd -> peer_new_with_fd -> broker_run exits). Losing the
+    # session bus kills uwsm's `systemctl --user start --wait
+    # wayland-session-envelope@...`, which makes greetd tear the whole graphical
+    # session down -- i.e. it looks exactly like a compositor crash.
+    # Observed twice on thanatos (2026-07-31 16:28, 2026-08-05 00:48).
+    # Mirror the system bus's headroom instead.
+    systemd.user.services.dbus-broker = {
+      overrideStrategy = "asDropin";
+      serviceConfig.LimitNOFILE = 16384;
+    };
+
     # NOTE: still need to find how I can use this and have captive portal work.
 
     # TODO: (very low prio) revisit this much later, this is a really nice to have (either DoH or DoT).
