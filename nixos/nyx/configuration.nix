@@ -76,54 +76,26 @@ in {
     ];
 
     boot.kernel.sysctl = {
-      # NOTE: more responsive memory options, defaults for some reason gave me issues during sleep after longer use.
-      # "vm.vfs_cache_pressure" = 200;
-      # "vm.dirty_ratio" = 3;
-      # "vm.swappiness" = 15;
-      # v2
-      # "vm.dirty_ratio" = 50;
-      # "vm.dirty_background_ratio" = 20;
-      # "vm.swappiness" = 90;
-      # "vm.swappiness" = 75;
-      # v3
-      # "vm.swappiness" = 190;
-      # "vm.vfs_cache_pressure" = 50;
+      # Reclaim policy for hosts running zram, which is every host importing
+      # this file. Host-specific / RAM-sized values (min_free_kbytes, dirty_*)
+      # live with the host -- see nixos/thanatos/memory.nix.
       #
-      # "vm.dirty_background_ratio" = 10;
-      # "vm.dirty_ratio" = 30;
-
-      # NOTE: dont recall what this was for, but this was apart of the memory issues
-      # "vm.page-cluster" = 3;
-
-      # v3
-      # "vm.page-cluster" = 0;
-
-      # "vm.watermark_scale_factor" = 150;
-
-      # v3
-      "fs.inotify.max_user_watches" = 65536;
-      # NOTE: zen stuff
-      # "kernel.sched_latency_ns" = 4000000;
-
-      # should be one-eighth of sched_latency (this ratio is not
-      # configurable, apparently -- so while zen changes that to
-      # one-tenth, we cannot):
-
-      # v3
-      # "kernel.sched_min_granularity_ns" = 500000;
-      # "kernel.sched_wakeup_granularity_ns" = 50000;
-      # "kernel.sched_migration_cost_ns" = 250000;
-      # "kernel.sched_cfs_bandwidth_slice_us" = 3000;
-      # "kernel.sched_nr_migrate" = 128;
-
       # NOTE: https://wiki.archlinux.org/title/Zram#Optimizing_swap_on_zram
+      #
+      # swappiness > 100 tells the kernel swap IO is cheaper than filesystem IO.
+      # True for zram, false for a disk swap -- swap *priority* is what keeps the
+      # disk tier out of reach, not this value.
+      "vm.swappiness" = 180;
+      # zram decompress is cheap and random, so swap readahead is pure waste.
+      "vm.page-cluster" = 0;
       "vm.watermark_boost_factor" = 0;
       "vm.watermark_scale_factor" = 125;
-      "vm.page-cluster" = 0;
-      "vm.swappiness" = 180;
-      # based on the at least 1% free
-      # ie 32714204 * 0.01 = 327142.04
-      "vm.min_free_kbytes" = 335544;
+
+      # kitty recursively watches /nix/store and alone approaches the old 65536
+      # ceiling; see features/hm/kitty/default.nix.
+      "fs.inotify.max_user_watches" = 524288;
+      "fs.inotify.max_user_instances" = 1024;
+      "fs.inotify.max_queued_events" = 65536;
     };
 
     services.fwupd.enable = false;
