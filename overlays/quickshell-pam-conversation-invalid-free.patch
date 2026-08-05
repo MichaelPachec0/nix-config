@@ -1,0 +1,36 @@
+Fix a wild free() in the Quickshell PAM subprocess that turns any IPC write
+failure into a SIGSEGV.
+
+PamSubprocess::conversation()'s `fail:` label runs `free(responseArray)`.
+`responseArray` is the `pam_response**` OUT-PARAM handed in by the PAM module,
+not the buffer this function allocated. Modules pass the address of a local --
+pam_fprintd's send_msg() does `struct pam_response *resp; pc->conv(1, &msgp,
+&resp, pc->appdata_ptr);` -- so this frees a stack address. The buffer that
+should be freed is `responses`, the calloc() at the top of the function.
+
+Under jemalloc (Quickshell's default) the invalid free segfaults inside
+je_free_default; under glibc it aborts with "free(): invalid pointer". Either
+way the crash handler runs and files a Quickshell crash report whose backtrace
+looks like the shell itself crashed -- the subprocess is a fork(), so every
+frame below PamConversation::createSubprocess is the parent's inherited stack,
+right down to qs::launch::main.
+
+The `fail:` path is reached whenever a writeBytes()/writeString() to the parent
+fails, which is exactly what happens when the shell dies while a PAM child is
+still blocked in a slow module (e.g. pam_fprintd's ~30s verify): the next
+conversation message hits EPIPE.
+
+Applies to Quickshell v0.3.0; unfixed on master as of 28771c7.
+See docs/quickshell-pam-invalid-free for the full analysis and upstream report.
+---
+diff --git a/src/services/pam/subprocess.cpp b/src/services/pam/subprocess.cpp
+--- a/src/services/pam/subprocess.cpp
++++ b/src/services/pam/subprocess.cpp
+@@ -201,6 +201,6 @@ int PamSubprocess::conversation(
+ 	return PAM_SUCCESS;
+
+ fail:
+-	free(responseArray); // NOLINT
++	free(responses); // NOLINT
+ 	_exit(1);
+ }

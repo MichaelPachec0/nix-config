@@ -193,7 +193,29 @@
     # patched binary and the plugin API-hash check still matches. See
     # docs/hyprland-popup-lock-crash for the full analysis + upstream PR.
     hyprland = prev.hyprland.overrideAttrs (old: {
-      patches = (old.patches or []) ++ [../overlays/hyprland-popup-sessionlock-crash.patch];
+      patches =
+        (old.patches or [])
+        ++ [
+          ../overlays/hyprland-popup-sessionlock-crash.patch
+          # Same 0.56.0 crash family, different site: a screencopy
+          # (ext-image-copy-capture) create_frame that lands after its output
+          # was removed derefs a null monitor in CScreenshareFrame::transform.
+          # Hit on every resume-with-monitor-unplugged, because the lock's
+          # ScreencopyView backdrop captures per Quickshell.screens entry.
+          # See docs/hyprland-screencopy-dead-output-crash.
+          ../overlays/hyprland-screencopy-dead-output-crash.patch
+        ];
+    });
+    # Patch Quickshell: the forked PAM subprocess frees the caller's
+    # `pam_response**` out-param (a stack address) on any IPC write failure, so
+    # a shell that dies while a PAM child is still blocked in pam_fprintd turns
+    # into a bogus "quickshell crashed" SIGSEGV report. Unfixed upstream as of
+    # 28771c7. Patched at the TOP-LEVEL `quickshell` so the raw `pkgs.quickshell`
+    # uses (swayidle.nix, quickshell-lock.nix) and the HM module's own
+    # overrideAttrs (features/hm/wayland/quickshell.nix) all stack on the fix.
+    # See docs/quickshell-pam-invalid-free.
+    quickshell = prev.quickshell.overrideAttrs (old: {
+      patches = (old.patches or []) ++ [../overlays/quickshell-pam-conversation-invalid-free.patch];
     });
     latest = {
       # nixpkgs ships Hyprland 0.56.0. The old 0005 popup-coords SIGSEGV patch
