@@ -69,8 +69,9 @@ Scope {
     // fully transparent AND keeps the just-authenticated password buffer.
     //
     // Wallpaper mode then locks immediately (unchanged MVP behaviour).
-    // Workspace mode arms the capture pool and defers `locked` until every
-    // output's frame has landed (or captureTimer's 50ms safety net fires).
+    // Workspace mode waits for the output set to settle, then arms the capture
+    // pool and defers `locked` until every output's frame has landed (or
+    // captureTimer's safety net fires).
     function lock() {
         unlockTimer.stop();
         if (root.locked) {
@@ -90,8 +91,7 @@ Scope {
             root.locked = true;
             return;
         }
-        root.captureArmed = true;
-        captureTimer.start();
+        root._armCaptureWhenSettled();
     }
 
     // Unlock is a two-phase move: play the detransition, then release. The
@@ -469,6 +469,76 @@ Scope {
         id: captureTimer
         interval: 250
         onTriggered: root.locked = true
+    }
+
+    // ---- Output-settle gate (compositor-crash mitigation) --------------------
+    //
+    // Asking the compositor to capture an output it has ALREADY destroyed kills
+    // it: Hyprland 0.56.0 derefs a null monitor in
+    // CScreenshareFrame::transform() when an ext-image-copy-capture create_frame
+    // lands after the output is gone, and the compositor dying takes the whole
+    // session with it. Seen 2026-08-05: resume from S3 with the external monitor
+    // unplugged while asleep -> we captured per `Quickshell.screens`, that list
+    // still held HDMI-A-1, compositor SIGSEGV. See
+    // docs/hyprland-screencopy-dead-output-crash. The real fix is the compositor
+    // patch in overlays/; this gate is the client-side belt.
+    //
+    // Why a DELAY and not a check: a client cannot know an output is dead before
+    // the compositor tells it. In the incident the removal had already happened
+    // compositor-side but `global_remove` had not reached us yet, so every
+    // reactive test ("did the screen list just change?", "is it still present?")
+    // answers "all fine" and captures the corpse anyway. Waiting for the set to
+    // hold still is the only thing that actually closes the window -- it lets
+    // the queued removal land before we ask for anything.
+    //
+    // Cost, stated plainly: the compositor lock now engages ~settleMs later on
+    // every workspace-mode lock, because the capture must precede the lock (the
+    // desktop stops compositing the moment the lock request lands, so a
+    // post-lock capture grabs black). That is a real, if small, window of
+    // desktop visible after a lid-open. Set screenSettleMs to 0 to drop the
+    // wait (capture then arms on the next event-loop turn, i.e. effectively the
+    // old behaviour) once the patched compositor is deployed everywhere.
+    readonly property int screenSettleMs: 250
+    // Hard cap on deferral: a flapping output must never keep us out of the
+    // lock. Past this, we give up on the capture, not on locking.
+    readonly property int screenSettleCapMs: 1000
+    property double _settleStartMs: 0
+
+    function _armCaptureWhenSettled() {
+        root._settleStartMs = Date.now();
+        settleTimer.restart();
+    }
+
+    Connections {
+        target: Quickshell
+        // Topology moved while we were waiting -> restart the quiet period, up
+        // to the cap. Past the cap we deliberately stop restarting so the
+        // already-running timer fires and resolves (see onTriggered).
+        function onScreensChanged() {
+            if (!settleTimer.running)
+                return;
+            if (Date.now() - root._settleStartMs < root.screenSettleCapMs)
+                settleTimer.restart();
+        }
+    }
+
+    // The only `root.locked = true` site added by this gate; captureTimer /
+    // _noteCapture remain the others (see the audit note above `secFreshness`).
+    // Fail-open by construction: if this timer never fires nothing locks, which
+    // matches qs-lock-trigger's own fail-open stance in swayidle.nix.
+    Timer {
+        id: settleTimer
+        interval: root.screenSettleMs
+        onTriggered: {
+            if (root.locked)
+                return;
+            if (Date.now() - root._settleStartMs >= root.screenSettleCapMs) {
+                root.locked = true; // capture sacrificed, lock is not
+                return;
+            }
+            root.captureArmed = true;
+            captureTimer.start();
+        }
     }
 
     WlSessionLock {
