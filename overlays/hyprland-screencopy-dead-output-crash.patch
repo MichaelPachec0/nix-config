@@ -24,7 +24,16 @@ transform; the client's subsequent capture request fails cleanly through the
 existing CScreenshareFrame::share() -> ERROR_STOPPED -> sendFailed(STOPPED)
 path, so no further change is needed.
 
-Applies to Hyprland v0.56.0. Not fixed upstream as of main@36b2e0c.
+Applies to Hyprland v0.56.0 and v0.56.1 (the deref is byte-identical in both;
+nothing in the v0.56.0..v0.56.1 diff touches this file).
+
+Upstream: the crash site no longer exists on main -- 901881c9 "render: always
+render in normal transform (#15714)" (2026-08-04) reduced transform() to
+`return WL_OUTPUT_TRANSFORM_NORMAL;` as a side effect of a rendering refactor,
+not as a crash fix. That commit is NOT on the 0.56.x release branch, so every
+shipped 0.56.x is still vulnerable and this patch is the backport. It does not
+apply to main (the context is gone); drop it when moving past 0.56.x.
+
 See docs/hyprland-screencopy-dead-output-crash for the full analysis.
 ---
 diff --git a/src/managers/screenshare/ScreenshareFrame.cpp b/src/managers/screenshare/ScreenshareFrame.cpp
