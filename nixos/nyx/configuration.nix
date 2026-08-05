@@ -491,10 +491,21 @@ in {
         # check=$(${
         #   lib.getExe yubikey-manager
         # } list | ${pkgs.busybox}/bin/wc -l)
+        # Fail-secure: if gpg is absent or the card cannot be read, lock.
+        # NOTE: gpg/grep/cut used to be unqualified, so under udev's minimal PATH
+        #   the query almost certainly failed and the branch always locked. They
+        #   are absolute now, which makes the "another owned key is still
+        #   inserted -> do not lock" case actually reachable for the first time.
         check = pkgs.writeShellScriptBin "yubicheck.sh" ''
           #!${pkgs.stdenv.shell}
-          sleep 1
-          check=$(gpg --card-status 2>/dev/null | grep "General key info" | cut -d " " -f 6)
+          # Let the USB stack settle before asking scdaemon about any remaining
+          # card. This sleep is why the script must not run inline from RUN+=:
+          # it would hold a udev event worker for a second. The rule dispatches
+          # it through systemd-run instead.
+          ${pkgs.coreutils}/bin/sleep 1
+          check=$(${pkgs.gnupg}/bin/gpg --card-status 2>/dev/null \
+            | ${pkgs.gnugrep}/bin/grep "General key info" \
+            | ${pkgs.coreutils}/bin/cut -d " " -f 6)
           if [[ $check != ${keyCheck} ]]; then
             ${command} lock-sessions --no-ask-password
           fi
@@ -504,8 +515,17 @@ in {
         pkgs.openocd
         (pkgs.writeTextFile {
           name = "yubikey-lock";
+          # DEVTYPE=="usb_device" is load-bearing: every usb_interface of the key
+          # inherits ENV{PRODUCT}, so without it the rule fires once per
+          # interface *plus* once for the device (4x for a YubiKey 5
+          # OTP+U2F+CCID). Each run called lock-sessions, which fans out to every
+          # lockable session, so a single unplug emitted 8 Session.Lock signals
+          # and a burst of lock.target starts.
+          # systemd-run --no-block detaches the check from the udev event worker;
+          # the fixed unit name collapses any residual duplicate events into one
+          # run.
           text = ''
-            SUBSYSTEM=="usb", ENV{PRODUCT}=="1050/407/543", ACTION=="remove", RUN+="${
+            SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{PRODUCT}=="1050/407/543", ACTION=="remove", RUN+="${pkgs.systemd}/bin/systemd-run --no-block --collect --unit=yubikey-lock-check ${
               lib.getExe check
             }"
           '';
