@@ -185,23 +185,57 @@
     pam_rssh = prev.callPackage ../overlays/pam_rssh {};
   };
   latest = final: prev: {
-    # Patch Hyprland CORE: guard the weak-pointer derefs that hard-crash the
-    # compositor when the session locks while a grabbing xdg_popup (a bar
-    # dropdown/menu) is open. Not fixed upstream as of main@36b2e0c. This
-    # overrides the TOP-LEVEL `hyprland` (not just latest.hyprland below) so the
-    # compositor AND hy3 -- which builds against final.hyprland -- share the one
-    # patched binary and the plugin API-hash check still matches. See
-    # docs/hyprland-popup-lock-crash for the full analysis + upstream PR.
+    # Hyprland CORE: bumped to the v0.56.1 point release and carrying the two
+    # crash patches. Overrides the TOP-LEVEL `hyprland` (not just latest.hyprland
+    # below) so the compositor AND hy3 -- which builds against final.hyprland --
+    # share the one binary and the plugin hash check still matches.
+    #
+    # nixpkgs is still on 0.56.0; we already build the compositor from source for
+    # the patches, so taking the point release costs nothing extra. 0.56.1 is a
+    # pure bugfix bump (28 files) and every header change in it is ADDITIVE (a
+    # new signal, a method decl, an event, an enum entry) -- nothing hy3 uses is
+    # removed or renamed, so the pinned hy3 needs no source change. hy3 is also
+    # already at its newest tag (hl0.56.0.1 = 42b7ed8 = its master HEAD).
     hyprland = prev.hyprland.overrideAttrs (old: {
+      version = "0.56.1";
+      src = prev.fetchFromGitHub {
+        owner = "hyprwm";
+        repo = "hyprland";
+        fetchSubmodules = true;
+        tag = "v0.56.1";
+        hash = "sha256-u3DU6wmJ2PZk8kAOnx64MTlVxp/hZH+oUtXouj1E3+0=";
+      };
+      # `hyprctl version` is fed from nixpkgs' pkgs/by-name/hy/hyprland/info.json,
+      # which still describes 0.56.0 -- restate it for the bumped src, or crash
+      # reports name a commit we are not running.
+      env =
+        (old.env or {})
+        // {
+          GIT_COMMIT_HASH = "5c9377c15f85c50648f35ca5a213754f95b93ca0";
+          GIT_COMMIT_MESSAGE = "version: bump to 0.56.1";
+          GIT_COMMIT_DATE = "2026-07-27";
+          GIT_TAG = "v0.56.1";
+        };
       patches =
         (old.patches or [])
         ++ [
+          # Compositor SIGSEGV when the session locks while a grabbing xdg_popup
+          # (a bar dropdown/menu) is open: newLock is emitted before m_locked is
+          # set, so the grab is torn down with isSessionLocked() still false.
+          # Still unfixed on main (SessionLock.cpp:198 is unchanged) and the
+          # patch still applies there, so this one survives a future bump.
+          # See docs/hyprland-popup-lock-crash.
           ../overlays/hyprland-popup-sessionlock-crash.patch
-          # Same 0.56.0 crash family, different site: a screencopy
+          # Same crash family, different site: a screencopy
           # (ext-image-copy-capture) create_frame that lands after its output
           # was removed derefs a null monitor in CScreenshareFrame::transform.
           # Hit on every resume-with-monitor-unplugged, because the lock's
           # ScreencopyView backdrop captures per Quickshell.screens entry.
+          #
+          # BACKPORT ONLY: main lost this crash site incidentally in 901881c9
+          # ("render: always render in normal transform", #15714), which is not
+          # on the 0.56.x branch. The patch therefore does NOT apply past
+          # 0.56.x -- DROP it, do not rebase it, when leaving this series.
           # See docs/hyprland-screencopy-dead-output-crash.
           ../overlays/hyprland-screencopy-dead-output-crash.patch
         ];
@@ -218,9 +252,9 @@
       patches = (old.patches or []) ++ [../overlays/quickshell-pam-conversation-invalid-free.patch];
     });
     latest = {
-      # nixpkgs ships Hyprland 0.56.0. The old 0005 popup-coords SIGSEGV patch
-      # is obsolete (fixed upstream in 0.56, #15416) and dropped; the NEW
-      # popup->session-lock crash patch is applied to `hyprland` just above.
+      # nixpkgs ships Hyprland 0.56.0; the `hyprland` attr above bumps it to
+      # v0.56.1 and carries the two crash patches. The old 0005 popup-coords
+      # SIGSEGV patch is obsolete (fixed upstream in 0.56, #15416) and dropped.
       # nixpkgs' hyprlandPlugins.hy3 is still hl0.55.0, which will not load
       # against a 0.56 compositor, so hy3's src is pinned to the matching
       # hl0.56.0.1 release (see the hy3 attr below) with our patches re-applied.
@@ -229,9 +263,12 @@
 
       sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
       # nixpkgs' hy3 is hl0.55.0; pin the src to the hl0.56.0.1 release (built
-      # against nixpkgs' 0.56.0 hyprland so the plugin ABI matches) and re-apply
-      # our dispatcher patches -- 0004 rebased onto the 0.56 workspace API
-      # (getWorkspaceByID -> State::workspaceState()->query().id().run()).
+      # against final.hyprland, so the plugin hash always matches whatever that
+      # attr resolves to -- 0.56.1 now) and re-apply our dispatcher patches --
+      # 0004 rebased onto the 0.56 workspace API (getWorkspaceByID ->
+      # State::workspaceState()->query().id().run()). hl0.56.0.1 is still hy3's
+      # newest tag AND its master HEAD, and 0.56.1 removes/renames nothing it
+      # uses, so there is nothing to resync here for the point release.
       hy3 = (final.hyprlandPlugins.hy3.override {inherit (final) hyprland;}).overrideAttrs (old: {
         src = final.fetchFromGitHub {
           owner = "outfoxxed";
