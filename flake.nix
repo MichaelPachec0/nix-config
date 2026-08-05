@@ -206,6 +206,7 @@
         inputs.disko.nixosModules.disko
         ./nixos/thanatos/e5800.nix
         ./nixos/thanatos/ec-pd.nix
+        ./nixos/thanatos/memory.nix
         ./features/nixos/common/nix-access-tokens.nix
         {
           services.e5800 = {
