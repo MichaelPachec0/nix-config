@@ -52,7 +52,7 @@ Singleton {
     readonly property real glyphGlowAlpha: 0.10
     readonly property real glyphGlowSpread: 1
     readonly property int glyphGlowOffsetX: 2
-    readonly property int glyphGlowOffsetY: 0
+    readonly property int glyphGlowOffsetY: 2
     readonly property bool glyphLifted: root.current === "frosted"
 
     readonly property string _stateDir: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/quickshell"
