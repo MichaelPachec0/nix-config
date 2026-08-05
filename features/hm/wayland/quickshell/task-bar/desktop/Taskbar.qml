@@ -3,6 +3,7 @@ import Quickshell.Hyprland
 import Quickshell.Wayland
 import Quickshell.Services.SystemTray
 import QtQuick
+import QtQuick.Effects // MultiEffect: blackens the app-icon extrusion in one pass
 import QtQuick.Layouts
 import "../lib" as Lib
 import "../lib/sysfmt.js" as SysFmt
@@ -248,6 +249,10 @@ PanelWindow {
                             readonly property bool onActive: (modelData.workspace?.id ?? -2) === dock.activeWs
                             readonly property bool isActive: modelData === Hyprland.activeToplevel
                             readonly property string cls: modelData.lastIpcObject?.class ?? ""
+                            // Hoisted: the icon is drawn once for real and once per
+                            // extrusion step, and iconFor() walks DesktopEntries on every
+                            // call. Resolve the path once per window instead of per copy.
+                            readonly property string iconSrc: dock.iconFor(win.cls)
                             readonly property string addr: {
                                 var a = (modelData.address && modelData.address.length > 0) ? modelData.address : (modelData.lastIpcObject?.address ?? "");
                                 return (a.indexOf("0x") === 0) ? a : ("0x" + a);
@@ -258,17 +263,104 @@ PanelWindow {
                             onClicked: Hyprland.dispatch('hl.dsp.focus({ window = "address:' + win.addr + '" })')
 
                             Rectangle {
+                                id: tile
                                 anchors.fill: parent
                                 radius: 6
                                 color: win.isActive ? dock.theme.bgItemHover : "transparent"
 
+                                // The focus chip, lifted the way the router's signal bars
+                                // are: a Rectangle gets none of Text.Raised or BarText's
+                                // lift, and Pill's frosted pass covers only the capsule, so
+                                // it casts its own. Copies at negative z draw behind the
+                                // parent's own fill.
+                                //
+                                // No halo on either lift here, unlike BarText and the
+                                // router -- these sit on the pill's own glass rather than
+                                // over raw wallpaper, so the extrusion alone carries the
+                                // depth and a white rim just fogs the icon art.
+                                //
+                                // Gated on isActive as well as glyphLifted: the copies are
+                                // opaque black whatever the tile's own color is, so running
+                                // this while the tile is transparent would park a black
+                                // square behind every inactive icon.
+                                Repeater {
+                                    model: (win.isActive && Lib.BarStyle.glyphLifted) ? Lib.BarStyle.glyphLiftSteps : 0
+                                    delegate: Rectangle {
+                                        required property int index
+                                        // index 0 = deepest, created first so nearer steps stack on it.
+                                        readonly property int step: Lib.BarStyle.glyphLiftSteps - index
+                                        z: -1
+                                        x: Math.round(step * Lib.BarStyle.glyphLiftX / Lib.BarStyle.glyphLiftSteps)
+                                        y: Math.round(step * Lib.BarStyle.glyphLiftY / Lib.BarStyle.glyphLiftSteps)
+                                        width: tile.width
+                                        height: tile.height
+                                        radius: tile.radius
+                                        color: Qt.rgba(0, 0, 0, Lib.BarStyle.glyphLiftAlpha)
+                                    }
+                                }
+
+                                // The icon's OWN extrusion, so it shares the tile's depth
+                                // plane instead of floating flat on a raised chip.
+                                //
+                                // An icon is arbitrary art with an alpha channel, so its
+                                // shadow has to be its silhouette -- no Rectangle
+                                // approximates that, which is why the tile lift above
+                                // cannot reach it. Blackening needs a shader (Image has no
+                                // tint property), and one MultiEffect per step would be one
+                                // offscreen pass per step. So the offset copies are stacked
+                                // RAW inside this Item and the whole stack is blackened by
+                                // a SINGLE layer effect: same solid slab, one pass, and it
+                                // re-renders only when the icon itself changes.
+                                //
+                                // Sized icon + lift because layer.enabled rasterises to the
+                                // item's bounding rect -- children past it would be clipped
+                                // out of the texture. No clip on the tile, so overhanging
+                                // the chip's bottom edge is fine.
+                                Item {
+                                    id: iconLift
+                                    visible: Lib.BarStyle.glyphLifted
+                                    x: appIcon.x
+                                    y: appIcon.y
+                                    width: appIcon.width + Lib.BarStyle.glyphLiftX
+                                    height: appIcon.height + Lib.BarStyle.glyphLiftY
+                                    opacity: Lib.BarStyle.glyphLiftAlpha
+                                    layer.enabled: true
+                                    // brightness -1 zeroes RGB and leaves alpha alone, which
+                                    // is the whole trick: the silhouette survives, the art
+                                    // does not. Measured byte-identical to colorization-to-
+                                    // black and to both stacked, so this is the one-property
+                                    // form of the same result -- no need for saturation or
+                                    // colorizationColor on top.
+                                    layer.effect: MultiEffect {
+                                        brightness: -1.0
+                                    }
+
+                                    Repeater {
+                                        model: Lib.BarStyle.glyphLifted ? Lib.BarStyle.glyphLiftSteps : 0
+                                        delegate: Image {
+                                            required property int index
+                                            readonly property int step: Lib.BarStyle.glyphLiftSteps - index
+                                            x: Math.round(step * Lib.BarStyle.glyphLiftX / Lib.BarStyle.glyphLiftSteps)
+                                            y: Math.round(step * Lib.BarStyle.glyphLiftY / Lib.BarStyle.glyphLiftSteps)
+                                            width: appIcon.width
+                                            height: appIcon.height
+                                            sourceSize.width: 32
+                                            sourceSize.height: 32
+                                            source: win.iconSrc
+                                        }
+                                    }
+                                }
+
+                                // Declared after iconLift so it draws on top of it: both
+                                // sit at the default z, where creation order decides.
                                 Image {
+                                    id: appIcon
                                     anchors.centerIn: parent
                                     width: 14 // icon glyph size
                                     height: 14
                                     sourceSize.width: 32
                                     sourceSize.height: 32
-                                    source: dock.iconFor(win.cls)
+                                    source: win.iconSrc
                                 }
                                 Rectangle {
                                     visible: win.isActive
