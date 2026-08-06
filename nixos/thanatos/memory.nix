@@ -177,9 +177,34 @@ in {
     ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="mq-deadline"
   '';
 
-  # Protected side. session.slice is where uwsm actually puts things: Hyprland,
-  # quickshell and Firefox all share wayland-wm@hyprland.desktop.service, and the
-  # kitty scopes sit next to it. app.slice exists but is empty on this setup.
+  # Protected side. The desktop working set spans THREE branches under
+  # user@.service and all of them have to be granted, because memory.low is
+  # only effective where every ancestor also grants it -- systemd derives a
+  # slice's parent from its dashed name, so app-graphical.slice sits under
+  # app.slice and background-graphical.slice under background.slice, and
+  # skipping the intermediate level would silently zero the protection:
+  #
+  #   session.slice                  -- the compositor unit itself
+  #                                     (wayland-wm@hyprland.desktop.service)
+  #                                     plus the kitty scopes beside it.
+  #   app.slice
+  #     app-graphical.slice          -- one scope per application.
+  #   background.slice
+  #     background-graphical.slice   -- quickshell (the bar) and the watermark,
+  #                                     launched with app-run -s b.
+  #
+  # Both -graphical branches were empty until launches were routed through the
+  # uwsm runner -- every GUI process used to be a fork() of the compositor and
+  # therefore lived inside its unit (see features/hm/wayland/app-run.nix).
+  # Now that Firefox/kitty/keepassxc and the bar get their own scopes out
+  # there, protecting session.slice alone would leave the applications
+  # themselves as first reclaim/oomd candidates, i.e. exactly backwards.
+  #
+  # All branches claim the same guiReserve rather than splitting it: memory.low
+  # is best-effort and the real ceiling is what user@.service grants, which the
+  # kernel then distributes proportionally between whichever children are
+  # actually claiming. Splitting would just under-protect whichever side happens
+  # to be busy.
   systemd.slices.user = protectSlice;
   systemd.slices."user-" = protectSlice;
   systemd.services."user@" = {
@@ -191,6 +216,13 @@ in {
     };
   };
   systemd.user.slices.session = protectSlice;
+  systemd.user.slices.app = protectSlice;
+  systemd.user.slices.background = protectSlice;
+  # The two -graphical slices are shipped by the uwsm package (symlinked into
+  # /etc/systemd/user), so these are drop-ins over existing units rather than
+  # fresh ones -- same asDropin strategy the rest of this file uses.
+  systemd.user.slices.app-graphical = protectSlice;
+  systemd.user.slices.background-graphical = protectSlice;
 
   # ---- sched_ext ----------------------------------------------------------
   # sched_ext is compiled into this XanMod kernel (/sys/kernel/sched_ext/state
