@@ -184,6 +184,9 @@
   pam_rssh = final: prev: {
     pam_rssh = prev.callPackage ../overlays/pam_rssh {};
   };
+  qsGreeter = final: prev: {
+    qs-greeter = prev.callPackage ../pkgs/qs-greeter {};
+  };
   latest = final: prev: {
     # Hyprland CORE: bumped to the v0.56.1 point release and carrying the two
     # crash patches. Overrides the TOP-LEVEL `hyprland` (not just latest.hyprland
@@ -359,6 +362,7 @@
     channels
     inputs.flake-playground.overlays.default
     pam_rssh
+    qsGreeter
   ];
 in {
   stable = let
