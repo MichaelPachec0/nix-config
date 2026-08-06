@@ -8,6 +8,7 @@
   config,
   lib,
   pkgs,
+  appRun,
   ...
 }: let
   firefox = "${lib.getExe config.programs.firefox.package}";
@@ -15,6 +16,20 @@
   # Base variables
 
   mod = "Mod4";
+
+  # `app` prefixes the launch of a long-lived GUI application with the app-run
+  # wrapper (./app-run.nix), which puts it in its own scope under
+  # app-graphical.slice instead of letting it inherit the compositor's cgroup.
+  # Both compositors benefit: sway is also registered in
+  # programs.uwsm.waylandCompositors, and outside a uwsm session app-run
+  # degrades to a plain exec.
+  #
+  # Deliberately NOT applied to the one-shot utility binds below (volumectl,
+  # brightnessctl, playerctl, grim, loginctl). Even on app-run's fast backend
+  # that is a ~19ms systemd-run round trip per press, and a one-shot that exits
+  # immediately has no lifetime for a scope to manage in the first place.
+  app = cmd: "${appRun}/bin/app-run ${cmd}";
+
   terminal = "kitty";
   menu = "rofi -show combi -combi-modes 'window,drun'";
 
@@ -31,7 +46,7 @@
   swayKeybindings = {
 
     # Basics
-    "${mod}+t" = "exec ${terminal}";
+    "${mod}+t" = "exec ${app terminal}";
     "${mod}+q" = "kill";
     "${mod}+Shift+r" = "reload";
 
@@ -92,9 +107,16 @@
     "${mod}+r" = "mode 'resize'";
 
     # Apps
-    "${mod}+w" = "exec ${firefox}";
+    "${mod}+w" = "exec ${app firefox}";
     "${mod}+Shift+f" = "floating toggle";
-    "${mod}+Space" = "exec ${menu}";
+    # rofi is wrapped too. It was exempted while the runner was `uwsm app`,
+    # where 0.28s of Python startup was plainly visible on a launcher; at
+    # app2unit's ~19ms that objection is gone, and leaving it out was the last
+    # thing still accumulating in the compositor's unit on a hot path. What rofi
+    # LAUNCHES is handled separately by its own run-command (./rofi.nix), which
+    # chains back into app-run -- a nested launch produces a SIBLING scope under
+    # app-graphical.slice (verified), so the app survives rofi exiting.
+    "${mod}+Space" = "exec ${app menu}";
 
     inherit Print;
     "${mod}+p" = Print;

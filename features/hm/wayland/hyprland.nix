@@ -14,6 +14,7 @@
   theme,
   generatedLuaBinds,
   generatedSwayBinds,
+  appRun,
   ...
 }: let
   firefox = "${lib.getExe config.programs.firefox.package}";
@@ -162,13 +163,28 @@
   '';
 
   # exec-once -> a single hl.on("hyprland.start", ...) handler.
+  #
+  # Every entry is fronted by app-run (./app-run.nix) so it lands in its own
+  # systemd scope instead of the compositor's cgroup. Two slices are used:
+  #   -s b  background-graphical.slice -- the shell and the watermark overlay.
+  #         They are session furniture, not apps; keeping them out of
+  #         app-graphical.slice means a blanket `systemctl --user stop
+  #         app-graphical.slice` (or an oomd sweep of it) does not take the bar
+  #         down with the browser.
+  #   (default a)  app-graphical.slice -- the actual applications.
+  # The Hyprland window-rule prefix has to stay in FRONT of the wrapper:
+  # Hyprland strips "[...]" off the exec string itself and hands the remainder
+  # to /bin/sh, so the rule applies to whatever window eventually appears.
   autostartHook = mkLuaInline ''
     function()
-      hl.exec_cmd("qs -c task-bar")
-      ${lib.optionalString wm.enable ''hl.exec_cmd(${luaStr activateLinuxCmd})''}
-      hl.exec_cmd("[workspace special:magic silent] keepassxc")
-      hl.exec_cmd("[workspace special:magic silent] Windscribe")
-      hl.exec_cmd("[workspace 3 silent] telegram")
+      hl.exec_cmd("${appRun}/bin/app-run -s b -a quickshell qs -c task-bar")
+      ${lib.optionalString wm.enable ''hl.exec_cmd(${luaStr "${appRun}/bin/app-run -s b -a activate-linux ${activateLinuxCmd}"})''}
+      hl.exec_cmd("[workspace special:magic silent] ${appRun}/bin/app-run keepassxc")
+      hl.exec_cmd("[workspace special:magic silent] ${appRun}/bin/app-run Windscribe")
+      -- The binary is "Telegram", capital T (/run/current-system/sw/bin/Telegram);
+      -- the old lowercase "telegram" here was never on PATH, so this autostart
+      -- has been silently doing nothing.
+      hl.exec_cmd("[workspace 3 silent] ${appRun}/bin/app-run Telegram")
     end
   '';
   # hl.exec_cmd(${luaStr "[workspace 2 silent] ${firefox}"})
@@ -232,6 +248,19 @@
       else 0
     ));
   chRow = key: desc: "${chPad 24 key}${desc}";
+  # Drop the app-run wrapper (and any -s/-a flags) from a bind's command before
+  # describing it: the sheet should read "kitty", not the store path of the
+  # uwsm launcher that fronts it. See ./app-run.nix.
+  chStripAppRun = toks:
+    if toks == [] || !(lib.hasSuffix "/app-run" (builtins.head toks))
+    then toks
+    else let
+      dropFlags = ts:
+        if builtins.length ts >= 2 && builtins.elem (builtins.head ts) ["-s" "-a"]
+        then dropFlags (builtins.tail (builtins.tail ts))
+        else ts;
+    in
+      dropFlags (builtins.tail toks);
   chDescribe = cmd:
     if lib.hasInfix "grim" cmd
     then "Screenshot region"
@@ -240,7 +269,7 @@
     else if lib.hasPrefix "exec " cmd
     then
       (let
-        toks = lib.splitString " " (lib.removePrefix "exec " cmd);
+        toks = chStripAppRun (lib.splitString " " (lib.removePrefix "exec " cmd));
       in
         builtins.baseNameOf (builtins.head toks)
         + lib.optionalString (builtins.length toks > 1) " ${lib.concatStringsSep " " (builtins.tail toks)}")
@@ -318,7 +347,13 @@
   cheatsheetScript = pkgs.writeShellScriptBin "keybind-cheatsheet" ''
     exec rofi -dmenu -i -no-custom -p "keybinds" -mesg "Esc to close" < ${cheatFile}
   '';
-  cheatBind = {_args = ["SUPER + slash" (mkLuaInline ''hl.dsp.exec_cmd("${cheatsheetScript}/bin/keybind-cheatsheet")'')];};
+  # Fronted by app-run for the same reason Super+Space is (common.nix): rofi is
+  # a GUI surface the compositor forks, so unwrapped it accumulates in the
+  # compositor's cgroup. The stdin redirect lives inside the script, so wrapping
+  # at the bind is enough. Store path rather than a bare name because the
+  # compositor evaluates this string; the cheatsheet's own "Super+/" row is
+  # hand-written (chRow), so it never shows the wrapper.
+  cheatBind = {_args = ["SUPER + slash" (mkLuaInline ''hl.dsp.exec_cmd("${appRun}/bin/app-run ${cheatsheetScript}/bin/keybind-cheatsheet")'')];};
 
   # Submap hint data -- SINGLE SOURCE for both the mode pill's hover popup
   # (emitted as JSON below, read by lib/HyprSubmapService.qml) and the Super+/
