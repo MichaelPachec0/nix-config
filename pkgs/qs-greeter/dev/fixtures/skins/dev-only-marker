@@ -1,0 +1,5 @@
+This file marks dev/fixtures/skins as a test fixture root. Skins.qml checks
+for it before honoring QSG_SKIN_ROOT, so setting that env var in a real
+deployment does nothing: the production skins/ tree shipped in the package
+never contains this marker (dev/ is not part of the installed derivation),
+so the override is inert unless it points at this exact fixture directory.

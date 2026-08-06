@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Io
 import QtQuick
 import "screens" as Screens
 
@@ -13,6 +14,17 @@ ShellRoot {
     }
 
     GreetdBackend { id: greetdBackend }
+
+    // A plain property binding, not a one-shot read in Component.onCompleted:
+    // Settings.skinName is itself reactive (config.skin || "xp"), so this
+    // re-evaluates on its own once Settings finishes loading, and again if
+    // the user tier's skin choice changes later -- no explicit readyChanged
+    // handling needed here, unlike the async-settling traps elsewhere in
+    // this codebase where a value was read once and never revisited.
+    // Settings.skinName defaults to "xp" even before Settings.ready, which
+    // happens to equal the built-in fallback, so there is nothing to show
+    // before the first settle in the common case.
+    property var skinResolution: Skins.resolve(Settings.skinName)
 
     // Backdrop.qml declares its own `required property var modelData`; Variants
     // sets that property directly from each model item, so the delegate here
@@ -58,49 +70,16 @@ ShellRoot {
         anchors { top: true; bottom: true; left: true; right: true }
         color: "transparent"
 
-        Rectangle {
-            anchors.centerIn: parent
-            width: 420
-            height: 220
-            color: "#ECE9D8"
-            border { width: 1; color: "#716F64" }
-
-            Column {
-                anchors.centerIn: parent
-                spacing: 10
-
-                TextField_ {
-                    id: userField
-                    label: "User name:"
-                    echoMode: TextInput.Normal
-                    text: "michael"
-                }
-                TextField_ {
-                    id: secretField
-                    label: Session.promptLabel || "Password:"
-                    echoMode: Session.promptSecret ? TextInput.Password : TextInput.Normal
-                    enabled: Session.promptLabel !== ""
-                    onAccepted: Session.submit(text)
-                }
-                Text {
-                    text: Session.waitingForDevice
-                        ? "Waiting for your security key..."
-                        : Session.statusText
-                    color: Session.statusIsError ? "#a00000" : "#303030"
-                }
-                Row {
-                    spacing: 8
-                    Button_ {
-                        text: "OK"
-                        onClicked: {
-                            if (Session.state === "idle" || Session.state === "failed")
-                                Session.begin(userField.text);
-                            else
-                                Session.submit(secretField.text);
-                        }
-                    }
-                    Button_ { text: "Cancel"; onClicked: Session.cancel() }
-                }
+        Loader {
+            id: skinLoader
+            anchors.fill: parent
+            source: shellRoot.skinResolution.source
+            onStatusChanged: if (status === Loader.Error)
+                Log.error("skin failed to instantiate: " + shellRoot.skinResolution.source);
+            onLoaded: {
+                item.session = Session;
+                item.sessions = Sessions;
+                item.requestPower.connect(shellRoot.power);
             }
         }
 
@@ -116,34 +95,32 @@ ShellRoot {
         }
     }
 
-    // Minimal inline controls; replaced by the skin's widget kit in Task 9.
-    component TextField_: Row {
-        property alias text: input.text
-        property alias echoMode: input.echoMode
-        property alias enabled: input.enabled
-        property string label: ""
-        signal accepted()
-        spacing: 8
-        Text { text: parent.label; width: 90 }
-        Rectangle {
-            width: 220; height: 22; color: "white"
-            border { width: 1; color: "#716F64" }
-            TextInput {
-                id: input
-                anchors.fill: parent
-                anchors.margins: 3
-                onAccepted: parent.parent.accepted()
-            }
-        }
+    // The last rung of the fallback chain. CoreFatal.qml is a PanelWindow in
+    // its own right (its own screen anchors and layer-shell namespace), so it
+    // is declared as a sibling here rather than nested inside `login` --
+    // nesting a PanelWindow inside another PanelWindow's item tree and giving
+    // it `anchors.fill: parent` does not work: PanelWindow's `anchors` object
+    // is the layer-shell edge-anchor API (booleans per screen edge), not
+    // QtQuick.Item's anchors, and QML rejects the unknown `fill` property at
+    // load time (confirmed with a standalone qs -p repro). Shown whenever the
+    // Loader failed to instantiate the resolved skin, or resolve() itself
+    // could not find any usable skin at all (reason "fatal" -- the built-in
+    // xp skin is broken too, so there is nowhere left to fall back to).
+    Screens.CoreFatal {
+        visible: skinLoader.status === Loader.Error
+            || shellRoot.skinResolution.reason === "fatal"
+        modelData: login.screen
+        reason: "No usable skin could be loaded."
     }
 
-    component Button_: Rectangle {
-        property alias text: label.text
-        signal clicked()
-        width: 80; height: 24
-        color: ma.pressed ? "#D6D2C2" : "#ECE9D8"
-        border { width: 1; color: "#716F64" }
-        Text { id: label; anchors.centerIn: parent }
-        MouseArea { id: ma; anchors.fill: parent; onClicked: parent.clicked() }
+    function power(action) {
+        var argv = action === "poweroff" ? ["systemctl", "poweroff"]
+                 : action === "reboot"   ? ["systemctl", "reboot"]
+                 : ["systemctl", "suspend"];
+        Log.info("power action: " + action);
+        powerProc.command = argv;
+        powerProc.running = true;
     }
+
+    Process { id: powerProc }
 }
