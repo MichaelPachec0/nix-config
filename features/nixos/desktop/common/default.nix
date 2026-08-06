@@ -63,9 +63,7 @@ in {
     };
     programs.firefox = {
       enable = true;
-      # package = pkgs.firefox;
       package = pkgs.latest.firefox-devedition-bin;
-      # package = pkgs.firefox-beta-bin;
 
       # pkgs.firefox-devedition-bin.overrideAttrs (let
       #   # NOTE: This is for 116.0b8.
@@ -80,7 +78,7 @@ in {
       # tridactyl = true;
       # };
       nativeMessagingHosts = {
-        packages = [pkgs.tridactyl-native];
+        packages = with pkgs; [tridactyl-native];
       };
     };
     nixpkgs.overlays = [];

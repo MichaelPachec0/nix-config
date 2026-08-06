@@ -9,5 +9,4 @@ scratchpad/
 logs/
 __pycache__
 
-# AFFiNE docs mirror: source of truth is AFFiNE; promote a doc deliberately with `git add -f`
 docs/

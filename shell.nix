@@ -38,7 +38,9 @@ in
           sops
           gnupg
           age
-          (pkgs.callPackage sops-nix {}).sops-import-keys-hook
+          # sops-install-secrets   sops-init-gpg-key   sops-pgp-hook
+          # sops-import-keys-hook  ssh-to-pgp          default = sops-init-gpg-key
+          # (pkgs.callPackage sops-nix {}).sops-import-keys-hook
           nixos-anywhere
           python3
         ]

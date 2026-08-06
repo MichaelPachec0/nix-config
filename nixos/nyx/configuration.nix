@@ -123,19 +123,10 @@ in {
     report-changes.enable = true;
     nixpkgs = {
       overlays = [
-        # (
-        #   final: prev: {
-        #     linux-firmware = pkgs.master.linux-firmware;
-        #   }
-        # )
       ];
       config = {
         allowUnfree = true;
         segger-jlink.acceptLicense = true;
-        # inputs.easy-tether.packages.${pkgs.system}.default
-        # permittedInsecurePackages = [
-        #   "openssl-1.1.1w"
-        # ];
       };
     };
     zramSwap = {
