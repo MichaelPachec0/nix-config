@@ -1,7 +1,7 @@
 # HM wiring for the Quickshell lock: the Nix-owned config seam (fail-open flag +
 # fallback image), the dev escape-hatch helper, and the watchdog. The QML/PAM
 # live elsewhere (task-bar/lock, features/nixos/auth/pam).
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, appRun, ... }:
 let
   # Single source of truth for the dev escape hatch (see the option below). Gates
   # the QML startup-escape (via config.json), the watchdog unit, and the Hyprland
@@ -10,7 +10,9 @@ let
 
   lockEscape = pkgs.writeShellApplication {
     name = "lock-escape";
-    runtimeInputs = [ pkgs.quickshell pkgs.procps pkgs.coreutils ];
+    # appRun so the relaunch resolves app-run hermetically rather than off
+    # whatever PATH the compositor happens to hand the keybind.
+    runtimeInputs = [ pkgs.quickshell pkgs.procps pkgs.coreutils appRun ];
     text = builtins.readFile ./quickshell/task-bar/lock/lock-escape.sh;
   };
 in {

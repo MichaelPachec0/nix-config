@@ -18,5 +18,12 @@ fi
 # `quickshell -c task-bar` command line is comm-truncation-proof.
 pkill -f 'quickshell -c task-bar' 2>/dev/null || true
 sleep 0.3
-QS_LOCK_ESCAPE=1 qs -c "$CFG" >/dev/null 2>&1 &
+# Same placement as the autostart hook (hyprland.nix): -s b puts the recovered
+# bar in background-graphical.slice, so it keeps the memory.low protection the
+# normally-started one gets (nixos/thanatos/memory.nix). Without app-run the
+# escape-path bar would be the one process left in the compositor's cgroup.
+# app2unit uses `systemd-run --scope`, which execs in place, so QS_LOCK_ESCAPE
+# is inherited by the scope -- the whole point of this relaunch. The scope name
+# carries a random suffix, so it cannot collide with a stale one.
+QS_LOCK_ESCAPE=1 app-run -s b -a quickshell qs -c "$CFG" >/dev/null 2>&1 &
 exit 0
