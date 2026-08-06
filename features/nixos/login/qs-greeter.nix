@@ -178,6 +178,44 @@ in {
 
     auth = {
       backoff = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = ''
+            Apply the delay/lockout escalation below (free/start/max) on
+            repeated auth failures. Off by default: a wrong password is
+            always immediately retryable, with no delay and no lockout, no
+            matter how many attempts are made. The original always-on
+            design tracked failures in a single counter shared across every
+            username, which turned out to be trivially bypassed by
+            alternating the attempted username between guesses -- each
+            login attempt with a different name reset the counter to zero,
+            so the lockout never engaged (reproduced 5/5 in testing). Left
+            off until a caller picks a mode below that actually matches
+            their threat model; see perUser.
+          '';
+        };
+        perUser = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = ''
+            When backoff is enabled, track failures and lockout per
+            attempted username instead of in one counter shared by every
+            name typed at the greeter. The shared counter (perUser = false,
+            the plan's original behavior, kept available for callers who
+            still want it) resets whenever the typed username changes, so
+            alternating between a real account and a throwaway name on
+            every attempt keeps the counter pinned near zero and defeats
+            the lockout entirely. perUser tracking keys failures and
+            blockedUntil to the username being attempted, so repeated
+            guesses against one account accumulate against that account no
+            matter what else is typed in between -- this is the mode that
+            actually resists the alternate-the-username bypass, at the
+            cost of a small amount of state kept per distinct username
+            seen. Off by default alongside enable; both need to be turned
+            on together to get a lockout that resists that bypass.
+          '';
+        };
         free = lib.mkOption {
           type = lib.types.ints.unsigned;
           default = 3;

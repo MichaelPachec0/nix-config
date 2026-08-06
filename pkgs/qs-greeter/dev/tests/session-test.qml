@@ -135,6 +135,19 @@ ShellRoot {
             check("infoNoRespond", mock.respondCount, 1);
         });
 
+        // --- submit() during the info-message window must be a no-op.
+        // promptLabel is still "Password:" here (stale, from before the
+        // info message), so gating submit() on promptLabel being non-empty
+        // would incorrectly let this through and call backend.respond()
+        // with nothing pending -- which real greetd/quickshell refuses
+        // with a qCCritical. _responsePending is what actually gates it. ---
+        action(function () {
+            var before = mock.respondCount;
+            Session.submit("should-not-send");
+            check("noRespondDuringInfoWindow", mock.respondCount, before);
+            check("stateUnchangedDuringInfoWindow", Session.state, "authenticating");
+        });
+
         // --- protocol error is distinct from an auth failure ---
         action(function () {
             Session.cancel();

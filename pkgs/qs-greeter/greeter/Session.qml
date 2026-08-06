@@ -22,30 +22,62 @@ Singleton {
     property bool waitingForDevice: false
     property int failures: 0
     property int blockedUntil: 0
+    // Set the instant a response-required message arrives, cleared the
+    // instant submit() sends an answer for it. This -- not promptLabel --
+    // is what submit() gates on: an info/error message (responseRequired
+    // false) leaves promptLabel holding the previous prompt's text, so
+    // gating on "promptLabel non-empty" would let a submit() land during
+    // that window and call backend.respond() with nothing pending, which
+    // quickshell refuses with a qCCritical.
+    property bool _responsePending: false
 
     // Tunables, set from the module via env.
     readonly property int backoffFree: parseInt(Quickshell.env("QSG_BACKOFF_FREE") || "3", 10)
     readonly property int backoffStart: parseInt(Quickshell.env("QSG_BACKOFF_START") || "1", 10)
     readonly property int backoffMax: parseInt(Quickshell.env("QSG_BACKOFF_MAX") || "10", 10)
     readonly property int idleTimeoutSec: parseInt(Quickshell.env("QSG_IDLE_TIMEOUT") || "60", 10)
+    // Backoff is off by default (see auth.backoff.enable/perUser in the Nix
+    // module): the original single-counter design reset on every username
+    // change, which alternating the attempted name between guesses defeats
+    // completely (reproduced 5/5 in review). perUser tracks failures and
+    // blockedUntil keyed to the attempted username instead of in one shared
+    // counter, which is what actually resists that bypass; global keeps the
+    // original bypassable behavior available for callers who still want it.
+    readonly property bool backoffEnabled: _envBool("QSG_BACKOFF_ENABLE")
+    readonly property bool backoffPerUser: _envBool("QSG_BACKOFF_PERUSER")
+    // Per-username failures/blockedUntil, used only when backoffPerUser is
+    // true. Absent (disabled) or malformed env values are treated as off.
+    property var _perUserFailures: ({})
+    property var _perUserBlockedUntil: ({})
+
+    function _envBool(name) {
+        var v = Quickshell.env(name);
+        return v === "1" || v === "true";
+    }
 
     signal launched()
 
     function begin(name) {
         if (!backend) { Log.error("no backend"); return; }
-        if (Date.now() / 1000 < blockedUntil) return;
+        // Assign the name first so a per-user blockedUntil check below (via
+        // onUserChanged, which loads that username's own counters) reflects
+        // the account actually being attempted, not whichever account was
+        // active before this call.
         root.user = name;
+        if (Date.now() / 1000 < root.blockedUntil) return;
         root.statusText = "";
         root.statusIsError = false;
         root.waitingForDevice = false;
         root.promptLabel = "";
+        root._responsePending = false;
         root._state = "authenticating";
         idleTimer.restart();
         backend.createSession(name);
     }
 
     function submit(text) {
-        if (_state !== "authenticating" || promptLabel === "") return;
+        if (_state !== "authenticating" || !_responsePending) return;
+        root._responsePending = false;
         silentTimer.restart();
         idleTimer.restart();
         backend.respond(text);
@@ -57,6 +89,7 @@ Singleton {
         if (backend && _state !== "idle") backend.cancelSession();
         root._state = "idle";
         root.promptLabel = "";
+        root._responsePending = false;
         root.waitingForDevice = false;
     }
 
@@ -118,9 +151,12 @@ Singleton {
             if (responseRequired) {
                 root.promptLabel = message;
                 root.promptSecret = !echoResponse;
+                root._responsePending = true;
             } else {
                 // Info/error only. Quickshell acknowledges these itself; calling
                 // respond() here would be refused and logged as critical.
+                // _responsePending is untouched -- greetd only ever has one
+                // message outstanding at a time, so it is already false here.
                 root.statusText = message;
                 root.statusIsError = error;
             }
@@ -134,12 +170,17 @@ Singleton {
             root.statusText = message;
             root.statusIsError = true;
             root.promptLabel = "";
+            root._responsePending = false;
             if (root.backend) root.backend.cancelSession();
-            if (root.failures > root.backoffFree) {
+            if (root.backoffEnabled && root.failures > root.backoffFree) {
                 var n = root.failures - root.backoffFree - 1;
                 var delay = Math.min(root.backoffStart * Math.pow(2, n), root.backoffMax);
                 root.blockedUntil = Math.floor(Date.now() / 1000 + delay);
                 Log.info("auth failure " + root.failures + ", blocked for " + delay + "s");
+            }
+            if (root.backoffEnabled && root.backoffPerUser) {
+                root._perUserFailures[root.user] = root.failures;
+                root._perUserBlockedUntil[root.user] = root.blockedUntil;
             }
         }
 
@@ -161,12 +202,35 @@ Singleton {
             Log.error("greetd error: " + message);
             root.statusText = message;
             root.statusIsError = true;
+            root._responsePending = false;
             if (root.backend && root._state !== "idle") root.backend.cancelSession();
             root._state = "idle";
         }
     }
 
-    // A successful username change resets the penalty: the backoff exists to
-    // slow a physical-console guesser, not to punish a typo in the user field.
-    onUserChanged: { root.failures = 0; root.blockedUntil = 0; }
+    // What a username change does to the failure/backoff state depends on
+    // the mode:
+    //   - disabled: backoff never applies regardless, but a stale
+    //     blockedUntil must never survive a name change.
+    //   - global (backoffEnabled && !backoffPerUser): the plan's original,
+    //     bypassable semantics -- one shared counter, wiped on every name
+    //     change. Kept available on purpose; see auth.backoff.perUser.
+    //   - perUser (backoffEnabled && backoffPerUser): swap in the new
+    //     username's own counters instead of wiping them, so guesses
+    //     against one account accumulate no matter what else was typed in
+    //     between.
+    onUserChanged: {
+        if (!root.backoffEnabled) {
+            root.failures = 0;
+            root.blockedUntil = 0;
+            return;
+        }
+        if (root.backoffPerUser) {
+            root.failures = root._perUserFailures[root.user] || 0;
+            root.blockedUntil = root._perUserBlockedUntil[root.user] || 0;
+        } else {
+            root.failures = 0;
+            root.blockedUntil = 0;
+        }
+    }
 }

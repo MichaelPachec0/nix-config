@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell.Io
 
 // Scripted stand-in for greetd. NEVER installed: pkgs/qs-greeter/default.nix
 // takes greeter/ as its src, so dev/ cannot reach a deployed system.
