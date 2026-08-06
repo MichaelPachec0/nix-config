@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import "xp-kit" as XpKit
+import "xp-kit/palettes" as XpPalettes
 import "xp-kit/screens" as XpScreens
 
 // Task 11: the XP "Shut Down Windows" modal (screens/ShutDownDialog.qml)
@@ -52,7 +53,16 @@ ShellRoot {
     }
 
     MockBackend { id: mock }
-    XpKit.Theme { id: theme }
+    // Same QSG_TEST_PALETTE seam as logon-dialog-test.qml (see its own
+    // comment): lets the runner drive Part 1's standalone ShutDownDialog
+    // fixture under both registered palettes. Parts 2/2b go through the
+    // REAL Skin.qml, which resolves its own theme from Settings.palette
+    // (see Skin.qml's `theme` property) -- those are covered separately,
+    // by pointing QSG_DEFAULTS at a skinSettings.xp.palette of "gruvbox".
+    XpKit.Theme { id: themeLuna }
+    XpPalettes.Gruvbox { id: themeGruvbox }
+    readonly property var theme:
+        Quickshell.env("QSG_TEST_PALETTE") === "gruvbox" ? themeGruvbox : themeLuna
 
     // --- Part 1 fixture: ShutDownDialog on its own. Nested one Item deep
     // under ShellRoot, not a direct child of it: a direct ShellRoot child's
@@ -73,7 +83,7 @@ ShellRoot {
         id: dlgHost
         XpScreens.ShutDownDialog {
             id: dlg
-            theme: theme
+            theme: root.theme
         }
     }
 

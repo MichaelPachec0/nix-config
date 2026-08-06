@@ -50,6 +50,24 @@ cat >"$tmp/defaults-picker-on.json" <<JSON
   "sessions": { "picker": true, "default": null } }
 JSON
 
+# Task 12: the same picker-on fixture, but with Settings' own palette set to
+# gruvbox -- used only for the skin-smoke-test.qml run below, the one run in
+# this file that actually goes through Skin.qml's real Settings.palette
+# resolution (logon-dialog-test.qml itself is handed a theme instance
+# directly -- see its own QSG_TEST_PALETTE comment -- so it does not need a
+# second defaults file at all).
+defaults_common_gruvbox='"skin": "xp",
+  "skins": { "xp": { "palettes": ["luna", "gruvbox"] } },
+  "skinSettings": { "xp": { "palette": "gruvbox" } },
+  "backdrop": { "kind": "color", "color": "#3A6EA5", "image": null, "fit": "cover" },
+  "optionsExpanded": false,
+  "rememberLastUser": true,
+  "branding": { "title": "Log On to Windows", "subtitle": "Microsoft Windows XP  Professional" }'
+cat >"$tmp/defaults-picker-on-gruvbox.json" <<JSON
+{ $defaults_common_gruvbox,
+  "sessions": { "picker": true, "default": null } }
+JSON
+
 cat >"$tmp/defaults-default-sway.json" <<JSON
 { $defaults_common,
   "sessions": { "picker": true, "default": "Sway (uwsm-managed)" } }
@@ -97,13 +115,26 @@ check_case() {
   cat "$outfile" >>"$all_out"
 }
 
-out1="$tmp/out1.log"
-run_qs "$out1" logon-dialog-test.qml \
-  QSG_DEFAULTS="$tmp/defaults-picker-on.json" \
-  QSG_USER_FILE="$tmp/no-such-user-file.json" \
-  QSG_SESSIONS="$tmp/sessions.json" \
-  QSG_STATE_FILE="$tmp/state-main.json"
-check_case "logon-dialog-test.qml (deep behavioral suite)" "LOGON-TEST" "$out1"
+# Task 12: the deep behavioral suite (52 assertions, none of them about
+# color) run once per registered palette -- QSG_TEST_PALETTE picks which
+# Theme instance logon-dialog-test.qml hands to the real LogonDialog.qml
+# (see that file's own comment). This is what proves the suite's ~50
+# assertions still hold when the palette underneath the exact same widget
+# tree is not Luna: label text, echo mode, row-height STABILITY (never
+# whether two DIFFERENT palettes produce the same row height -- that cross-
+# palette geometry comparison is palette-test.sh's job, not this file's),
+# session-combo ordering, Caps Lock balloon, blocked-countdown status line,
+# and every signal-wiring path Task 10 already covers.
+for palette in luna gruvbox; do
+  out1="$tmp/out1-$palette.log"
+  run_qs "$out1" logon-dialog-test.qml \
+    QSG_DEFAULTS="$tmp/defaults-picker-on.json" \
+    QSG_USER_FILE="$tmp/no-such-user-file.json" \
+    QSG_SESSIONS="$tmp/sessions.json" \
+    QSG_STATE_FILE="$tmp/state-main-$palette.json" \
+    QSG_TEST_PALETTE="$palette"
+  check_case "logon-dialog-test.qml (deep behavioral suite, palette=$palette)" "LOGON-TEST" "$out1"
+done
 
 out2="$tmp/out2.log"
 run_qs "$out2" logon-dialog-precedence-test.qml \
@@ -132,13 +163,21 @@ run_qs "$out4" logon-dialog-precedence-test.qml \
   QSG_TEST_PICKER_OFF=1
 check_case "precedence: Options is a no-op when the picker is disabled" "LOGON-PRECEDENCE-TEST" "$out4"
 
-out5="$tmp/out5.log"
-run_qs "$out5" skin-smoke-test.qml \
-  QSG_DEFAULTS="$tmp/defaults-picker-on.json" \
-  QSG_USER_FILE="$tmp/no-such-user-file.json" \
-  QSG_SESSIONS="$tmp/sessions.json" \
-  QSG_STATE_FILE="$tmp/state-smoke.json"
-check_case "skin-smoke-test.qml (Skin.qml/SkinFatal.qml construction)" "SKIN-SMOKE-TEST" "$out5"
+# Task 12: construction-only smoke check, once per palette. This run goes
+# through the REAL Skin.qml (unlike logon-dialog-test.qml above), so it is
+# what actually exercises Settings.palette -> Skin.qml's palette-resolution
+# `theme` property end to end for gruvbox, not just for luna.
+for palette in luna gruvbox; do
+  defaults="$tmp/defaults-picker-on.json"
+  [ "$palette" = "gruvbox" ] && defaults="$tmp/defaults-picker-on-gruvbox.json"
+  out5="$tmp/out5-$palette.log"
+  run_qs "$out5" skin-smoke-test.qml \
+    QSG_DEFAULTS="$defaults" \
+    QSG_USER_FILE="$tmp/no-such-user-file.json" \
+    QSG_SESSIONS="$tmp/sessions.json" \
+    QSG_STATE_FILE="$tmp/state-smoke-$palette.json"
+  check_case "skin-smoke-test.qml (Skin.qml/SkinFatal.qml construction, palette=$palette)" "SKIN-SMOKE-TEST" "$out5"
+done
 
 # --- disallowed-warning scan over the FULL combined output, same
 # allowlist/patterns as widgets-gallery.sh (see its header for the

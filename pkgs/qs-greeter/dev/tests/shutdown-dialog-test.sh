@@ -30,7 +30,15 @@ sessions_json='[
 ]'
 printf '%s' "$sessions_json" >"$tmp/sessions.json"
 
-cat >"$tmp/defaults.json" <<'JSON'
+# Task 12: one defaults file per registered palette. Parts 2/2b of
+# shutdown-dialog-test.qml go through the REAL Skin.qml, which resolves its
+# theme from Settings.palette -- only skinSettings.xp.palette differs
+# between the two files below, so those two parts are only actually
+# exercised under gruvbox by the second one. Part 1 (the standalone
+# ShutDownDialog fixture) does not read Settings at all -- it gets its
+# palette from QSG_TEST_PALETTE instead (see shutdown-dialog-test.qml's own
+# comment), passed alongside whichever of these two files is active.
+cat >"$tmp/defaults-luna.json" <<'JSON'
 { "skin": "xp",
   "skins": { "xp": { "palettes": ["luna", "gruvbox"] } },
   "skinSettings": { "xp": { "palette": "luna" } },
@@ -40,9 +48,18 @@ cat >"$tmp/defaults.json" <<'JSON'
   "rememberLastUser": true,
   "branding": { "title": "Log On to Windows", "subtitle": "Microsoft Windows XP  Professional" } }
 JSON
+cat >"$tmp/defaults-gruvbox.json" <<'JSON'
+{ "skin": "xp",
+  "skins": { "xp": { "palettes": ["luna", "gruvbox"] } },
+  "skinSettings": { "xp": { "palette": "gruvbox" } },
+  "backdrop": { "kind": "color", "color": "#3A6EA5", "image": null, "fit": "cover" },
+  "sessions": { "picker": false, "default": null },
+  "optionsExpanded": false,
+  "rememberLastUser": true,
+  "branding": { "title": "Log On to Windows", "subtitle": "Microsoft Windows XP  Professional" } }
+JSON
 
 overall=0
-out="$tmp/out.log"
 
 # qs -p does not reliably return control on Qt.quit() in this environment
 # (see settings-load.sh's own comment on the same quirk); timeout bounds
@@ -51,18 +68,25 @@ out="$tmp/out.log"
 # behavior -- Settings.qml/GreeterState.qml both already treat a missing
 # file as "not an error"; see logon-dialog-test.sh's own allowlist entry
 # for the FileView-level warning this produces regardless).
-env QML_XHR_ALLOW_FILE_READ=1 QT_QPA_PLATFORM=offscreen \
-  QSG_DEFAULTS="$tmp/defaults.json" \
-  QSG_USER_FILE="$tmp/no-such-user-file.json" \
-  QSG_SESSIONS="$tmp/sessions.json" \
-  QSG_STATE_FILE="$tmp/no-such-state-file.json" \
-  timeout 20 qs -p "$here/shutdown-dialog-test.qml" >"$out" 2>&1 || true
+for palette in luna gruvbox; do
+  out="$tmp/out-$palette.log"
+  env QML_XHR_ALLOW_FILE_READ=1 QT_QPA_PLATFORM=offscreen \
+    QSG_DEFAULTS="$tmp/defaults-$palette.json" \
+    QSG_USER_FILE="$tmp/no-such-user-file.json" \
+    QSG_SESSIONS="$tmp/sessions.json" \
+    QSG_STATE_FILE="$tmp/no-such-state-file-$palette.json" \
+    QSG_TEST_PALETTE="$palette" \
+    timeout 20 qs -p "$here/shutdown-dialog-test.qml" >"$out" 2>&1 || true
 
-grep SHUTDOWN-TEST "$out" || echo "(no SHUTDOWN-TEST line -- crash or syntax error)"
-if ! grep -qE "SHUTDOWN-TEST PASS [0-9]+/[0-9]+" "$out"; then
-  echo "FAIL: shutdown-dialog-test.qml did not report a clean PASS"
-  overall=1
-fi
+  echo "--- shutdown-dialog-test.qml (palette=$palette) ---"
+  grep SHUTDOWN-TEST "$out" || echo "(no SHUTDOWN-TEST line -- crash or syntax error)"
+  if ! grep -qE "SHUTDOWN-TEST PASS [0-9]+/[0-9]+" "$out"; then
+    echo "FAIL: shutdown-dialog-test.qml (palette=$palette) did not report a clean PASS"
+    overall=1
+  fi
+  cat "$out" >>"$tmp/all-out.log"
+done
+out="$tmp/all-out.log"
 
 # --- disallowed-warning scan, same allowlist/patterns as
 # logon-dialog-test.sh (see its own header for the story this guards

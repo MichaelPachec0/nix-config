@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import "xp-kit" as XpKit
+import "xp-kit/palettes" as XpPalettes
 import "xp-kit/screens" as XpScreens
 
 // Deep behavioral test for the XP logon dialog (Task 10), same queue/poll
@@ -45,11 +46,23 @@ ShellRoot {
     }
 
     MockBackend { id: mock }
-    XpKit.Theme { id: theme }
+    // Palette selection for this run: QSG_TEST_PALETTE lets the .sh runner
+    // drive this entire ~50-assertion behavioral suite under BOTH
+    // registered palettes (Task 12's requirement that the existing
+    // suites still pass under Gruvbox, not just Luna) without duplicating
+    // the suite into a second file. This suite drives LogonDialog.qml
+    // standalone -- theme is handed to it directly, exactly as before;
+    // it never goes through Settings/Skin.qml's own palette resolution
+    // (that resolution path is covered separately, at the Skin.qml level,
+    // by skin-smoke-test.qml and shutdown-dialog-test.qml's Part 2).
+    XpKit.Theme { id: themeLuna }
+    XpPalettes.Gruvbox { id: themeGruvbox }
+    readonly property var theme:
+        Quickshell.env("QSG_TEST_PALETTE") === "gruvbox" ? themeGruvbox : themeLuna
 
     XpScreens.LogonDialog {
         id: dlg
-        theme: theme
+        theme: root.theme
         session: Session
         sessions: Sessions
     }

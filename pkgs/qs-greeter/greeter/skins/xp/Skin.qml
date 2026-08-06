@@ -39,9 +39,10 @@ Item {
     anchors.fill: parent
 
     Palettes.Luna { id: lunaPalette }
-    // Gruvbox is Task 12; until then every registered palette name this
-    // skin's meta.json advertises maps to the one real palette it ships.
-    readonly property var _palettes: ({ luna: lunaPalette })
+    Palettes.Gruvbox { id: gruvboxPalette }
+    // Every registered palette name this skin's meta.json advertises
+    // (["luna", "gruvbox"]) maps to a real palette instance here.
+    readonly property var _palettes: ({ luna: lunaPalette, gruvbox: gruvboxPalette })
     // Settings here is a DIFFERENT singleton instance than the one
     // screens/LogonDialog.qml reads (per-directory registration -- see
     // that file's own note on this) -- harmless today only because this
@@ -50,7 +51,24 @@ Item {
     // computation shared between the two reads. Nothing enforces that
     // split; the same key read from both would risk observing two
     // different settle timings.
-    readonly property var theme: root._palettes[Settings.palette] || lunaPalette
+    //
+    // Settings.palette has already been validated against meta.json's
+    // declared list by SettingsMerge.js before it reaches here in
+    // production (unregistered names are dropped there -- see
+    // SettingsMerge.js's skinSettings handling), so this fallback should
+    // never fire from a real user-settings write. It exists for the two
+    // paths that skip that validation: a test driving Skin.qml directly
+    // (Settings/SettingsMerge.js validate the USER tier only, not
+    // defaults.json), and defense against _palettes and meta.json ever
+    // drifting out of sync. Falls back to Luna with a warning rather than
+    // silently rendering unstyled (a missing key would otherwise resolve
+    // every theme.* read to undefined).
+    readonly property var theme: {
+        var p = root._palettes[Settings.palette];
+        if (p) return p;
+        Log.warn("skins/xp: unknown palette '" + Settings.palette + "', falling back to luna");
+        return lunaPalette;
+    }
 
     // Sessions.ready starts false and settles asynchronously; treating an
     // empty-so-far list as fatal before it has ever settled would flash
