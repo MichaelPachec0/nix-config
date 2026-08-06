@@ -148,4 +148,26 @@ in {
   # hy3-project -- finds the same script.
   _module.args.appRun = appRun;
   home.packages = [appRun];
+
+  # Which terminal `app-run -T` opens.
+  #
+  # app2unit HARDCODES its terminal handler to xdg-terminal-exec (the store path
+  # is baked into the script as A2U__TERMINAL_HANDLER), and xdg-terminal-exec
+  # does not look at $TERMINAL at all -- it reads this file, and with no file it
+  # scans every TerminalEmulator desktop entry and takes the first one, which
+  # here is foot.desktop (alphabetically ahead of kitty.desktop, and foot is in
+  # the profile). Without this, a Terminal=true entry launched from rofi -- e.g.
+  # ncspot -- opens in foot rather than kitty, because rofi routes those through
+  # run-shell-command = app-run -T (see ./rofi.nix). Before app-run that path
+  # was rofi's own "{terminal} -e {cmd}", i.e. programs.rofi.terminal = kitty.
+  #
+  # This is the spec's own seam ($XDG_CONFIG_HOME/xdg-terminals.list, entry ids
+  # in descending order of preference), so it also fixes every OTHER
+  # xdg-terminal-exec caller, not just app-run. Keep it in step with the
+  # $TERMINAL-then-kitty fallback in the non-uwsm branch above and with
+  # programs.rofi.terminal.
+  xdg.configFile."xdg-terminals.list".text = ''
+    kitty.desktop
+    foot.desktop
+  '';
 }
