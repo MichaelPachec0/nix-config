@@ -199,6 +199,86 @@ ShellRoot {
         });
         action(function () { Session.cancel(); });
 
+        // --- Cancel: _cancel() clears the secret field, leaves the
+        // username field alone (cancel should not punish the user for a
+        // mistyped password), reaches Session.cancel() (proven via
+        // mock.cancelCount actually incrementing, not just that the
+        // method was called), returns state to idle, and does not wedge
+        // the dialog -- a fresh OK afterward must be able to start a new
+        // attempt and reach a prompt again. Invoked as dlg._cancel(), the
+        // exact function Keys.onEscapePressed delegates to (see the
+        // Enter/Escape block below for what that adds on top of this). ---
+        action(function () {
+            Session.cancel();
+            XpScreens.GreeterState.lastUser = "canceltestuser"; // seeds userField.text via its own binding
+            mock.loadScenario("happy");
+            Session.begin("canceltestuser");
+        });
+        wait("cancelPrompt", function () { return Session.promptLabel === "Password:"; }, 2000, function () {
+            dlg.testSetSecretText("typed-but-not-submitted");
+            check("secretPopulatedBeforeCancel", dlg.testSecretFieldText, "typed-but-not-submitted");
+            check("userFieldPopulatedBeforeCancel", dlg.testUserFieldText, "canceltestuser");
+        });
+        action(function () {
+            var cancelsBefore = mock.cancelCount;
+            dlg._cancel();
+            check("secretClearedByCancel", dlg.testSecretFieldText, "");
+            check("usernameNotClearedByCancel", dlg.testUserFieldText, "canceltestuser");
+            ok("cancelReachedTheSession", mock.cancelCount > cancelsBefore);
+            check("stateReturnsToIdleAfterCancel", Session.state, "idle");
+        });
+        action(function () {
+            dlg._ok(); // cancel must not wedge the dialog: a fresh OK starts a new attempt
+        });
+        wait("freshPromptAfterCancel", function () { return Session.promptLabel === "Password:" && Session.state === "authenticating"; }, 2000, function () {
+            check("cancelDoesNotWedgeTheDialog", Session.state, "authenticating");
+        });
+        action(function () { Session.cancel(); });
+
+        // --- Enter/Escape: Keys.onReturnPressed/Keys.onEscapePressed are
+        // one-line delegations to _ok()/_cancel() (both already covered
+        // above); this additionally proves the ATTACHED PROPERTY SIGNAL
+        // itself is wired to them, by invoking the signal directly
+        // (Keys.escapePressed/returnPressed are ordinary QML signals,
+        // callable like functions) rather than only re-testing _ok()/
+        // _cancel() under a different name. This is NOT a synthetic key
+        // event -- there is no synthetic-keyboard path under
+        // QT_QPA_PLATFORM=offscreen (the same limitation XpComboBox's own
+        // tests document, see widgets-gallery.qml) -- so it proves the
+        // wiring from the signal to the function, not that a real OS
+        // keypress reaches this Item through an actual compositor's focus
+        // chain. Whether Tab/click focus actually lands on this dialog in
+        // a live session is NOT covered here and needs the interactive
+        // pass. `null` is passed as the KeyEvent argument because neither
+        // handler reads it (both call a zero-argument function), and it
+        // is the one value that does not also log a spurious "Could not
+        // convert argument" warning (confirmed empirically: a plain {}
+        // does log one; calling with no argument at all throws
+        // "Insufficient arguments" instead of emitting anything). ---
+        action(function () {
+            Session.cancel();
+            mock.loadScenario("happy");
+            Session.begin("keytestuser");
+        });
+        wait("keyEscapePrompt", function () { return Session.promptLabel === "Password:"; }, 2000, function () {
+            var cancelsBefore = mock.cancelCount;
+            dlg.Keys.escapePressed(null);
+            check("escapeSignalReachesIdle", Session.state, "idle");
+            ok("escapeSignalReachedTheSession", mock.cancelCount > cancelsBefore);
+        });
+        action(function () {
+            mock.loadScenario("happy");
+            Session.begin("keytestuser2");
+        });
+        wait("keyReturnPrompt", function () { return Session.promptLabel === "Password:"; }, 2000, function () {
+            dlg.testSetSecretText("hunter2");
+            dlg.Keys.returnPressed(null);
+        });
+        wait("keyReturnLaunched", function () { return Session.state === "launched"; }, 2000, function () {
+            check("returnSignalReachesOkAndLaunches", Session.state, "launched");
+        });
+        action(function () { Session.cancel(); });
+
         // --- status line priority: blocked countdown > waiting-for-device
         // hint > plain Session.statusText, in that exact order ---
         action(function () {

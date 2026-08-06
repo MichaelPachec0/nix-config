@@ -36,6 +36,14 @@ Item {
     // Gruvbox is Task 12; until then every registered palette name this
     // skin's meta.json advertises maps to the one real palette it ships.
     readonly property var _palettes: ({ luna: lunaPalette })
+    // Settings here is a DIFFERENT singleton instance than the one
+    // screens/LogonDialog.qml reads (per-directory registration -- see
+    // that file's own note on this) -- harmless today only because this
+    // file reads Settings.palette and LogonDialog.qml reads
+    // Settings.config.sessions/branding, disjoint keys with no
+    // computation shared between the two reads. Nothing enforces that
+    // split; the same key read from both would risk observing two
+    // different settle timings.
     readonly property var theme: root._palettes[Settings.palette] || lunaPalette
 
     // Sessions.ready starts false and settles asynchronously; treating an

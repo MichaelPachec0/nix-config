@@ -18,7 +18,14 @@ import "../widgets" as Widgets
 // the local Settings.qml/CapsLock.qml/GreeterState.qml symlinks in this
 // directory -- Quickshell's singleton registration is per-directory, so a
 // bare reference from here needs its own link even though skins/xp/Skin.qml
-// already has one; NOT called "State" -- QtQuick already has a built-in
+// already has one. That also means Settings here is a DIFFERENT singleton
+// instance than the one Skin.qml reads for the palette: harmless today
+// only because this file reads Settings.config.sessions/branding and
+// Skin.qml reads Settings.palette, disjoint keys with no computation
+// shared between the two reads. Nothing enforces that split -- if a future
+// change reads the SAME config key from both directories, the two
+// instances can settle (finish loading) at different times and briefly
+// disagree. NOT called "State" -- QtQuick already has a built-in
 // `State` element, and a same-named singleton is silently shadowed by it
 // everywhere `import QtQuick` is in scope, i.e. everywhere. Confirmed the
 // hard way: `State.save()` resolved to QtQuick's State and threw "Property
@@ -248,6 +255,13 @@ Item {
         combo.currentIndex = idx;
         root._comboUserSet = true;
     }
+    // Sets secretField's text directly. Only exists so a test can put
+    // something in the field to then prove _cancel() actually clears it --
+    // secretField.text has no declarative binding of its own to break
+    // (unlike userField.text, bound to GreeterState.lastUser, which a test
+    // seeds through that binding instead so there is nothing for this
+    // function to need to do for that field).
+    function testSetSecretText(text) { secretField.text = text; }
 
     Item {
         id: content
