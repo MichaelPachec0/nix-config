@@ -119,6 +119,22 @@ in {
       description = "Only directory the greeter will load backdrop images from.";
     };
 
+    stateDir = lib.mkOption {
+      type = lib.types.str;
+      default = "/run/qs-greeter";
+      description = ''
+        Where the wrapper keeps its crash-loop counter and writes the
+        generated sessions.json that the greeter reads. Deliberately
+        tmpfs-backed (/run by default): the crash counter must survive
+        greetd restarting the compositor within one boot (that is the loop
+        being caught) but reset on reboot, since a reboot is a deliberate
+        retry. This is the single source for both QSG_STATE_DIR (read by
+        the wrapper) and QSG_SESSIONS (read by the greeter, derived as
+        stateDir + "/sessions.json") -- they used to be two independently
+        hardcoded literals that only agreed by coincidence.
+      '';
+    };
+
     group = lib.mkOption {
       type = lib.types.str;
       default = "qsgreeter";
@@ -264,13 +280,11 @@ in {
       "d ${cfg.logging.dir} 0750 greeter greeter - -"
       "f ${cfg.userFile} 0664 greeter ${cfg.group} - -"
       # State dir for the wrapper's crash counter and generated
-      # sessions.json (QSG_STATE_DIR, default /run/qs-greeter, matches
-      # Sessions.qml's own default QSG_SESSIONS path -- neither is
-      # overridden below, so this rule is the only place that default is
-      # spelled out). /run is root:root 0755, so without this the wrapper's
-      # own `mkdir -p "$state_dir"`, run as the unprivileged greeter user,
-      # would fail on every boot.
-      "d /run/qs-greeter 0750 greeter greeter - -"
+      # sessions.json -- see cfg.stateDir for why it's tmpfs-backed. /run is
+      # root:root 0755, so without this the wrapper's own
+      # `mkdir -p "$state_dir"`, run as the unprivileged greeter user, would
+      # fail on every boot.
+      "d ${cfg.stateDir} 0750 greeter greeter - -"
     ];
 
     environment.systemPackages = [cfg.package];
@@ -309,12 +323,15 @@ in {
     # or the wrapper script itself reads is set here from the matching Nix
     # option -- an unset QSG_* would silently fall back to its hardcoded
     # default in the script, which is a default nobody using this module
-    # actually chose. QSG_SESSIONS_DIR, QSG_STATE_DIR/QSG_SESSIONS, and
-    # QSG_TTY_HINT are deliberately left unset: none of them has a matching
-    # Nix option (session dir is the real wayland-sessions dir; state dir
-    # and the TTY hint are plumbing shared verbatim between this script and
-    # Sessions.qml/CoreFatal.qml's own hardcoded defaults), so there is
-    # nothing here to override.
+    # actually chose. QSG_SESSIONS_DIR and QSG_TTY_HINT are deliberately
+    # left unset: neither has a matching Nix option (session dir is the
+    # real wayland-sessions dir; the TTY hint is plumbing shared verbatim
+    # between this script and CoreFatal.qml's own hardcoded default), so
+    # there is nothing here to override. QSG_STATE_DIR and QSG_SESSIONS
+    # both come from cfg.stateDir below -- one option, one source, so the
+    # wrapper (which writes sessions.json under QSG_STATE_DIR) and the
+    # greeter (which reads it from QSG_SESSIONS) can never independently
+    # drift onto different paths.
     programs.qsGreeter.wrapperPackage = let
       bool01 = b: if b then "1" else "0";
 
@@ -347,6 +364,8 @@ in {
           export QSG_DEFAULTS=/etc/qs-greeter/defaults.json
           export QSG_USER_FILE=${lib.escapeShellArg cfg.userFile}
           export QSG_BACKDROP_DIR=${lib.escapeShellArg cfg.backdropDir}
+          export QSG_STATE_DIR=${lib.escapeShellArg cfg.stateDir}
+          export QSG_SESSIONS=${lib.escapeShellArg "${cfg.stateDir}/sessions.json"}
           export QSG_PRECEDENCE=${lib.escapeShellArg cfg.precedence}
           export QSG_LOG_LEVEL=${toString cfg.logging.level}
           export QSG_LOG_ARGS=${lib.escapeShellArg logArgs}
