@@ -228,7 +228,12 @@ in {
         };
       };
 
-      firewall = {
+      firewall = let
+        kdeconnect = {
+          from = 1714;
+          to = 1764;
+        };
+      in {
         enable = true;
         allowedTCPPorts = [
           # rquickshare
@@ -250,6 +255,7 @@ in {
             from = 8888;
             to = 8889;
           }
+          kdeconnect
         ];
         allowedUDPPortRanges = [
           # scream
@@ -267,6 +273,7 @@ in {
             from = 9999;
             to = 9999;
           }
+          kdeconnect
         ];
       };
       nameservers = ["1.1.1.1" "8.8.8.8" "9.9.9.9"];
@@ -1255,7 +1262,7 @@ in {
     };
 
     # TODO: move this to its own file
-    programs.kdeconnect.enable = false;
+    programs.kdeconnect.enable = true;
     programs.captive-browser = {
       enable = true;
       # WARN: this needs to be changed per wifi interface

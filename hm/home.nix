@@ -651,6 +651,10 @@ in {
   };
   # Nicely reload system units when changing configs
   programs.glide-browser.enable = true;
+  services.kdeconnect = {
+    enable = true;
+    indicator = true;
+  };
   systemd.user.startServices = "sd-switch";
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
   home.stateVersion = "23.11";
