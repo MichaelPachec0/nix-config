@@ -238,6 +238,21 @@ in {
         description = "Seconds before an idle authenticating session cancels.";
       };
     };
+
+    wrapperPackage = lib.mkOption {
+      type = lib.types.nullOr lib.types.package;
+      internal = true;
+      default = null;
+      description = ''
+        Computed, not set by callers: the fully-configured launcher greetd
+        execs to start the greeter (every QSG_* env var below baked in, then
+        exec cfg.package.wrapper). Read by features/nixos/login/default.nix
+        to build the /etc/greetd/sway-config exec line when backend =
+        "qsGreeter". null whenever the module is disabled -- the regreet
+        branch never forces this, so an inactive qs-greeter never needs a
+        wrapper built.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -248,8 +263,111 @@ in {
       "d ${cfg.backdropDir} 0775 greeter ${cfg.group} - -"
       "d ${cfg.logging.dir} 0750 greeter greeter - -"
       "f ${cfg.userFile} 0664 greeter ${cfg.group} - -"
+      # State dir for the wrapper's crash counter and generated
+      # sessions.json (QSG_STATE_DIR, default /run/qs-greeter, matches
+      # Sessions.qml's own default QSG_SESSIONS path -- neither is
+      # overridden below, so this rule is the only place that default is
+      # spelled out). /run is root:root 0755, so without this the wrapper's
+      # own `mkdir -p "$state_dir"`, run as the unprivileged greeter user,
+      # would fail on every boot.
+      "d /run/qs-greeter 0750 greeter greeter - -"
     ];
 
     environment.systemPackages = [cfg.package];
+
+    # Cosmetic defaults, rendered from the Nix tier. Valid by construction --
+    # it comes from toJSON, not from a parser -- which is why the merge code
+    # can treat it as trusted and fall back to it unconditionally.
+    environment.etc."qs-greeter/defaults.json".text = builtins.toJSON {
+      skin = cfg.skin;
+      skins =
+        {xp = {palettes = ["luna" "gruvbox"];};}
+        // lib.listToAttrs (map (p: {
+            name = p.pname or p.name;
+            value = {palettes = ["default"];};
+          })
+          cfg.skins.extra);
+      skinSettings = cfg.skinSettings;
+      backdrop = {
+        inherit (cfg.backdrop) kind color fit;
+        image = cfg.backdrop.image;
+      };
+      sessions = {
+        picker = cfg.sessions.picker;
+        default = null;
+      };
+      optionsExpanded = false;
+      rememberLastUser = true;
+      branding = {
+        title = "Log On to Windows";
+        subtitle = "Microsoft Windows XP  Professional";
+      };
+    };
+
+    # The launcher that actually gets exec'd by greetd's sway session. Every
+    # QSG_* variable the QML (Settings.qml/Log.qml/Session.qml/Sessions.qml)
+    # or the wrapper script itself reads is set here from the matching Nix
+    # option -- an unset QSG_* would silently fall back to its hardcoded
+    # default in the script, which is a default nobody using this module
+    # actually chose. QSG_SESSIONS_DIR, QSG_STATE_DIR/QSG_SESSIONS, and
+    # QSG_TTY_HINT are deliberately left unset: none of them has a matching
+    # Nix option (session dir is the real wayland-sessions dir; state dir
+    # and the TTY hint are plumbing shared verbatim between this script and
+    # Sessions.qml/CoreFatal.qml's own hardcoded defaults), so there is
+    # nothing here to override.
+    programs.qsGreeter.wrapperPackage = let
+      bool01 = b: if b then "1" else "0";
+
+      # qs's own verbosity/rule/timestamp flags, distinct from QSG_LOG_LEVEL
+      # (which gates our Log.qml singleton's own console.log calls, not
+      # Quickshell's engine diagnostics).
+      logArgs = lib.concatStringsSep " " (
+        lib.optional (cfg.logging.level >= 1) (
+          if cfg.logging.level >= 2 then "-vv" else "-v"
+        )
+        ++ lib.optional (cfg.logging.rules != "")
+        "--log-rules ${lib.escapeShellArg cfg.logging.rules}"
+        ++ lib.optional cfg.logging.timestamps "--log-times"
+      );
+
+      # cfg.sessions.shells is a list of packages (e.g. pkgs.zsh); turn each
+      # into the same {name, argv, env} shape sessions-parse.sh emits for
+      # graphical sessions, so Sessions.qml never has to special-case them.
+      shellSessions = map (shell: {
+        name = shell.pname or shell.name;
+        argv = [(lib.getExe shell)];
+        env = {};
+      }) cfg.sessions.shells;
+    in
+      pkgs.writeShellApplication {
+        name = "qs-greeter-launch";
+        runtimeInputs = [cfg.package.wrapper];
+        text = ''
+          export QSG_CONFIG=${cfg.package}/greeter
+          export QSG_DEFAULTS=/etc/qs-greeter/defaults.json
+          export QSG_USER_FILE=${lib.escapeShellArg cfg.userFile}
+          export QSG_BACKDROP_DIR=${lib.escapeShellArg cfg.backdropDir}
+          export QSG_PRECEDENCE=${lib.escapeShellArg cfg.precedence}
+          export QSG_LOG_LEVEL=${toString cfg.logging.level}
+          export QSG_LOG_ARGS=${lib.escapeShellArg logArgs}
+          export QSG_LOG_DIR=${lib.escapeShellArg cfg.logging.dir}
+          export QSG_LOG_KEEP=${toString cfg.logging.keep}
+          export QSG_JOURNAL=${bool01 cfg.logging.journal}
+          export QSG_SHOW_LOG=${bool01 cfg.logging.showOnFallback}
+          export QSG_THRESHOLD=${toString cfg.crashLoop.threshold}
+          export QSG_WINDOW=${toString cfg.crashLoop.window}
+          export QSG_FILTER=${lib.escapeShellArg cfg.sessions.filter}
+          export QSG_EXTRA_JSON=${lib.escapeShellArg (builtins.toJSON cfg.sessions.extra)}
+          export QSG_SHELLS_JSON=${lib.escapeShellArg (builtins.toJSON shellSessions)}
+          export QSG_BACKOFF_ENABLE=${bool01 cfg.auth.backoff.enable}
+          export QSG_BACKOFF_PERUSER=${bool01 cfg.auth.backoff.perUser}
+          export QSG_BACKOFF_FREE=${toString cfg.auth.backoff.free}
+          export QSG_BACKOFF_START=${toString cfg.auth.backoff.start}
+          export QSG_BACKOFF_MAX=${toString cfg.auth.backoff.max}
+          export QSG_IDLE_TIMEOUT=${toString cfg.auth.idleTimeout}
+          export QSG_PARSE=${lib.getExe cfg.package.sessionsParse}
+          exec qs-greeter-run
+        '';
+      };
   };
 }

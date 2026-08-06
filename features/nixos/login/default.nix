@@ -288,7 +288,11 @@ in {
         -b 'Reboot' 'systemctl reboot'
 
       # TODO: make sure to clean up the log file here.
-      exec "${lib.getExe cfg.programs.regreet.package} -L trace -l /tmp/regreet_$(date +%Y-%m-%d_%H:%M).log;  swaymsg exit"
+      ${
+        if cfgGL.backend == "qsGreeter"
+        then ''exec "${lib.getExe config.programs.qsGreeter.wrapperPackage}; swaymsg exit"''
+        else ''exec "${lib.getExe cfg.programs.regreet.package} -L trace -l /tmp/regreet_$(date +%Y-%m-%d_%H:%M).log;  swaymsg exit"''
+      }
       include /etc/sway/config.d/*
     '';
 
