@@ -1,0 +1,1 @@
+../../../../greeter/skins/xp/screens/ShutDownDialog.qml

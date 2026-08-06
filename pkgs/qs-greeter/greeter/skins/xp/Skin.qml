@@ -21,14 +21,20 @@ Item {
     // by Settings.palette rather than the caller.
     readonly property var palette: root.theme
     signal requestPower(string action)
-    // Distinct from requestPower(action): requestPower fires an
-    // already-decided systemctl action (poweroff/reboot/else-suspend --
-    // see shell.qml's power()), and there is no "show me the choices"
-    // case among those three. This fires the intent to see them; Task 11's
-    // ShutDownDialog is the thing that turns an actual user pick into a
-    // requestPower() call. Until Task 11 lands this is an inert seam: the
-    // screens below emit it, nothing here consumes it yet.
-    signal shutDownRequested()
+
+    // True while screens/ShutDownDialog.qml (the "Shut Down Windows"
+    // modal) is up. Both LogonDialog.qml and SkinFatal.qml can ask for it
+    // -- each fires its own `shutDownRequested()` when its "Shut Down..."
+    // button is clicked -- but this file is the only thing that actually
+    // owns the flag, so exactly one modal with one dimmed background ever
+    // exists regardless of which screen asked. requestPower(action) above
+    // is this skin's ONLY way out to shell.qml's power(): there is no
+    // separate "shut down requested" signal exposed from this file at
+    // all -- the choice made inside ShutDownDialog.qml is turned into a
+    // requestPower(action) call right here, not re-exposed as its own
+    // public seam the way it was (deliberately, as a placeholder) before
+    // this dialog existed.
+    property bool shutDownVisible: false
 
     anchors.fill: parent
 
@@ -59,22 +65,69 @@ Item {
     readonly property bool _fatal: !root._greetdAvailable
         || (!!root.sessions && root.sessions.ready && !root._hasSessions)
 
+    // enabled/opacity both driven by shutDownVisible: enabled (a plain
+    // QtQuick Item property, cascading to every descendant's input
+    // regardless of that descendant's own local enabled state) is what
+    // actually makes this screen non-interactive while the modal is up --
+    // opacity is the visible half of "dimmed", enabled is the part that
+    // makes it true rather than cosmetic. theme.faceDark-driven dimming
+    // lives on the overlay Rectangle below, not here, so both screens
+    // share exactly one dimming treatment.
     Screens.LogonDialog {
+        id: logonDialog
         anchors.centerIn: parent
         visible: !root._fatal
+        enabled: !root.shutDownVisible
+        opacity: root.shutDownVisible ? 0.5 : 1.0
         session: root.session
         sessions: root.sessions
         theme: root.theme
-        onShutDownRequested: root.shutDownRequested()
+        onShutDownRequested: root.shutDownVisible = true
     }
 
     Screens.SkinFatal {
+        id: skinFatalScreen
         anchors.centerIn: parent
         visible: root._fatal
+        enabled: !root.shutDownVisible
+        opacity: root.shutDownVisible ? 0.5 : 1.0
         theme: root.theme
         reason: !root._greetdAvailable
             ? "The login service is not available."
             : "No sessions are available to log into."
-        onShutDownRequested: root.shutDownRequested()
+        onShutDownRequested: root.shutDownVisible = true
     }
+
+    // Dims the whole skin area behind the modal (not just whichever of the
+    // two screens above happens to be visible), in one paint-order slot
+    // above both of them and below the modal itself. theme.faceDark, not a
+    // literal -- this file is covered by the same "no literal colors"
+    // rule as every other file under skins/.
+    Rectangle {
+        anchors.fill: parent
+        visible: root.shutDownVisible
+        color: root.theme.faceDark
+        opacity: 0.35
+    }
+
+    Screens.ShutDownDialog {
+        id: shutDownDialog
+        anchors.centerIn: parent
+        visible: root.shutDownVisible
+        theme: root.theme
+        onCancelled: root.shutDownVisible = false
+        onRequestPower: function (action) {
+            root.shutDownVisible = false;
+            root.requestPower(action);
+        }
+    }
+
+    // --- exposed for headless testing only (same convention as
+    // LogonDialog.qml's testXxx aliases): lets a test reach the exact
+    // child instances this file wires up, to drive the real
+    // shutDownRequested() seam and observe enabled/opacity/visible on the
+    // real objects, rather than re-deriving them from shutDownVisible. ---
+    readonly property alias testLogonDialog: logonDialog
+    readonly property alias testSkinFatal: skinFatalScreen
+    readonly property alias testShutDownDialog: shutDownDialog
 }

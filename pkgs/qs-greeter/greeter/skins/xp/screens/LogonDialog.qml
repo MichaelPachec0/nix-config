@@ -40,8 +40,14 @@ Item {
     // Distinct from Skin.qml's requestPower(action): that fires an
     // already-decided systemctl action, and its three cases (poweroff,
     // reboot, else-suspend) have no "show me the choices" branch. This
-    // fires the intent; Task 11's ShutDownDialog is the thing that turns a
-    // user's actual pick into a requestPower() call.
+    // fires only the intent to see the choices; Skin.qml owns
+    // `shutDownVisible` and, on this signal, shows screens/
+    // ShutDownDialog.qml -- the thing that turns a user's actual pick into
+    // a requestPower() call. This file never talks to ShutDownDialog.qml
+    // directly (it does not import screens/ -- there is nothing there to
+    // import from itself), which keeps the same session/sessions-only
+    // privilege boundary this file's own header describes: the dialog that
+    // can reboot or power off the machine is entirely Skin.qml's concern.
     signal shutDownRequested()
 
     implicitWidth: dialog.implicitWidth
