@@ -102,7 +102,12 @@ Lib.Card {
                 }
                 onRightClicked: {
                     root.closeRequested();
-                    Quickshell.execDetached(["nm-connection-editor"]);
+                    // app-run, not the bare binary: execDetached forks from
+                    // quickshell, which under uwsm lives in the shell's own
+                    // scope -- a bare launch would tie the editor's lifetime to
+                    // the bar. app-run gives it its own scope under
+                    // app-graphical.slice, and degrades to exec without uwsm.
+                    Quickshell.execDetached(["app-run", "nm-connection-editor"]);
                 }
             }
             Lib.ExpressiveButton {
@@ -115,7 +120,7 @@ Lib.Card {
                 onClicked: Quickshell.execDetached(["bluetoothctl", "power", btOn.value ? "off" : "on"])
                 onRightClicked: {
                     root.closeRequested();
-                    Quickshell.execDetached(["blueman-manager"]);
+                    Quickshell.execDetached(["app-run", "blueman-manager"]);
                 }
             }
             Lib.ExpressiveButton {
