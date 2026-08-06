@@ -177,6 +177,35 @@ in {
     ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="mq-deadline"
   '';
 
+  # Build width. Both of these defaulted to `auto`, which on this 8C/16T part
+  # means max-jobs=16 and cores=0 ("use everything") -- i.e. up to 16 concurrent
+  # derivations each free to spawn 16 compiler threads, ~256 runnable tasks.
+  #
+  # SCHED_IDLE above rations CPU *time* correctly at that width, but two costs it
+  # cannot touch scale with the thread count and are what the desktop actually
+  # feels:
+  #   - L3 is 2x4M, one per 4-core CCX (cpu0-7 and cpu8-15 -- verify with
+  #     cache/index3/shared_cpu_list, NOT lscpu's aggregate "8 MiB"), and Zen 2
+  #     does not share it across CCXs. A 256-thread compile refills both from
+  #     DRAM continuously, so an interactive thread pays a cold cache on every
+  #     wakeup no matter how promptly it is scheduled.
+  #   - use-cgroups is off, so all builders share the ONE MemoryHigh above rather
+  #     than getting a budget each: at 16 jobs that is ~512M apiece before the
+  #     cgroup starts forcing reclaim, versus ~2G at 4. Reclaim here compresses
+  #     into zram on these same cores, so overshoot is paid in desktop latency.
+  #     (Unverified as the trigger -- nix-daemon.service's memory.events `high`
+  #     counter during a build is what would confirm it; the counter resets when
+  #     the daemon restarts, which a rebuild does.)
+  #
+  # 4x4 keeps the product at 16, one runnable thread per hardware thread: builds
+  # can still occupy the entire CPU, they just cannot oversubscribe it. Note this
+  # is a *default*, not a ceiling -- `cores` only sets $NIX_BUILD_CORES, so a
+  # derivation that hardcodes its own -j still overshoots.
+  nix.settings = {
+    max-jobs = 4;
+    cores = 4;
+  };
+
   # Protected side. The desktop working set spans THREE branches under
   # user@.service and all of them have to be granted, because memory.low is
   # only effective where every ancestor also grants it -- systemd derives a
