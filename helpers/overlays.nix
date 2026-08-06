@@ -322,6 +322,11 @@
             # workspaces -- lets hy3-layout `show --wk N/--wk all` read a
             # non-active workspace's tree without switching to it.
             ../overlays/0004-feat-hy3-dump-tree-workspace-scope.patch
+            # hy3:ungroup [node|group] / hl.plugin.hy3.ungroup -- lift the
+            # focused node out of its group (node, the default) or dissolve the
+            # whole group into its parent (group). Upstream has neither:
+            # makegroup's `toggle` only collapses a single-CHILD group.
+            ../overlays/0005-feat-hy3-ungroup-dispatcher.patch
           ];
       });
       firefox-devedition-bin = inputs.firefox.packages.${prev.stdenv.hostPlatform.system}.firefox-devedition-bin.override {

@@ -452,6 +452,14 @@
           d = "Group w/ neighbour -> horizontal";
         }
         {
+          k = "d";
+          d = "Ungroup this window only";
+        }
+        {
+          k = "Shift+d";
+          d = "Dissolve group (children move up)";
+        }
+        {
           k = "Esc / Return";
           d = "Cancel";
         }
@@ -1241,6 +1249,8 @@ in {
         #   bare h/j/k/l    -> vertical  (stack the pair)
         #   SHIFT  h/j/k/l  -> tabbed    (tab the pair together)
         #   CONTROL h/j/k/l -> horizontal (side-by-side, nested as a unit)
+        # `d` / `SHIFT d` are the inverse (hy3 0005 patch): ungroup just the
+        # focused node, or dissolve the whole group.
         # Each bind performs the group then exits the submap; Escape/Return and
         # the Super+Shift+g leader also exit. Waybar's hyprland/submap module
         # surfaces "groupwith mode" while active (parity with sway's resize mode).
@@ -1268,6 +1278,21 @@ in {
           (submapBind "CONTROL + j" (gw "d" "h") {})
           (submapBind "CONTROL + k" (gw "u" "h") {})
           (submapBind "CONTROL + l" (gw "r" "h") {})
+          # Ungroup: the inverse of the group binds above (hy3 0005 patch).
+          #   d       -> lift ONLY the focused node out of its group; the group
+          #              and its remaining children survive one level down --
+          #              ((a - b - c) | d) focused on a becomes ((b - c) | a | d).
+          #   Shift+d -> dissolve the WHOLE group; every child takes the group's
+          #              slot in the parent -- ((a - b) | c) becomes (a | b | c).
+          # Neither is expressible upstream: make_group's `toggle` only collapses
+          # a group that is already down to a SINGLE child.
+          # A group sitting directly on the workspace has no level above it (the
+          # hy3 root node holds exactly one child, drawn at full size), so there
+          # `d` first wraps the group in a split of its pre-tab orientation --
+          # tabs(a,b,c) focused on a becomes (tabs(b,c) | a) -- and Shift+d just
+          # untabs in place. Both are no-ops on a plain top-level split.
+          (submapBind "d" ''function() hl.plugin.hy3.ungroup("node")(); hl.dispatch(hl.dsp.submap("reset")) end'' {})
+          (submapBind "SHIFT + d" ''function() hl.plugin.hy3.ungroup("group")(); hl.dispatch(hl.dsp.submap("reset")) end'' {})
           # Exits.
           (submapBind "escape" "hl.dsp.submap(\"reset\")" {})
           (submapBind "return" "hl.dsp.submap(\"reset\")" {})
