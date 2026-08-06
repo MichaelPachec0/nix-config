@@ -1,0 +1,4 @@
+[Desktop Entry]
+Name=Sway (uwsm-managed)
+Exec=uwsm start -S -F /nix/store/fake-sway/bin/sway
+Type=Application
