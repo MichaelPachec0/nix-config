@@ -685,11 +685,12 @@ in {
                   then 3
                   else 2;
                 new_optimizations = true;
-                xray = config.gpu.strong.enable;
-                popups = true;
-                vibrancy = 0.6;
-                brightness = 0.7;
-                contrast = 1.75;
+                xray = true;
+                popups = false;
+                vibrancy = 0.35;
+                vibrancy_darkness = 0.4;
+                brightness = 0.75;
+                contrast = 1.5;
               };
 
               shadow = {
