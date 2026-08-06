@@ -289,6 +289,18 @@ in {
 
     environment.systemPackages = [cfg.package];
 
+    # wine-fonts, not corefonts: corefonts ships Tahoma regular only, while
+    # wine-fonts carries tahoma.ttf, tahomabd.ttf (XP uses bold for labels)
+    # and marlett.ttf, whose glyphs are the combo arrow and window marks --
+    # vector, so they stay crisp at any DPI with no bitmap assets. This
+    # nixpkgs pin has no top-level `wine-fonts` attribute (only wine's own
+    # font derivation, exposed as `winePackages.fonts` / `wine64Packages.fonts`
+    # / `wineWow64Packages.fonts` -- all three are the same package, since
+    # fonts.nix does not depend on which wine build called it); confirmed by
+    # building it and finding tahoma.ttf, tahomabd.ttf and marlett.ttf under
+    # its share/fonts/truetype/.
+    fonts.packages = [pkgs.winePackages.fonts];
+
     # Cosmetic defaults, rendered from the Nix tier. Valid by construction --
     # it comes from toJSON, not from a parser -- which is why the merge code
     # can treat it as trusted and fall back to it unconditionally.
