@@ -243,6 +243,12 @@ in {
         wantedBy = ["graphical-session.target"];
         wants = ["graphical-session.target"];
         after = ["graphical-session.target"];
+        # Without partOf, stopping the session leaves this running; the agent
+        # then exits 1 on the broken Wayland pipe and Restart=on-failure fires
+        # a second later, whose wants= drags graphical-session{,-pre}.target
+        # back up. uwsm then refuses to start ("A compositor or
+        # graphical-session* target is already active!").
+        partOf = ["graphical-session.target"];
         serviceConfig = {
           Type = "simple";
           ExecStart = "${pkgs.polkit_gnome}/libexec/polkit-gnome-authentication-agent-1";
