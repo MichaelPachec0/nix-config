@@ -472,8 +472,7 @@
   # and the default browser is injected as an absolute path. runtimeInputs pin
   # only what the script itself runs; kitty/rofi/the browser are launched by the
   # compositor/session (rofi stays the themed one resolved from PATH, and
-  # --browser overrides the injected default). See
-  # docs/superpowers/plans/2026-06-21-hy3-project-dispatcher-notes.md.
+  # --browser overrides the injected default).
   hy3ProjectScript = pkgs.writeShellApplication {
     name = "hy3-project";
     runtimeInputs = [pkgs.jq pkgs.coreutils pkgs.findutils pkgs.latest.hyprland];
@@ -501,8 +500,7 @@
   # fronts them with app-run to get them out of the compositor's cgroup, the
   # same way hy3-project.sh does). Wrapped via
   # writeShellApplication (python3 on the .py) rather than writePython3Bin to
-  # skip the build-time flake8 gate. See
-  # docs/superpowers/specs/2026-06-22-hy3-layout-design.md.
+  # skip the build-time flake8 gate.
   hy3LayoutScript = pkgs.writeShellApplication {
     name = "hy3-layout";
     runtimeInputs = [pkgs.python3 pkgs.latest.hyprland];
@@ -517,8 +515,7 @@
   # hy3-layout-tui: Textual TUI over the engine. Needs the third-party `textual`
   # dep (so python3.withPackages, not the stdlib wrapper) and all four modules
   # importable together -- assemble them into one store dir and run the entry
-  # from there so `import hy3_layout*` resolves via sys.path[0]. See
-  # docs/superpowers/specs/2026-06-22-hy3-layout-tui-design.md.
+  # from there so `import hy3_layout*` resolves via sys.path[0].
   hy3LayoutTuiSrc = pkgs.runCommand "hy3-layout-tui-src" {} ''
     mkdir -p "$out"
     cp ${./hy3_layout.py}           "$out/hy3_layout.py"

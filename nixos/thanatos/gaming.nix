@@ -1,6 +1,5 @@
 # Thanatos-only gaming layer. Imported by ./amd.nix. Nothing here touches the
 # shared nyx/configuration.nix (nyx + aphrodite are unaffected).
-# See docs/superpowers/specs/2026-07-14-thanatos-gog-gaming-design.md.
 {
   inputs,
   lib,

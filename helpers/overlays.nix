@@ -224,7 +224,6 @@
           # set, so the grab is torn down with isSessionLocked() still false.
           # Still unfixed on main (SessionLock.cpp:198 is unchanged) and the
           # patch still applies there, so this one survives a future bump.
-          # See docs/hyprland-popup-lock-crash.
           ../overlays/hyprland-popup-sessionlock-crash.patch
           # Same crash family, different site: a screencopy
           # (ext-image-copy-capture) create_frame that lands after its output
@@ -236,7 +235,6 @@
           # ("render: always render in normal transform", #15714), which is not
           # on the 0.56.x branch. The patch therefore does NOT apply past
           # 0.56.x -- DROP it, do not rebase it, when leaving this series.
-          # See docs/hyprland-screencopy-dead-output-crash.
           ../overlays/hyprland-screencopy-dead-output-crash.patch
         ];
     });
@@ -280,7 +278,6 @@
     # 28771c7. Patched at the TOP-LEVEL `quickshell` so the raw `pkgs.quickshell`
     # uses (swayidle.nix, quickshell-lock.nix) and the HM module's own
     # overrideAttrs (features/hm/wayland/quickshell.nix) all stack on the fix.
-    # See docs/quickshell-pam-invalid-free.
     quickshell = prev.quickshell.overrideAttrs (old: {
       patches = (old.patches or []) ++ [../overlays/quickshell-pam-conversation-invalid-free.patch];
     });

@@ -189,7 +189,7 @@
 
     overlays = import ./helpers/overlays.nix {inherit inputs;};
     # Single source of truth for per-user HM module lists, shared with the
-    # integrated NixOS path (features/nixos/home). See docs/hm-nixos-integration.md.
+    # integrated NixOS path (features/nixos/home).
     homeModules = import ./helpers/home.nix {inherit inputs;};
     thanatosSharedModules =
       overlays.unstable.nixosDesktop

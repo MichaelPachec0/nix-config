@@ -4,8 +4,7 @@
   # config,
   pkgs,
   # true for `home-manager switch`; false when integrated as a NixOS module
-  # (useGlobalPkgs), where the system owns nixpkgs/nix config. See
-  # docs/hm-nixos-integration.md.
+  # (useGlobalPkgs), where the system owns nixpkgs/nix config.
   standalone ? true,
   ...
 }: let

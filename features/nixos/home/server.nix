@@ -4,7 +4,6 @@
 # home as part of the system. desktop = false -> no hyprland/nixneovim and no
 # overlay hoist (sysadmin.nix references only plain nixpkgs). The standalone path
 # keeps working (e.g. `home-manager switch --flake .#sysadmin-kore`).
-# See docs/hm-nixos-integration.md.
 {lib, ...}: {
   imports = [./stable.nix];
   local.hm = {

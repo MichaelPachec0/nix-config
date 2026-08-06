@@ -13,8 +13,7 @@
   # latest one atomically as a world-readable regular file that the RyzenSmuStats
   # provider polls.
   # Checked python source: mypy --strict + unittest run at build time; a type
-  # error or failing test fails the build. See
-  # docs/superpowers/specs/2026-07-05-thinkfan-ryzen-smu-fan-control-design.md.
+  # error or failing test fails the build.
   ryzenSmuBridgeSrc = pkgs.runCommand "ryzen-smu-bridge-src" {
     nativeBuildInputs = [pkgs.python3 pkgs.mypy];
   } ''
@@ -121,7 +120,6 @@
   # us_cadet layout compiled but produced XF86Tools on those keys). This single
   # dir feeds BOTH Hyprland (XKB_CONFIG_ROOT) and the TTY console (ckbcomp) via
   # services.xserver.xkb.dir below. Verified with `xkbcli compile-keymap`.
-  # See docs/superpowers/specs/2026-07-10-cadet-paren-brace-wm-chords-design.md
   cadetXkbSymbols = pkgs.writeText "xkb-cadet-symbols" ''
     partial xkb_symbols "parens" {
         key <FK13> { [ parenleft  ] };
