@@ -24,9 +24,16 @@ Singleton {
     // dev/fixtures/skins instead of the real skins/ tree, so the "broken"
     // fixture is reachable at all. It is gated on a marker file
     // (dev/fixtures/skins/dev-only-marker) that ships only inside dev/,
-    // which is never copied into the installed package (see default.nix) --
-    // so even if this env var ended up set on a deployed system, it stays
-    // inert unless the target directory also carries that exact marker. The
+    // which is never copied into the installed package (see default.nix).
+    // This is an accident guard, not a security boundary: it stops a stray
+    // or accidentally-inherited QSG_SKIN_ROOT from doing anything on a
+    // deployed system, because the production skins/ tree never carries
+    // the marker. It does NOT stop a capable attacker -- anyone with
+    // enough access to set an env var on the greeter's own process could
+    // just as easily create the marker file too, at which point this gate
+    // offers nothing extra. The actual barrier against arbitrary QML
+    // execution is the skin-name validation in _validName()/_load() below,
+    // which resolve() applies no matter where root_ ends up pointing. The
     // real launcher (qs-greeter.nix wrapperPackage) never sets this var.
     readonly property string _envRoot: Quickshell.env("QSG_SKIN_ROOT") || ""
     readonly property bool _envRootTrusted: root._envRoot !== ""
@@ -37,6 +44,23 @@ Singleton {
     function provides(meta, capability) {
         return !!meta && Array.isArray(meta.provides)
             && meta.provides.indexOf(capability) >= 0;
+    }
+
+    // A skin name is an identifier, not a path: lowercase letters, digits,
+    // hyphen, underscore, bounded length. An allow-list on shape rather
+    // than a deny-list of known-bad sequences, because a deny-list only
+    // stops the traversal patterns someone thought to block ("..", a
+    // leading "/") and misses the rest -- a URL scheme ("file:", "qrc:"),
+    // an embedded null byte, a bare "~", an over-long string. This is what
+    // actually keeps _load() from ever constructing a path outside skins/,
+    // independent of any caller: SettingsMerge.js already checks a
+    // requested skin name against the Nix-built registry before it can
+    // reach resolve(), but that is a second, independent barrier, not a
+    // substitute for this one. A future caller that forgets the registry
+    // check (programs.qsGreeter.skins.extra is exactly the shape of caller
+    // that could) must not be able to walk a skin name into a path escape.
+    function _validName(name) {
+        return typeof name === "string" && /^[a-z0-9_-]{1,32}$/.test(name);
     }
 
     // Reads a small file synchronously. Quickshell disables XMLHttpRequest's
@@ -69,13 +93,19 @@ Singleton {
         return text;
     }
 
-    // { status: "ok", source, meta } | { status: "unknown" | "invalid" }.
-    // "unknown" is no meta.json at that path at all (typo, unregistered
-    // name); "invalid" is a meta.json that exists but cannot be trusted --
-    // unparseable, or missing the "logon" capability every skin must
-    // provide to be usable as the login surface. Both fall back, but only
-    // "invalid" is a bug in a registered skin worth logging loudly.
+    // { status: "ok", source, meta }
+    // | { status: "unknown" | "invalid" | "malformed" }.
+    // "malformed" is a name that fails _validName() -- rejected before any
+    // path is built from it, so it can never reach root.root_ + "/" + name.
+    // "unknown" is a well-formed name with no meta.json at that path
+    // (typo, unregistered name); "invalid" is a meta.json that exists but
+    // cannot be trusted -- unparseable, or missing the "logon" capability
+    // every skin must provide to be usable as the login surface. All three
+    // fall back, but "invalid" and "malformed" are each a bug (in a
+    // registered skin, or in whatever produced the name) worth logging
+    // loudly; "unknown" is ordinary typo/unregistered-name noise.
     function _load(name) {
+        if (!root._validName(name)) return { status: "malformed" };
         var dir = root.root_ + "/" + name;
         var text = root._readTextBlocking(dir + "/meta.json");
         if (text === null) return { status: "unknown" };
@@ -99,8 +129,19 @@ Singleton {
         if (wanted.status === "ok")
             return { source: wanted.source, meta: wanted.meta, reason: "ok" };
 
-        Log.warn("skin '" + name + "' " + wanted.status
-            + ", falling back to " + root.builtin);
+        if (wanted.status === "malformed") {
+            // Not a typo -- a name that fails the shape check at all is a
+            // sign something upstream is wrong (or hostile), so this is
+            // logged as an error, not the routine warning an unregistered
+            // name gets. The rejected name is logged as-is: it is already
+            // known not to be a path (that is what "malformed" means), so
+            // there is nothing here for it to traverse into.
+            Log.error("skin name '" + name + "' rejected (not a valid "
+                + "identifier), falling back to " + root.builtin);
+        } else {
+            Log.warn("skin '" + name + "' " + wanted.status
+                + ", falling back to " + root.builtin);
+        }
 
         if (name === root.builtin) {
             // The built-in itself failed; there is nowhere left to fall to.

@@ -2,10 +2,10 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 
-// Last rung of the skin fallback chain. Deliberately uses no widget, no
-// palette, and no font beyond the default: it must be unbreakable by whatever
-// broke the skin. Not yet wired into shell.qml -- the fallback chain that
-// selects this screen is built in a later task alongside the skin loader.
+// Last rung of the skin fallback chain, wired in by shell.qml as a sibling
+// of the login window. Deliberately built from plain QML types only -- no
+// widget kit, no palette, no font beyond the default -- so that whatever
+// broke the skin cannot break this screen as well.
 PanelWindow {
     id: root
     required property var modelData
