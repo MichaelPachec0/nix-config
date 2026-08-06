@@ -3,7 +3,11 @@
 # skins/xp/widgets/ reads colors only through the theme object it is
 # handed, never a literal color. This is what makes a palette swap
 # (Task 12's Gruvbox, swapped in for Luna) a single-object substitution
-# instead of a hunt through widget code.
+# instead of a hunt through widget code. Task 10 extends the same rule to
+# skins/xp/screens/ (LogonDialog.qml, SkinFatal.qml) and to Skin.qml
+# itself, which assemble the widgets into the actual dialog -- the rule
+# does not stop applying just because a file composes widgets instead of
+# being one.
 #
 # Checks four literal color forms, not just 6-digit hex:
 #   1. #rrggbb   (the original check)
@@ -29,15 +33,22 @@ set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 widgets_dir="$root/greeter/skins/xp/widgets"
+screens_dir="$root/greeter/skins/xp/screens"
+skin_file="$root/greeter/skins/xp/Skin.qml"
+# Theme.qml (the one file this skin is allowed to hardcode colors in) and
+# palettes/ (Luna.qml today, Gruvbox in Task 12) are deliberately NOT in
+# this list -- they are the actual palette definitions, not consumers of
+# one, and grepping them would just flag the rule's own implementation.
+targets=("$widgets_dir" "$screens_dir" "$skin_file")
 
 overall=0
 
 check() {
   local label="$1" pattern="$2"
   local hits
-  hits="$(grep -rnE "$pattern" "$widgets_dir" || true)"
+  hits="$(grep -rnE "$pattern" "${targets[@]}" || true)"
   if [ -n "$hits" ]; then
-    echo "FAIL: $label found under $widgets_dir"
+    echo "FAIL: $label found under skins/xp (widgets/, screens/, or Skin.qml)"
     echo "$hits"
     overall=1
   fi
@@ -54,7 +65,7 @@ named_colors='red|blue|green|yellow|orange|purple|pink|black|white|gray|grey|cya
 check "common named-color string literals" "\"($named_colors)\""
 
 if [ "$overall" -eq 0 ]; then
-  echo "no-literal-colors PASS: no literal colors under $widgets_dir"
+  echo "no-literal-colors PASS: no literal colors under ${targets[*]}"
 fi
 
 exit "$overall"

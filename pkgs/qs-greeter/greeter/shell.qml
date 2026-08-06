@@ -36,30 +36,6 @@ ShellRoot {
         Screens.Backdrop {}
     }
 
-    // Latches true the first time the walking-skeleton auto-launch actually
-    // fires, so launch() is called at most once per shell lifetime no matter
-    // how many times _maybeLaunch() is re-entered (Session state settling,
-    // Sessions finishing its load, or both in either order). Without this,
-    // a stray re-entry (e.g. Session cycling back through "ready") would call
-    // backend.launch() a second time on top of an already-launching session.
-    property bool _autoLaunched: false
-
-    // Ready to launch requires BOTH Session having reached "ready" (greetd's
-    // side is done) AND Sessions having settled (the wrapper's sessions.json
-    // FileView has loaded or failed -- see Sessions.qml). Gating on Session
-    // state alone races: if greetd reaches "ready" before the session list
-    // has loaded, Sessions.list is still its initial empty array and this
-    // would silently no-op forever, since onStateChanged only re-fires on
-    // Session's own state changes, never on Sessions arriving later.
-    function _maybeLaunch() {
-        if (shellRoot._autoLaunched) return;
-        if (Session.state !== "ready") return;
-        if (!Sessions.ready) return;
-        if (Sessions.list.length === 0) return;
-        shellRoot._autoLaunched = true;
-        Session.launch(Sessions.list[0]);
-    }
-
     PanelWindow {
         id: login
         screen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
@@ -81,17 +57,6 @@ ShellRoot {
                 item.sessions = Sessions;
                 item.requestPower.connect(shellRoot.power);
             }
-        }
-
-        // Ready -> launch the first session. Task 10 adds the picker.
-        Connections {
-            target: Session
-            function onStateChanged() { shellRoot._maybeLaunch(); }
-        }
-
-        Connections {
-            target: Sessions
-            function onReadyChanged() { shellRoot._maybeLaunch(); }
         }
     }
 

@@ -1,0 +1,302 @@
+import QtQuick
+import Quickshell
+import "xp-kit" as XpKit
+import "xp-kit/screens" as XpScreens
+
+// Deep behavioral test for the XP logon dialog (Task 10), same queue/poll
+// style as session-test.qml (see its header for why: a fixed millisecond
+// delay is exactly the kind of race Task 5's FileView fix eliminated, so
+// every step polls for the transition it depends on rather than guessing a
+// delay). Session, Sessions, Settings, GreeterState, CapsLock, MockBackend
+// and scenarios/ are all same-directory symlinks to the real greeter/dev
+// singletons and fixtures (see this directory's other *-test.qml files for
+// the same technique) -- this drives the REAL LogonDialog.qml, reached
+// through the xp-kit/ mirror (the same technique widgets-gallery.qml uses
+// to reach the widget kit), against the REAL Session state machine. Nothing
+// here is a stand-in for either.
+//
+// QSG_DEFAULTS/QSG_SESSIONS/QSG_STATE_FILE point at fixtures the runner
+// (logon-dialog-test.sh) builds in a tmp dir: three sessions with a shell
+// last, and sessions.picker: true so the Options row is reachable.
+// logon-dialog-precedence-test.qml covers the picker-off gate and the
+// Settings-default-vs-GreeterState.lastSession precedence, which both need
+// DIFFERENT global Settings/GreeterState fixtures than this file uses --
+// Settings and GreeterState are singletons, so only one fixture combination
+// can be live per process. This file also reaches CapsLock/GreeterState
+// through the XpScreens-qualified import rather than bare where it needs
+// to observe the SAME instance LogonDialog.qml uses internally -- see the
+// comment where those first appear below for why a bare reference from
+// this file's own directory is not that instance.
+ShellRoot {
+    id: root
+    property int pass: 0
+    property int total: 0
+    property var queue: []
+
+    function check(name, got, want) {
+        total++;
+        if (got === want) pass++;
+        else console.log("LOGON-TEST CASE FAIL: " + name + " got=" + JSON.stringify(got) + " want=" + JSON.stringify(want));
+    }
+    function ok(name, cond) {
+        total++;
+        if (cond) pass++;
+        else console.log("LOGON-TEST CASE FAIL: " + name);
+    }
+
+    MockBackend { id: mock }
+    XpKit.Theme { id: theme }
+
+    XpScreens.LogonDialog {
+        id: dlg
+        theme: theme
+        session: Session
+        sessions: Sessions
+    }
+
+    property real fixedUserRow: 0
+    property real fixedSecretRow: 0
+
+    function action(fn) { queue.push(["action", fn]); }
+    function wait(label, predicateFn, timeoutMs, thenFn) {
+        queue.push(["wait", label, predicateFn, timeoutMs, thenFn]);
+    }
+    function drain() {
+        if (queue.length === 0) {
+            console.log("LOGON-TEST " + (pass === total ? "PASS" : "FAIL") + " " + pass + "/" + total);
+            Qt.quit();
+            return;
+        }
+        var head = queue.shift();
+        if (head[0] === "action") {
+            head[1]();
+            root.drain();
+        } else {
+            _pollUntil(head[1], head[2], head[3], head[4]);
+        }
+    }
+    function _pollUntil(label, predicateFn, timeoutMs, thenFn) {
+        var start = Date.now();
+        var t = Qt.createQmlObject('import QtQuick; Timer { interval: 20; repeat: true }', root);
+        t.triggered.connect(function () {
+            if (predicateFn()) {
+                t.stop(); t.destroy();
+                thenFn();
+                root.drain();
+            } else if (Date.now() - start > timeoutMs) {
+                t.stop(); t.destroy();
+                check(label + "Timeout", "timed-out-after-" + timeoutMs + "ms", "condition-met");
+                thenFn();
+                root.drain();
+            }
+        });
+        t.start();
+    }
+
+    Component.onCompleted: {
+        Session.backend = mock;
+
+        // --- baseline: banner/field rows have a real, fixed height before
+        // anything happens; every later check re-confirms it hasn't moved.
+        // Also the ONLY place this suite checks the FALLBACK label text
+        // (idle, no live prompt) -- every other "Password:" check below
+        // happens mid-authentication, where the value comes from
+        // session.promptLabel (the scenario's own text), not this
+        // fallback branch, so none of them would catch a mutation to the
+        // fallback string itself. ---
+        action(function () {
+            root.fixedUserRow = dlg.testUserRowHeight;
+            root.fixedSecretRow = dlg.testSecretRowHeight;
+            ok("userRowHasRealHeight", root.fixedUserRow > 0);
+            ok("secretRowHasRealHeight", root.fixedSecretRow > 0);
+            check("fallbackLabelIsPasswordWhenIdle", dlg.testSecretFieldLabel, "Password:");
+        });
+
+        // --- the active field is chrome: it tracks whatever PAM last
+        // asked for, not a hardcoded "Password:". Proven with a prompt
+        // that is NOT "Password:", so a hardcoded label would fail this.
+        // Session._state is poked directly (not begin()) to isolate the
+        // label/echo BINDING from the rest of the state machine, which
+        // the scenario-driven blocks below already exercise. ---
+        action(function () {
+            Session.cancel();
+            Session._state = "authenticating";
+            Session.promptLabel = "Enter PIN:";
+            Session.promptSecret = false;
+            check("labelTracksArbitraryPamPrompt", dlg.testSecretFieldLabel, "Enter PIN:");
+            check("echoFollowsPromptSecretFalse", dlg.testSecretFieldEchoMode, TextInput.Normal);
+            Session.promptSecret = true;
+            check("echoFollowsPromptSecretTrue", dlg.testSecretFieldEchoMode, TextInput.Password);
+            check("rowsUnchangedByArbitraryPrompt", dlg.testSecretRowHeight, root.fixedSecretRow);
+            Session._state = "idle";
+            Session.promptLabel = "";
+        });
+
+        // --- happy path end to end, through the real scenario/MockBackend
+        // machinery this time: label reads back "Password:" because THAT
+        // is what the scenario actually prompted for, not because it is
+        // hardcoded (the block above already proved it is not) ---
+        action(function () {
+            mock.loadScenario("happy");
+            Session.begin("michael");
+            check("userFieldDisabledWhileAuthenticating", dlg.testUserFieldEnabled, false);
+        });
+        wait("happyPrompt", function () { return Session.promptLabel === "Password:"; }, 2000, function () {
+            check("labelFollowsRealPrompt", dlg.testSecretFieldLabel, "Password:");
+            check("echoFollowsRealPromptSecret", dlg.testSecretFieldEchoMode, TextInput.Password);
+            check("rowsUnchangedDuringAuth", dlg.testUserRowHeight, root.fixedUserRow);
+            Session.submit("hunter2");
+        });
+        // The dialog's own onStateChanged handler launches synchronously
+        // the instant Session reaches "ready" (see LogonDialog.qml's
+        // _launchSelected()), so "ready" is never independently observable
+        // here -- by the time this poll's next tick runs, MockBackend's
+        // inert launch() has already fired and Session is "launched".
+        wait("happyLaunched", function () { return Session.state === "launched"; }, 2000, function () {
+            check("reachedLaunched", Session.state, "launched");
+            check("rowsUnchangedAfterLaunch", dlg.testUserRowHeight, root.fixedUserRow);
+        });
+
+        // --- wrong password: a failure surfaces the message box with the
+        // exact canned text, clears the secret field, and does not move
+        // the fixed rows ---
+        action(function () {
+            Session.cancel();
+            mock.loadScenario("wrong-password");
+            Session.begin("michael");
+        });
+        wait("wrongPrompt", function () { return Session.promptLabel === "Password:"; }, 2000, function () {
+            Session.submit("nope");
+        });
+        wait("wrongFailed", function () { return Session.state === "failed"; }, 2000, function () {
+            check("messageBoxShownOnFailure", dlg.testMsgBoxVisible, true);
+            check("messageBoxCannedText", dlg.testMsgBoxText,
+                "The system could not log you on. Make sure your User name and password are correct.");
+            check("secretFieldClearedOnFailure", dlg.testSecretFieldText, "");
+            check("rowsUnchangedOnFailure", dlg.testUserRowHeight, root.fixedUserRow);
+        });
+
+        // --- info message (touch-2fa): renders as status text, does NOT
+        // create a third input, and is never responded to a second time ---
+        action(function () {
+            Session.cancel();
+            mock.loadScenario("touch-2fa");
+            Session.begin("michael");
+        });
+        wait("touchPrompt", function () { return Session.promptLabel === "Password:"; }, 2000, function () {
+            Session.submit("hunter2");
+        });
+        wait("touchInfoArrived", function () { return Session.statusText === "Please touch the device"; }, 2500, function () {
+            check("infoRendersAsStatusLine", dlg.statusLineText, "Please touch the device");
+            check("infoDidNotChangeActiveLabel", dlg.testSecretFieldLabel, "Password:");
+            check("infoDidNotTriggerASecondRespond", mock.respondCount, 1);
+            check("rowsUnchangedByInfoMessage", dlg.testUserRowHeight, root.fixedUserRow);
+        });
+        action(function () {
+            var before = mock.respondCount;
+            dlg._ok(); // OK during the info window must not double-respond
+            check("okDuringInfoWindowIsANoOp", mock.respondCount, before);
+        });
+        action(function () { Session.cancel(); });
+
+        // --- status line priority: blocked countdown > waiting-for-device
+        // hint > plain Session.statusText, in that exact order ---
+        action(function () {
+            Session.blockedUntil = 0;
+            Session.waitingForDevice = false;
+            Session.statusText = "";
+        });
+        action(function () {
+            Session.waitingForDevice = true;
+        });
+        wait("waitingHintShown", function () { return dlg.statusLineText === "Waiting for your security key..."; }, 500, function () {
+            check("waitingHintExactText", dlg.statusLineText, "Waiting for your security key...");
+        });
+        action(function () {
+            Session.blockedUntil = Math.floor(Date.now() / 1000) + 2;
+        });
+        wait("blockRecognized", function () { return dlg.blocked === true; }, 1000, function () {
+            ok("blockedBeatsWaitingHint", dlg.statusLineText.indexOf("Too many attempts") === 0);
+            check("okDisabledWhileBlocked", dlg.testOkEnabled, false);
+        });
+        wait("blockClears", function () { return dlg.blocked === false; }, 5000, function () {
+            check("okReenabledAfterBlockExpires", dlg.testOkEnabled, true);
+            check("fallsBackToWaitingHintOnceUnblocked", dlg.statusLineText, "Waiting for your security key...");
+        });
+        action(function () {
+            Session.waitingForDevice = false;
+            Session.statusText = "plain backend status";
+            check("plainStatusTextWhenNothingElsePending", dlg.statusLineText, "plain backend status");
+            Session.statusText = "";
+        });
+
+        // --- Caps Lock balloon ---
+        // Poked via XpScreens.CapsLock (not the bare CapsLock this file
+        // also has its own local symlink for), because Quickshell's
+        // per-directory singleton registration mints an INDEPENDENT
+        // instance per directory even when the symlinks resolve to the
+        // same real file underneath -- confirmed empirically (a two-
+        // directory repro: writing a shared singleton's property from one
+        // directory's own bare reference left the other directory's own
+        // bare reference completely unaffected). Bare `CapsLock` from
+        // this file would poke THIS file's own instance, not the one
+        // LogonDialog.qml (loaded through the xp-kit/screens/ mirror)
+        // actually reads from; `XpScreens.CapsLock` reaches into that
+        // same imported module and gets the identical instance
+        // LogonDialog.qml itself sees. session/sessions sidestep this
+        // entirely because they are passed to `dlg` as PROPS (an actual
+        // object reference, not a fresh per-directory lookup) -- which is
+        // exactly why the contract injects those two instead of letting
+        // the skin import Session/Sessions directly.
+        action(function () {
+            check("balloonHiddenWithoutCapsLock", dlg.testCapsBalloonVisible, false);
+            XpScreens.CapsLock.on = true;
+            check("balloonShownWithCapsLock", dlg.testCapsBalloonVisible, true);
+            XpScreens.CapsLock.on = false;
+            check("balloonHidesAgain", dlg.testCapsBalloonVisible, false);
+        });
+
+        // --- session combo: lists Sessions entries in order (shells last,
+        // per wrapper/sessions-parse.sh), preselects the first entry when
+        // no Settings default or GreeterState.lastSession applies, and
+        // Options only reveals it because this fixture's sessions.picker
+        // is true (the false case is logon-dialog-precedence-test.qml,
+        // which needs its own Settings fixture). Settings.ready is read
+        // via XpScreens.Settings for the same cross-directory-instance
+        // reason as CapsLock above; Sessions.ready is read via the bare
+        // Sessions singleton because THAT one is fine -- it is the exact
+        // object passed into `dlg.sessions` as a prop above. ---
+        wait("sessionsSettled", function () { return Sessions.ready === true && XpScreens.Settings.ready === true; }, 2000, function () {
+            check("comboListsEverySession", dlg.testComboModel.length, 3);
+            check("comboOrderMatchesSessionsList", dlg.testComboModel[0], "Hyprland (uwsm-managed)");
+            check("comboShellsLast", dlg.testComboModel[dlg.testComboModel.length - 1], "zsh (console)");
+            check("preselectsFirstEntryAbsentAnyDefault", dlg.testComboCurrentName, "Hyprland (uwsm-managed)");
+            check("optionsInitiallyCollapsed", dlg.optionsExpanded, false);
+            check("comboHiddenInitially", dlg.testComboVisible, false);
+            dlg.toggleOptions();
+            check("optionsExpandsWhenPickerEnabled", dlg.optionsExpanded, true);
+            check("comboVisibleAfterToggle", dlg.testComboVisible, true);
+        });
+
+        // --- explicit combo selection beats every default, and reaching
+        // "ready" launches exactly that entry (GreeterState is written
+        // first). GreeterState read via XpScreens for the same
+        // cross-directory-instance reason as CapsLock above. ---
+        action(function () {
+            Session.cancel();
+            dlg.testSelectSessionByName("Sway (uwsm-managed)");
+            check("explicitSelectionReflectedImmediately", dlg.testComboCurrentName, "Sway (uwsm-managed)");
+            mock.loadScenario("happy");
+            Session.begin("secondlogin");
+        });
+        wait("selectPrompt", function () { return Session.promptLabel === "Password:"; }, 2000, function () {
+            Session.submit("hunter2");
+        });
+        wait("selectLaunched", function () { return Session.state === "launched"; }, 2000, function () {
+            check("explicitSelectionWinsAtLaunch", XpScreens.GreeterState.lastSession, "Sway (uwsm-managed)");
+            check("lastUserWrittenBeforeLaunch", XpScreens.GreeterState.lastUser, "secondlogin");
+        });
+
+        drain();
+    }
+}
