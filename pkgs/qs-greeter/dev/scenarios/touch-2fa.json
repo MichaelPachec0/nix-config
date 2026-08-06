@@ -1,0 +1,7 @@
+{ "name": "touch-2fa",
+  "steps": [
+    { "after": 50, "authMessage": { "message": "Password:", "error": false,
+      "responseRequired": true, "echoResponse": false } },
+    { "onRespond": 1, "after": 80, "authMessage": { "message": "Please touch the device",
+      "error": false, "responseRequired": false, "echoResponse": false } },
+    { "after": 1500, "readyToLaunch": true } ] }
