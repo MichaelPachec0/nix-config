@@ -455,6 +455,7 @@ in {
       slack
       slack-term
       neovide
+      playground.freebuff
     ];
     # systemd.user.units."dunst" = {wantedBy = ["hyprland-session.target"];};
     systemd.services = {
