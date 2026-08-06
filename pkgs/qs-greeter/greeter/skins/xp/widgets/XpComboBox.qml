@@ -133,7 +133,7 @@ Item {
         y: box.height
         z: 1000
         width: root.width
-        height: Math.min(list.contentHeight, theme.controlHeight * 8)
+        height: Math.min(list.contentHeight, theme.controlHeight * theme.comboVisibleRows)
         color: theme.fieldBg
         border.width: 1
         border.color: theme.fieldBorder

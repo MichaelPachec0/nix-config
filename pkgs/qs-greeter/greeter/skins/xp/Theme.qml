@@ -49,4 +49,18 @@ QtObject {
     property bool useGradients: true
     property bool useRoundedButtons: true
     property bool pulseDefaultButton: true
+
+    // chrome behavior
+    //
+    // The boundary this file draws, so it does not get relitigated per
+    // widget in a future task: a palette controls color, typography, and
+    // chrome BEHAVIOR (does the default button pulse, how fast, how many
+    // rows a popup shows before it scrolls) -- anything a skin variant
+    // might plausibly want to dial differently. Per-widget default
+    // GEOMETRY (a dialog defaulting to 420px wide, a balloon body to
+    // 220px) is a widget default, not a palette concern -- a palette
+    // recolors, it does not relayout -- and stays a literal in the widget
+    // that owns it.
+    property int pulseDuration: 900
+    property int comboVisibleRows: 8
 }

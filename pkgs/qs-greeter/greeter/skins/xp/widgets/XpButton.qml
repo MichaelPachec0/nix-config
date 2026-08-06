@@ -42,14 +42,15 @@ Item {
             GradientStop { position: 1.0; color: ma.pressed ? theme.buttonFrom : theme.buttonTo }
         }
 
-        // XP's default button pulses its glow. Behind a theme switch so a
-        // palette can opt out without touching widget code.
+        // XP's default button pulses its glow. Behind a theme switch, and
+        // at a theme-driven speed, so a palette can opt out or retime it
+        // without touching widget code.
         SequentialAnimation on border.color {
             id: pulseAnim
             running: root.isDefault && theme.pulseDefaultButton && root.enabled
             loops: Animation.Infinite
-            ColorAnimation { to: theme.defaultGlowTo; duration: 900 }
-            ColorAnimation { to: theme.defaultGlowFrom; duration: 900 }
+            ColorAnimation { to: theme.defaultGlowTo; duration: theme.pulseDuration }
+            ColorAnimation { to: theme.defaultGlowFrom; duration: theme.pulseDuration }
         }
     }
 
