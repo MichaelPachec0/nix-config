@@ -497,7 +497,9 @@
   # `hy3-layout build '<notation>'` constructs the layout live; `show` prints the
   # active (or --wk N / --wk all) workspace as notation; --visualize prints an
   # ASCII tree. stdlib-only Python -- only hyprctl is shelled out to (kitty/the
-  # browser are launched by the compositor via hl.exec_cmd). Wrapped via
+  # browser are launched by the compositor via hl.exec_cmd, so _launch_string
+  # fronts them with app-run to get them out of the compositor's cgroup, the
+  # same way hy3-project.sh does). Wrapped via
   # writeShellApplication (python3 on the .py) rather than writePython3Bin to
   # skip the build-time flake8 gate. See
   # docs/superpowers/specs/2026-06-22-hy3-layout-design.md.

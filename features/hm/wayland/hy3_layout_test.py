@@ -503,11 +503,11 @@ class ExecutorTest(unittest.TestCase):
 
     def test_fresh_build_sequence(self):
         self.assertEqual(self._trace("H[a, {b,c}]"), [
-            ("spawn", 1, "kitty"),
+            ("spawn", 1, "app-run kitty"),
             ("focus", "0xA"),
-            ("spawn", 1, "kitty"),
+            ("spawn", 1, "app-run kitty"),
             ("focus", "0xB"),
-            ("spawn", 1, "kitty"),
+            ("spawn", 1, "app-run kitty"),
             ("focus", "0xB"),
             ("group", "r", "T"),
         ])
@@ -516,11 +516,11 @@ class ExecutorTest(unittest.TestCase):
         self.assertEqual(self._trace("H[a, {b,c}]", append=True), [
             ("hy3", "change_focus", "top"),
             ("hy3", "change_focus", "lower"),
-            ("spawn", 1, "kitty"),
+            ("spawn", 1, "app-run kitty"),
             ("focus", "0xA"),
-            ("spawn", 1, "kitty"),
+            ("spawn", 1, "app-run kitty"),
             ("focus", "0xB"),
-            ("spawn", 1, "kitty"),
+            ("spawn", 1, "app-run kitty"),
             ("focus", "0xB"),
             ("group", "r", "T"),
             ("focus", "0xA"),
@@ -550,12 +550,14 @@ class ExecutorTest(unittest.TestCase):
         ])
 
     def test_launch_string(self):
-        self.assertEqual(h._launch_string(h.Spawn("a"), None), "kitty")
-        self.assertEqual(h._launch_string(h.Spawn("c", command="firefox"), None), "firefox")
-        self.assertEqual(h._launch_string(h.Spawn("c", command="browser"), "fdev"), "fdev")
+        # Every form is fronted by app-run (see _launch_string): the compositor
+        # forks these, so the scope has to be asked for explicitly.
+        self.assertEqual(h._launch_string(h.Spawn("a"), None), "app-run kitty")
+        self.assertEqual(h._launch_string(h.Spawn("c", command="firefox"), None), "app-run firefox")
+        self.assertEqual(h._launch_string(h.Spawn("c", command="browser"), "fdev"), "app-run fdev")
         self.assertEqual(
             h._launch_string(h.Spawn("a", cwd="/tmp"), None),
-            "sh -c 'cd \"/tmp\" && exec kitty'",
+            "sh -c 'cd \"/tmp\" && exec app-run kitty'",
         )
 
     def test_same_structure(self):

@@ -633,14 +633,25 @@ def _ws_client_addrs(ws):
 
 
 def _launch_string(spawn, browser):
+    # app-run (features/hm/wayland/app-run.nix) fronts every window this builds:
+    # the spawn is handed to hl.exec_cmd, i.e. forked by the compositor, so
+    # without it the window inherits the compositor's cgroup instead of getting
+    # its own scope under app-graphical.slice. Outside a uwsm session app-run
+    # degrades to a plain exec, so the bare-name form stays correct everywhere.
+    # It is resolved off PATH (home.packages), not by store path, because this
+    # string is executed by the compositor, not by this process.
     import os
     cmd = spawn.command or "kitty"
     if cmd == "browser":
         cmd = browser or "firefox"
     if spawn.cwd:
         # kitty --directory is dropped through Hyprland's exec, so cd in a shell.
-        return "sh -c 'cd \"%s\" && exec %s'" % (os.path.expanduser(spawn.cwd), cmd)
-    return cmd
+        # app-run sits INSIDE the sh -c, after the cd, so the scope inherits the
+        # working directory (systemd-run --same-dir) -- same placement as
+        # hy3-project.sh's kitty_cmd.
+        return "sh -c 'cd \"%s\" && exec app-run %s'" % (
+            os.path.expanduser(spawn.cwd), cmd)
+    return "app-run " + cmd
 
 
 def _spawn_window(ws, launch, timeout=10.0):
