@@ -23,8 +23,21 @@ Item {
     // Externally observable, same reasoning as XpButton/XpTextField.
     opacity: root.enabled ? 1.0 : 0.6
 
-    activeFocusOnTab: true
-    focus: true
+    // Conditional, not a bare `true`: this widget is reused inside dialogs
+    // that are constructed eagerly and shown later (LogonDialog.qml's own
+    // session-picker combo, built before Options is ever toggled;
+    // ShutDownDialog.qml's combo, built at skin startup before the "Shut
+    // Down..." button is ever clicked). A hidden or disabled combo must
+    // not hold a focus claim on a screen whose whole job is routing
+    // keystrokes to the active PAM field -- confirmed empirically that
+    // `root.visible` here correctly tracks an ANCESTOR's visibility too
+    // (not just this item's own literal `visible: true` default): hiding
+    // an ancestor via a live binding (the same pattern Skin.qml uses for
+    // `shutDownVisible`/`_fatal`) propagates down and flips this combo's
+    // own `visible` reactively, both ways, confirmed with an isolated
+    // repro before relying on it here.
+    activeFocusOnTab: root.visible && root.enabled
+    focus: root.visible && root.enabled
 
     function openPopup() { if (root.enabled) popup.visible = true; }
     function closePopup() { popup.visible = false; }

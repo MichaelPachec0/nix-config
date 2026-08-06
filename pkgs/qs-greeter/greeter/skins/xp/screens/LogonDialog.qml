@@ -55,7 +55,14 @@ Item {
     width: implicitWidth
     height: implicitHeight
 
-    focus: true
+    // Conditional, not a bare `true`: Skin.qml constructs this screen
+    // eagerly and shows it via `visible: !root._fatal`, so it is built but
+    // HIDDEN whenever greetd is unavailable or no sessions loaded (routed
+    // to SkinFatal.qml instead) -- exactly the same "built before it is
+    // shown" shape as ShutDownDialog.qml, and the same fix applies for the
+    // same reason: a hidden dialog must not hold a focus claim on a screen
+    // whose whole job is routing keystrokes to the PAM field.
+    focus: root.visible
     Keys.onEscapePressed: root._cancel()
     Keys.onReturnPressed: root._ok()
 
