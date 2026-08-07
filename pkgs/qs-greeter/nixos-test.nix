@@ -119,7 +119,6 @@ pkgs.testers.nixosTest {
     # whatever the VM's GPU is actually displaying, observed from outside
     # quickshell entirely. A blank or uniform frame here would mean the
     # PanelWindow/layer-shell path never painted anything, crash or not.
-    machine.screenshot("login")
 
     def read_ppm():
         import tempfile
@@ -176,5 +175,77 @@ pkgs.testers.nixosTest {
         return close(corner, expected_backdrop) and not close(corner, center, tol=8)
 
     retry(rendered)
+
+    # machine.screenshot() must run AFTER retry(rendered) settles, not
+    # before: it captures whatever is on screen at the moment it is called,
+    # and the compositor has not necessarily painted anything yet the
+    # instant this test script reaches this point (retry(rendered) is what
+    # actually waits for that). Calling it earlier captured a uniformly
+    # black frame every run -- a screenshot that told a human nothing about
+    # what actually failed the one time this test caught a real defect.
+    machine.screenshot("login")
+
+    # --- QML runtime-error scan -----------------------------------------
+    # This is the check that would have caught the skins/xp/ bare-singleton
+    # bug (ReferenceError: Settings/Log/CapsLock/GreeterState is not
+    # defined, then 46 follow-on TypeErrors reading theme.* off the
+    # now-undefined theme): every headless dev/tests/ suite -- including
+    # widgets-gallery.sh, which already runs exactly this class of scan --
+    # reaches the skin through a STATIC directory import from an entrypoint
+    # that sits right next to symlinks for the singletons the skin needs,
+    # so those bare references resolve there. Production reaches the same
+    # skin only through shell.qml's Loader, whose `source` is a
+    # runtime-computed path string invisible to Quickshell's import-graph
+    # scan (see shell.qml's and Skin.qml's own comments on the mechanism);
+    # the bug was real only on that path, so only a check against the
+    # REAL store package under a REAL compositor -- this VM test -- could
+    # ever see it. journalctl is read here, after retry(rendered) has
+    # already proven the compositor painted a real frame, so every QML
+    # warning the whole boot produced has had time to land in the journal
+    # (qs-greeter-run.sh pipes the wrapped `qs` process's stdout/stderr
+    # through `systemd-cat -t qs-greeter`).
+    qml_log = machine.succeed("journalctl -t qs-greeter --no-pager")
+
+    # Known-benign lines that would otherwise trip the checks below --
+    # same convention as widgets-gallery.sh's own allowlist (a "prove it's
+    # benign" entry, not a silence-the-noise reflex). GreeterState's own
+    # state file has no tmpfiles rule (see qs-greeter.nix's own comment on
+    # stateFile: "written by the unprivileged greeter user itself... only
+    # dataDir's own directory has to exist first"), so a brand-new VM's
+    # very first boot genuinely has no state.json yet -- FileView logs
+    # that as a "scene" warning by design, and it is not one of the four
+    # named danger classes below, so it is listed here only for the record,
+    # not because the loop needs it to pass.
+    benign_allowlist = [
+        "Read of /var/lib/qs-greeter/state.json failed: File does not exist",
+    ]
+
+    # The same four classes widgets-gallery.sh's own danger_patterns
+    # names: Binding loop (a self-referential property binding), Unable to
+    # assign (a theme.* reference that resolved to undefined being fed to
+    # a typed property), ReferenceError (a bare singleton reference that
+    # does not resolve at all -- this bug), and TypeError (calling a
+    # method on, or reading a property off, something that resolved to
+    # undefined -- this bug's 46 follow-on failures once `theme` itself
+    # went undefined).
+    danger_patterns = [
+        "Binding loop",
+        "Unable to assign",
+        "ReferenceError",
+        "TypeError",
+    ]
+
+    offending = []
+    for line in qml_log.splitlines():
+        if not line.strip():
+            continue
+        if any(pat in line for pat in benign_allowlist):
+            continue
+        if any(pat in line for pat in danger_patterns):
+            offending.append(line)
+
+    assert not offending, (
+        "qs-greeter logged disallowed QML warnings:\n" + "\n".join(offending)
+    )
   '';
 }
