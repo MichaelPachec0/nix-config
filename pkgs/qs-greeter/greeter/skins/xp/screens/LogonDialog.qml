@@ -9,39 +9,48 @@ import "../widgets" as Widgets
 // session.promptSecret and shows session.statusText when there is no
 // pending prompt at all.
 //
-// session/sessions are injected by Skin.qml exactly as shell.qml injects
-// them into Skin.qml -- this file does not import the Session/Sessions
-// singletons directly, so it can only ever see the object it was handed
-// (the real one in production, a scripted MockBackend-driven one in the
-// test below). Settings, CapsLock and GreeterState are cosmetic/local-state
-// concerns, not privileged auth ones, so those ARE imported directly (see
-// the local Settings.qml/CapsLock.qml/GreeterState.qml symlinks in this
-// directory -- Quickshell's singleton registration is per-directory, so a
-// bare reference from here needs its own link even though skins/xp/Skin.qml
-// already has one. That also means Settings here is a DIFFERENT singleton
-// instance than the one Skin.qml reads for the palette -- and there are
-// FOUR such independent instances in this tree in total, not just these
-// two, one per directory that carries its own Settings.qml symlink:
-// greeter/ itself (shell.qml's own bare reference, reads Settings.skinName),
-// greeter/screens/ (Backdrop.qml, reads Settings.config.backdrop and
-// Settings.backdropPath), greeter/skins/xp/ (Skin.qml, reads
-// Settings.palette), and greeter/skins/xp/screens/ (this file, reads
-// Settings.config.sessions/branding/rememberLastUser/optionsExpanded).
-// Harmless today only because every one of the four reads a disjoint set of
-// keys, with no computation shared between any pair of them. Nothing
-// enforces that split -- if a future change reads the SAME config key from
-// two of these four directories, those two instances can settle (finish
-// loading) at different times and briefly disagree. NOT called "State" --
-// QtQuick already has a built-in `State` element, and a same-named
-// singleton is silently shadowed by it everywhere `import QtQuick` is in
-// scope, i.e. everywhere. Confirmed the hard way: `State.save()` resolved
-// to QtQuick's State and threw "Property 'save' of object QtQuick/State is
-// not a function" instead of ever reaching this file's singleton).
+// session/sessions/theme/settings/capsLock/greeterState are all injected by
+// Skin.qml, which itself only ever received them from shell.qml -- this
+// file imports none of the underlying singletons directly. That used to be
+// true only for session/sessions ("privileged auth" ones); Settings,
+// CapsLock and GreeterState were bare-referenced directly instead, on the
+// theory that they are cosmetic/local-state concerns and this directory
+// carries its own Settings.qml/CapsLock.qml/GreeterState.qml symlinks so
+// the reference would resolve. It compiled and ran fine under every
+// headless dev/tests/ suite and was still wrong: this file (like all of
+// skins/xp/) is reached in production only through shell.qml's Loader,
+// whose `source` is a runtime-computed path string, never a static
+// `import` -- and Quickshell only registers a directory for bare singleton
+// access by walking the textual `import` graph from the shell's actual
+// entrypoint (see scan.cpp's scanQmlFile/scanDir). A directory a Loader
+// reaches dynamically is invisible to that walk no matter what symlinks
+// sit in it, so every bare Settings/CapsLock/GreeterState reference here
+// threw "ReferenceError: <name> is not defined" against the real built
+// package (confirmed with a standalone `qs -p` repro) while silently
+// passing every dev/tests/ suite, which reaches this same file through a
+// STATIC directory import from an entrypoint that happens to sit right
+// next to its own copies of these symlinks. Injection sidesteps the whole
+// per-directory-registration question the same way it already did for
+// session/sessions: an object reference handed down explicitly does not
+// care which directory anyone's `import` graph does or does not cover.
+//
+// NOT called "State" -- QtQuick already has a built-in `State` element, and
+// a same-named singleton is silently shadowed by it everywhere `import
+// QtQuick` is in scope, i.e. everywhere. Confirmed the hard way:
+// `State.save()` resolved to QtQuick's State and threw "Property 'save' of
+// object QtQuick/State is not a function" instead of ever reaching this
+// file's singleton).
 Item {
     id: root
     required property var session
     required property var sessions
     required property var theme
+    // May legitimately be null (e.g. a test driving this file standalone
+    // with no Settings/GreeterState/CapsLock fixture) -- every read below
+    // is guarded the same way the pre-existing session/sessions reads are.
+    required property var settings
+    required property var greeterState
+    required property var capsLock
 
     // Distinct from Skin.qml's requestPower(action): that fires an
     // already-decided systemctl action, and its three cases (poweroff,
@@ -169,7 +178,7 @@ Item {
     // lands (Settings.config is reassigned wholesale on settle, which
     // re-fires this binding's dependency the same way _syncComboDefault()'s
     // own Settings.onReadyChanged connection reacts to the same settle).
-    property bool optionsExpanded: !!(Settings.config && Settings.config.optionsExpanded)
+    property bool optionsExpanded: !!(root.settings && root.settings.config && root.settings.config.optionsExpanded)
     property bool _comboUserSet: false
 
     function _sessionNames() {
@@ -180,14 +189,14 @@ Item {
     function _defaultSessionIndex() {
         var names = root._sessionNames();
         if (names.length === 0) return -1;
-        var cfgSessions = Settings.config && Settings.config.sessions;
+        var cfgSessions = root.settings && root.settings.config && root.settings.config.sessions;
         var def = cfgSessions ? cfgSessions.default : null;
         if (def) {
             var i = names.indexOf(def);
             if (i >= 0) return i;
         }
-        if (GreeterState.lastSession) {
-            var j = names.indexOf(GreeterState.lastSession);
+        if (root.greeterState && root.greeterState.lastSession) {
+            var j = names.indexOf(root.greeterState.lastSession);
             if (j >= 0) return j;
         }
         return 0;
@@ -213,11 +222,11 @@ Item {
         function onReadyChanged() { root._syncComboDefault(); }
     }
     Connections {
-        target: Settings
+        target: root.settings
         function onReadyChanged() { root._syncComboDefault(); }
     }
     Connections {
-        target: GreeterState
+        target: root.greeterState
         function onLastSessionChanged() { root._syncComboDefault(); }
     }
     // Combines both this file's own startup actions -- QML only permits one
@@ -240,7 +249,7 @@ Item {
     }
 
     function _pickerEnabled() {
-        var cfgSessions = Settings.config && Settings.config.sessions;
+        var cfgSessions = root.settings && root.settings.config && root.settings.config.sessions;
         return !!(cfgSessions && cfgSessions.picker);
     }
 
@@ -277,7 +286,8 @@ Item {
     // it explicitly, but a hand-built Settings.config in a test might not),
     // so the check is `!== false`, not a bare truthiness read on a possibly
     // undefined value.
-    readonly property bool _rememberLastUser: Settings.config.rememberLastUser !== false
+    readonly property bool _rememberLastUser:
+        !root.settings || !root.settings.config || root.settings.config.rememberLastUser !== false
 
     function _launchSelected() {
         var entry = root._resolveEntry();
@@ -295,9 +305,11 @@ Item {
         // the prefill below -- so a user who opted out never has their name
         // land on disk from a successful login, no matter what a previous
         // (remembering) login already left there.
-        if (root._rememberLastUser) GreeterState.lastUser = root.session.user;
-        GreeterState.lastSession = entry.name;
-        GreeterState.save();
+        if (root._rememberLastUser && root.greeterState) root.greeterState.lastUser = root.session.user;
+        if (root.greeterState) {
+            root.greeterState.lastSession = entry.name;
+            root.greeterState.save();
+        }
         root.session.launch(entry);
     }
 
@@ -384,7 +396,7 @@ Item {
                 // still holds on disk (root._rememberLastUser, defined
                 // below near _launchSelected() which is the other half of
                 // this same setting).
-                text: root._rememberLastUser ? GreeterState.lastUser : ""
+                text: (root._rememberLastUser && !!root.greeterState) ? root.greeterState.lastUser : ""
                 width: parent.width
                 enabled: !root.session
                     || root.session.state === "idle"
@@ -453,8 +465,9 @@ Item {
     Widgets.XpDialog {
         id: dialog
         theme: root.theme
-        bannerTitle: (Settings.config.branding && Settings.config.branding.title) || "Log On to Windows"
-        bannerSubtitle: (Settings.config.branding && Settings.config.branding.subtitle) || ""
+        bannerTitle: (!!root.settings && root.settings.config.branding && root.settings.config.branding.title)
+            || "Log On to Windows"
+        bannerSubtitle: (!!root.settings && root.settings.config.branding && root.settings.config.branding.subtitle) || ""
         contentItem: content
         // Rebuilding this array (and so the button row) whenever `blocked`
         // flips is inherent to XpDialog's own buttons-array API (any
@@ -478,7 +491,7 @@ Item {
     Widgets.XpBalloon {
         id: capsBalloon
         theme: root.theme
-        visible: CapsLock.on
+        visible: !!root.capsLock && root.capsLock.on
         text: "Caps Lock is on."
         target: secretField
     }

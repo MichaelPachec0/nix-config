@@ -68,15 +68,16 @@ ShellRoot {
     XpPalettes.Gruvbox { id: gruvbox }
 
     // === Part B/C fixtures: one luna-themed and one gruvbox-themed
-    // instance of each widget/screen, side by side. session/sessions are
-    // explicitly null (not omitted -- both are `required property var` on
-    // LogonDialog, so an explicit null satisfies the requirement the same
-    // way skin-smoke-test.qml's session-less Skin instance does): this
-    // file measures BASELINE geometry only (implicit sizes, the two fixed
-    // field rows, the dialog's overall size), which does not depend on a
-    // real Session/Sessions backend, so wiring MockBackend here would only
-    // add a shared-singleton race against nothing this file actually
-    // checks.
+    // instance of each widget/screen, side by side. session/sessions/
+    // settings/greeterState/capsLock are all explicitly null (not omitted
+    // -- every one of them is a `required property var` on LogonDialog, so
+    // an explicit null satisfies the requirement the same way skin-smoke-
+    // test.qml's session-less Skin instance does): this file measures
+    // BASELINE geometry only (implicit sizes, the two fixed field rows,
+    // the dialog's overall size), which does not depend on a real Session/
+    // Sessions backend or on Settings/GreeterState/CapsLock content, so
+    // wiring any of them here would only add a shared-singleton race
+    // against nothing this file actually checks.
     Item {
         id: gallery
         width: 2400
@@ -115,8 +116,14 @@ ShellRoot {
             buttons: [{ text: "OK", isDefault: true }, { text: "Cancel" }]
         }
 
-        XpScreens.LogonDialog { id: dlgL; theme: luna; session: null; sessions: null }
-        XpScreens.LogonDialog { id: dlgG; theme: gruvbox; session: null; sessions: null }
+        XpScreens.LogonDialog {
+            id: dlgL; theme: luna
+            session: null; sessions: null; settings: null; greeterState: null; capsLock: null
+        }
+        XpScreens.LogonDialog {
+            id: dlgG; theme: gruvbox
+            session: null; sessions: null; settings: null; greeterState: null; capsLock: null
+        }
 
         XpScreens.ShutDownDialog { id: sdL; theme: luna }
         XpScreens.ShutDownDialog { id: sdG; theme: gruvbox }
@@ -133,12 +140,15 @@ ShellRoot {
     // reach Skin.qml's own fallback (the `theme` property in Skin.qml)
     // without going through Settings' own validation, matching this
     // file's brief ("Settings validation would normally stop it, so drive
-    // Skin directly"). XpKit.Settings below is the SAME per-directory
-    // singleton instance Skin.qml itself reads (both reached through the
-    // "xp-kit" import) -- see LogonDialog.qml's own comment on why a
-    // *different* directory's Settings symlink would be the wrong
-    // instance to poll.
-    XpKit.Skin { id: fallbackSkin }
+    // Skin directly"). Skin.qml no longer reads Settings bare at all (see
+    // its own header note on why: a bare reference from anywhere under
+    // skins/ is unreliable in production, where this whole tree is reached
+    // through a runtime Loader, not a static import) -- `settings` is
+    // explicitly wired below to XpKit.Settings, the fixture QSG_DEFAULTS
+    // actually loaded, so fallbackSkin.theme resolves through the exact
+    // path production does instead of Skin.qml's own "no settings yet"
+    // default.
+    XpKit.Skin { id: fallbackSkin; settings: XpKit.Settings; log: XpKit.Log }
 
     Component.onCompleted: {
         var start = Date.now();

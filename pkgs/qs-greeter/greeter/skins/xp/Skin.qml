@@ -14,6 +14,25 @@ Item {
     id: root
     property var session: null
     property var sessions: null
+    // Injected by shell.qml's Loader.onLoaded, same as session/sessions
+    // above: this file is loaded through a Loader whose `source` is a
+    // runtime-computed absolute path, not a static `import`, so Quickshell
+    // never registers skins/xp/ (or any directory under it) for bare
+    // singleton access -- see shell.qml's own comment on this Loader for
+    // the mechanism. Every bare `Settings`/`Log`/`CapsLock`/`GreeterState`
+    // reference that used to live in this file and in screens/LogonDialog.qml
+    // threw "ReferenceError: <name> is not defined" in production for
+    // exactly this reason (confirmed with a standalone `qs -p` repro against
+    // the built store package) while every headless dev/tests/ suite passed,
+    // because those suites reach the skin through a directory import from an
+    // entrypoint that sits right next to symlinks for these same singletons,
+    // which DOES get scanned. Left null by default so a test can construct
+    // this file directly without wiring every singleton (skin-smoke-test.qml
+    // does exactly that, matching the existing session/sessions convention).
+    property var settings: null
+    property var log: null
+    property var capsLock: null
+    property var greeterState: null
     // Read-only reflection of the palette this skin actually resolved, not
     // an input: nothing sets it from outside (shell.qml's contract only
     // ever assigns session/sessions/requestPower -- see shell.qml's
@@ -50,31 +69,38 @@ Item {
     // user-tier palette choice), and this map. Adding a palette means
     // editing all three; nothing catches it if you forget one.
     readonly property var _palettes: ({ luna: lunaPalette, gruvbox: gruvboxPalette })
-    // Settings here is a DIFFERENT singleton instance than the one
-    // screens/LogonDialog.qml reads (per-directory registration -- see
-    // that file's own note on this, which also lists all FOUR independent
-    // instances this tree carries in total, not just these two) --
-    // harmless today only because this file reads Settings.palette and
-    // LogonDialog.qml reads Settings.config.sessions/branding, disjoint
-    // keys with no computation shared between the two reads. Nothing
-    // enforces that split; the same key read from both would risk
-    // observing two different settle timings.
+    // root.settings is the SAME object shell.qml handed to root.session and
+    // root.sessions -- one real Settings singleton, injected once, not a
+    // per-directory copy (see the property declaration above for why a bare
+    // reference cannot be used here instead). screens/LogonDialog.qml reads
+    // Settings.config.sessions/branding through the same injected object, by
+    // the same route (Skin.qml passes its own `settings` down, exactly as it
+    // already does for `theme`) -- so unlike before, there is only ever one
+    // instance in this whole tree, not four, and no risk of two reads
+    // observing different settle timings.
+    //
+    // Guarded on `!!root.settings` because settings starts null until
+    // shell.qml's Loader.onLoaded runs (the same brief window session/
+    // sessions already have to tolerate below), and defaults to "luna" in
+    // that window rather than logging a spurious "unknown palette ''"
+    // warning for a value that just has not arrived yet.
     //
     // Settings.palette has already been validated against meta.json's
     // declared list by SettingsMerge.js before it reaches here in
     // production (unregistered names are dropped there -- see
-    // SettingsMerge.js's skinSettings handling), so this fallback should
-    // never fire from a real user-settings write. It exists for the two
-    // paths that skip that validation: a test driving Skin.qml directly
-    // (Settings/SettingsMerge.js validate the USER tier only, not
-    // defaults.json), and defense against _palettes and meta.json ever
-    // drifting out of sync. Falls back to Luna with a warning rather than
-    // silently rendering unstyled (a missing key would otherwise resolve
-    // every theme.* read to undefined).
+    // SettingsMerge.js's skinSettings handling), so the actual fallback
+    // path below should never fire from a real user-settings write. It
+    // exists for the two paths that skip that validation: a test driving
+    // Skin.qml directly (Settings/SettingsMerge.js validate the USER tier
+    // only, not defaults.json), and defense against _palettes and
+    // meta.json ever drifting out of sync. Falls back to Luna with a
+    // warning rather than silently rendering unstyled (a missing key would
+    // otherwise resolve every theme.* read to undefined).
     readonly property var theme: {
-        var p = root._palettes[Settings.palette];
+        var pal = (!!root.settings && root.settings.palette) || "luna";
+        var p = root._palettes[pal];
         if (p) return p;
-        Log.warn("skins/xp: unknown palette '" + Settings.palette + "', falling back to luna");
+        if (root.log) root.log.warn("skins/xp: unknown palette '" + pal + "', falling back to luna");
         return lunaPalette;
     }
 
@@ -108,6 +134,9 @@ Item {
         session: root.session
         sessions: root.sessions
         theme: root.theme
+        settings: root.settings
+        capsLock: root.capsLock
+        greeterState: root.greeterState
         onShutDownRequested: root.shutDownVisible = true
     }
 

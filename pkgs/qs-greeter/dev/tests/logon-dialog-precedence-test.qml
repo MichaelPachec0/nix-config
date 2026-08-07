@@ -46,6 +46,9 @@ ShellRoot {
         theme: theme
         session: Session
         sessions: Sessions
+        settings: XpScreens.Settings
+        greeterState: XpScreens.GreeterState
+        capsLock: XpScreens.CapsLock
     }
 
     Component.onCompleted: {

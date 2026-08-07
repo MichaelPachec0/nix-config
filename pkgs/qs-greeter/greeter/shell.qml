@@ -130,6 +130,32 @@ ShellRoot {
                 onLoaded: {
                     item.session = Session;
                     item.sessions = Sessions;
+                    // Settings/Log/CapsLock/GreeterState are singletons
+                    // greeter/ itself can read bare (this file lives in the
+                    // directory Quickshell's scanner actually visits), but
+                    // the skin loaded above cannot: it is reached only
+                    // through this Loader's dynamically-computed `source`
+                    // string, never through a static `import` anywhere in
+                    // the scanned tree, so Quickshell's per-directory
+                    // singleton scan (see scan.cpp's scanQmlFile -- it
+                    // discovers directories to register by walking textual
+                    // `import` statements starting from this file, and a
+                    // Loader.source assignment is invisible to that walk)
+                    // never runs for skins/xp/ or any directory under it.
+                    // A same-directory symlink to e.g. Settings.qml does
+                    // not fix that: the file resolves fine, but nothing
+                    // ever registers it as an importable singleton there,
+                    // so a bare `Settings.foo` reference inside the skin
+                    // throws "ReferenceError: Settings is not defined" at
+                    // runtime -- confirmed with a standalone `qs -p` repro
+                    // against the built store package. These four are
+                    // handed down the same way session/sessions already
+                    // are, and Skin.qml re-exposes them to its own screens
+                    // exactly as it already does for `theme`.
+                    item.settings = Settings;
+                    item.log = Log;
+                    item.capsLock = CapsLock;
+                    item.greeterState = GreeterState;
                     item.requestPower.connect(shellRoot.power);
                 }
             }

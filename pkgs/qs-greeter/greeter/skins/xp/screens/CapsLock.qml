@@ -1,1 +1,0 @@
-../../../CapsLock.qml

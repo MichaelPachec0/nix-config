@@ -60,11 +60,20 @@ ShellRoot {
     readonly property var theme:
         Quickshell.env("QSG_TEST_PALETTE") === "gruvbox" ? themeGruvbox : themeLuna
 
+    // settings/greeterState/capsLock are the same XpScreens-qualified
+    // instances the rest of this file already pokes directly (see the
+    // Caps Lock block and the Settings.config mutation further down) --
+    // LogonDialog.qml no longer reads any of these bare, so what it
+    // observes is now exactly whatever object identity is handed to it
+    // here, not an implicit "same directory" resolution.
     XpScreens.LogonDialog {
         id: dlg
         theme: root.theme
         session: Session
         sessions: Sessions
+        settings: XpScreens.Settings
+        greeterState: XpScreens.GreeterState
+        capsLock: XpScreens.CapsLock
     }
 
     property real fixedUserRow: 0
@@ -377,23 +386,22 @@ ShellRoot {
         });
 
         // --- Caps Lock balloon ---
-        // Poked via XpScreens.CapsLock (not the bare CapsLock this file
-        // also has its own local symlink for), because Quickshell's
+        // Poked via XpScreens.CapsLock, not the bare CapsLock this file
+        // also has its own local symlink for, because Quickshell's
         // per-directory singleton registration mints an INDEPENDENT
         // instance per directory even when the symlinks resolve to the
         // same real file underneath -- confirmed empirically (a two-
         // directory repro: writing a shared singleton's property from one
         // directory's own bare reference left the other directory's own
-        // bare reference completely unaffected). Bare `CapsLock` from
-        // this file would poke THIS file's own instance, not the one
-        // LogonDialog.qml (loaded through the xp-kit/screens/ mirror)
-        // actually reads from; `XpScreens.CapsLock` reaches into that
-        // same imported module and gets the identical instance
-        // LogonDialog.qml itself sees. session/sessions sidestep this
-        // entirely because they are passed to `dlg` as PROPS (an actual
-        // object reference, not a fresh per-directory lookup) -- which is
-        // exactly why the contract injects those two instead of letting
-        // the skin import Session/Sessions directly.
+        // bare reference completely unaffected). Bare `CapsLock` from this
+        // file would poke a DIFFERENT instance than the one bound to
+        // `dlg.capsLock` above (XpScreens.CapsLock, the same qualified
+        // reference); LogonDialog.qml itself never reads CapsLock bare at
+        // all any more -- capsLock is injected as a prop, exactly like
+        // session/sessions/theme/settings/greeterState, precisely so that
+        // whoever constructs it controls which instance it observes
+        // instead of an implicit "same directory" resolution nobody can
+        // see from outside.
         action(function () {
             check("balloonHiddenWithoutCapsLock", dlg.testCapsBalloonVisible, false);
             XpScreens.CapsLock.on = true;

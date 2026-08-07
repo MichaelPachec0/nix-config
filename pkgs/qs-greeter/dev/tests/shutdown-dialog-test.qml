@@ -88,11 +88,15 @@ ShellRoot {
     }
 
     // --- Part 2 fixture: the real Skin.qml, routed to LogonDialog
-    // (session/sessions wired the way shell.qml wires them). ---
+    // (session/sessions/settings wired the way shell.qml wires them, so
+    // this instance's theme really does come from QSG_DEFAULTS' palette
+    // as the comment above claims, not from Skin.qml's own "no settings
+    // yet" fallback). ---
     XpKit.Skin {
         id: skin
         session: Session
         sessions: Sessions
+        settings: XpKit.Settings
     }
 
     // --- Part 2b fixture: a SECOND, independent Skin.qml instance,
@@ -100,9 +104,12 @@ ShellRoot {
     // instead (same technique skin-smoke-test.qml uses), so SkinFatal's
     // own shutDownRequested() seam gets proven against a real instance
     // too, without disturbing `skin` above (which must stay routed to
-    // LogonDialog for the rest of this file's checks). ---
+    // LogonDialog for the rest of this file's checks). settings is wired
+    // for the same theme-source parity as `skin` above even though
+    // SkinFatal never reads it directly. ---
     XpKit.Skin {
         id: fatalSkin
+        settings: XpKit.Settings
     }
 
     Component.onCompleted: {
