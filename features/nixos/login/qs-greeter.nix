@@ -30,6 +30,31 @@ in {
       description = "Default skin name. Overridable by the user tier.";
     };
 
+    brandImage = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = ../../../assets/img/banner/Stock-Windows-XP-x64-banner.png;
+      description = ''
+        Artwork for the xp skin's brand panel -- the wide band under the
+        title bar carrying the flag and wordmark. When set, it replaces the
+        panel the skin would otherwise draw for itself (flag, wordmark,
+        copyright and vendor together), because the real panel is a single
+        bitmap: the wordmark is a custom logotype and the flag is shaded and
+        drop-shadowed, neither of which type and vector drawing reproduce.
+        The drawn panel remains the fallback and is what appears if this is
+        null or if the file fails to load.
+
+        The panel takes this file's aspect ratio, so its height follows the
+        artwork rather than a configured number.
+
+        Nix-only on purpose. It becomes a filesystem path the greeter reads
+        before anyone has authenticated, and SettingsMerge.js deliberately
+        does not copy branding.image out of the group-writable user tier --
+        a hostile write there must not be able to aim this at an arbitrary
+        file. The panel's text strings stay user-writable because the worst
+        those achieve is wrong wording.
+      '';
+    };
+
     skinSettings = lib.mkOption {
       type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
       default = {xp = {palette = "luna";};};
@@ -393,6 +418,13 @@ in {
         wordmarkAccent = "xp";
         edition = "Professional";
         vendor = "Microsoft";
+        # The store path of the brand-panel artwork, or "" to let the skin
+        # draw the panel itself. Not in SettingsMerge.js's branding field
+        # list, so the user tier cannot touch it -- see brandImage above.
+        image =
+          if cfg.brandImage == null
+          then ""
+          else "${cfg.brandImage}";
         # "(C)" rather than the copyright sign: this repo keeps shipped
         # files pure ASCII.
         copyright = "Copyright (C) 1985-2001\nMicrosoft Corporation";

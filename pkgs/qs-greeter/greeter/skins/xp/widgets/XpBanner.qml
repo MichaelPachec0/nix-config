@@ -43,9 +43,51 @@ Item {
     property string wordmarkAccent: ""
     property string vendor: ""
 
+    // Absolute path to a banner artwork file. When set, it REPLACES the
+    // whole drawn brand panel -- flag, wordmark, copyright and vendor
+    // together -- because the real panel is a single bitmap and no amount
+    // of type and vector work reproduces it: the wordmark is a custom
+    // logotype, the flag is shaded and drop-shadowed, and the panel carries
+    // a soft two-axis falloff. Drawing it is the fallback, not the goal.
+    //
+    // Nix-only by construction. This is a filesystem path rendered into
+    // /etc/qs-greeter/defaults.json, and `branding.image` is deliberately
+    // NOT one of the fields SettingsMerge.js copies out of the user tier,
+    // so a hostile write to the group-writable settings file cannot point
+    // this at an arbitrary file and turn a pre-auth screen into a file-read
+    // oracle. The drawn strings above stay user-writable because the worst
+    // they achieve is wrong text.
+    property string image: ""
+
+    // Gated on showFlag as well as on the path being set: showFlag means
+    // "this palette is presenting itself as Windows". A palette that turns
+    // it off (Gruvbox) must not get the Windows artwork handed to it
+    // through a different property.
+    readonly property bool usingImage: root.image.length > 0 && theme.showFlag
+
+    // Everything the panel draws for itself is shown only when the artwork
+    // is NOT standing in for it -- including when the artwork was asked for
+    // but failed to load. A missing or unreadable banner file must degrade
+    // to the drawn panel, not to an empty blue rectangle: this is the
+    // screen someone logs in through, and it is reached before they can fix
+    // anything.
+    readonly property bool drawnPanel: !(root.usingImage && art.status === Image.Ready)
+
+    // The artwork's natural width, or 0 when none is in use. Exposed so the
+    // dialog can size itself to render the bitmap 1:1 -- this panel is
+    // mostly a logotype, and scaling type in a bitmap is exactly the kind of
+    // softness that gives away a reproduction. Reads the Image's IMPLICIT
+    // width (the file's own dimensions), which does not change when the item
+    // is resized, so a consumer binding its width to this cannot loop.
+    readonly property int artNaturalWidth:
+        (root.usingImage && art.status === Image.Ready) ? art.implicitWidth : 0
+
     implicitWidth: 400
+    // brandPanel.height, not theme.brandPanelHeight: with artwork the panel
+    // sizes itself to the file's aspect ratio, so the configured height is
+    // only the fallback and the panel is the thing that knows which applies.
     implicitHeight: titleBar.height
-        + (root.brand ? theme.brandPanelHeight + theme.dividerHeight : 0)
+        + (root.brand ? brandPanel.height + theme.dividerHeight : 0)
     width: implicitWidth
     height: implicitHeight
 
@@ -141,8 +183,42 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: titleBar.bottom
-        height: root.brand ? theme.brandPanelHeight : 0
+        // With artwork, the panel takes the artwork's own aspect ratio
+        // rather than a configured height, so the image is never letterboxed
+        // or cropped. Driven off the Image's IMPLICIT size (the file's
+        // natural dimensions), not its rendered size -- reading the rendered
+        // size here would be a binding loop, since the image fills this very
+        // item.
+        height: !root.brand
+            ? 0
+            : (root.usingImage && art.implicitWidth > 0
+                ? Math.round(root.width * art.implicitHeight / art.implicitWidth)
+                : theme.brandPanelHeight)
         color: theme.brandPanel
+
+        Image {
+            id: art
+            anchors.fill: parent
+            // Explicit file:// URL rather than the bare path. A plain string
+            // in `source` is resolved as a URL RELATIVE TO THE DOCUMENT, and
+            // this document is loaded through Quickshell's qs: interceptor,
+            // so an absolute path can come back out as qs:/nix/store/...
+            // instead of a readable file. Building the scheme here removes
+            // the question rather than depending on how the path was spelled
+            // upstream.
+            source: root.usingImage
+                ? (root.image.charAt(0) === "/" ? "file://" + root.image : root.image)
+                : ""
+            visible: root.usingImage && art.status === Image.Ready
+            // Stretch, not PreserveAspectFit: the panel above has already
+            // been sized to this file's exact aspect ratio, so the two agree
+            // and there is nothing to letterbox. smooth covers the small
+            // upscale from the artwork's natural width to the dialog's.
+            fillMode: Image.Stretch
+            smooth: true
+            mipmap: true
+            cache: true
+        }
 
         // The soft lighter wash toward the upper right. A diagonal linear
         // ramp rather than a radial one: at this size the two are
@@ -156,6 +232,7 @@ Item {
                 GradientStop { position: 1.0; color: theme.brandPanelLight }
             }
             opacity: 0.9
+            visible: root.drawnPanel
         }
 
         // Flag and wordmark travel together as one centred group, the way
@@ -167,7 +244,7 @@ Item {
             anchors.centerIn: parent
             anchors.verticalCenterOffset: -4
             spacing: theme.rowSpacing
-            visible: root.wordmark.length > 0 || theme.showFlag
+            visible: root.drawnPanel && (root.wordmark.length > 0 || theme.showFlag)
 
             Kit.XpFlag {
                 theme: root.theme
@@ -233,7 +310,7 @@ Item {
 
         Text {
             id: copyrightText
-            visible: root.copyright.length > 0
+            visible: root.drawnPanel && root.copyright.length > 0
             anchors.left: parent.left
             anchors.leftMargin: theme.rowSpacing
             anchors.bottom: parent.bottom
@@ -247,7 +324,7 @@ Item {
         }
 
         Text {
-            visible: root.vendor.length > 0
+            visible: root.drawnPanel && root.vendor.length > 0
             anchors.right: parent.right
             anchors.rightMargin: theme.rowSpacing
             anchors.bottom: parent.bottom

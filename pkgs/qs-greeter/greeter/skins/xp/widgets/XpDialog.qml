@@ -22,13 +22,22 @@ Item {
     property string bannerWordmark: ""
     property string bannerWordmarkAccent: ""
     property string bannerVendor: ""
+    property string bannerImage: ""
     property var buttons: []
 
     // The real dialog is a wide, short box -- its two field rows sit on
     // single lines with their labels beside them, so it has no reason to be
     // tall. A narrower box forces the fields to look cramped next to their
     // label column.
-    implicitWidth: 442
+    //
+    // When the banner is carrying artwork, the dialog takes ITS width
+    // instead, so the bitmap renders 1:1. That panel is almost entirely
+    // logotype, and rescaling type inside a bitmap softens it visibly --
+    // which is the one thing artwork was brought in to avoid. The banner
+    // spans the full width inside the frame, hence the two bevels.
+    implicitWidth: banner.artNaturalWidth > 0
+        ? banner.artNaturalWidth + theme.bevel * 2
+        : 442
     // banner.implicitHeight, not theme.bannerHeight: the banner is two
     // different heights depending on whether it carries a brand panel, and
     // it is the thing that knows which.
@@ -86,6 +95,7 @@ Item {
                 wordmark: root.bannerWordmark
                 wordmarkAccent: root.bannerWordmarkAccent
                 vendor: root.bannerVendor
+                image: root.bannerImage
                 width: layout.width
             }
 

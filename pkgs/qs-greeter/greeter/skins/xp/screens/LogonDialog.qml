@@ -508,6 +508,10 @@ Item {
         bannerWordmark: root._brand("wordmark")
         bannerWordmarkAccent: root._brand("wordmarkAccent")
         bannerVendor: root._brand("vendor")
+        // Nix-only: SettingsMerge.js does not copy branding.image out of
+        // the user tier, so this can only ever be the store path the module
+        // rendered into defaults.json.
+        bannerImage: root._brand("image")
         contentItem: content
         // Rebuilding this array (and so the button row) whenever `blocked`
         // flips is inherent to XpDialog's own buttons-array API (any
