@@ -143,7 +143,10 @@ in {
         this greeter always made before this option existed. Set it
         explicitly on any host where a closed-lid or otherwise unreachable
         output could sort first (a docked laptop being the concrete case
-        that motivated this option).
+        that motivated this option). If the named output is not currently
+        connected (e.g. the same laptop undocked), shell.qml falls back to
+        the same "whichever output Quickshell lists first" behavior rather
+        than leaving no output holding the keyboard at all.
       '';
     };
 
