@@ -83,6 +83,20 @@ cat >"$tmp/defaults-picker-off.json" <<JSON
   "sessions": { "picker": false, "default": null } }
 JSON
 
+# F5: optionsExpanded must initialize the Options expansion state from
+# Settings.config, not always start collapsed -- defaults_common always
+# sets it false, so this is a dedicated fixture with the one field flipped.
+cat >"$tmp/defaults-options-expanded.json" <<JSON
+{ "skin": "xp",
+  "skins": { "xp": { "palettes": ["luna", "gruvbox"] } },
+  "skinSettings": { "xp": { "palette": "luna" } },
+  "backdrop": { "kind": "color", "color": "#3A6EA5", "image": null, "fit": "cover" },
+  "optionsExpanded": true,
+  "rememberLastUser": true,
+  "branding": { "title": "Log On to Windows", "subtitle": "Microsoft Windows XP  Professional" },
+  "sessions": { "picker": true, "default": null } }
+JSON
+
 printf '{"lastUser":"prior","lastSession":"zsh (console)"}' >"$tmp/state-zsh.json"
 
 # qs -p does not reliably return control on Qt.quit() in this environment
@@ -160,8 +174,18 @@ run_qs "$out4" logon-dialog-precedence-test.qml \
   QSG_USER_FILE="$tmp/no-such-user-file.json" \
   QSG_SESSIONS="$tmp/sessions.json" \
   QSG_STATE_FILE="$tmp/state-main-off.json" \
-  QSG_TEST_PICKER_OFF=1
+  QSG_TEST_PICKER_OFF=1 \
+  QSG_TEST_EXPECT_OPTIONS_EXPANDED=0
 check_case "precedence: Options is a no-op when the picker is disabled" "LOGON-PRECEDENCE-TEST" "$out4"
+
+out6="$tmp/out6.log"
+run_qs "$out6" logon-dialog-precedence-test.qml \
+  QSG_DEFAULTS="$tmp/defaults-options-expanded.json" \
+  QSG_USER_FILE="$tmp/no-such-user-file.json" \
+  QSG_SESSIONS="$tmp/sessions.json" \
+  QSG_STATE_FILE="$tmp/state-main-options-expanded.json" \
+  QSG_TEST_EXPECT_OPTIONS_EXPANDED=1
+check_case "F5: optionsExpanded initializes true from Settings" "LOGON-PRECEDENCE-TEST" "$out6"
 
 # Task 12: construction-only smoke check, once per palette. This run goes
 # through the REAL Skin.qml (unlike logon-dialog-test.qml above), so it is

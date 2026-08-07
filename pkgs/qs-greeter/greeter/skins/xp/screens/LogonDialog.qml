@@ -19,18 +19,24 @@ import "../widgets" as Widgets
 // directory -- Quickshell's singleton registration is per-directory, so a
 // bare reference from here needs its own link even though skins/xp/Skin.qml
 // already has one. That also means Settings here is a DIFFERENT singleton
-// instance than the one Skin.qml reads for the palette: harmless today
-// only because this file reads Settings.config.sessions/branding and
-// Skin.qml reads Settings.palette, disjoint keys with no computation
-// shared between the two reads. Nothing enforces that split -- if a future
-// change reads the SAME config key from both directories, the two
-// instances can settle (finish loading) at different times and briefly
-// disagree. NOT called "State" -- QtQuick already has a built-in
-// `State` element, and a same-named singleton is silently shadowed by it
-// everywhere `import QtQuick` is in scope, i.e. everywhere. Confirmed the
-// hard way: `State.save()` resolved to QtQuick's State and threw "Property
-// 'save' of object QtQuick/State is not a function" instead of ever
-// reaching this file's singleton).
+// instance than the one Skin.qml reads for the palette -- and there are
+// FOUR such independent instances in this tree in total, not just these
+// two, one per directory that carries its own Settings.qml symlink:
+// greeter/ itself (shell.qml's own bare reference, reads Settings.skinName),
+// greeter/screens/ (Backdrop.qml, reads Settings.config.backdrop and
+// Settings.backdropPath), greeter/skins/xp/ (Skin.qml, reads
+// Settings.palette), and greeter/skins/xp/screens/ (this file, reads
+// Settings.config.sessions/branding/rememberLastUser/optionsExpanded).
+// Harmless today only because every one of the four reads a disjoint set of
+// keys, with no computation shared between any pair of them. Nothing
+// enforces that split -- if a future change reads the SAME config key from
+// two of these four directories, those two instances can settle (finish
+// loading) at different times and briefly disagree. NOT called "State" --
+// QtQuick already has a built-in `State` element, and a same-named
+// singleton is silently shadowed by it everywhere `import QtQuick` is in
+// scope, i.e. everywhere. Confirmed the hard way: `State.save()` resolved
+// to QtQuick's State and threw "Property 'save' of object QtQuick/State is
+// not a function" instead of ever reaching this file's singleton).
 Item {
     id: root
     required property var session
@@ -65,6 +71,40 @@ Item {
     focus: root.visible
     Keys.onEscapePressed: root._cancel()
     Keys.onReturnPressed: root._ok()
+
+    // Nothing has keyboard focus at boot without this: `focus: root.visible`
+    // above only ever routes Enter/Escape (this Item's own Keys.on*
+    // handlers) -- it does not, by itself, give either XpTextField's inner
+    // TextInput the actual character-level activeFocus a login screen
+    // needs. XpTextField.forceFocus() exists for exactly this and
+    // previously had zero callers. Gated on root.visible, never
+    // unconditional, matching the same hidden-dialog rule the comment
+    // above already states for `focus: root.visible` itself: a hidden
+    // dialog (behind SkinFatal, or behind the ShutDown modal) must never
+    // steal a focus claim. This covers the dialog becoming visible after
+    // starting hidden (greetd or the session list arriving late); the
+    // Component.onCompleted near the bottom of this file (QML permits only
+    // one per object, so it is merged with the pre-existing combo-default
+    // sync there rather than duplicated here) covers the common case where
+    // it is visible from the very first frame.
+    onVisibleChanged: if (root.visible) userField.forceFocus();
+
+    // The other half of F1/F4: the instant PAM asks a new response-required
+    // question, move focus to the field that answers it and clear whatever
+    // text a PREVIOUS prompt left behind, strictly before this prompt's own
+    // echo mode (session.promptSecret, read through activeEcho below) can
+    // apply to that leftover text -- session.promptArriving() fires before
+    // Session.qml assigns promptLabel/promptSecret for exactly this
+    // ordering (see its own comment). Without this, an echo-off prompt
+    // (e.g. a PIN) followed by an echo-on prompt re-renders whatever the
+    // user typed for the FIRST prompt in cleartext on a pre-auth screen.
+    Connections {
+        target: root.session
+        function onPromptArriving() {
+            secretField.text = "";
+            if (root.visible) secretField.forceFocus();
+        }
+    }
 
     // --- the active field: chrome bound to whatever PAM last asked for ---
     readonly property bool _authenticating: !!root.session && root.session.state === "authenticating"
@@ -104,7 +144,17 @@ Item {
     // wrapper/sessions-parse.sh, which appends them after the graphical
     // and extra entries, so "first" here already means "first graphical"
     // in the common case). ---
-    property bool optionsExpanded: false
+    // Initial value only -- toggleOptions() below assigns this property
+    // directly, and a plain imperative assignment permanently tears down
+    // whatever declarative binding a property started with (standard QML
+    // behavior), so this binding only ever governs the very first render;
+    // after that it is free-toggle state exactly as before. Settings.config
+    // starts as an empty object before Settings.ready settles, so this
+    // reads false at construction and re-evaluates once the real config
+    // lands (Settings.config is reassigned wholesale on settle, which
+    // re-fires this binding's dependency the same way _syncComboDefault()'s
+    // own Settings.onReadyChanged connection reacts to the same settle).
+    property bool optionsExpanded: !!(Settings.config && Settings.config.optionsExpanded)
     property bool _comboUserSet: false
 
     function _sessionNames() {
@@ -155,7 +205,16 @@ Item {
         target: GreeterState
         function onLastSessionChanged() { root._syncComboDefault(); }
     }
-    Component.onCompleted: root._syncComboDefault()
+    // Combines both this file's own startup actions -- QML only permits one
+    // Component.onCompleted per object, so the F1 initial-focus claim
+    // (see the header note near `onVisibleChanged` above, which covers the
+    // dialog becoming visible LATER; this covers it already being visible
+    // on the very first frame) lives here alongside the pre-existing combo
+    // default sync rather than as a second handler.
+    Component.onCompleted: {
+        root._syncComboDefault();
+        if (root.visible) userField.forceFocus();
+    }
 
     function _resolveEntry() {
         var list = (!!root.sessions && root.sessions.list) || [];
@@ -198,6 +257,13 @@ Item {
         secretField.text = "";
     }
 
+    // rememberLastUser is a COSMETIC key (SettingsMerge.js's COSMETIC table),
+    // absent-or-true by default (the Nix-rendered defaults.json always sets
+    // it explicitly, but a hand-built Settings.config in a test might not),
+    // so the check is `!== false`, not a bare truthiness read on a possibly
+    // undefined value.
+    readonly property bool _rememberLastUser: Settings.config.rememberLastUser !== false
+
     function _launchSelected() {
         var entry = root._resolveEntry();
         if (!entry) return;
@@ -209,7 +275,12 @@ Item {
         // click, since OK's own handler reads userField.text into begin()
         // in the first place, but there is no reason to route back through
         // the widget for a value Session already owns authoritatively.
-        GreeterState.lastUser = root.session.user;
+        //
+        // rememberLastUser = false skips this write entirely -- not just
+        // the prefill below -- so a user who opted out never has their name
+        // land on disk from a successful login, no matter what a previous
+        // (remembering) login already left there.
+        if (root._rememberLastUser) GreeterState.lastUser = root.session.user;
         GreeterState.lastSession = entry.name;
         GreeterState.save();
         root.session.launch(entry);
@@ -290,7 +361,12 @@ Item {
                 id: userField
                 theme: root.theme
                 label: "User name:"
-                text: GreeterState.lastUser
+                // Skips the prefill outright when rememberLastUser is
+                // false, independent of whatever GreeterState.lastUser
+                // still holds on disk (root._rememberLastUser, defined
+                // below near _launchSelected() which is the other half of
+                // this same setting).
+                text: root._rememberLastUser ? GreeterState.lastUser : ""
                 width: parent.width
                 enabled: !root.session
                     || root.session.state === "idle"
@@ -327,6 +403,7 @@ Item {
                     font.family: root.theme.uiBold
                     font.bold: true
                     font.pixelSize: root.theme.uiSize
+                    textFormat: Text.PlainText
                 }
                 Widgets.XpComboBox {
                     id: combo
@@ -345,6 +422,7 @@ Item {
                 id: statusText
                 width: parent.width
                 text: root.statusLineText
+                textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: (!!root.session && root.session.statusIsError && !root.blocked
                     && !root.session.waitingForDevice) ? root.theme.errorText : root.theme.infoText

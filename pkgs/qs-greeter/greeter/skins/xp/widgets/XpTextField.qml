@@ -31,6 +31,7 @@ Item {
             id: labelText
             visible: root.label.length > 0
             text: root.label
+            textFormat: Text.PlainText
             color: theme.infoText
             font.family: theme.uiBold
             font.bold: true
@@ -54,6 +55,24 @@ Item {
                 color: "transparent"
                 border.width: 1
                 border.color: theme.faceShadow
+            }
+
+            // theme.focusRing made visible: declared in Theme.qml and read
+            // by nothing until this fix. A pure overlay -- extends 2px
+            // OUTSIDE field's own bounds via negative margins rather than
+            // touching field's own border, so it cannot perturb this
+            // widget's implicitWidth/Height (field's size is set by
+            // explicit width/height above, not by its children, so a child
+            // partially outside its bounds is fine and does not resize it)
+            // or interact with the sunken-inset Rectangle above.
+            Rectangle {
+                id: focusRing
+                visible: input.activeFocus
+                anchors.fill: parent
+                anchors.margins: -2
+                color: "transparent"
+                border.width: 2
+                border.color: theme.focusRing
             }
 
             TextInput {

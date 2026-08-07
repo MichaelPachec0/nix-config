@@ -68,6 +68,20 @@ ShellRoot {
                     check("preselectMatchesExpectedPrecedence", dlg.testComboCurrentName, expectPreselect);
                 }
 
+                // F5: optionsExpanded must initialize from
+                // Settings.config.optionsExpanded, read BEFORE the
+                // toggleOptions() call below -- that call assigns
+                // dlg.optionsExpanded directly, which permanently tears
+                // down whatever declarative binding it started with
+                // (standard QML behavior for a property that had one), so
+                // this is the only point in this dlg instance's lifetime
+                // where the INITIAL value is still observable.
+                var expectOptionsExpanded = Quickshell.env("QSG_TEST_EXPECT_OPTIONS_EXPANDED");
+                if (expectOptionsExpanded === "0" || expectOptionsExpanded === "1") {
+                    check("optionsExpandedInitializesFromSettings",
+                        dlg.optionsExpanded, expectOptionsExpanded === "1");
+                }
+
                 var before = dlg.optionsExpanded;
                 dlg.toggleOptions();
                 if (pickerOff) {

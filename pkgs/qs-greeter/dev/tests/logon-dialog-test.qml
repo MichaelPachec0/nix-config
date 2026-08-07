@@ -74,6 +74,23 @@ ShellRoot {
     function wait(label, predicateFn, timeoutMs, thenFn) {
         queue.push(["wait", label, predicateFn, timeoutMs, thenFn]);
     }
+    // A pure delay, asserting nothing -- distinct from wait() above, whose
+    // timeout path always counts as a failed assertion if the predicate
+    // never turns true. Exists for GreeterState.qml's FileView.writeAdapter():
+    // each write runs on a background QThreadPool worker (confirmed by
+    // reading Quickshell's own fileview.cpp), with no queueing between
+    // successive setData() calls on the same FileView -- two save() calls
+    // issued close together race two independent writer threads, and
+    // whichever happens to finish LAST wins regardless of which was issued
+    // last, which is backwards under load. A real login never calls save()
+    // twice within milliseconds of another (human typing speed, not two
+    // MockBackend-driven instant logins back to back), so this is a
+    // synthetic-test-only hazard, not a production one -- reproduced and
+    // root-caused by hand (comboIdx/entry/session.user were already
+    // correct at the point of the SECOND _launchSelected() call; the
+    // GreeterState fields read back moments later reverted to the FIRST
+    // call's values regardless), not worked around blind.
+    function pause(ms) { queue.push(["pause", ms]); }
     function drain() {
         if (queue.length === 0) {
             console.log("LOGON-TEST " + (pass === total ? "PASS" : "FAIL") + " " + pass + "/" + total);
@@ -84,6 +101,11 @@ ShellRoot {
         if (head[0] === "action") {
             head[1]();
             root.drain();
+        } else if (head[0] === "pause") {
+            var pt = Qt.createQmlObject('import QtQuick; Timer { repeat: false }', root);
+            pt.interval = head[1];
+            pt.triggered.connect(function () { pt.destroy(); root.drain(); });
+            pt.start();
         } else {
             _pollUntil(head[1], head[2], head[3], head[4]);
         }
@@ -188,6 +210,37 @@ ShellRoot {
             check("secretFieldClearedOnFailure", dlg.testSecretFieldText, "");
             check("rowsUnchangedOnFailure", dlg.testUserRowHeight, root.fixedUserRow);
         });
+
+        // --- F4: a prompt sequence secret-then-visible must never leave
+        // the PRIOR prompt's text sitting in the field once the new
+        // prompt's echo mode has taken effect. secret-then-visible.json
+        // asks an echo-off "Password:" first, then (after that response)
+        // an echo-on "Confirm code:" -- exactly the shape the finding
+        // describes: if the field is not cleared until session.state
+        // changes or _cancel() runs (as it was before this fix), the
+        // password typed for step one would render in CLEARTEXT the
+        // instant step two's echo-on mode applies to it. session.
+        // promptArriving() fires (and this file's Connections handler
+        // clears secretField.text) strictly before promptLabel/
+        // promptSecret change, so by the time this poll observes the new
+        // label, the field must already read empty -- this assertion is
+        // exactly what would go red if that ordering, or the clear
+        // itself, regressed. ---
+        action(function () {
+            Session.cancel();
+            mock.loadScenario("secret-then-visible");
+            Session.begin("f4testuser");
+        });
+        wait("secretThenVisiblePrompt1", function () { return Session.promptLabel === "Password:"; }, 2000, function () {
+            dlg.testSetSecretText("hunter2");
+            check("secretPromptEchoIsOff", dlg.testSecretFieldEchoMode, TextInput.Password);
+            Session.submit("hunter2");
+        });
+        wait("secretThenVisiblePrompt2", function () { return Session.promptLabel === "Confirm code:"; }, 2000, function () {
+            check("priorSecretNeverLeaksIntoVisiblePrompt", dlg.testSecretFieldText, "");
+            check("secondPromptEchoIsOn", dlg.testSecretFieldEchoMode, TextInput.Normal);
+        });
+        action(function () { Session.cancel(); });
 
         // --- info message (touch-2fa): renders as status text, does NOT
         // create a third input, and is never responded to a second time ---
@@ -388,6 +441,58 @@ ShellRoot {
         wait("selectLaunched", function () { return Session.state === "launched"; }, 2000, function () {
             check("explicitSelectionWinsAtLaunch", XpScreens.GreeterState.lastSession, "Sway (uwsm-managed)");
             check("lastUserWrittenBeforeLaunch", XpScreens.GreeterState.lastUser, "secondlogin");
+        });
+        // See pause()'s own comment: gives this block's GreeterState.save()
+        // background writer thread room to finish before the next block
+        // issues another one, so the two cannot race.
+        pause(500);
+
+        // --- F5: rememberLastUser = false must skip BOTH the prefill and
+        // the write-on-launch, not just one half -- a config with only one
+        // of the two fixed looks like it works (the field is empty at
+        // boot) while still silently leaking the username to disk on every
+        // login. Settings.config is mutated directly here (through
+        // XpScreens.Settings, the SAME per-directory instance
+        // LogonDialog.qml itself reads -- see this file's own header note
+        // on why that qualifier, not the bare singleton, is required)
+        // rather than through a whole new fixture file: it is a plain
+        // reassignment of an already-settled config object and needs no
+        // FileView settle machinery of its own.
+        //
+        // Drives straight to "ready" rather than running a full
+        // begin()/submit() scenario through MockBackend: the launch path
+        // itself is not what this check is about. Does NOT also call
+        // dlg._launchSelected() directly -- reaching "ready" here already
+        // fires LogonDialog's own onStateChanged, which Qt.callLater-
+        // defers straight into that SAME private helper (see that
+        // handler's own comment for why the deferral exists), so calling
+        // it a second time on top of that would queue two writes instead
+        // of one. One trigger, one call: driven through the real state
+        // transition and waited for below. ---
+        action(function () {
+            Session.cancel();
+            var cfg = JSON.parse(JSON.stringify(XpScreens.Settings.config));
+            cfg.rememberLastUser = false;
+            XpScreens.GreeterState.lastUser = "sentinel-should-not-change";
+            XpScreens.Settings.config = cfg;
+            check("prefillSkippedWhenRememberFalse", dlg.testUserFieldText, "");
+            // Deterministic, not whatever a previous block's combo click
+            // left selected: dlg._comboUserSet latches once any earlier
+            // block picks a session, and this suite's dlg instance is
+            // shared across every block in this file.
+            dlg.testSelectSessionByName("Hyprland (uwsm-managed)");
+            Session.user = "rememberfalseuser";
+            Session._state = "ready";
+        });
+        wait("rememberFalseLaunched", function () { return Session.state === "launched"; }, 1000, function () {
+            check("lastSessionStillWrittenWhenRememberFalse", XpScreens.GreeterState.lastSession, "Hyprland (uwsm-managed)");
+            check("lastUserWriteSkippedWhenRememberFalse", XpScreens.GreeterState.lastUser, "sentinel-should-not-change");
+            // Restores rememberLastUser so this mutation does not leak into
+            // whatever might run after this block in a future edit.
+            var restored = JSON.parse(JSON.stringify(XpScreens.Settings.config));
+            restored.rememberLastUser = true;
+            XpScreens.Settings.config = restored;
+            Session.cancel();
         });
 
         drain();

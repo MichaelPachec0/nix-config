@@ -52,12 +52,37 @@ Item {
             ColorAnimation { to: theme.defaultGlowTo; duration: theme.pulseDuration }
             ColorAnimation { to: theme.defaultGlowFrom; duration: theme.pulseDuration }
         }
+
+        // theme.focusRing made visible: declared in Theme.qml and read by
+        // nothing until this fix. A separate overlay Rectangle rather than
+        // driving `body.border.color` itself, so it never fights the
+        // pulse-glow `SequentialAnimation on border.color` immediately
+        // above -- that animation is a property value source that owns
+        // border.color outright whenever it is running, and layering a
+        // second driver onto the same property is exactly the kind of
+        // interaction this avoids by construction rather than by ordering.
+        // Currently reachable only if a future caller Tab-focuses a button
+        // (nothing in this codebase does yet -- OK/Cancel are today only
+        // ever reached by mouse or by the dialog root's own Keys.
+        // onReturnPressed calling _ok() directly), wired now so the ring
+        // exists the moment that changes.
+        Rectangle {
+            id: focusRing
+            visible: root.activeFocus
+            anchors.fill: parent
+            anchors.margins: -2
+            radius: body.radius
+            color: "transparent"
+            border.width: 2
+            border.color: theme.focusRing
+        }
     }
 
     Text {
         id: label
         anchors.centerIn: parent
         text: root.text
+        textFormat: Text.PlainText
         color: theme.buttonText
         font.family: theme.ui
         font.pixelSize: theme.uiSize
