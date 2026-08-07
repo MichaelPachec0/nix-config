@@ -82,6 +82,7 @@ Item {
             anchors.rightMargin: 4
             elide: Text.ElideRight
             text: root.currentName
+            textFormat: Text.PlainText
             color: theme.fieldText
             font.family: theme.ui
             font.pixelSize: theme.uiSize
@@ -116,6 +117,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: "6"
+                textFormat: Text.PlainText
                 font.family: theme.glyph
                 font.pixelSize: theme.uiSize
                 color: theme.buttonText
@@ -166,6 +168,7 @@ Item {
                     anchors.leftMargin: 4
                     verticalAlignment: Text.AlignVCenter
                     text: String(modelData)
+                    textFormat: Text.PlainText
                     color: ListView.isCurrentItem ? theme.bannerText : theme.fieldText
                     font.family: theme.ui
                     font.pixelSize: theme.uiSize

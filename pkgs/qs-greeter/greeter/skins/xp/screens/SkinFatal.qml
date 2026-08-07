@@ -26,6 +26,7 @@ Item {
     Text {
         id: msg
         text: root.reason
+        textFormat: Text.PlainText
         wrapMode: Text.WordWrap
         width: 300
         color: root.theme.infoText

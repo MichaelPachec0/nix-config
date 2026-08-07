@@ -25,6 +25,7 @@ Item {
     Text {
         id: msgText
         text: root.text
+        textFormat: Text.PlainText
         wrapMode: Text.WordWrap
         width: 300
         color: theme.infoText

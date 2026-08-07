@@ -51,6 +51,7 @@ Item {
             anchors.centerIn: parent
             width: parent.width - theme.dialogPad * 2
             text: root.text
+            textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             color: theme.infoText
             font.family: theme.ui

@@ -112,6 +112,7 @@ Item {
             Text {
                 width: parent.width
                 text: "What do you want the computer to do?"
+                textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.theme.infoText
                 font.family: root.theme.ui
@@ -132,6 +133,7 @@ Item {
                 width: parent.width
                 text: (combo.currentIndex >= 0 && combo.currentIndex < root._actions.length)
                     ? root._actions[combo.currentIndex].description : ""
+                textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.theme.infoText
                 font.family: root.theme.ui

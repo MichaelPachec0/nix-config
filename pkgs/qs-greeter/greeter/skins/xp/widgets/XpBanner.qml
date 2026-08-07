@@ -1,5 +1,13 @@
 import QtQuick
 
+// title/subtitle are rendered here but not chosen here: LogonDialog.qml
+// feeds this from Settings.config.branding.title/subtitle, a user-tier
+// writable key, and SkinFatal.qml/ShutDownDialog.qml feed fixed literals.
+// Without an explicit textFormat, Qt's AutoText detection would let a
+// branding.title containing markup (including an <img src="file://...">)
+// actually render as rich text on a pre-auth screen -- both Text elements
+// below pin PlainText so that can never happen regardless of which caller
+// is driving this file.
 Item {
     id: root
     required property var theme
@@ -51,6 +59,7 @@ Item {
             Text {
                 width: parent.width
                 text: root.title
+                textFormat: Text.PlainText
                 color: theme.bannerText
                 font.family: theme.uiBold
                 font.bold: true
@@ -61,6 +70,7 @@ Item {
                 width: parent.width
                 visible: root.subtitle.length > 0
                 text: root.subtitle
+                textFormat: Text.PlainText
                 color: theme.bannerSubtext
                 font.family: theme.ui
                 font.pixelSize: theme.uiSize - 1
