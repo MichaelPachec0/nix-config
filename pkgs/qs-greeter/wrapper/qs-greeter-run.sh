@@ -94,6 +94,40 @@ mapfile -t old < <(find "$log_dir" -name 'greeter-*.log' -printf '%T@ %p\n' 2>/d
   | sort -n | head -n -$((log_keep - 1)) | cut -d' ' -f2-)
 for f in "${old[@]:-}"; do [ -n "$f" ] && rm -f "$f"; done
 
+# --- Qt environment hygiene ------------------------------------------------
+# greetd sources /etc/profile for the greeter session (source_profile,
+# documented as defaulting to true in greetd.5), and NixOS's /etc/profile
+# sources /etc/set-environment -- so the host's entire environment.variables
+# set arrives here, chosen for the logged-in user's desktop and never for a
+# greeter. QT_QPA_PLATFORMTHEME is the one that is fatal rather than merely
+# wrong: with qt.platformTheme = "gtk2" (or "gtk3") Qt loads a platform theme
+# plugin that links GTK and calls gtk_init(), and gtk_init() -- unlike
+# gtk_init_check() -- prints "cannot open display:" and calls exit(1) on the
+# whole process when no X display exists. The greeter compositor runs
+# "xwayland disable", so one never does.
+#
+# That failure is close to invisible, which is why it is unset here rather
+# than worked around later: a clean exit(1) leaves no coredump, so it does not
+# look like a crash; and by that point quickshell's threaded logger has
+# switched to a queued event-loop connection, so everything it logs from there
+# on waits for QGuiApplication::exec() to flush it -- which a process dying
+# inside the QGuiApplication constructor never reaches. GTK's own warning goes
+# straight to stderr, bypassing Qt's logger entirely, and is the only evidence
+# that survives.
+#
+# Neither variable has anything to offer this program: the greeter renders its
+# own skin with its own palette and uses no platform palette, no native
+# dialogs and no widget style. ReGreet never tripped over this because it is
+# GTK4 and ignores both.
+unset QT_QPA_PLATFORMTHEME QT_STYLE_OVERRIDE
+
+# Refuse to silently fall back to xcb for the same reason -- on a greeter with
+# no xwayland, an X11 fallback can only fail, and failing loudly as "wayland
+# platform unavailable" beats failing as a GTK warning about a display nobody
+# asked for. Defaulted rather than forced so the headless dev suites can still
+# ask for offscreen.
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland}"
+
 # --- run -------------------------------------------------------------------
 # shellcheck disable=SC2086
 if [ -n "$qs_cmd" ]; then

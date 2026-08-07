@@ -47,12 +47,38 @@ pkgs.testers.nixosTest {
     # even if that ever changes.
     security.pam.services.greetd.u2fAuth = lib.mkForce false;
 
-    # greetd execs sway as a PAM session, not a login shell, so
-    # environment.variables (shell-sourced) never reaches it --
-    # environment.sessionVariables is the lever that does: NixOS wires it
-    # into every PAM service's session stack via pam_env
-    # (security.pam.services.<name>.setEnvironment, on by default), which
-    # is how greetd's exec'd sway process actually picks this up.
+    # Reproduces the exact host condition that killed the first real cutover.
+    # greetd sources /etc/profile for the greeter session (source_profile,
+    # documented as defaulting to true in greetd.5), and NixOS's /etc/profile
+    # sources /etc/set-environment -- so the host's whole environment.variables
+    # set reaches the greeter after all, including the QT_QPA_PLATFORMTHEME
+    # that qt.platformTheme writes. With "gtk2" that is fatal rather than
+    # cosmetic: Qt loads the qt6gtk2 platform theme, which links GTK and calls
+    # gtk_init(), and gtk_init() (unlike gtk_init_check()) prints
+    # "cannot open display:" and calls exit(1) on the whole process when no X
+    # display exists. The greeter compositor runs "xwayland disable", so one
+    # never does, and quickshell died inside the QGuiApplication constructor
+    # before loading a line of QML.
+    #
+    # This must be the real qt module and not just a hand-set
+    # environment.variables entry: without the plugin actually installed, Qt
+    # merely warns that the platform theme could not be loaded and carries on,
+    # so a hand-set variable would pass this test whether or not the bug came
+    # back. It is the plugin being present AND selected that reproduces it.
+    qt = {
+      enable = true;
+      platformTheme = "gtk2";
+    };
+
+    # environment.sessionVariables reaches the greeter through PAM: NixOS
+    # wires it into every PAM service's session stack via pam_env
+    # (security.pam.services.<name>.setEnvironment, on by default), which is
+    # how greetd's exec'd sway process picks this up. It is used here rather
+    # than environment.variables only because it needs no profile sourcing to
+    # work -- NOT, as this comment previously claimed, because
+    # environment.variables fails to reach a greeter session. It does reach
+    # it, via greetd's own source_profile; assuming otherwise is exactly what
+    # let the QT_QPA_PLATFORMTHEME failure above ship.
     # WLR_RENDERER=pixman is needed because GLES2 does not work under this
     # VM's virtio-gpu without virgl -- the identical problem and fix
     # nixos/tests/sway.nix uses, for the same underlying reason.
@@ -84,6 +110,17 @@ pkgs.testers.nixosTest {
         "journalctl -t qs-greeter | grep -q 'settings ready'")
     machine.wait_until_succeeds(
         "journalctl -t qs-greeter | grep -q 'sessions: '")
+
+    # The greeter's Qt process was not killed before it could load any QML by
+    # an inherited platform theme that links GTK (see the qt.platformTheme
+    # note on the node above). Checked explicitly rather than relying on the
+    # assertions around it: every one of those would also fail here, but they
+    # would fail as "settings ready never appeared" or "the screen stayed
+    # black", which is what made this cost an evening of bisecting the wrong
+    # layer. This line names the actual cause. The message comes from GTK
+    # itself, straight to stderr, bypassing Qt's logger -- which is why it is
+    # the ONLY surviving evidence when this happens.
+    machine.fail("journalctl -t qs-greeter | grep -q 'cannot open display'")
 
     # Neither fallback path was taken: greetd was available to the greeter,
     # and the configured skin actually instantiated rather than the Loader
