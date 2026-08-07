@@ -80,14 +80,29 @@ Item {
     // previously had zero callers. Gated on root.visible, never
     // unconditional, matching the same hidden-dialog rule the comment
     // above already states for `focus: root.visible` itself: a hidden
-    // dialog (behind SkinFatal, or behind the ShutDown modal) must never
-    // steal a focus claim. This covers the dialog becoming visible after
-    // starting hidden (greetd or the session list arriving late); the
-    // Component.onCompleted near the bottom of this file (QML permits only
-    // one per object, so it is merged with the pre-existing combo-default
-    // sync there rather than duplicated here) covers the common case where
-    // it is visible from the very first frame.
+    // dialog (behind SkinFatal) must never steal a focus claim. This
+    // covers the dialog becoming visible after starting hidden (greetd or
+    // the session list arriving late); the Component.onCompleted near the
+    // bottom of this file (QML permits only one per object, so it is
+    // merged with the pre-existing combo-default sync there rather than
+    // duplicated here) covers the common case where it is visible from the
+    // very first frame.
     onVisibleChanged: if (root.visible) userField.forceFocus();
+
+    // Final micro-fix, second item: Skin.qml disables this dialog while
+    // the Shut Down modal is up (`enabled: !root.shutDownVisible`) rather
+    // than hiding it -- `visible` never changes, only opacity does, so
+    // neither the claim above nor Component.onCompleted's ever fires for
+    // this transition. Qt clears activeFocus when an item is disabled and
+    // does NOT restore it when the item is re-enabled, so cancelling that
+    // modal left the keyboard dead until the user clicked a field. Same
+    // conditional pattern as every other claim in this file: gated on
+    // visible && enabled (enabled is read explicitly here, not implied by
+    // firing only on enabledChanged, so a future caller that disables this
+    // dialog for some other reason while it happens to already be enabled
+    // cannot steal a claim it should not have), reusing the existing
+    // built-in enabledChanged signal rather than adding a new one.
+    onEnabledChanged: if (root.visible && root.enabled) userField.forceFocus();
 
     // The other half of F1/F4: the instant PAM asks a new response-required
     // question, move focus to the field that answers it and clear whatever
@@ -319,6 +334,9 @@ Item {
     // out under a name that says what it is for). ---
     readonly property alias testUserFieldText: userField.text
     readonly property alias testUserFieldEnabled: userField.enabled
+    // Final micro-fix, Item 2: see XpTextField.qml's own comment on why
+    // this counts calls rather than reading activeFocus directly.
+    readonly property alias testUserFieldForceFocusCalls: userField._forceFocusCalls
     readonly property alias testUserRowHeight: userField.height
     readonly property alias testSecretFieldLabel: secretField.label
     readonly property alias testSecretFieldEchoMode: secretField.echoMode

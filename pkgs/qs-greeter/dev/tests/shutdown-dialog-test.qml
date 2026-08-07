@@ -246,6 +246,13 @@ ShellRoot {
         // covers).
         skin.testLogonDialog.shutDownRequested();
         ok("reopenedForCancelCheck", skin.shutDownVisible === true);
+        // Final micro-fix, Item 2: Skin.qml disables (not hides) LogonDialog
+        // while the modal is up, so `visible` never changes and neither of
+        // LogonDialog's own visible-gated focus claims fires for this
+        // transition -- captured before the cancel below so the assertion
+        // that follows proves a NEW claim happened, not just that one
+        // happened at some earlier point (e.g. at construction).
+        var forceFocusCallsBeforeCancel = skin.testLogonDialog.testUserFieldForceFocusCalls;
         (function () {
             var powerFired = false;
             var conn = function () { powerFired = true; };
@@ -256,6 +263,15 @@ ShellRoot {
         })();
         ok("cancelClosesTheModal", skin.shutDownVisible === false);
         ok("logonDialogReenabledAfterCancel", skin.testLogonDialog.enabled === true);
+        // The core assertion this item is about: re-enabling the dialog
+        // after Cancel must re-claim focus on the user field, the same
+        // field the dialog claims on first becoming visible. activeFocus
+        // itself is not observable under offscreen QPA (see XpTextField.
+        // qml's own comment); this proves the CODE PATH that would set it
+        // actually ran again, which is what regressed (onEnabledChanged
+        // never firing that call at all is the exact bug this item fixes).
+        ok("focusReclaimedAfterShutDownCancel",
+            skin.testLogonDialog.testUserFieldForceFocusCalls > forceFocusCallsBeforeCancel);
 
         // === Part 2b: SkinFatal's own seam, on the independent instance ===
         ok("fatalSkinRoutesToSkinFatal", fatalSkin._fatal === true);

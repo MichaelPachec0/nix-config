@@ -14,6 +14,17 @@ Item {
     // TextInput.Password/Normal mapping outside this file.
     readonly property int echoMode: input.echoMode
 
+    // Exposed for headless testing only: input.activeFocus itself is not
+    // observable under offscreen QPA (confirmed empirically -- forceActive
+    // Focus() never actually flips it without a real window, since a bare
+    // ShellRoot with no PanelWindow establishes no focus scope at all), so
+    // this counts CALLS to forceFocus() instead, as the only observable
+    // proxy this harness has for "a focus claim was made." Proves the
+    // CODE PATH fired; whether the OS-level focus actually lands still
+    // needs the interactive pass.
+    property int _forceFocusCalls: 0
+    readonly property alias testForceFocusCalls: root._forceFocusCalls
+
     implicitWidth: Math.max(160, column.implicitWidth)
     implicitHeight: column.implicitHeight
     width: implicitWidth
@@ -101,5 +112,8 @@ Item {
     // prints a "Binding loop detected" warning.
     onTextChanged: if (input.text !== root.text) input.text = root.text
 
-    function forceFocus() { input.forceActiveFocus(); }
+    function forceFocus() {
+        root._forceFocusCalls++;
+        input.forceActiveFocus();
+    }
 }
