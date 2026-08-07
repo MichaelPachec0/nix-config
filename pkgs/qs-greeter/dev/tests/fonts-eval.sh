@@ -8,8 +8,8 @@
 # derivation, so this is safe to run unasked (unlike a nixos-rebuild).
 #
 # Fails loudly: prints the raw eval result either way, then exits nonzero
-# unless wine-fonts is present exactly once under the default backend and
-# exactly twice under an extendModules override that flips backend to
+# unless wine-fonts is present exactly once under an extendModules override
+# forcing backend = "regreet" and exactly twice under one forcing
 # "qsGreeter" (thanatos's shared nyx/configuration.nix already lists
 # winePackages.fonts once, unconditionally, for actual Wine use --
 # confirmed by inspection before writing this check, so "twice" and not
@@ -33,13 +33,21 @@ trap 'rm -f "$tmp"' EXIT
       lib = flake.nixosConfigurations.thanatos.pkgs.lib;
       countWine = cfg: lib.length (builtins.filter
         (p: (p.pname or p.name) == "wine-fonts") cfg.fonts.packages);
-      defCfg = flake.nixosConfigurations.thanatos.config;
+      # BOTH arms force the backend explicitly. This used to read the host
+      # as-configured for the "off" arm, which silently stopped testing
+      # anything the moment thanatos actually cut over to qsGreeter: both
+      # arms then evaluated the same config and the counts agreed for the
+      # wrong reason. What is being checked is the mkIf gate, so neither arm
+      # may depend on which backend the host happens to run today.
+      regreetCfg = (flake.nixosConfigurations.thanatos.extendModules {
+        modules = [{ services.graphicalLogin.backend = lib.mkForce "regreet"; }];
+      }).config;
       qsCfg = (flake.nixosConfigurations.thanatos.extendModules {
-        modules = [{ services.graphicalLogin.backend = "qsGreeter"; }];
+        modules = [{ services.graphicalLogin.backend = lib.mkForce "qsGreeter"; }];
       }).config;
   in {
-    defaultBackend = defCfg.services.graphicalLogin.backend;
-    defaultWineFontsCount = countWine defCfg;
+    hostBackend = flake.nixosConfigurations.thanatos.config.services.graphicalLogin.backend;
+    defaultWineFontsCount = countWine regreetCfg;
     qsGreeterWineFontsCount = countWine qsCfg;
   }
 ' >"$tmp" 2>&1) || true
@@ -58,7 +66,9 @@ echo "FONTS-EVAL RESULT: $result_line"
 overall=0
 
 if ! echo "$result_line" | grep -q 'defaultWineFontsCount = 1;'; then
-  echo "FAIL: expected exactly 1 wine-fonts entry with the default backend"
+  echo "FAIL: expected exactly 1 wine-fonts entry with backend = regreet"
+  echo "      (the one nyx/configuration.nix adds unconditionally for Wine itself;"
+  echo "      a second would mean this module's fonts.packages escaped its mkIf)"
   overall=1
 fi
 

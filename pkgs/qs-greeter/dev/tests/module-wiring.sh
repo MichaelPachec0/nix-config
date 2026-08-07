@@ -45,11 +45,17 @@ ok() {
 echo "building wrapperPackage under an overridden dataDir..." >&2
 launch_out="$(nix build --impure --no-link --print-out-paths --expr \
   'let f = (builtins.getFlake (toString "'"$root"'"));
-       c = (f.nixosConfigurations.thanatos.extendModules { modules = [{
-         services.graphicalLogin.backend = "qsGreeter";
-         services.graphicalLogin.enable = true;
+       c = (f.nixosConfigurations.thanatos.extendModules { modules = [({ lib, ... }: {
+         services.graphicalLogin.backend = lib.mkForce "qsGreeter";
+         services.graphicalLogin.enable = lib.mkForce true;
          programs.qsGreeter.dataDir = "/var/lib/qs-greeter-custom";
-       }]; }).config;
+         # mkForce because nyx/configuration.nix (shared by every host,
+         # including the thanatos this evaluates) now sets primaryOutput for
+         # real. Without it this arm measures the HOST value and the
+         # null-to-empty-string mapping below goes untested -- which is
+         # exactly what happened when the greeter was cut over.
+         programs.qsGreeter.primaryOutput = lib.mkForce null;
+       })]; }).config;
    in c.programs.qsGreeter.wrapperPackage' 2>/dev/null | tail -n1)"
 
 if [ -z "$launch_out" ] || [ ! -x "$launch_out/bin/qs-greeter-launch" ]; then
@@ -64,7 +70,11 @@ ok "stateFileMovesWithDataDir" \
   "$(echo "$script" | grep -c '^export QSG_STATE_FILE=/var/lib/qs-greeter-custom/state.json$')"
 ok "sessionEnvDefaultsToWlrNoModifiers" \
   "$(echo "$script" | grep -c 'QSG_SESSION_ENV=.*WLR_DRM_NO_MODIFIERS.*1')"
-ok "primaryOutputDefaultsEmpty" \
+# null must reach the wrapper as an empty string, which is what shell.qml
+# treats as "no output named, fall back to whichever Quickshell lists
+# first". The forced null above is what makes this a real assertion rather
+# than a reading of whatever the host is configured with.
+ok "primaryOutputNullBecomesEmptyString" \
   "$(echo "$script" | grep -c "^export QSG_PRIMARY_OUTPUT=''$")"
 
 echo "checking tmpfiles + persistence wiring..." >&2
