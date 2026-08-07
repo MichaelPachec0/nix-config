@@ -97,12 +97,19 @@ Item {
             border.width: 1
             border.color: theme.buttonBorder
             gradient: theme.useGradients ? arrowGradient : null
-            color: theme.useGradients ? "transparent" : theme.buttonTo
+            color: theme.useGradients ? "transparent" : theme.btnFaceMid
 
+            // The same Luna face XpButton uses, resting and pressed, with
+            // XP.css's own stop positions: the drop-down arrow is a push
+            // button, and giving it a plain two-stop ramp while the OK
+            // button beside it carries the real curve makes the two look
+            // like they came from different toolkits.
             Gradient {
                 id: arrowGradient
-                GradientStop { position: 0.0; color: arrowArea.pressed ? theme.buttonTo : theme.buttonFrom }
-                GradientStop { position: 1.0; color: arrowArea.pressed ? theme.buttonFrom : theme.buttonTo }
+                GradientStop { position: 0.0; color: arrowArea.pressed ? theme.btnPressTop : theme.btnFaceTop }
+                GradientStop { position: 0.08; color: arrowArea.pressed ? theme.btnPressUpper : theme.btnFaceTop }
+                GradientStop { position: 0.86; color: arrowArea.pressed ? theme.btnPressLower : theme.btnFaceMid }
+                GradientStop { position: 1.0; color: arrowArea.pressed ? theme.btnPressBottom : theme.btnFaceBottom }
             }
 
             // Marlett glyph mapping verified against the shipped font, not
@@ -162,14 +169,18 @@ Item {
             delegate: Rectangle {
                 width: list.width
                 height: theme.controlHeight
-                color: ListView.isCurrentItem ? theme.bannerFrom : theme.fieldBg
+                // selectionBg, not a banner color: this is a highlighted
+                // list row, which XP paints in the selection blue
+                // (XP.css --dialog-blue), not in the title-bar gradient's
+                // top stop that this used to borrow.
+                color: ListView.isCurrentItem ? theme.selectionBg : theme.fieldBg
                 Text {
                     anchors.fill: parent
                     anchors.leftMargin: 4
                     verticalAlignment: Text.AlignVCenter
                     text: String(modelData)
                     textFormat: Text.PlainText
-                    color: ListView.isCurrentItem ? theme.bannerText : theme.fieldText
+                    color: ListView.isCurrentItem ? theme.selectionText : theme.fieldText
                     font.family: theme.ui
                     font.pixelSize: theme.uiSize
                 }

@@ -7,6 +7,7 @@ import Quickshell
 // anyway, depth preserved so relative imports inside the mirrored files
 // keep resolving correctly.
 import "xp-kit" as XpKit
+import "xp-kit/XpCss.js" as XpCss
 import "xp-kit/palettes" as XpPalettes
 import "xp-kit/widgets" as XpWidgets
 import "xp-kit/screens" as XpScreens
@@ -197,11 +198,30 @@ ShellRoot {
         }
         allProps.sort();
 
+        // Overridden by Gruvbox AND given a different value. Almost all
+        // colors, plus showFlag -- which is not a color but belongs here for
+        // the same reason: Gruvbox states it and changes it. The Windows
+        // flag is the one piece of banner chrome a palette cannot restate in
+        // its own colors (a Gruvbox-tinted Windows flag is still a Windows
+        // flag), so Gruvbox switches it off rather than recoloring it, and
+        // that decision has to be asserted somewhere.
         var COLOR_PROPS = ["face", "faceLight", "faceShadow", "faceDark",
-            "fieldBg", "fieldText", "fieldBorder", "fieldDisabled",
-            "bannerFrom", "bannerTo", "bannerText", "bannerSubtext",
-            "buttonFrom", "buttonTo", "buttonBorder", "buttonText",
-            "defaultGlowFrom", "defaultGlowTo", "focusRing", "errorText", "infoText"];
+            "windowFrame", "grooveDark", "grooveLight",
+            "fieldBg", "fieldText", "fieldBorder", "fieldDisabled", "fieldDisabledText",
+            "selectionBg", "selectionText",
+            "bannerTop", "bannerUpper", "bannerMid", "bannerLower", "bannerFoot",
+            "bannerText", "bannerSubtext", "bannerShadow",
+            "frameOuter", "frameInner",
+            "brandPanel", "brandPanelLight", "brandText", "brandAccent",
+            "dividerEdge", "dividerMid", "dividerPeak",
+            "btnFaceTop", "btnFaceMid", "btnFaceBottom",
+            "btnPressTop", "btnPressUpper", "btnPressLower", "btnPressBottom",
+            "buttonBorder", "buttonText",
+            "hoverGlowOuter", "hoverGlowUpper", "hoverGlowLower", "hoverGlowBottom",
+            "focusGlowOuter", "focusGlowUpper", "focusGlowLower", "focusGlowBottom",
+            "focusRing",
+            "errorText", "infoText", "mutedText",
+            "showFlag"];
         // Explicitly re-stated in Gruvbox.qml with the SAME value as
         // Luna's default (both "Tahoma") -- deliberate, not an omission
         // (see Gruvbox.qml's own comment): checked separately from
@@ -214,18 +234,60 @@ ShellRoot {
         // (the 6 metrics + comboVisibleRows) and what keeps chrome
         // behavior (switches, pulseDuration) and the two unused-today
         // font slots (banner, glyph, uiSize) identical too.
-        var INHERITED_PROPS = ["banner", "glyph", "uiSize",
+        // The flag quadrant colors are inherited rather than overridden
+        // BECAUSE Gruvbox hides the flag outright (showFlag above): there is
+        // nothing on screen for a Gruvbox-specific red/green/blue/yellow to
+        // affect, so restating them would be four values that no rendered
+        // pixel depends on.
+        var INHERITED_PROPS = ["flagRed", "flagGreen", "flagBlue", "flagYellow",
+            "banner", "glyph", "uiSize", "titleSize", "smallSize",
+            "wordmarkSize", "wordmarkAccentSize", "editionSize",
             "bevel", "radius", "controlHeight", "rowSpacing", "dialogPad", "bannerHeight",
+            "brandPanelHeight", "dividerHeight", "labelColumnWidth",
             "useGradients", "useRoundedButtons", "pulseDefaultButton",
             "pulseDuration", "comboVisibleRows"];
 
         var accounted = COLOR_PROPS.concat(SAME_VALUE_OVERRIDE_PROPS, INHERITED_PROPS).sort();
-        eq("every Theme.qml property is accounted for exactly once (21 colors + 2 same-value overrides + 14 inherited = 37)",
+        eq("every Theme.qml property is accounted for exactly once (46 divergent + 2 same-value overrides + 21 inherited = 69)",
             JSON.stringify(accounted), JSON.stringify(allProps));
 
         COLOR_PROPS.forEach(function (p) {
             ok("color '" + p + "' differs between luna and gruvbox", luna[p] !== gruvbox[p]);
         });
+
+        // ---- Luna actually comes from XpCss.js ----
+        // Theme.qml reads its Luna defaults out of XpCss.js by lookup
+        // (XpCss.stopColor(...) and array indexing), which fails SILENTLY:
+        // a mistyped stop position returns undefined, and a color property
+        // assigned undefined does not throw -- it just stops being the
+        // color anyone intended. These pin the values that are looked up
+        // rather than written literally, against the numbers documented in
+        // XpCss.js's own transcription, so drift in either direction is a
+        // failure here instead of a subtly wrong button six months later.
+        function hex(c) { return String(c).toLowerCase(); }
+        eq("btnFaceTop is XP.css's button face stop at 0%", hex(luna.btnFaceTop), "#ffffff");
+        eq("btnFaceMid is XP.css's button face stop at 86%", hex(luna.btnFaceMid), "#ecebe5");
+        eq("btnFaceBottom is XP.css's button face stop at 100%", hex(luna.btnFaceBottom), "#d8d0c4");
+        eq("btnPressTop is XP.css's :active stop at 0%", hex(luna.btnPressTop), "#cdcac3");
+        eq("btnPressBottom is XP.css's :active stop at 100%", hex(luna.btnPressBottom), "#f2f2f1");
+        eq("buttonBorder is XP.css's button border", hex(luna.buttonBorder), "#003c74");
+        eq("fieldBorder is XP.css's select border", hex(luna.fieldBorder), "#7f9db9");
+        eq("selectionBg is XP.css's --dialog-blue", hex(luna.selectionBg), "#2267cb");
+        eq("bannerTop is XP.css's title-bar stop at 0%", hex(luna.bannerTop), "#0997ff");
+        eq("bannerFoot is XP.css's title-bar stop at 100%", hex(luna.bannerFoot), "#003dd7");
+        eq("hoverGlowBottom is the warmest XP.css hover inset", hex(luna.hoverGlowBottom), "#e5a01a");
+        eq("focusGlowBottom is the deepest XP.css focus inset", hex(luna.focusGlowBottom), "#89ade4");
+        eq("controlHeight is XP.css's input height", luna.controlHeight, 23);
+        eq("radius is XP.css's button border-radius", luna.radius, 3);
+        eq("uiSize is XP.css's button font-size", luna.uiSize, 11);
+
+        // And that the accessor itself is honest: asking for a stop that is
+        // not in the list must return undefined rather than quietly handing
+        // back a neighbouring color, because "quietly handing back
+        // something plausible" is exactly how the lookups above would rot.
+        ok("stopColor returns undefined for a position that is not a stop",
+            XpCss.stopColor(XpCss.BUTTON.face, 0.5) === undefined);
+        eq("stopColor finds a real stop", hex(XpCss.stopColor(XpCss.BUTTON.face, 0.86)), "#ecebe5");
         SAME_VALUE_OVERRIDE_PROPS.forEach(function (p) {
             ok("'" + p + "' is the SAME value in both (Gruvbox restates it deliberately, does not change it)",
                 luna[p] === gruvbox[p]);

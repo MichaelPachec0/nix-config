@@ -14,10 +14,25 @@ Item {
     property string bannerTitle: ""
     property string bannerSubtitle: ""
     property Item contentItem: null
+    // Brand-panel content, all empty by default -- see XpBanner's own note
+    // on why this skin ships no default copyright or vendor string.
+    property bool bannerBrand: false
+    property string bannerCopyright: ""
+    property string bannerEdition: ""
+    property string bannerWordmark: ""
+    property string bannerWordmarkAccent: ""
+    property string bannerVendor: ""
     property var buttons: []
 
-    implicitWidth: 420
-    implicitHeight: theme.bannerHeight + contentArea.implicitHeight
+    // The real dialog is a wide, short box -- its two field rows sit on
+    // single lines with their labels beside them, so it has no reason to be
+    // tall. A narrower box forces the fields to look cramped next to their
+    // label column.
+    implicitWidth: 442
+    // banner.implicitHeight, not theme.bannerHeight: the banner is two
+    // different heights depending on whether it carries a brand panel, and
+    // it is the thing that knows which.
+    implicitHeight: banner.implicitHeight + contentArea.implicitHeight
         + buttonArea.height
     width: implicitWidth
     height: implicitHeight
@@ -27,7 +42,6 @@ Item {
     Rectangle {
         anchors.fill: face
         anchors.margins: -4
-        radius: theme.radius + 2
         color: theme.faceDark
         opacity: 0.25
         z: -1
@@ -37,17 +51,19 @@ Item {
         id: face
         anchors.fill: parent
         color: theme.face
-        radius: theme.radius
+        // Square corners. The rounded frame belongs to Luna's title bars;
+        // the logon dialog is drawn by GINA as a plain rectangular box, and
+        // rounding it is a modern-UI reflex that reads wrong immediately.
+        radius: 0
         border.width: 1
         border.color: theme.faceDark
 
         // Raised outer edge: a light inset border one pixel inside the true
-        // frame, the same etched-chrome idea XpTextField uses for its
-        // sunken field, mirrored here to read as raised instead of sunken.
+        // frame, so the box reads as sitting above the backdrop rather than
+        // being cut into it.
         Rectangle {
             anchors.fill: parent
             anchors.margins: 1
-            radius: Math.max(0, theme.radius - 1)
             color: "transparent"
             border.width: 1
             border.color: theme.faceLight
@@ -64,6 +80,12 @@ Item {
                 theme: root.theme
                 title: root.bannerTitle
                 subtitle: root.bannerSubtitle
+                brand: root.bannerBrand
+                copyright: root.bannerCopyright
+                edition: root.bannerEdition
+                wordmark: root.bannerWordmark
+                wordmarkAccent: root.bannerWordmarkAccent
+                vendor: root.bannerVendor
                 width: layout.width
             }
 
@@ -84,6 +106,27 @@ Item {
                 id: buttonArea
                 width: layout.width
                 height: theme.controlHeight + 2 + theme.dialogPad
+
+                // The engraved groove XP rules across a dialog above its
+                // button row. Two hairlines, not one: a dark pixel with a
+                // light pixel beneath it. A single grey line in the same
+                // place reads as a border rather than as a groove cut into
+                // the face, which is the whole effect.
+                Rectangle {
+                    id: grooveTop
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: 1
+                    color: theme.grooveDark
+                }
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: grooveTop.bottom
+                    height: 1
+                    color: theme.grooveLight
+                }
 
                 Row {
                     anchors.right: parent.right

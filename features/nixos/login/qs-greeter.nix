@@ -372,9 +372,30 @@ in {
       };
       optionsExpanded = false;
       rememberLastUser = true;
+      # Header strings for the brand panel. All cosmetic, all user-tier
+      # overridable, and all set here to reproduce the real Log On to
+      # Windows header, which is the point of a skin named "xp".
+      #
+      # Worth being explicit about what these are, since they are the one
+      # part of this package that restates someone else's marks: "Windows",
+      # "xp" and "Microsoft" are Microsoft trademarks, and the copyright
+      # line below is Microsoft's, not this package's. Nothing here claims
+      # otherwise -- this is a visual recreation of a discontinued login
+      # screen, in the same spirit as the CSS recreations it borrows its
+      # colors from, and every string is one settings write away from being
+      # changed or emptied. Emptying them leaves a bare periwinkle panel
+      # with just the flag: the panel is structural chrome, so it does not
+      # break the layout.
       branding = {
         title = "Log On to Windows";
-        subtitle = "Microsoft Windows XP  Professional";
+        subtitle = "";
+        wordmark = "Windows";
+        wordmarkAccent = "xp";
+        edition = "Professional";
+        vendor = "Microsoft";
+        # "(C)" rather than the copyright sign: this repo keeps shipped
+        # files pure ASCII.
+        copyright = "Copyright (C) 1985-2001\nMicrosoft Corporation";
       };
     };
 

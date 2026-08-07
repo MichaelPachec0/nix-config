@@ -181,6 +181,14 @@ Item {
     property bool optionsExpanded: !!(root.settings && root.settings.config && root.settings.config.optionsExpanded)
     property bool _comboUserSet: false
 
+    // One accessor for every branding string, so the six bindings that feed
+    // the brand panel do not each re-spell the same four-level guarded
+    // lookup into Settings.config.
+    function _brand(key) {
+        var b = root.settings && root.settings.config && root.settings.config.branding;
+        return (b && typeof b[key] === "string") ? b[key] : "";
+    }
+
     function _sessionNames() {
         return (!!root.sessions && root.sessions.list ? root.sessions.list : [])
             .map(function (s) { return s.name; });
@@ -391,6 +399,10 @@ Item {
                 id: userField
                 theme: root.theme
                 label: "User name:"
+                // Label beside the box in a fixed right-aligned column,
+                // which is how the real dialog lays this out -- see
+                // XpTextField's own note on why stacking reads wrong.
+                labelWidth: root.theme.labelColumnWidth
                 // Skips the prefill outright when rememberLastUser is
                 // false, independent of whatever GreeterState.lastUser
                 // still holds on disk (root._rememberLastUser, defined
@@ -408,6 +420,7 @@ Item {
                 id: secretField
                 theme: root.theme
                 label: root.activeLabel
+                labelWidth: root.theme.labelColumnWidth
                 echo: root.activeEcho
                 width: parent.width
                 enabled: !!root.session
@@ -421,23 +434,35 @@ Item {
             // toggled -- and only reachable when Settings' picker flag is
             // on (see toggleOptions()), so optionsExpanded can never
             // become true otherwise.
-            Column {
+            // Same label column as the two field rows above it, so the three
+            // rows line up down a single edge once Options is expanded --
+            // which is the point of a label column, and does not happen if
+            // this one row keeps its own stacked layout.
+            Item {
                 id: sessionRow
                 width: parent.width
                 visible: root.optionsExpanded
-                spacing: root.theme.rowSpacing / 2
+                height: visible ? root.theme.controlHeight : 0
 
                 Text {
+                    id: sessionLabel
                     text: "Log on to:"
+                    width: root.theme.labelColumnWidth
+                    horizontalAlignment: Text.AlignRight
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
                     color: root.theme.infoText
                     font.family: root.theme.uiBold
-                    font.bold: true
                     font.pixelSize: root.theme.uiSize
                     textFormat: Text.PlainText
                 }
                 Widgets.XpComboBox {
                     id: combo
                     theme: root.theme
+                    anchors.left: sessionLabel.right
+                    anchors.leftMargin: root.theme.rowSpacing
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
                     model: root._sessionNames()
                     onActivated: root._comboUserSet = true
                 }
@@ -450,7 +475,11 @@ Item {
             // text wraps to, never with an added/removed sibling.
             Text {
                 id: statusText
-                width: parent.width
+                // Indented to the field column, not to the dialog edge, so
+                // status and prompt text share the left edge the boxes
+                // start at rather than starting under the labels.
+                x: root.theme.labelColumnWidth + root.theme.rowSpacing
+                width: parent.width - x
                 text: root.statusLineText
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
@@ -468,6 +497,17 @@ Item {
         bannerTitle: (!!root.settings && root.settings.config.branding && root.settings.config.branding.title)
             || "Log On to Windows"
         bannerSubtitle: (!!root.settings && root.settings.config.branding && root.settings.config.branding.subtitle) || ""
+        // The brand panel. Every string is cosmetic, user-tier, and blank
+        // unless configured -- see XpBanner's own note on why this skin
+        // ships no default copyright or vendor line of its own. The panel
+        // itself still appears (flag and blue field) when they are blank,
+        // because it is structural chrome rather than a caption.
+        bannerBrand: true
+        bannerCopyright: root._brand("copyright")
+        bannerEdition: root._brand("edition")
+        bannerWordmark: root._brand("wordmark")
+        bannerWordmarkAccent: root._brand("wordmarkAccent")
+        bannerVendor: root._brand("vendor")
         contentItem: content
         // Rebuilding this array (and so the button row) whenever `blocked`
         // flips is inherent to XpDialog's own buttons-array API (any

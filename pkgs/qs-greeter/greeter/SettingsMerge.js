@@ -215,7 +215,16 @@ function _applyKey(out, key, value, skins, warnings) {
             warnings.push("key 'branding' expects an object, dropped");
             return;
         }
-        ["title", "subtitle"].forEach(function (f) {
+        // The brand-panel strings (copyright, edition, wordmark,
+        // wordmarkAccent, vendor) get exactly the same treatment as
+        // title/subtitle: plain strings, and rendered as PlainText by
+        // XpBanner so markup in any of them can never become live rich text
+        // on a pre-auth screen. They are cosmetic by the same argument as
+        // the rest of this table -- the worst a hostile write achieves is an
+        // ugly or misleading header, which is a different class of problem
+        // from a hostile session argv.
+        ["title", "subtitle", "copyright", "edition",
+         "wordmark", "wordmarkAccent", "vendor"].forEach(function (f) {
             if (value[f] === undefined) return;
             if (typeof value[f] !== "string")
                 warnings.push("branding." + f + " expects a string, dropped");

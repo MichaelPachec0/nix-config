@@ -122,13 +122,37 @@ ShellRoot {
         ok("luna is not the same object as theme", luna !== theme);
 
         // --- XpButton ---
-        ok("btnNormal.implicitWidth sane", btnNormal.implicitWidth >= 80 && btnNormal.implicitWidth < 1000);
+        // Floor is 75, not 80: that is XpButton's own minimum, and it is the
+        // width a standard Windows dialog push button has always been. The
+        // old 80 was this test's invention rather than the widget's.
+        ok("btnNormal.implicitWidth sane", btnNormal.implicitWidth >= 75 && btnNormal.implicitWidth < 1000);
         ok("btnNormal.implicitHeight sane", btnNormal.implicitHeight > 0 && btnNormal.implicitHeight < 200);
         ok("btnNormal at full opacity", btnNormal.opacity === 1.0);
         ok("btnDisabled dimmer than btnNormal", btnDisabled.opacity < btnNormal.opacity);
-        ok("btnDefault pulse animation running", btnDefault.pulseRunning === true);
+        // The default button no longer pulses, and that is the fix rather
+        // than a regression: XP's default button wears a STATIC blue inset
+        // ring (XP.css's :focus box-shadows), and the pulse was invented
+        // here. theme.pulseDefaultButton now defaults false, so what is
+        // asserted is the ring, with the pulse checked as an opt-in lever
+        // that still works when a palette turns it back on.
+        eq("btnDefault shows the focus ring", btnDefault.testRing, "focus");
+        eq("btnNormal shows no ring (not default, not hovered)", btnNormal.testRing, "");
+        ok("btnDefault pulse NOT running (theme.pulseDefaultButton is off by default)",
+            btnDefault.pulseRunning === false);
         ok("btnNormal pulse animation NOT running (not default)", btnNormal.pulseRunning === false);
         ok("btnDisabled pulse animation NOT running (disabled)", btnDisabled.pulseRunning === false);
+        // Prove the lever is a lever and not dead code: flipping it on must
+        // actually start the animation on the default button, and only on
+        // the default button. Restored immediately so nothing below sees a
+        // mutated theme.
+        theme.pulseDefaultButton = true;
+        ok("pulse starts when theme.pulseDefaultButton is turned on",
+            btnDefault.pulseRunning === true);
+        ok("pulse still does not run on a non-default button",
+            btnNormal.pulseRunning === false);
+        theme.pulseDefaultButton = false;
+        ok("pulse stops again when the lever is turned back off",
+            btnDefault.pulseRunning === false);
 
         // --- XpTextField ---
         ok("fieldNormal.implicitWidth sane", fieldNormal.implicitWidth >= 160);

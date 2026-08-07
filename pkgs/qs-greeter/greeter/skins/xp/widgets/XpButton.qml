@@ -1,5 +1,20 @@
 import QtQuick
 
+// A Luna push button, built from XP.css's themes/XP/_buttons.scss rather
+// than from an impression of one. Three details do all the work, and all
+// three are things a from-memory recreation gets wrong:
+//
+//   1. The resting face is white at the top, holds almost all the way down,
+//      then drops hard in the last 14% -- the stop sits at 86%, not near
+//      the middle. A gradient that breaks near the middle looks lit from
+//      the side rather than from above. See theme.btnFaceTop/Mid/Bottom.
+//   2. Pressed is NOT that ramp reversed. It is its own curve: a dark cap
+//      at the very top, an immediate step lighter at 8%, flat through the
+//      body, and a lift at the last pixel.
+//   3. Hover and focus are rings INSIDE the border, not halos outside it --
+//      amber warming downward for hover (theme.hoverGlowOuter through
+//      hoverGlowBottom), blue for focus. The default button wears the focus
+//      ring; XP has no pulsing glow.
 Item {
     id: root
     required property var theme
@@ -12,9 +27,19 @@ Item {
     // whether the anonymous pulse animation below is actually running from
     // outside this file); it is not part of the widget's own behavior.
     readonly property bool pulseRunning: pulseAnim.running
+    // Same convention: lets a gallery/unit test assert that hover actually
+    // reaches the ring, which is not otherwise visible from outside.
+    readonly property bool testHovered: ma.containsMouse
+    // Which inset ring is showing, if any: "" | "hover" | "focus". One
+    // string rather than two booleans, because the two are mutually
+    // exclusive by construction below and a test asserting that should not
+    // be able to express "both".
+    readonly property string testRing: ma.containsMouse
+        ? "hover"
+        : ((root.isDefault || root.activeFocus) ? "focus" : "")
 
-    implicitWidth: Math.max(80, label.implicitWidth + 24)
-    implicitHeight: theme.controlHeight + 2
+    implicitWidth: Math.max(75, label.implicitWidth + 22)
+    implicitHeight: theme.controlHeight
     // Self-sizing default so this widget renders correctly the moment it is
     // dropped somewhere without a Layout around it (a plain Item never picks
     // up its implicit size on its own); an explicit width/height assignment
@@ -32,55 +57,92 @@ Item {
         anchors.fill: parent
         radius: theme.useRoundedButtons ? theme.radius : 0
         border.width: 1
-        border.color: root.isDefault ? theme.defaultGlowFrom : theme.buttonBorder
-        gradient: theme.useGradients ? buttonGradient : null
-        color: theme.useGradients ? "transparent" : theme.buttonTo
+        border.color: theme.buttonBorder
+        gradient: theme.useGradients ? (ma.pressed ? pressedFace : restingFace) : null
+        color: theme.useGradients ? "transparent" : theme.btnFaceMid
 
         Gradient {
-            id: buttonGradient
-            GradientStop { position: 0.0; color: ma.pressed ? theme.buttonTo : theme.buttonFrom }
-            GradientStop { position: 1.0; color: ma.pressed ? theme.buttonFrom : theme.buttonTo }
+            id: restingFace
+            GradientStop { position: 0.0; color: theme.btnFaceTop }
+            GradientStop { position: 0.86; color: theme.btnFaceMid }
+            GradientStop { position: 1.0; color: theme.btnFaceBottom }
         }
 
-        // XP's default button pulses its glow. Behind a theme switch, and
-        // at a theme-driven speed, so a palette can opt out or retime it
-        // without touching widget code.
-        SequentialAnimation on border.color {
-            id: pulseAnim
-            running: root.isDefault && theme.pulseDefaultButton && root.enabled
-            loops: Animation.Infinite
-            ColorAnimation { to: theme.defaultGlowTo; duration: theme.pulseDuration }
-            ColorAnimation { to: theme.defaultGlowFrom; duration: theme.pulseDuration }
+        Gradient {
+            id: pressedFace
+            GradientStop { position: 0.0; color: theme.btnPressTop }
+            GradientStop { position: 0.08; color: theme.btnPressUpper }
+            GradientStop { position: 0.94; color: theme.btnPressLower }
+            GradientStop { position: 1.0; color: theme.btnPressBottom }
         }
 
-        // theme.focusRing made visible: declared in Theme.qml and read by
-        // nothing until this fix. A separate overlay Rectangle rather than
-        // driving `body.border.color` itself, so it never fights the
-        // pulse-glow `SequentialAnimation on border.color` immediately
-        // above -- that animation is a property value source that owns
-        // border.color outright whenever it is running, and layering a
-        // second driver onto the same property is exactly the kind of
-        // interaction this avoids by construction rather than by ordering.
-        // Currently reachable only if a future caller Tab-focuses a button
-        // (nothing in this codebase does yet -- OK/Cancel are today only
-        // ever reached by mouse or by the dialog root's own Keys.
-        // onReturnPressed calling _ok() directly), wired now so the ring
-        // exists the moment that changes.
+        // The inset ring. XP.css draws it as four overlapping box-shadows
+        // whose offsets make the color warm (hover) or cool (focus) toward
+        // the bottom of the button; two concentric 1px rectangles with the
+        // upper and lower tones reproduce that at this size, where the
+        // outermost of the four tones is a single pixel that never reads as
+        // its own band.
+        //
+        // Hover beats focus deliberately: an XP default button you are
+        // pointing at glows amber like any other button, it does not stay
+        // blue underneath the cursor.
+        Item {
+            id: ring
+            anchors.fill: parent
+            visible: root.enabled && (ma.containsMouse || root.isDefault || root.activeFocus)
+            readonly property bool warm: ma.containsMouse
+
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 1
+                radius: Math.max(0, body.radius - 1)
+                color: "transparent"
+                border.width: 1
+                border.color: ring.warm ? theme.hoverGlowUpper : theme.focusGlowUpper
+            }
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 2
+                radius: Math.max(0, body.radius - 2)
+                color: "transparent"
+                border.width: 1
+                border.color: ring.warm ? theme.hoverGlowLower : theme.focusGlowLower
+            }
+
+            // Off by default (theme.pulseDefaultButton) -- XP's default
+            // button wears this ring statically. Left wired because it was
+            // this skin's previous behavior and is one property away.
+            SequentialAnimation on opacity {
+                id: pulseAnim
+                running: root.isDefault && !ma.containsMouse
+                    && theme.pulseDefaultButton && root.enabled
+                loops: Animation.Infinite
+                NumberAnimation { to: 0.35; duration: theme.pulseDuration; easing.type: Easing.InOutSine }
+                NumberAnimation { to: 1.0; duration: theme.pulseDuration; easing.type: Easing.InOutSine }
+            }
+        }
+
+        // The keyboard focus indicator proper: Windows draws a dotted
+        // rectangle just inside the face, distinct from the colored ring
+        // above (which a default button shows whether or not it has focus).
         Rectangle {
-            id: focusRing
             visible: root.activeFocus
             anchors.fill: parent
-            anchors.margins: -2
-            radius: body.radius
+            anchors.margins: 3
             color: "transparent"
-            border.width: 2
+            border.width: 1
             border.color: theme.focusRing
+            opacity: 0.55
         }
     }
 
     Text {
         id: label
         anchors.centerIn: parent
+        // Pressed nudges the label down-right by a pixel, the way every
+        // Windows push button has since 3.1.
+        anchors.horizontalCenterOffset: ma.pressed ? 1 : 0
+        anchors.verticalCenterOffset: ma.pressed ? 1 : 0
         text: root.text
         textFormat: Text.PlainText
         color: theme.buttonText
@@ -92,6 +154,7 @@ Item {
         id: ma
         anchors.fill: parent
         enabled: root.enabled
+        hoverEnabled: true
         onClicked: root.clicked()
     }
 
