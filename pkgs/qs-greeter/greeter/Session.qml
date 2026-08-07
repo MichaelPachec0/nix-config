@@ -56,6 +56,33 @@ Singleton {
     }
 
     signal launched()
+    // Fired the instant a NEW response-required prompt is about to replace
+    // whatever the active field currently shows, strictly BEFORE promptLabel
+    // or promptSecret change below -- not after. A listener that clears its
+    // own secret-entry widget here is guaranteed to do so before this
+    // prompt's echo mode (which promptSecret drives) can ever apply to
+    // whatever text was still sitting in that widget from the PREVIOUS
+    // prompt. Ordering this any other way around the two property writes
+    // would only be safe by an argument about Qt's synchronous binding
+    // evaluation and same-turn repaint batching -- firing first removes the
+    // need to make that argument at all.
+    signal promptArriving()
+
+    // Baseline environment merged under (never over) every launched
+    // session's own `env`, driven by QSG_SESSION_ENV -- see
+    // programs.qsGreeter.sessionEnv for why WLR_DRM_NO_MODIFIERS=1 is the
+    // default. Malformed/absent JSON resolves to no baseline at all rather
+    // than failing launch() outright.
+    readonly property var _defaultEnv: {
+        var raw = Quickshell.env("QSG_SESSION_ENV") || "{}";
+        try {
+            var parsed = JSON.parse(raw);
+            return (parsed && typeof parsed === "object" && !Array.isArray(parsed)) ? parsed : {};
+        } catch (e) {
+            Log.warn("QSG_SESSION_ENV unparseable, ignoring: " + e);
+            return {};
+        }
+    }
 
     function begin(name) {
         if (!backend) { Log.error("no backend"); return; }
@@ -95,8 +122,14 @@ Singleton {
 
     function launch(entry) {
         if (_state !== "ready") return;
+        // entry.env wins on a key collision: the baseline is a floor, not an
+        // override -- a session that needs a different value for a key
+        // QSG_SESSION_ENV also sets must still be able to say so.
+        var merged = {};
+        for (var dk in root._defaultEnv) merged[dk] = root._defaultEnv[dk];
+        for (var ek in (entry.env || {})) merged[ek] = entry.env[ek];
         var env = [];
-        for (var k in (entry.env || {})) env.push(k + "=" + entry.env[k]);
+        for (var k in merged) env.push(k + "=" + merged[k]);
         root._state = "launching";
         Log.info("launching session: " + entry.name);
         backend.launch(entry.argv, env, true);
@@ -149,6 +182,7 @@ Singleton {
                 + " responseRequired=" + responseRequired
                 + " echoResponse=" + echoResponse);
             if (responseRequired) {
+                root.promptArriving();
                 root.promptLabel = message;
                 root.promptSecret = !echoResponse;
                 root._responsePending = true;
