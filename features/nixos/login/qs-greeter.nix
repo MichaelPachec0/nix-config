@@ -30,16 +30,6 @@ in {
       description = "Default skin name. Overridable by the user tier.";
     };
 
-    skins.extra = lib.mkOption {
-      type = lib.types.listOf lib.types.package;
-      default = [];
-      description = ''
-        Additional skins to register. PRIVILEGED: a skin is QML executed in the
-        pre-auth greeter process, so skins may only be added here, never from
-        the writable settings file.
-      '';
-    };
-
     skinSettings = lib.mkOption {
       type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
       default = {xp = {palette = "luna";};};
@@ -107,10 +97,66 @@ in {
       };
     };
 
+    dataDir = lib.mkOption {
+      type = lib.types.str;
+      default = "/var/lib/qs-greeter";
+      description = ''
+        Persistent (non-tmpfs) parent directory for the writable settings
+        tier and the greeter-written last-user/last-session state. The
+        single source for the tmpfiles rule that creates it: userFile and
+        stateFile both default to paths under this directory, so pointing
+        either of them somewhere else no longer silently leaves tmpfiles
+        creating the wrong parent (or none at all). Distinct from stateDir
+        below, which is deliberately tmpfs-backed.
+      '';
+    };
+
     userFile = lib.mkOption {
       type = lib.types.str;
-      default = "/var/lib/qs-greeter/settings.json";
+      default = "${cfg.dataDir}/settings.json";
       description = "Group-writable cosmetic settings file.";
+    };
+
+    stateFile = lib.mkOption {
+      type = lib.types.str;
+      default = "${cfg.dataDir}/state.json";
+      description = ''
+        Where GreeterState.qml persists the last-logged-in username and
+        session across boots (QSG_STATE_FILE). Written by the unprivileged
+        greeter user itself, so it needs no tmpfiles `f` rule of its own --
+        only dataDir's own directory has to exist first.
+      '';
+    };
+
+    primaryOutput = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        Connector name (e.g. "eDP-1") of the one output whose login window
+        may hold exclusive keyboard focus (QSG_PRIMARY_OUTPUT). shell.qml
+        renders the login dialog on every connected output regardless of
+        this setting; it only decides which single output's window actually
+        receives keystrokes, because a layer-shell surface's "exclusive"
+        keyboard mode locks out every other surface, and only one may ever
+        safely claim it. null falls back to whichever output Quickshell
+        lists first -- fine on a single-monitor machine, and the same choice
+        this greeter always made before this option existed. Set it
+        explicitly on any host where a closed-lid or otherwise unreachable
+        output could sort first (a docked laptop being the concrete case
+        that motivated this option).
+      '';
+    };
+
+    sessionEnv = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
+      default = {WLR_DRM_NO_MODIFIERS = "1";};
+      description = ''
+        Environment variables merged into every launched session
+        (QSG_SESSION_ENV), applied underneath -- and overridable by -- each
+        session entry's own `env`. Defaults to the same
+        WLR_DRM_NO_MODIFIERS=1 programs.regreet.settings.env carries, for
+        parity with the backend this module replaces.
+      '';
     };
 
     backdropDir = lib.mkOption {
@@ -275,7 +321,7 @@ in {
     users.groups.${cfg.group} = {};
 
     systemd.tmpfiles.rules = [
-      "d /var/lib/qs-greeter 0755 greeter ${cfg.group} - -"
+      "d ${cfg.dataDir} 0755 greeter ${cfg.group} - -"
       "d ${cfg.backdropDir} 0775 greeter ${cfg.group} - -"
       "d ${cfg.logging.dir} 0750 greeter greeter - -"
       "f ${cfg.userFile} 0664 greeter ${cfg.group} - -"
@@ -306,13 +352,12 @@ in {
     # can treat it as trusted and fall back to it unconditionally.
     environment.etc."qs-greeter/defaults.json".text = builtins.toJSON {
       skin = cfg.skin;
-      skins =
-        {xp = {palettes = ["luna" "gruvbox"];};}
-        // lib.listToAttrs (map (p: {
-            name = p.pname or p.name;
-            value = {palettes = ["default"];};
-          })
-          cfg.skins.extra);
+      # The palette allow-list SettingsMerge.js actually enforces at
+      # runtime -- see Skin.qml's `_palettes` name-to-instance map and
+      # skins/xp/meta.json's own (decorative, read by nothing) `palettes`
+      # field for the other two places this same list is written down.
+      # All three must move together; nothing enforces that automatically.
+      skins = {xp = {palettes = ["luna" "gruvbox"];};};
       skinSettings = cfg.skinSettings;
       backdrop = {
         inherit (cfg.backdrop) kind color fit;
@@ -331,19 +376,24 @@ in {
     };
 
     # The launcher that actually gets exec'd by greetd's sway session. Every
-    # QSG_* variable the QML (Settings.qml/Log.qml/Session.qml/Sessions.qml)
-    # or the wrapper script itself reads is set here from the matching Nix
-    # option -- an unset QSG_* would silently fall back to its hardcoded
-    # default in the script, which is a default nobody using this module
-    # actually chose. QSG_SESSIONS_DIR and QSG_TTY_HINT are deliberately
-    # left unset: neither has a matching Nix option (session dir is the
-    # real wayland-sessions dir; the TTY hint is plumbing shared verbatim
-    # between this script and CoreFatal.qml's own hardcoded default), so
-    # there is nothing here to override. QSG_STATE_DIR and QSG_SESSIONS
-    # both come from cfg.stateDir below -- one option, one source, so the
-    # wrapper (which writes sessions.json under QSG_STATE_DIR) and the
-    # greeter (which reads it from QSG_SESSIONS) can never independently
-    # drift onto different paths.
+    # QSG_* variable the QML (Settings.qml/Log.qml/Session.qml/Sessions.qml/
+    # GreeterState.qml) or the wrapper script itself reads is set here from
+    # the matching Nix option -- an unset QSG_* would silently fall back to
+    # its hardcoded default in the script, which is a default nobody using
+    # this module actually chose. QSG_SESSIONS_DIR and QSG_TTY_HINT are
+    # deliberately left unset: neither has a matching Nix option (session
+    # dir is the real wayland-sessions dir; the TTY hint is plumbing shared
+    # verbatim between this script and CoreFatal.qml's own hardcoded
+    # default), so there is nothing here to override. QSG_STATE_DIR and
+    # QSG_SESSIONS both come from cfg.stateDir below -- one option, one
+    # source, so the wrapper (which writes sessions.json under
+    # QSG_STATE_DIR) and the greeter (which reads it from QSG_SESSIONS) can
+    # never independently drift onto different paths. QSG_STATE_FILE
+    # (GreeterState.qml's persisted last-user/last-session) similarly comes
+    # from cfg.stateFile, itself derived from cfg.dataDir alongside
+    # QSG_USER_FILE -- see dataDir's own description for why both being
+    # derived from the same option is what actually keeps the tmpfiles rule
+    # honest.
     programs.qsGreeter.wrapperPackage = let
       bool01 = b: if b then "1" else "0";
 
@@ -375,9 +425,14 @@ in {
           export QSG_CONFIG=${cfg.package}/greeter
           export QSG_DEFAULTS=/etc/qs-greeter/defaults.json
           export QSG_USER_FILE=${lib.escapeShellArg cfg.userFile}
+          export QSG_STATE_FILE=${lib.escapeShellArg cfg.stateFile}
           export QSG_BACKDROP_DIR=${lib.escapeShellArg cfg.backdropDir}
           export QSG_STATE_DIR=${lib.escapeShellArg cfg.stateDir}
           export QSG_SESSIONS=${lib.escapeShellArg "${cfg.stateDir}/sessions.json"}
+          export QSG_PRIMARY_OUTPUT=${lib.escapeShellArg (
+            if cfg.primaryOutput == null then "" else cfg.primaryOutput
+          )}
+          export QSG_SESSION_ENV=${lib.escapeShellArg (builtins.toJSON cfg.sessionEnv)}
           export QSG_PRECEDENCE=${lib.escapeShellArg cfg.precedence}
           export QSG_LOG_LEVEL=${toString cfg.logging.level}
           export QSG_LOG_ARGS=${lib.escapeShellArg logArgs}

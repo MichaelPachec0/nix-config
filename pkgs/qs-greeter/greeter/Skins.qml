@@ -57,8 +57,12 @@ Singleton {
     // requested skin name against the Nix-built registry before it can
     // reach resolve(), but that is a second, independent barrier, not a
     // substitute for this one. A future caller that forgets the registry
-    // check (programs.qsGreeter.skins.extra is exactly the shape of caller
-    // that could) must not be able to walk a skin name into a path escape.
+    // check (a Nix option letting a host register additional skin packages
+    // would be exactly that shape of caller -- programs.qsGreeter.skins.extra
+    // was one such option, removed rather than fixed because nothing in
+    // this repo ever set it and actually wiring it up meant building a
+    // merged skins/ tree Skins.qml's root_ never learns about today) must
+    // not be able to walk a skin name into a path escape.
     function _validName(name) {
         return typeof name === "string" && /^[a-z0-9_-]{1,32}$/.test(name);
     }
@@ -104,6 +108,19 @@ Singleton {
     // fall back, but "invalid" and "malformed" are each a bug (in a
     // registered skin, or in whatever produced the name) worth logging
     // loudly; "unknown" is ordinary typo/unregistered-name noise.
+    // NOTE for anyone editing a skin's meta.json: its own "palettes" and
+    // "defaultPalette" fields (and any "provides" entry beyond "logon") are
+    // read by nothing at all -- this function only ever checks provides()
+    // for "logon" a few lines down. The palette allow-list actually
+    // enforced at runtime is qs-greeter.nix's hardcoded
+    // `skins.xp.palettes = ["luna" "gruvbox"]` inside defaults.json (what
+    // SettingsMerge.js validates a user-tier palette choice against), and
+    // the palette NAMES that resolve to an actual instance live in
+    // skins/xp/Skin.qml's `_palettes` map. All three have to move together
+    // for a new palette to actually work; nothing enforces that
+    // automatically, and meta.json itself cannot hold this note (plain
+    // JSON, no comment syntax) -- hence it living here instead, in the one
+    // file that actually reads meta.json.
     function _load(name) {
         if (!root._validName(name)) return { status: "malformed" };
         var dir = root.root_ + "/" + name;

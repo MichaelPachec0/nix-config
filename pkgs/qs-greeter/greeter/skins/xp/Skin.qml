@@ -41,16 +41,24 @@ Item {
     Palettes.Luna { id: lunaPalette }
     Palettes.Gruvbox { id: gruvboxPalette }
     // Every registered palette name this skin's meta.json advertises
-    // (["luna", "gruvbox"]) maps to a real palette instance here.
+    // (["luna", "gruvbox"]) maps to a real palette instance here. This is
+    // one of THREE places this same palette set is written down, none of
+    // which reference each other in code: meta.json's own "palettes" field
+    // (decorative -- read by nothing, see Skins.qml's _load() for why),
+    // qs-greeter.nix's hardcoded `skins.xp.palettes` inside defaults.json
+    // (the allow-list SettingsMerge.js actually enforces against a
+    // user-tier palette choice), and this map. Adding a palette means
+    // editing all three; nothing catches it if you forget one.
     readonly property var _palettes: ({ luna: lunaPalette, gruvbox: gruvboxPalette })
     // Settings here is a DIFFERENT singleton instance than the one
     // screens/LogonDialog.qml reads (per-directory registration -- see
-    // that file's own note on this) -- harmless today only because this
-    // file reads Settings.palette and LogonDialog.qml reads
-    // Settings.config.sessions/branding, disjoint keys with no
-    // computation shared between the two reads. Nothing enforces that
-    // split; the same key read from both would risk observing two
-    // different settle timings.
+    // that file's own note on this, which also lists all FOUR independent
+    // instances this tree carries in total, not just these two) --
+    // harmless today only because this file reads Settings.palette and
+    // LogonDialog.qml reads Settings.config.sessions/branding, disjoint
+    // keys with no computation shared between the two reads. Nothing
+    // enforces that split; the same key read from both would risk
+    // observing two different settle timings.
     //
     // Settings.palette has already been validated against meta.json's
     // declared list by SettingsMerge.js before it reaches here in
