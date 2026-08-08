@@ -22,6 +22,16 @@ Item {
         anchors.centerIn: parent
         theme: root.theme
         ringColor: root.theme.accent
+        pulseColor: root.theme.accent
+        // 4300 is Pill's default, tuned for an ambient weather alert. A "you are
+        // in a mode" signal wants a faster cadence.
+        pulseGapMs: 1200
+        // Pulse only while this bar is actually on screen. An animation left
+        // running in a hidden layer surface still paints at the monitor refresh
+        // rate (112 fps measured on a hidden 120 Hz bar), and desktop/
+        // ModeOverlay.qml carries the signal while the bar is covered. The two
+        // conditions are complements, so exactly one of them ever animates.
+        pulseActive: root.barWindow ? root.barWindow.surfaceVisible : false
 
         Lib.ModeBadge {
             theme: root.theme
