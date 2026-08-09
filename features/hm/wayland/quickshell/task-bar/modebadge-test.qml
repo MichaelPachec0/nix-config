@@ -1,10 +1,12 @@
 // Headless check for lib/ModeBadge.qml. Run:
 //     quickshell -p modebadge-test.qml
 //
-// Lives at the config ROOT rather than beside the component: `quickshell -p`
-// makes the entrypoint's parent the root, and lib/ModeBadge.qml does
-// `import "modefmt.js" as ModeFmt`, which only resolves from inside that root
-// (same reasoning as wakeservice-test.qml and routerpopup-size-test.qml).
+// Lives at the config ROOT (not beside the component): `quickshell -p` makes
+// the entrypoint's parent the config root. That placement is not what makes
+// lib/ModeBadge.qml's `import "modefmt.js" as ModeFmt` resolve, though: like
+// any relative QML import, it resolves relative to ModeBadge.qml's own
+// directory (lib/), regardless of where the entrypoint sits (same reasoning
+// as modeoverlay-test.qml, wakeservice-test.qml and routerpopup-size-test.qml).
 //
 // Wraps the badge in a Lib.Pill, mirroring how desktop/ModePill.qml (and the
 // coming desktop/ModeOverlay.qml) actually use it, with a stub theme carrying

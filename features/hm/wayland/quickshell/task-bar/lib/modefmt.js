@@ -4,7 +4,7 @@
 
 // Hex codepoint string -> glyph, or "" when there is nothing valid to draw.
 // The guard matters: parseInt("zz", 16) is NaN and String.fromCharCode(NaN) is
-// " ", which paints a garbage box instead of drawing nothing.
+// U+0000, which paints a garbage box instead of drawing nothing.
 function glyphFor(cp) {
     if (cp === null || cp === undefined)
         return "";
