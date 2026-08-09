@@ -29,9 +29,13 @@ Item {
         // Pulse only while this bar is actually on screen. An animation left
         // running in a hidden layer surface still paints at the monitor refresh
         // rate (112 fps measured on a hidden 120 Hz bar), and desktop/
-        // ModeOverlay.qml carries the signal while the bar is covered. The two
-        // conditions are complements, so exactly one of them ever animates.
-        pulseActive: root.barWindow ? root.barWindow.surfaceVisible : false
+        // ModeOverlay.qml carries the signal while the bar is covered. On a
+        // single monitor the two conditions are complements, so exactly one of
+        // them ever animates. The root.visible term is what actually stops the
+        // timer when no submap is active: Lib.Pill's own pulse Timer is not
+        // gated by its parent Item's visibility, so without it the timer would
+        // free-run every 33ms forever, on every monitor, even at idle.
+        pulseActive: root.visible && (root.barWindow ? root.barWindow.surfaceVisible : false)
 
         Lib.ModeBadge {
             theme: root.theme

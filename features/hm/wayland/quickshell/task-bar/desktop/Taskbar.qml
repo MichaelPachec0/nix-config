@@ -80,10 +80,17 @@ PanelWindow {
     // already relied on below (the tab strip reads .class from it). Measured
     // end to end: gate engages ~0.6s after a fullscreen window maps and
     // releases ~0.6s after it goes away.
+    //
+    // Hyprland's fullscreen field is a mode enum, not a bool: 0 = none, 1 =
+    // maximized, 2 = fullscreen. A maximized window does not cover a Top-layer
+    // bar, so the test below checks === 2, not > 0 -- desktop/ModeOverlay.qml
+    // uses this property's complement as a visibility predicate, and treating
+    // maximize as "covered" would show the overlay badge while the bar and its
+    // own pill were still on screen underneath it.
     readonly property bool surfaceVisible: {
         var list = Hyprland.toplevels?.values ?? [];
         for (var i = 0; i < list.length; i++)
-            if ((list[i].workspace?.id ?? -2) === dock.activeWs && (list[i].lastIpcObject?.fullscreen ?? 0) > 0)
+            if ((list[i].workspace?.id ?? -2) === dock.activeWs && (list[i].lastIpcObject?.fullscreen ?? 0) === 2)
                 return false;
         return true;
     }

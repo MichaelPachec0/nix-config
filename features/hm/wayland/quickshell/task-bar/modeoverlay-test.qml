@@ -22,6 +22,7 @@
 // interactively by a human on the live compositor, not here.
 import QtQuick
 import Quickshell
+import Quickshell.Wayland
 import "desktop" as Desktop
 
 ShellRoot {
@@ -115,6 +116,27 @@ ShellRoot {
         harness.check("idle submap, locked, not covered stays hidden",
                        ovIdleLocked.visible === false,
                        "visible=" + ovIdleLocked.visible);
+
+        // The four checks above are near-tautological on their own: every
+        // instance is pinned covered: false, which alone forces visible ===
+        // false regardless of anything else. The checks below are the
+        // load-bearing ones for an unmapped window -- they prove the
+        // layer-shell configuration itself actually resolved (right layer,
+        // no keyboard focus, right namespace, an empty input region), since a
+        // misspelled enum or a missing Region would silently break layering
+        // or click-through without ever failing a visible === false check.
+        harness.check("layer is WlrLayer.Overlay",
+                       ovActiveUnlocked.WlrLayershell.layer === WlrLayer.Overlay,
+                       "layer=" + ovActiveUnlocked.WlrLayershell.layer);
+        harness.check("keyboardFocus is WlrKeyboardFocus.None",
+                       ovActiveUnlocked.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
+                       "keyboardFocus=" + ovActiveUnlocked.WlrLayershell.keyboardFocus);
+        harness.check("namespace is quickshell:mode",
+                       ovActiveUnlocked.WlrLayershell.namespace === "quickshell:mode",
+                       "namespace=" + ovActiveUnlocked.WlrLayershell.namespace);
+        harness.check("mask is set (empty input region for click-through)",
+                       ovActiveUnlocked.mask !== null,
+                       "mask=" + ovActiveUnlocked.mask);
 
         // implicitHeight tracks the bound barHeight without restating it (44
         // in the real shell, off taskbar.implicitHeight); 34 here just proves

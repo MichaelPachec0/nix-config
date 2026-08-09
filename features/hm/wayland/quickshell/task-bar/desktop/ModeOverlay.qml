@@ -63,8 +63,11 @@ PanelWindow {
         ringColor: root.theme.accent
         pulseColor: root.theme.accent
         pulseGapMs: 1200
-        // Complement of ModePill's gate: this surface only exists while the bar
-        // is covered, so only one of the two ever animates.
+        // Complement of ModePill's gate: this surface only exists while THIS
+        // monitor's bar is covered, so on a single monitor only one of the two
+        // ever animates. Across monitors that is not true: a fullscreen window
+        // on one monitor pulses its overlay while another monitor's bar pill
+        // pulses too.
         pulseActive: root.visible
 
         Lib.ModeBadge {
