@@ -262,10 +262,32 @@ in {
   services.scx = {
     enable = true;
     scheduler = "scx_lavd";
-    # --autopower lets lavd pick performance / balanced / powersave from AC
-    # state on its own, so no external AC/BAT reconciler is needed. Its
-    # powersave mode also enables core compaction, packing threads onto fewer
-    # cores so the rest can reach deep C-states.
+    # --autopower does NOT read AC state directly, despite the name. Per the
+    # disassembled scx_utils::autopower logic, it consults, in order: (1) D-Bus
+    # net.hadess.PowerProfiles ActiveProfile, (2) sysfs
+    # cpufreq/policy0/energy_performance_preference, (3) sysfs
+    # cpufreq/policy0/scaling_governor -- first source present wins, matched
+    # against power|powersave|balance_power|balanced_power|
+    # balance_performance|balanced_performance|performance, else "unknown".
+    #
+    # On this machine sources (1) and (2) are both absent: power-profiles-daemon
+    # is inactive and owns no bus name, and policy0/energy_performance_preference
+    # does not exist (the same fact that got CPU_ENERGY_PERF_POLICY deleted from
+    # tlp.nix). So only (3), the governor, is ever consulted, and that comes from
+    # TLP's CPU_SCALING_GOVERNOR_ON_{AC,BAT} split in nixos/thanatos/tlp.nix --
+    # meaning this flag tracks AC only INDIRECTLY, through TLP, and changing that
+    # split silently disables it.
+    #
+    # Verified live: battery governor is "powersave", which matches and selects
+    # lavd powersave (hence the core compaction below). AC governor is
+    # "schedutil", which matches NONE of the accepted strings and falls through
+    # to "unknown" -- so the AC side is UNVERIFIED to do anything in particular.
+    # If AC turns out to stick in powersave behaviour, --autopilot (load-based,
+    # needs no external signal) is the fallback that does not depend on this
+    # chain at all.
+    #
+    # Core compaction: lavd's powersave mode packs threads onto fewer cores so
+    # the rest can reach deep C-states.
     #
     # This flag is mutually exclusive with --autopilot, --performance,
     # --powersave, --balanced and --no-core-compaction; lavd refuses to start if
