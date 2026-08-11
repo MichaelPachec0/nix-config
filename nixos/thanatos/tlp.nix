@@ -21,11 +21,14 @@
       CPU_SCALING_GOVERNOR_ON_AC = "schedutil";
       CPU_SCALING_GOVERNOR_ON_BAT = "powersave";
 
-      # `tlp-stat -p` annotates this "(CPU not supported)", so it may well be
-      # inert -- but it is KEPT rather than deleted because if TLP ever does
-      # drive it, the kernel default is boost-enabled, and re-enabling boost on
-      # battery is the opposite of what this file is for. Verify after any
-      # change that /sys/devices/system/cpu/cpufreq/boost still reads 0.
+      # `tlp-stat -p` annotates this "(CPU not supported)", but the value
+      # demonstrably lands anyway: checked live, boost reads 1 with AC plugged
+      # in and 0 on battery, matching CPU_BOOST_ON_AC/CPU_BOOST_ON_BAT below --
+      # so TLP IS driving this knob despite the "not supported" annotation. It
+      # is kept because the kernel default is boost-enabled, and re-enabling
+      # boost on battery is the opposite of what this file is for. Verify
+      # after any change that /sys/devices/system/cpu/cpufreq/boost still
+      # reads 0 ON BATTERY specifically -- it is expected to read 1 on AC.
       CPU_BOOST_ON_AC = 1;
       CPU_BOOST_ON_BAT = 0;
 
@@ -73,6 +76,12 @@
       # policy cannot wedge storage; the worst case is a card needing a replug.
       # If the reader does misbehave, re-add:
       #   RUNTIME_PM_DENYLIST = "04:00.0 00:02.4";
+
+      # ---- PCIe ASPM ------------------------------------------------------
+      # "default" is byte-identical to TLP's own stock default for AC; stated
+      # explicitly (rather than omitted) so the AC/BAT pair reads symmetrically
+      # next to each other, matching how the rest of this file always states
+      # both sides.
       PCIE_ASPM_ON_AC = "default";
       PCIE_ASPM_ON_BAT = "powersupersave";
 
@@ -88,6 +97,11 @@
       # ---- Radio / audio ---------------------------------------------------
       WIFI_PWR_ON_AC = "off";
       WIFI_PWR_ON_BAT = "on";
+      # 0 on AC deviates from TLP's own default of 1. This is NOT a power
+      # optimisation -- it costs a little AC draw, not saves it -- it avoids
+      # the audible HDA codec resume pop when the codec is woken from
+      # power-save while plugged in. On battery the pop is an acceptable
+      # trade for the power saved.
       SOUND_POWER_SAVE_ON_AC = 0;
       SOUND_POWER_SAVE_ON_BAT = 1;
       SOUND_POWER_SAVE_CONTROLLER = 1;
