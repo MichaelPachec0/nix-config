@@ -49,7 +49,24 @@
       RUNTIME_PM_ON_AC = "on";
       RUNTIME_PM_ON_BAT = "auto";
 
-      # No denylist, deliberately. The previous RUNTIME_PM_DENYLIST
+      # Empty string, NOT omission. Leaving this key out does not mean "no
+      # driver denylist" -- TLP falls back to the baseline baked into
+      # share/tlp/defaults.conf, which is
+      #   "mei_me nouveau radeon xhci_hcd"
+      # and would pin BOTH onboard USB 3.1 controllers (07:00.3 and 07:00.4,
+      # driver xhci_hcd) at control=on forever. Those two sit under bridge
+      # 00:08.1 together with the GPU, HDMI audio, the PSP and HD audio, and a
+      # bridge only suspends once every child is idle -- so the stock default
+      # would hold that entire root port awake and defeat the setting above.
+      # "" is TLP's documented way to disable the driver denylist completely.
+      #
+      # Trade-off accepted deliberately: xhci_hcd is in TLP's default list
+      # because USB controller runtime PM has a history of wake regressions.
+      # If USB wake or a specific device misbehaves, restore the stock list
+      # rather than reverting RUNTIME_PM_ON_BAT.
+      RUNTIME_PM_DRIVER_DENYLIST = "";
+
+      # No address denylist either. The previous RUNTIME_PM_DENYLIST
       # "04:00.0 00:02.4" named ONE device twice over: 00:02.4 is a GPP bridge
       # whose only child is 04:00.0, the Realtek RTS522A card reader. The NVMe
       # hangs off a different root port (00:02.1 -> 01:00.0), so an aggressive
@@ -94,6 +111,8 @@
       #   RADEON_DPM_PERF_LEVEL_ON_BAT, RADEON_DPM_STATE_ON_BAT
       #     `tlp-stat -g` returns an empty graphics section and
       #     power_dpm_force_performance_level still read `auto` on battery.
+      #     Additionally, the old setting was "mid", which is not in TLP's valid
+      #     domain (auto|low|high), so it may have been rejected as invalid.
       #   AMDGPU_ABM_LEVEL_ON_BAT
       #     No panel_power_savings attribute exists on this kernel/panel, so
       #     backlight modulation has nowhere to land.
