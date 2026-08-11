@@ -15,6 +15,15 @@ in {
     # idle -> systemctl suspend. Lid-close suspend already works via logind's
     # default HandleLidSwitch; this covers the lid-OPEN case, where the session
     # previously locked, blanked, and then stayed fully awake indefinitely.
+    #
+    # This timeout is NOT AC-aware -- nothing here, in logind, or in the
+    # stay-awake popup gates it on power state, and the home-manager
+    # services.swayidle module has no cheap declarative AC gate to add one
+    # with. It fires identically on battery and on AC, so a long unattended
+    # nixos-rebuild, a big download, or an inbound SSH session left idle for
+    # 30 minutes now suspends even while plugged in, where it previously never
+    # did. Arm the stay-awake toggle before leaving anything long-running
+    # unattended.
     suspendSec = 1800;
     configPkg = pkgs.writeText "swaylockConfig" ''
       indicator-idle-visible
