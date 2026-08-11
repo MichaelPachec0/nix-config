@@ -12,6 +12,10 @@ in {
   config = let
     lockSec = 300; # idle -> loginctl lock-session
     dpmsSec = 800; # idle -> DPMS screen off
+    # idle -> systemctl suspend. Lid-close suspend already works via logind's
+    # default HandleLidSwitch; this covers the lid-OPEN case, where the session
+    # previously locked, blanked, and then stayed fully awake indefinitely.
+    suspendSec = 1800;
     configPkg = pkgs.writeText "swaylockConfig" ''
       indicator-idle-visible
       indicator-radius=100
@@ -57,7 +61,7 @@ in {
     # swayidle timeouts use, emitted as JSON the popup reads. Lives outside
     # ~/.config/quickshell (that dir is a repo symlink).
     xdg.configFile."quickshell-idle/policy.json".text =
-      builtins.toJSON {inherit lockSec dpmsSec;};
+      builtins.toJSON {inherit lockSec dpmsSec suspendSec;};
     # xdg
     systemd.user = {
       services = {
@@ -130,6 +134,10 @@ in {
             timeout = dpmsSec;
             command = "${mkDpms "off"}";
             resumeCommand = "${mkDpms "on"}";
+          }
+          {
+            timeout = suspendSec;
+            command = "${sys}/bin/systemctl suspend";
           }
         ];
         # Bind to graphical-session.target (UWSM-managed) so swayidle runs and
