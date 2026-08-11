@@ -54,6 +54,17 @@ rc=0
 check "require_discharging succeeds when AC offline" "0" "$rc"
 rm -rf "$ac_tmp"
 
+# once rejects a non-positive window before it can reach watts_from_delta's
+# division. The guard runs before require_discharging, so no AC/BATT fixture
+# is needed here.
+rc=0
+(once 0) >/dev/null 2>&1 || rc="$?"
+check "once exits 64 on a non-positive window" "64" "$rc"
+
+# NOTE: suspend-during-window detection (exit 3) is not unit tested here --
+# it needs a real suspend/resume cycle to observe SECONDS outrunning slept
+# time. Covered by inspection only; see the comment in once().
+
 if [ "$fails" -gt 0 ]; then
   echo "$fails test(s) failed" >&2
   exit 1

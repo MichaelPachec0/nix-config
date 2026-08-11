@@ -13,6 +13,7 @@
       bash test_batt-watts.sh ./batt-watts.sh
       install -Dm755 batt-watts.sh "$out/bin/batt-watts"
       wrapProgram "$out/bin/batt-watts" --prefix PATH : ${lib.makeBinPath [
+        pkgs.bash
         pkgs.coreutils
         pkgs.gawk
       ]}
