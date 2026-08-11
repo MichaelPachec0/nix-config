@@ -36,13 +36,28 @@ require_discharging() {
 
 once() {
   local window="${1:-600}"
+  local poll_interval=5
   require_discharging
-  local start end
+  local start end elapsed remaining
   start="$(cat "$BATT_DIR/energy_now")"
-  sleep "$window"
+  SECONDS=0
+  # Poll AC every ~5s instead of one long sleep, so a plug-in that is
+  # unplugged again before the window ends still gets caught. SECONDS is a
+  # bash builtin (monotonic-ish wall clock since it was last assigned), so
+  # elapsed reflects the actual time slept rather than the requested window.
+  while [ "$SECONDS" -lt "$window" ]; do
+    remaining=$((window - SECONDS))
+    if [ "$remaining" -lt "$poll_interval" ]; then
+      sleep "$remaining"
+    else
+      sleep "$poll_interval"
+    fi
+    require_discharging
+  done
+  elapsed=$SECONDS
   end="$(cat "$BATT_DIR/energy_now")"
   require_discharging
-  watts_from_delta "$start" "$end" "$window"
+  watts_from_delta "$start" "$end" "$elapsed"
 }
 
 median() {
