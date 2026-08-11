@@ -6,6 +6,13 @@
 # power tuning produces. Integrating energy_now over a window removes that noise
 # because it measures charge actually consumed rather than an instantaneous
 # estimate.
+#
+# The full measurement protocol (120s pre-idle settle, then `median 3` of 600s
+# windows) runs for roughly 1920s of no input, which is longer than this
+# machine's idle-suspend tier. Arm the stay-awake idle inhibitor (the
+# Quickshell "stay awake" popup, or equivalent) for the whole session before
+# starting a measurement run, or a suspend firing mid-window will make `once`
+# exit 3 (see below) and discard the sample.
 set -euo pipefail
 
 BATT_DIR="${BATT_DIR:-/sys/class/power_supply/BAT0}"
@@ -37,8 +44,12 @@ require_discharging() {
 once() {
   local window="${1:-600}"
   local poll_interval=5
+  if [ "$window" -le 0 ]; then
+    echo "batt-watts: WINDOW_SECONDS must be > 0 (got '$window')" >&2
+    exit 64
+  fi
   require_discharging
-  local start end elapsed remaining
+  local start end elapsed remaining slept=0
   start="$(cat "$BATT_DIR/energy_now")"
   SECONDS=0
   # Poll AC every ~5s instead of one long sleep, so a plug-in that is
@@ -49,12 +60,27 @@ once() {
     remaining=$((window - SECONDS))
     if [ "$remaining" -lt "$poll_interval" ]; then
       sleep "$remaining"
+      slept=$((slept + remaining))
     else
       sleep "$poll_interval"
+      slept=$((slept + poll_interval))
     fi
     require_discharging
   done
   elapsed=$SECONDS
+  # sleep uses CLOCK_MONOTONIC, which does not advance across suspend; SECONDS
+  # is wall clock and does. If the machine suspended mid-window, the loop above
+  # still exits (SECONDS caught up once resumed) but elapsed is inflated by the
+  # whole suspended interval while energy_now barely moved -- watts_from_delta
+  # would then divide a small delta by a large window and silently print an
+  # artificially LOW wattage that passes require_discharging and looks
+  # plausible. Detect it by comparing elapsed against the sleep time actually
+  # accumulated: more than 10s of drift means a suspend happened, not just
+  # scheduling jitter.
+  if [ "$((elapsed - slept))" -gt 10 ]; then
+    echo "batt-watts: wall time (${elapsed}s) outran slept time (${slept}s) by more than 10s; the system suspended mid-window, discarding this sample" >&2
+    exit 3
+  fi
   end="$(cat "$BATT_DIR/energy_now")"
   require_discharging
   watts_from_delta "$start" "$end" "$elapsed"
