@@ -262,5 +262,14 @@ in {
   services.scx = {
     enable = true;
     scheduler = "scx_lavd";
+    # --autopower lets lavd pick performance / balanced / powersave from AC
+    # state on its own, so no external AC/BAT reconciler is needed. Its
+    # powersave mode also enables core compaction, packing threads onto fewer
+    # cores so the rest can reach deep C-states.
+    #
+    # This flag is mutually exclusive with --autopilot, --performance,
+    # --powersave, --balanced and --no-core-compaction; lavd refuses to start if
+    # more than one is passed, so keep this list to exactly one power-mode flag.
+    extraArgs = ["--autopower"];
   };
 }
