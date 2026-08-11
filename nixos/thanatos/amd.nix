@@ -179,6 +179,7 @@ in {
   imports = [
     ./tlp.nix
     ./gaming.nix
+    ./batt-watts.nix
   ];
   config = {
     assertions = [
