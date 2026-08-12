@@ -36,10 +36,42 @@ in {
     # starving this deadlocks reclaim (zram needs free pages to compress into).
     "vm.min_free_kbytes" = memTotalKb / 100;
 
-    # Bound writeback by bytes, not by percent-of-RAM. The 20%/10% defaults let
-    # ~4.2G of dirty pages queue up, and draining that stalls swap-in behind it
-    # on the same NVMe. Setting *_bytes zeroes the matching *_ratio; they are
-    # mutually exclusive, so do not reintroduce vm.dirty_ratio here.
+    # Bound writeback by bytes, not by percent-of-RAM. Setting *_bytes zeroes
+    # the matching *_ratio; they are mutually exclusive, so do not reintroduce
+    # vm.dirty_ratio here.
+    #
+    # PROVENANCE: these values were tuned against the PREVIOUS SSD, where the
+    # 20%/10% defaults let ~4.2G of dirty pages queue up and draining that
+    # stalled swap-in behind it. That machine now runs a Crucial P310 (2TB,
+    # DRAM-less/HMB), and the stall does NOT reproduce on it.
+    #
+    # Measured A/B/A on the P310 (fio: buffered 1M writer saturating the drive
+    # at ~380 MB/s, concurrent O_DIRECT 4k random reader, 60s overlapping):
+    #   p50 read latency was 94-95us in ALL THREE runs, so there is no
+    #   systematic difference in typical latency between the two settings.
+    #   The tail moved, but the two identically-configured runs disagreed with
+    #   each other MORE than either disagreed with the default-ratio run
+    #   (p99 285us vs 1045us for the same config), i.e. run-to-run variance
+    #   dominates and the experiment cannot separate them.
+    #
+    # So these are kept as HARMLESS, not as proven necessary. Two cases remain
+    # untested: SLC-cache exhaustion (needs 100G+ of sustained writing, well
+    # past what was measured) and the workload that actually motivated this --
+    # a large Nix build under memory pressure, where swap-in competes with
+    # writeback. That is anonymous-page traffic the fio test never generated.
+    #
+    # IF WRITEBACK OR SWAP-IN STALLS EVER REAPPEAR, START HERE. Both values are
+    # live-tunable, so bisect without a rebuild:
+    #   sysctl -w vm.dirty_ratio=20 vm.dirty_background_ratio=10   # defaults
+    #   sysctl -w vm.dirty_bytes=268435456 vm.dirty_background_bytes=67108864
+    # Writing either pair zeroes the other. Judge by desktop feel during a real
+    # rebuild, not by a synthetic benchmark -- the synthetic could not resolve
+    # the difference.
+    #
+    # Note powertop reports "Bad: VM dirty ratio" here. That is a false
+    # positive: it reads vm.dirty_ratio, which is 0 precisely BECAUSE the byte
+    # limits are in force. Never let `powertop --auto-tune` near this -- it
+    # would set the ratio, silently zero the byte limits, and undo the bound.
     "vm.dirty_bytes" = 256 * 1024 * 1024;
     "vm.dirty_background_bytes" = 64 * 1024 * 1024;
 
