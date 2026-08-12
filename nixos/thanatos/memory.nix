@@ -294,36 +294,39 @@ in {
   services.scx = {
     enable = true;
     scheduler = "scx_lavd";
-    # --autopower does NOT read AC state directly, despite the name. Per the
-    # disassembled scx_utils::autopower logic, it consults, in order: (1) D-Bus
-    # net.hadess.PowerProfiles ActiveProfile, (2) sysfs
-    # cpufreq/policy0/energy_performance_preference, (3) sysfs
-    # cpufreq/policy0/scaling_governor -- first source present wins, matched
-    # against power|powersave|balance_power|balanced_power|
-    # balance_performance|balanced_performance|performance, else "unknown".
+    # --autopilot picks the power mode from LOAD. --autopower was tried here and
+    # deliberately rejected; do not "fix" this back.
     #
-    # On this machine sources (1) and (2) are both absent: power-profiles-daemon
-    # is inactive and owns no bus name, and policy0/energy_performance_preference
-    # does not exist (the same fact that got CPU_ENERGY_PERF_POLICY deleted from
-    # tlp.nix). So only (3), the governor, is ever consulted, and that comes from
-    # TLP's CPU_SCALING_GOVERNOR_ON_{AC,BAT} split in nixos/thanatos/tlp.nix --
-    # meaning this flag tracks AC only INDIRECTLY, through TLP, and changing that
-    # split silently disables it.
+    # Despite the name, --autopower does not read AC state. Per the disassembled
+    # scx_utils::autopower logic it consults, first-present-wins: (1) D-Bus
+    # net.hadess.PowerProfiles ActiveProfile, (2)
+    # cpufreq/policy0/energy_performance_preference, (3)
+    # cpufreq/policy0/scaling_governor. On Renoir (1) and (2) are both absent --
+    # power-profiles-daemon is inactive and owns no bus name, and the EPP
+    # attribute does not exist (the same fact that got CPU_ENERGY_PERF_POLICY
+    # deleted from tlp.nix). So only the governor is ever read.
     #
-    # Verified live: battery governor is "powersave", which matches and selects
-    # lavd powersave (hence the core compaction below). AC governor is
-    # "schedutil", which matches NONE of the accepted strings and falls through
-    # to "unknown" -- so the AC side is UNVERIFIED to do anything in particular.
-    # If AC turns out to stick in powersave behaviour, --autopilot (load-based,
-    # needs no external signal) is the fallback that does not depend on this
-    # chain at all.
+    # That is what makes it the wrong flag HERE. tlp.nix pins
+    # CPU_SCALING_GOVERNOR_ON_BAT = "powersave", so on battery --autopower
+    # resolves to lavd powersave permanently, whatever the machine is actually
+    # doing (confirmed live: "Set the scheduler's power profile to powersave
+    # mode"). Powersave enables core compaction, packing threads onto fewer
+    # cores so the rest reach deep C-states -- a latency trade applied
+    # unconditionally the whole time you are unplugged. scx_lavd is in this file
+    # FOR latency, so that is backwards. Measured A/B against it showed no
+    # battery saving that survived the run-to-run variance, so the trade bought
+    # nothing measurable either.
     #
-    # Core compaction: lavd's powersave mode packs threads onto fewer cores so
-    # the rest can reach deep C-states.
+    # --autopilot decides from load instead: it can pick performance under
+    # interactive work and still compact when genuinely idle, and it needs no
+    # external signal, which matters when two of autopower's three inputs do not
+    # exist on this hardware. It is also lavd's default when no power-mode flag
+    # is given -- stated explicitly here so the behaviour is legible and does not
+    # silently change if upstream changes that default.
     #
-    # This flag is mutually exclusive with --autopilot, --performance,
-    # --powersave, --balanced and --no-core-compaction; lavd refuses to start if
-    # more than one is passed, so keep this list to exactly one power-mode flag.
-    extraArgs = ["--autopower"];
+    # Exactly one power-mode flag: --autopilot, --autopower, --performance,
+    # --powersave, --balanced and --no-core-compaction are mutually exclusive and
+    # lavd refuses to start if more than one is passed.
+    extraArgs = ["--autopilot"];
   };
 }
