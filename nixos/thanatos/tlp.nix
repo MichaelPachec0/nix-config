@@ -106,6 +106,28 @@
       SOUND_POWER_SAVE_ON_BAT = 1;
       SOUND_POWER_SAVE_CONTROLLER = 1;
 
+      # ---- Panel ------------------------------------------------------------
+      # Adaptive Backlight Management. The panel is the single largest consumer
+      # left on this machine, so this is the one graphics knob here that is not
+      # decoration.
+      #
+      # This was briefly removed on the strength of a BAD PROBE: a
+      # `find /sys -name panel_power_savings` without -L, which silently never
+      # traversed /sys/class/drm/card1-eDP-1 because that is a symlink, and so
+      # reported the attribute as absent. It is not. The real path is
+      #   /sys/class/drm/card1-eDP-1/amdgpu/panel_power_savings
+      # and it is writable. Verify with `find -L`, or just cat that path -- do
+      # not re-derive this with a bare `find`.
+      #
+      # Levels are 0 (off) to 4 (most aggressive). ABM dims the backlight and
+      # compensates in the pixel pipeline, so higher levels trade colour
+      # accuracy and visible shifts on gradients for power. 3 is the level TLP
+      # documents as a strong-but-usable default; drop to 1-2 if the shifting is
+      # distracting on photos or video. AC is left at 0: there is no reason to
+      # pay the image-quality cost while plugged in.
+      AMDGPU_ABM_LEVEL_ON_AC = 0;
+      AMDGPU_ABM_LEVEL_ON_BAT = 3;
+
       # ---- Misc ------------------------------------------------------------
       NMI_WATCHDOG = 0;
 
@@ -127,9 +149,8 @@
       #     power_dpm_force_performance_level still read `auto` on battery.
       #     Additionally, the old setting was "mid", which is not in TLP's valid
       #     domain (auto|low|high), so it may have been rejected as invalid.
-      #   AMDGPU_ABM_LEVEL_ON_BAT
-      #     No panel_power_savings attribute exists on this kernel/panel, so
-      #     backlight modulation has nowhere to land.
+      # (AMDGPU_ABM_LEVEL_ON_BAT was listed here as inert. That was wrong -- see
+      # the Panel section above. It is back, and it is real.)
     };
   };
 }
