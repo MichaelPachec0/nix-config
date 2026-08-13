@@ -130,6 +130,7 @@
     };
     flake-playground = {
       url = "github:MichaelPachec0/flake-playground";
+      inputs.nixpkgs.follows = "nixpkgs";
       # INFO: for local building
       # url = "path:/home/michael/git/personal/flake-playground";
     };
