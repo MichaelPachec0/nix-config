@@ -8,6 +8,7 @@
     ./programs.nix
     ./services.nix
     ./dbus-fd-watch.nix
+    ./unix-inflight-watch.nix
     ./dbus-activation-reload.nix
   ];
   options = {
