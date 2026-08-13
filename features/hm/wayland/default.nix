@@ -127,18 +127,9 @@
         gtk-cursor-theme-size = 24;
       };
 
-      theme = {
-        # name = "Adwaita-dark";
-        # package = pkgs.flat-remix-gtk;
-        # name = "Flat-Remix-GTK-Blue-Dark";
-        name = "Gruvbox-Yellow-Dark";
-
-        package = pkgs.gruvbox-gtk-theme.override {
-          themeVariants = ["all"];
-          tweakVariants = ["macos"];
-          iconVariants = ["Dark"];
-        };
-      };
+      # No `theme` here: gruvbox-gtk-theme was removed from nixpkgs (it needed
+      # gtk-engine-murrine, dropped as unmaintained GTK 2). Apps fall back to
+      # the default until a replacement is picked.
     };
     qt = {
       enable = true;

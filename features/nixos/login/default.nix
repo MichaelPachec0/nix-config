@@ -53,16 +53,9 @@ in {
       #     outputHash = "sha256-M1ha8tL5j5B1wOOrBRQ7qEDbsaSzfrluqT35W9RWluI=";
       #   });
       # });
-      # do not set settings here yet
-      theme = {
-        package = pkgs.gruvbox-gtk-theme.override {
-          themeVariants = ["all"];
-          tweakVariants = ["macos"];
-        };
-        # /nix/store/<theme>/share/themes/
-        # the name will specified there
-        name = "Gruvbox-Yellow-Dark";
-      };
+
+      # No `theme` here: gruvbox-gtk-theme was removed from nixpkgs (it needed
+      # gtk-engine-murrine, dropped as unmaintained GTK 2).
       font = {
         size = 8;
       };
@@ -143,11 +136,6 @@ in {
     # It is here for the dbus commands usage.
     environment.systemPackages = with pkgs; [
       dbus
-      (pkgs.gruvbox-gtk-theme.override {
-        themeVariants = ["all"];
-        tweakVariants = ["macos"];
-        # iconVariants = ["Dark"];
-      })
 
       bibata-cursors
       papirus-icon-theme
