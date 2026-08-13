@@ -13,7 +13,8 @@ inner wl_surface (or owner) being null/destroying during the teardown race
 faults. Hardened to the .expired()+inner-check convention already used by
 CPopup::coordsRelativeToParent() and CPopup::t1ParentCoords().
 
-Applies to Hyprland v0.56.0. Not fixed upstream as of main@36b2e0c.
+Applies to Hyprland v0.56.0 through v0.56.2 (Popup.cpp and SeatManager.cpp are
+byte-identical across those tags). Not fixed upstream as of main@36b2e0c.
 See docs/hyprland-popup-lock-crash for the full analysis and upstream PR text.
 ---
 diff --git a/src/desktop/view/Popup.cpp b/src/desktop/view/Popup.cpp

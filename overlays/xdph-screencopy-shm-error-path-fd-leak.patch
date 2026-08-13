@@ -1,0 +1,49 @@
+Fix xdg-desktop-portal-hyprland leaking the shm file descriptor on the two
+error paths of the SHM branch of CPipewireConnection::createBuffer.
+
+pBuffer is a std::unique_ptr<SBuffer> and SBuffer has no destructor, so
+`return nullptr` after the fd has been assigned into pBuffer->fd[0] simply
+abandons it:
+
+  * ftruncate() failing on the freshly shm_open()ed fd;
+  * import_wl_shm_buffer() returning nullptr.
+
+The DMABUF branch a few dozen lines above already gets this right -- it closes
+every plane fd both when zwp_linux_buffer_params_v1_create_immed fails and
+when gbm_bo_get_fd_for_plane fails partway through. The SHM branch below it
+just does not, which reads as an oversight rather than a deliberate
+difference. The normal teardown path (destroyBuffer) closes fd[0] correctly
+via planeCount, so only these two failure exits leak.
+
+Both are error paths, so this is rare in practice; it is fixed for
+consistency with the DMABUF branch and because a portal that fails to
+allocate a buffer is likely to be asked again.
+
+Found while auditing fd lifetimes in this codebase after an unrelated leak in
+the input-capture portal.
+
+Not upstreamed yet.
+
+diff --git a/src/portals/Screencopy.cpp b/src/portals/Screencopy.cpp
+index cc232e9..99c31da 100644
+--- a/src/portals/Screencopy.cpp
++++ b/src/portals/Screencopy.cpp
+@@ -1383,6 +1383,10 @@ std::unique_ptr<SBuffer> CPipewireConnection::createBuffer(CPipewireConnection::
+ 
+         if (ftruncate(pBuffer->fd[0], pBuffer->size[0]) < 0) {
+             Debug::log(ERR, "[screencopy] ftruncate failed");
++            // SBuffer has no destructor, so returning here abandons the fd --
++            // the DMABUF branch above already closes its fds on the equivalent
++            // failures, this one did not.
++            close(pBuffer->fd[0]);
+             return nullptr;
+         }
+ 
+@@ -1390,6 +1394,7 @@ std::unique_ptr<SBuffer> CPipewireConnection::createBuffer(CPipewireConnection::
+                                                  pStream->pSession->sharingData.frameInfoSHM.h, pStream->pSession->sharingData.frameInfoSHM.stride);
+         if (!pBuffer->wlBuffer) {
+             Debug::log(ERR, "[screencopy] import_wl_shm_buffer failed");
++            close(pBuffer->fd[0]);
+             return nullptr;
+         }
+     }
