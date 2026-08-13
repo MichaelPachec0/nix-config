@@ -151,7 +151,14 @@ Item {
                 // surfaceVisible: don't scroll into a bar that a fullscreen
                 // window is covering -- the frame callbacks keep coming, so the
                 // stepping would render at full rate for nothing.
-                running: marquee.overflow && root.isPlaying && root.barWindow.surfaceVisible
+                //
+                // Hover-gated by default (Lib.MediaState.marqueeAlways = false),
+                // because continuous scrolling is the single largest idle
+                // battery item on this machine -- see the marquee chip in
+                // MediaPopup.qml for the measurement. Hovering still scrolls a
+                // PAUSED title on purpose: that is a deliberate action, not an
+                // idle background cost.
+                running: marquee.overflow && root.barWindow.surfaceVisible && (Lib.MediaState.marqueeAlways ? root.isPlaying : widgetHover.hovered)
                 onRunningChanged: if (!running)
                     marquee.resetScroll()
                 onTriggered: {
