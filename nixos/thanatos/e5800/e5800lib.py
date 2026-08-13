@@ -16,8 +16,15 @@ def login_hash(user, cipher, nonce):
 
 
 def gen_from_network_type(nt):
-    """Map a modem network_type string to a coarse generation label."""
-    s = (nt or "").upper()
+    """Map a modem network_type string to a coarse generation label.
+
+    Only strings decode. GL 4.10's cell_info reports network_type as an integer
+    enum instead; derive_mode turns a component set back into GL's own string
+    vocabulary, so this function keeps seeing strings and an int that reaches it
+    by mistake reads as unknown rather than raising."""
+    if not isinstance(nt, str):
+        return "?"
+    s = nt.upper()
     if s.startswith("NR5G") or "5G" in s:
         return "5G"
     if "LTE" in s:
@@ -34,6 +41,107 @@ def _int_or_none(s):
         return int(s)
     except (TypeError, ValueError):
         return None
+
+
+def _num(v):
+    """A JSON number as int when it is whole, else float, else None."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return int(f) if f == int(f) else f
+
+
+# --- GL 4.10 cell_info -------------------------------------------------------
+# Up to GL 4.8.5 `cellular.collect get_signals` answered one FLAT metric set per
+# slot. 4.10 reshaped it into one entry per component carrier with network_type
+# as an integer enum, and dropped `strength` and the 0-5 `*_level` buckets from
+# that method entirely -- reading the old keys off the new payload yields None
+# for every metric, which is what blanked the widget after the upgrade. Those
+# keys now live only in `cellular.network cell_info`, so that is the source.
+#
+# The enum was established by cross-checking ARFCN ranges, not assumed:
+#   4  = LTE   (band 66 at EARFCN 66786, inside LTE B66's 66436-67335)
+#   51 = NR5G  (bands 41/71 at ARFCN 501390/126530, NR-ARFCN values)
+#   0  = unregistered (an all-zero component)
+NT_LTE = 4
+NT_NR = 51
+
+# rsrp/rsrq/rssi are negative-dBm quantities, so 0 is physically impossible and
+# means "unset". sinr is different: 0 dB is a real reading and only -32768 is
+# the not-measured sentinel. Getting this backwards would either discard a
+# valid SINR or plot a cliff to the floor of the chart.
+_UNSET_IF_ZERO = ("rsrp", "rsrq", "rssi")
+_SINR_UNSET = -32768
+
+
+def normalize_component(c):
+    """One component carrier with its sentinels mapped to None."""
+    out = dict(c or {})
+    for k in _UNSET_IF_ZERO:
+        if k in out:
+            v = _num(out.get(k))
+            out[k] = None if v == 0 else v
+    if "sinr" in out:
+        v = _num(out.get("sinr"))
+        out["sinr"] = None if v == _SINR_UNSET else v
+    return out
+
+
+def primary_component(signal):
+    """The ca:0 component, which is what the old flat metric set was."""
+    sig = signal or []
+    for c in sig:
+        if c.get("ca") == 0:
+            return c
+    return sig[0] if sig else None
+
+
+def derive_mode(signal):
+    """The aggregate RAT, in GL's own string vocabulary so it still matches what
+    4.8.5 published and what the popup renders. SA vs NSA comes from the
+    component SET, never from a single component's enum: under NSA the primary
+    is the LTE anchor while the aggregate is 5G."""
+    types = set()
+    for c in signal or []:
+        nt = c.get("network_type")
+        if nt:
+            types.add(nt)
+    has_lte, has_nr = NT_LTE in types, NT_NR in types
+    if has_lte and has_nr:
+        return "NR5G-NSA"
+    if has_nr:
+        return "NR5G-SA"
+    if has_lte:
+        return "LTE"
+    return None
+
+
+def cell_metrics(cell):
+    """The flat metric set the status file publishes, from a cell_info payload.
+
+    Returns {} when there is no payload at all -- that is what marks the modem
+    unsupported. A registered-but-idle slot still answers with one all-zero
+    component, which yields a populated dict of None metrics: the modem exists,
+    it just has nothing to report, and the two cases must not be conflated."""
+    ci = cell or {}
+    signal = [normalize_component(c) for c in (ci.get("signal") or [])]
+    if not signal:
+        return {}
+    p = primary_component(signal) or {}
+    mode = derive_mode(signal)
+    return {
+        # Which SIM these metrics belong to. This box is DSDS -- both SIMs
+        # register and only one carries data -- so the slot is part of the
+        # reading, not a constant.
+        "slot": _int_or_none(ci.get("slot")),
+        "network_type": mode,
+        "gen": gen_from_network_type(mode),
+        "strength": _num(p.get("strength")),
+        "rsrp": p.get("rsrp"),
+        "rsrq": p.get("rsrq"),
+        "sinr": p.get("sinr"),
+    }
 
 
 # --- PLMN -> network name ----------------------------------------------------
@@ -639,6 +747,34 @@ def _parse_ca_band(s):
     return (rat, num, ("B" if rat == "LTE" else "n") + str(num))
 
 
+def _qcainfo_has_state(toks):
+    """Whether an SCC line carries a <scell_state> field at token 4.
+
+    Token count cannot answer this. NR SCCs in EN-DC appear in a SHORT form
+    that omits the state entirely -- ("SCC",freq,bw,band,PCID) -- because the
+    serving PSCell is by definition the active NR leg. This modem used to emit
+    exactly those five tokens, but now appends measurements to the same line:
+
+        +QCAINFO: "SCC",501390,12,"NR5G BAND 41",704,-88,-11,1555
+
+    A length test reads 704 (a PCID) as the state, and since 704 != 2 it
+    reports the carrier actually carrying 5G as deactivated. Discriminate on
+    the values instead:
+
+      * <scell_state> is only ever 0, 1 or 2, so anything else at token 4 is a
+        PCID and the line is short form.
+      * When token 4 IS 0/1/2 it is still ambiguous with a low PCID, so look at
+        what follows. The long form puts the PCID there (never negative); the
+        short form puts RSRP there (always negative).
+      * With nothing following, there is no room for a state plus a PCID, so
+        the line is the bare five-token short form.
+    """
+    if len(toks) <= 4 or _int_or_none(toks[4]) not in (0, 1, 2):
+        return False
+    nxt = _int_or_none(toks[5]) if len(toks) > 5 else None
+    return nxt is not None and nxt >= 0
+
+
 def parse_qcainfo(data):
     """Parse an AT+QCAINFO response into component-carrier aggregation info.
 
@@ -648,7 +784,8 @@ def parse_qcainfo(data):
     2=configured-activated. The PCC line's state field is *registration* state
     (a different enum), so the PCC is always treated as the active primary. NR
     SCCs in EN-DC may appear in a short form ("SCC",freq,bw,band,PCID) with no
-    state field; that is the serving NR PSCell and is treated as active.
+    state field; that is the serving NR PSCell and is treated as active. See
+    _qcainfo_has_state for why the two forms cannot be told apart by length.
 
     Returns None when no PCC line is present (idle / no service), else:
         {"mode": "NSA"|"SA"|"LTE"|None,
@@ -679,7 +816,7 @@ def parse_qcainfo(data):
         if role == "PCC":
             have_pcc = True
             state, active, configured = None, True, True
-        elif len(toks) <= 5:
+        elif not _qcainfo_has_state(toks):
             # NR short form (serving PSCell): no state field, treat as active.
             state, active, configured = None, True, True
         else:
@@ -779,8 +916,7 @@ def build_status(parts):
     up = _active_uplink(gs.get("network"))
     speed = parts.get("get_speed") or {}
     info = parts.get("info") or {}
-    sig_list = parts.get("signals")
-    sig = (sig_list or [{}])[0] if sig_list else {}
+    sig = cell_metrics(parts.get("cellinfo"))
     # Country hint for naming: an explicit override wins, else the timezone.
     hint = parts.get("country_hint")
     if hint is None:
@@ -858,8 +994,8 @@ def build_status(parts):
             "result": (marker or {}).get("result"),
         },
         "cellular": {
-            "supported": bool(sig_list),
-            "gen": gen_from_network_type(sig.get("network_type")),
+            "supported": bool(sig),
+            "gen": sig.get("gen") or "?",
             "network_type": sig.get("network_type"),
             "strength": sig.get("strength"),
             "rsrp": sig.get("rsrp"),

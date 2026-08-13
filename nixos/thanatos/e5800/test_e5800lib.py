@@ -4,6 +4,50 @@ import unittest
 import e5800lib as L
 
 
+# A real `cellular.network cell_info` capture from the RG650V-NA on GL 4.10.0
+# (2026-08-10, slot 1): an LTE B66 anchor plus two NR SCCs, i.e. NSA. n71 is
+# barely there at -144 dBm, and both SCCs report the -32768 not-measured SINR.
+CELL_INFO_NSA = {
+    "bus": "cpu", "slot": 1, "network_type": 51,
+    "tac": "3C6E", "cell_id": "1762803",
+    "signal": [
+        {"ca": 0, "network_type": 4, "band": 66, "bandwidth": 20.0,
+         "pci": 322, "earfcn": 66786, "rsrp": -88, "rsrq": -9, "rssi": -58,
+         "sinr": 16, "rsrp_level": 4, "rsrq_level": 3, "rssi_level": 4,
+         "sinr_level": 4, "strength": 4},
+        {"ca": 1, "network_type": 51, "band": 41, "bandwidth": 12.0,
+         "pci": 704, "earfcn": 501390, "rsrp": -89, "rsrq": -11, "rssi": 0,
+         "sinr": -32768, "rsrp_level": 4, "rsrq_level": 4, "strength": 4},
+        {"ca": 2, "network_type": 51, "band": 71, "bandwidth": 20.0,
+         "pci": 71, "earfcn": 126530, "rsrp": -144, "rsrq": -20, "rssi": 0,
+         "sinr": -32768, "rsrp_level": 1, "rsrq_level": 2, "strength": 2},
+    ],
+}
+
+# The same shape with only the LTE anchor: no NR component, so the aggregate is
+# plain LTE rather than NSA.
+CELL_INFO_LTE = {
+    "bus": "cpu", "slot": 1, "network_type": 4,
+    "tac": "3C6E", "cell_id": "1762803",
+    "signal": [
+        {"ca": 0, "network_type": 4, "band": 66, "bandwidth": 20.0,
+         "pci": 322, "earfcn": 66786, "rsrp": -88, "rsrq": -9, "rssi": -58,
+         "sinr": 16, "strength": 4},
+    ],
+}
+
+# What an unregistered slot answers: one all-zero component. The modem is
+# present and supported; it just has nothing to report.
+CELL_INFO_IDLE = {
+    "bus": "cpu", "slot": 2, "network_type": 0,
+    "signal": [
+        {"ca": 0, "network_type": 0, "band": 0, "bandwidth": 0.0, "pci": 0,
+         "earfcn": 0, "rsrp": 0, "rsrq": 0, "rssi": 0, "sinr": -32768,
+         "strength": 0},
+    ],
+}
+
+
 class TestAuthGen(unittest.TestCase):
     def test_login_hash(self):
         # sha256("root:CIPHER:NONCE")
@@ -19,6 +63,96 @@ class TestAuthGen(unittest.TestCase):
         self.assertEqual(L.gen_from_network_type("WCDMA"), "3G")
         self.assertEqual(L.gen_from_network_type(""), "?")
         self.assertEqual(L.gen_from_network_type(None), "?")
+
+
+class TestCellInfo(unittest.TestCase):
+    """GL 4.10's `cellular.network cell_info`, which replaced the flat metric
+    set `cellular.collect get_signals` published up to 4.8.5."""
+
+    def test_primary_is_the_ca0_component(self):
+        p = L.primary_component(CELL_INFO_NSA["signal"])
+        self.assertEqual(p["ca"], 0)
+        self.assertEqual(p["band"], 66)
+
+    def test_primary_falls_back_to_the_first_component(self):
+        # A payload that never reports ca:0 must still yield a primary rather
+        # than blanking every metric.
+        sig = [{"ca": 1, "band": 41, "rsrp": -90}]
+        self.assertEqual(L.primary_component(sig)["band"], 41)
+        self.assertIsNone(L.primary_component([]))
+
+    def test_mode_comes_from_the_component_set_not_the_primary(self):
+        # Under NSA the primary is the LTE anchor. Reading the RAT off it alone
+        # would report a 5G connection as 4G.
+        self.assertEqual(L.derive_mode(CELL_INFO_NSA["signal"]), "NR5G-NSA")
+        self.assertEqual(L.derive_mode(CELL_INFO_LTE["signal"]), "LTE")
+        self.assertEqual(
+            L.derive_mode([{"ca": 0, "network_type": L.NT_NR, "band": 41}]),
+            "NR5G-SA")
+        self.assertIsNone(L.derive_mode(CELL_INFO_IDLE["signal"]))
+        self.assertIsNone(L.derive_mode([]))
+
+    def test_zero_is_unset_for_the_negative_dbm_metrics(self):
+        c = L.normalize_component({"rsrp": 0, "rsrq": 0, "rssi": 0})
+        self.assertIsNone(c["rsrp"])
+        self.assertIsNone(c["rsrq"])
+        self.assertIsNone(c["rssi"])
+
+    def test_sinr_zero_survives_and_only_the_sentinel_is_unset(self):
+        # 0 dB SINR is a real, poor-but-usable reading; -32768 is GL's
+        # not-measured sentinel. Treating 0 as unset would discard it, and
+        # treating -32768 as real would plot a cliff to the chart floor.
+        self.assertEqual(L.normalize_component({"sinr": 0})["sinr"], 0)
+        self.assertIsNone(L.normalize_component({"sinr": -32768})["sinr"])
+
+    def test_metrics_come_from_the_primary_component(self):
+        m = L.cell_metrics(CELL_INFO_NSA)
+        self.assertEqual(m["rsrp"], -88)
+        self.assertEqual(m["rsrq"], -9)
+        self.assertEqual(m["sinr"], 16)
+        self.assertEqual(m["strength"], 4)
+        self.assertEqual(m["slot"], 1)
+        self.assertEqual(m["network_type"], "NR5G-NSA")
+        self.assertEqual(m["gen"], "5G")
+
+    def test_lte_only_reports_4g(self):
+        m = L.cell_metrics(CELL_INFO_LTE)
+        self.assertEqual(m["network_type"], "LTE")
+        self.assertEqual(m["gen"], "4G")
+
+    def test_idle_slot_is_populated_but_empty(self):
+        # An unregistered slot is NOT the same as an absent modem: the dict is
+        # populated (so `supported` stays true) with honest None metrics.
+        m = L.cell_metrics(CELL_INFO_IDLE)
+        self.assertTrue(m)
+        self.assertEqual(m["slot"], 2)
+        self.assertIsNone(m["network_type"])
+        self.assertEqual(m["gen"], "?")
+        self.assertIsNone(m["rsrp"])
+        self.assertIsNone(m["sinr"])
+
+    def test_missing_payload_is_empty(self):
+        self.assertEqual(L.cell_metrics(None), {})
+        self.assertEqual(L.cell_metrics({}), {})
+        self.assertEqual(L.cell_metrics({"signal": []}), {})
+
+    def test_build_status_publishes_the_410_metrics(self):
+        s = L.build_status({"ts": 1, "reachable": True,
+                            "cellinfo": CELL_INFO_NSA})["cellular"]
+        self.assertTrue(s["supported"])
+        self.assertEqual(s["gen"], "5G")
+        self.assertEqual(s["network_type"], "NR5G-NSA")
+        self.assertEqual(s["strength"], 4)
+        self.assertEqual(s["rsrp"], -88)
+        self.assertEqual(s["rsrq"], -9)
+        self.assertEqual(s["sinr"], 16)
+        self.assertEqual(s["slot"], 1)
+
+    def test_build_status_without_cell_info_is_unsupported(self):
+        s = L.build_status({"ts": 1, "reachable": True})["cellular"]
+        self.assertFalse(s["supported"])
+        self.assertEqual(s["gen"], "?")
+        self.assertIsNone(s["rsrp"])
 
 
 class TestQeng(unittest.TestCase):
@@ -115,6 +249,45 @@ class TestQcainfo(unittest.TestCase):
         self.assertEqual(r["carriers"][1]["state"], 0)
         self.assertFalse(r["carriers"][1]["active"])
 
+    # Real capture from the RG650V-NA on 2026-08-10, same 3-carrier EN-DC as
+    # NSA above but with measurements appended to every SCC line -- including
+    # the SHORT-form n41 PSCell, which now runs to eight tokens.
+    NSA_WITH_MEASUREMENTS = (
+        '+QCAINFO: "PCC",66786,100,"LTE BAND 66",1,322,-88,-11,-58,8\r\n'
+        '+QCAINFO: "SCC",501390,12,"NR5G BAND 41",704,-88,-11,1555\r\n'
+        '+QCAINFO: "SCC",126530,3,"NR5G BAND 71",1,71,0,-,-,-144,-20,-2300\r\n'
+        '\r\nOK\r\n')
+
+    def test_short_form_pscell_survives_appended_measurements(self):
+        # 704 is a PCID, not a <scell_state> (that enum only goes 0..2), so the
+        # n41 leg is the active PSCell. Reading it as a state reports the
+        # carrier actually carrying 5G as deactivated.
+        cs = L.parse_qcainfo(self.NSA_WITH_MEASUREMENTS)["carriers"]
+        self.assertEqual(cs[1]["label"], "n41")
+        self.assertIsNone(cs[1]["state"])
+        self.assertTrue(cs[1]["active"])
+        # The long-form n71 line on the same response must still decode as
+        # configured-but-deactivated.
+        self.assertEqual(cs[2]["label"], "n71")
+        self.assertEqual(cs[2]["state"], 1)
+        self.assertFalse(cs[2]["active"])
+
+    def test_active_count_includes_the_pscell(self):
+        r = L.parse_qcainfo(self.NSA_WITH_MEASUREMENTS)
+        self.assertEqual(r["mode"], "NSA")
+        self.assertEqual(r["count"], 3)
+        self.assertEqual(r["active_count"], 2)   # LTE anchor + n41 PSCell
+
+    def test_low_pcid_short_form_is_not_read_as_a_state(self):
+        # The ambiguous case: a PCID that happens to be 0/1/2. The token after
+        # it settles it -- the long form puts a PCID there (never negative),
+        # the short form an RSRP (always negative).
+        data = ('+QCAINFO: "PCC",66786,100,"LTE BAND 66",1,322,-88,-11,-58,8\r\n'
+                '+QCAINFO: "SCC",501390,12,"NR5G BAND 41",2,-88,-11,1555\r\n')
+        cs = L.parse_qcainfo(data)["carriers"]
+        self.assertIsNone(cs[1]["state"])
+        self.assertTrue(cs[1]["active"])
+
     def test_no_pcc_and_empty_return_none(self):
         self.assertIsNone(L.parse_qcainfo(None))
         self.assertIsNone(L.parse_qcainfo(""))
@@ -192,8 +365,7 @@ class TestBuildStatus(unittest.TestCase):
             "get_list": {"clients": [{"name": "laptop", "ip": "192.168.8.232",
                                       "online": True, "rx": 1100, "tx": 300}]},
             "vpn": {"status_list": [{"name": "mullvad", "type": "wireguard", "enabled": False}]},
-            "signals": [{"slot": 1, "strength": 4, "network_type": "NR5G-NSA",
-                         "rsrp": -73, "rsrq": -10, "sinr": 30}],
+            "cellinfo": CELL_INFO_NSA,
             "usage": {"cycle_rx": 5000000000, "cycle_tx": 400000000,
                       "cycle_start": 1782000000},
             "recovery": None,
@@ -205,7 +377,7 @@ class TestBuildStatus(unittest.TestCase):
         self.assertEqual(s["battery"]["percent"], 72)
         self.assertFalse(s["battery"]["charging"])
         self.assertEqual(s["cellular"]["gen"], "5G")
-        self.assertEqual(s["cellular"]["rsrp"], -73)
+        self.assertEqual(s["cellular"]["rsrp"], -88)
         self.assertEqual(s["cellular"]["strength"], 4)
         self.assertTrue(s["cellular"]["supported"])
         self.assertEqual(s["clients"]["wireless"], 3)
@@ -224,7 +396,7 @@ class TestBuildStatus(unittest.TestCase):
         self.assertEqual(s["recovery"]["started"], 99)
 
     def test_no_signal_marks_unsupported(self):
-        parts = {"ts": 1, "reachable": True, "signals": []}
+        parts = {"ts": 1, "reachable": True, "cellinfo": None}
         s = L.build_status(parts)
         self.assertFalse(s["cellular"]["supported"])
 
@@ -374,14 +546,14 @@ class TestOperator(unittest.TestCase):
 
     def test_build_status_lifts_operator_onto_cellular(self):
         st = L.build_status({"reachable": True, "country_hint": ["US"],
-                             "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}],
+                             "cellinfo": CELL_INFO_NSA,
                              "qeng": TestQeng.SAMPLE})
         self.assertEqual(st["cellular"]["operator"], "T-Mobile")
         self.assertEqual(st["cellular"]["plmn"], "310-260")
 
     def test_build_status_without_qeng_has_no_operator(self):
         st = L.build_status({"reachable": True, "country_hint": ["US"],
-                             "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}]})
+                             "cellinfo": CELL_INFO_NSA})
         self.assertIsNone(st["cellular"]["operator"])
         self.assertIsNone(st["cellular"]["plmn"])
 
@@ -765,7 +937,7 @@ class TestSimCarrier(unittest.TestCase):
         st = L.build_status({
             "reachable": True, "country_hint": ["US"],
             "sim_operator": "Mint",
-            "signals": [{"network_type": "NR5G-NSA"}],
+            "cellinfo": CELL_INFO_NSA,
             "qeng": TestDebugAtInfo.QENG,
         })
         self.assertEqual(st["cellular"]["sim_operator"], "Mint")
@@ -777,7 +949,7 @@ class TestSimCarrier(unittest.TestCase):
         st = L.build_status({
             "reachable": True, "country_hint": ["US"],
             "qspn": "\r\n+QSPN: \"Ultra\",\"Ultra\",\"\",0,\"310260\"\r\n\r\nOK\r\n",
-            "signals": [{"network_type": "NR5G-NSA"}],
+            "cellinfo": CELL_INFO_NSA,
             "qeng": TestDebugAtInfo.QENG,
         })
         self.assertEqual(st["cellular"]["operator_label"], "Ultra (T-Mobile)")
@@ -836,7 +1008,7 @@ class TestSimOperator(unittest.TestCase):
 
     def test_build_status_composes_the_label(self):
         st = L.build_status({"reachable": True, "country_hint": ["US"],
-                             "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}],
+                             "cellinfo": CELL_INFO_NSA,
                              "qeng": TestQeng.SAMPLE,
                              "qspn": self.SAMPLE})
         self.assertEqual(st["cellular"]["sim_operator"], "Mint")
@@ -845,7 +1017,7 @@ class TestSimOperator(unittest.TestCase):
 
     def test_build_status_without_qspn_falls_back_to_network(self):
         st = L.build_status({"reachable": True, "country_hint": ["US"],
-                             "signals": [{"network_type": "NR5G-NSA", "rsrp": -88}],
+                             "cellinfo": CELL_INFO_NSA,
                              "qeng": TestQeng.SAMPLE})
         self.assertIsNone(st["cellular"]["sim_operator"])
         self.assertEqual(st["cellular"]["operator_label"], "T-Mobile")
@@ -906,7 +1078,7 @@ class TestRoaming(unittest.TestCase):
 
     def test_build_status_exposes_roaming(self):
         st = L.build_status({"reachable": True, "country_hint": ["US"],
-                             "signals": [{"network_type": "LTE", "rsrp": -88}],
+                             "cellinfo": CELL_INFO_LTE,
                              "qeng": TestQeng.SAMPLE,
                              "qspn": TestSimOperator.SAMPLE,
                              "cereg": '\r\n+CEREG: 0,5\r\n\r\nOK\r\n'})
@@ -916,7 +1088,7 @@ class TestRoaming(unittest.TestCase):
 
     def test_build_status_without_cereg_is_not_roaming(self):
         st = L.build_status({"reachable": True, "country_hint": ["US"],
-                             "signals": [{"network_type": "LTE", "rsrp": -88}],
+                             "cellinfo": CELL_INFO_LTE,
                              "qeng": TestQeng.SAMPLE,
                              "qspn": TestSimOperator.SAMPLE})
         self.assertIsNone(st["cellular"]["registration"])
@@ -1048,7 +1220,7 @@ class TestUnknownNetwork(unittest.TestCase):
         # The end-to-end shape the display uses: the SIM brand still resolves
         # (AT+QSPN needs no country), the network does not.
         st = L.build_status({"reachable": True, "country_hint": [],
-                             "signals": [{"network_type": "LTE", "rsrp": -88}],
+                             "cellinfo": CELL_INFO_LTE,
                              "qeng": TestQeng.SAMPLE,
                              "qspn": TestSimOperator.SAMPLE})
         self.assertEqual(st["cellular"]["operator"], "N/A")
