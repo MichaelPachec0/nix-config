@@ -1,0 +1,79 @@
+Fix a Quickshell buffer-manager deadlock that silently disables ScreencopyView
+for the entire life of a shell process.
+
+WlBufferManager::initWindow() needs a window with a live scene graph to query
+render formats. When the caller hands it one that is null or not yet
+initialised, it defers: it registers a callback via
+ProxiedWindow::callOnScenegraphInit() and returns. That queue is only ever
+drained by ProxiedWindow::onSceneGraphInitialized(), which runs from
+QQuickWindow::sceneGraphInitialized -- a signal each window emits exactly once,
+when it first comes online. So the deferral terminates only if another window
+is still to be created. In a shell whose windows are already up, nothing emits
+it again and the wait never ends.
+
+ScreencopyView::componentComplete() passes QQuickItem::window(), which is null
+for any item that is not in a scene. That is not an exotic state: an
+Instantiator delegate created on demand and reparented into place afterwards
+has no window at componentComplete, and that is exactly how a lock screen's
+per-output capture pool is built.
+
+The two combine into a permanent latch. The first such ScreencopyView sets the
+function-static `initWaiting` and registers the callback that will never fire;
+every later view hits `if (initWaiting) return;` and does not even re-register.
+mRenderFormatsReady stays false, ready() is never emitted,
+ScreencopyView::onBuffersReady() never runs, and createContext() is never
+called. The client issues no screencopy protocol at all -- it does not even
+bind ext_output_image_capture_source_manager_v1 -- so there is nothing to see
+on the wire and no error anywhere. hasContent simply stays false forever.
+
+Observed as: a workspace-backdrop lock screen that shows only the fallback
+wallpaper on every lock, on a freshly started shell, until the config is
+reloaded. Reloading fixes it because tearing down and recreating every window
+makes sceneGraphInitialized fire again, which drains the stale callback.
+
+Confirmed mechanically: an unparented ScreencopyView created 1s after startup
+stays at hasContent=false indefinitely, and creating an unrelated PanelWindow
+1.5s later makes it capture immediately with nothing else touching it.
+
+Any window with a live scene graph can supply the render formats, and the
+non-deferred path already calls initRenderFormats() from the GUI thread, so
+this looks for an existing window before deciding to wait for a new one.
+
+Applies to Quickshell v0.3.0; unfixed on master as of 28771c7.
+---
+diff --git a/src/wayland/buffer/manager.cpp b/src/wayland/buffer/manager.cpp
+--- a/src/wayland/buffer/manager.cpp
++++ b/src/wayland/buffer/manager.cpp
+@@ -4,6 +4,7 @@
+
+ #include <drm_fourcc.h>
+ #include <qdebug.h>
++#include <qguiapplication.h>
+ #include <qlogging.h>
+ #include <qloggingcategory.h>
+ #include <qmatrix4x4.h>
+@@ -65,6 +66,24 @@ void WlBufferManager::initWindow(QQuickWindow* window) {
+ 	if (this->p->mRenderFormatsReady) return;
+ 	qCDebug(logBuffer) << "Initializing buffer manager";
+
++	// Callers do not always have a window of their own. ScreencopyView passes
++	// QQuickItem::window(), which is null for an item that is not in a scene --
++	// an Instantiator delegate that gets reparented into place later, for
++	// instance. Deferring to the next sceneGraphInitialized only helps while
++	// windows are still being created: once a shell's windows are up, nothing
++	// emits that signal again, so the wait below never ends and the manager
++	// never becomes ready. Any live window can supply the render formats, so
++	// look for one before deciding to wait for a new one.
++	if (!window || !window->isSceneGraphInitialized()) {
++		for (auto* topLevel: QGuiApplication::allWindows()) {
++			auto* quickWindow = qobject_cast<QQuickWindow*>(topLevel);
++			if (quickWindow != nullptr && quickWindow->isSceneGraphInitialized()) {
++				window = quickWindow;
++				break;
++			}
++		}
++	}
++
+ 	static bool initWaiting = false;
+ 	if (!window || !window->isSceneGraphInitialized()) {
+ 		if (initWaiting) return;

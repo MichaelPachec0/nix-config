@@ -174,7 +174,6 @@ in {
         # neofetch
         # thefuck
         pay-respects
-        # powertop
         # extract
         unzip
         zip
@@ -245,7 +244,7 @@ in {
         usbutils
       ]
       ++ lib.optionals config.devMachine.enable [
-        powertop-git
+        playground.powertop
         nixpkgs-review
         crate2nix
         nix-prefetch
@@ -261,6 +260,7 @@ in {
         android-tools
         # 2025-11-05: wakatime to wakatime-cli
         wakatime-cli
+        onefetch
       ]
       ++ lib.optionals config.services.hardware.bolt.enable [bolt];
     # TODO: move to using nixos module. Might be a bit difficult since the nixos stable does not have this merged, but unstable does.
