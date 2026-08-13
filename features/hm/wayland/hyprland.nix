@@ -15,6 +15,7 @@
   generatedLuaBinds,
   generatedSwayBinds,
   appRun,
+  qsBarLaunch,
   ...
 }: let
   firefox = "${lib.getExe config.programs.firefox.package}";
@@ -177,7 +178,10 @@
   # to /bin/sh, so the rule applies to whatever window eventually appears.
   autostartHook = mkLuaInline ''
     function()
-      hl.exec_cmd("${appRun}/bin/app-run -s b -a quickshell qs -c task-bar")
+      -- Not app-run directly: qs-bar-launch (./hypr-wl-debug.nix) is the same
+      -- launch plus one conditional, so the Wayland-debug session entry can
+      -- start the shell under WAYLAND_DEBUG=client without a second config.
+      hl.exec_cmd("${qsBarLaunch}/bin/qs-bar-launch")
       ${lib.optionalString wm.enable ''hl.exec_cmd(${luaStr "${appRun}/bin/app-run -s b -a activate-linux ${activateLinuxCmd}"})''}
       hl.exec_cmd("[workspace special:magic silent] ${appRun}/bin/app-run keepassxc")
       hl.exec_cmd("[workspace special:magic silent] ${appRun}/bin/app-run Windscribe")
@@ -617,6 +621,14 @@ in {
     # ./hypr-scratchpad-guard.nix. Pairs with the float-forcing send/pull binds.
     services.hyprScratchpadGuard.enable = true;
 
+    # Release keys the kernel wrongly believes are held: the i8042 matrix drops
+    # RELEASE scancodes when many keys go down at once, and since
+    # disable_while_typing gates touchpads but not pointing sticks, the symptom
+    # is a dead touchpad with a working trackpoint. A daemon rather than a
+    # keybind on purpose -- a stuck trigger key never re-fires (libinput drops
+    # kernel autorepeat) and a stuck modifier makes every bind misfire.
+    services.fixStuckKeys.enable = true;
+
     wayland = {
       windowManager.hyprland = {
         enable = true;
@@ -700,6 +712,17 @@ in {
                 color = "rgba(${theme.palette.bgMain}66)"; # active: stronger
                 color_inactive = "rgba(${theme.palette.bgMain}22)"; # inactive: recede
               };
+            };
+
+            # Hyprland's own logging is off by default and cannot be enabled at
+            # runtime, so hyprland.log normally carries only aquamarine chatter
+            # and the protocol error that destroys the quickshell client leaves
+            # no compositor-side trace. Read from the environment at parse time
+            # so the debug session entry (features/nixos/desktop/wayland/
+            # hyprland-wldebug.nix) can ask for full logs and the normal session
+            # is untouched.
+            debug = {
+              disable_logs = mkLuaInline ''os.getenv("HYPR_WL_DEBUG") ~= "1"'';
             };
 
             misc = {
@@ -940,6 +963,23 @@ in {
               cheatBind
               hy3ProjectBind
               hubBind
+              # Escape hatch for a stuck XDG InputCapture session, which sends
+              # every pointer and key event to the capturing client over libei:
+              # no cursor, nothing reaches any window, compositor otherwise
+              # fine. kdeconnectd's share-input-devices plugin strands one on
+              # every Release (see the xdph release-without-activation-id
+              # patch), and the only other way out is a monitor hotplug.
+              #
+              # allow_input_capture is REQUIRED: KeybindManager skips every
+              # bind during a capture unless it opts in, so without the flag
+              # this bind is dead exactly when it is needed.
+              {
+                _args = [
+                  "SUPER + CONTROL + ALT + i"
+                  (mkLuaInline ''hl.dsp.release_input_capture()'')
+                  {allow_input_capture = true;}
+                ];
+              }
             ]
             # Dev escape hatch: recover a stranded/crashed session lock. LOCKED
             # bind (locked=true) so it fires WHILE the ext-session-lock holds

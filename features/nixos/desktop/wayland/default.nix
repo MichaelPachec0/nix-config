@@ -36,6 +36,7 @@ in {
   imports = [
     # NOTE: this was already merged
     # ../../../../overlays/modules/systemd-lock-handler
+    ./hyprland-wldebug.nix
   ];
 
   config = lib.mkIf (cfg.wayland.laptop || cfg.wayland.desktop) {
@@ -342,7 +343,7 @@ in {
       # image viewer
       nw.imv
       # auto configure displays
-      nw.kanshi
+      kanshi
       # notification daemon
       #nw.mako
       # dunst
