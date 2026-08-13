@@ -16,10 +16,12 @@
     ./waybar
     ./rofi.nix
     ./common.nix
+    ./hypr-wl-debug.nix
     ./hyprland.nix
     ./hypr-window-keeper.nix
     ./hypr-monitor-arrange.nix
     ./hypr-scratchpad-guard.nix
+    ./fix-stuck-keys.nix
     ./sway.nix
   ];
   config = {
