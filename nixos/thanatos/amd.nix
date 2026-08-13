@@ -14,17 +14,18 @@
   # provider polls.
   # Checked python source: mypy --strict + unittest run at build time; a type
   # error or failing test fails the build.
-  ryzenSmuBridgeSrc = pkgs.runCommand "ryzen-smu-bridge-src" {
-    nativeBuildInputs = [pkgs.python3 pkgs.mypy];
-  } ''
-    cp ${./ryzen-smu-bridge/fanbridge.py} fanbridge.py
-    cp ${./ryzen-smu-bridge/main.py} main.py
-    cp ${./ryzen-smu-bridge/test_fanbridge.py} test_fanbridge.py
-    mypy --strict fanbridge.py main.py test_fanbridge.py
-    python3 -m unittest test_fanbridge -v
-    install -d "$out"
-    cp fanbridge.py main.py "$out/"
-  '';
+  ryzenSmuBridgeSrc =
+    pkgs.runCommand "ryzen-smu-bridge-src" {
+      nativeBuildInputs = [pkgs.python3 pkgs.mypy];
+    } ''
+      cp ${./ryzen-smu-bridge/fanbridge.py} fanbridge.py
+      cp ${./ryzen-smu-bridge/main.py} main.py
+      cp ${./ryzen-smu-bridge/test_fanbridge.py} test_fanbridge.py
+      mypy --strict fanbridge.py main.py test_fanbridge.py
+      python3 -m unittest test_fanbridge -v
+      install -d "$out"
+      cp fanbridge.py main.py "$out/"
+    '';
   # Single merged service: republishes the SMU frame for Quickshell AND writes
   # /run/thinkfan/temp for thinkfan. ryzen_monitor must be on PATH.
   ryzenSmuBridge = pkgs.writeShellApplication {
@@ -52,51 +53,56 @@
   # cpu_thm scale (bridge offset 0); disengage at 78. Each row is [level low high];
   # thinkfan needs low_k < high_{k-1} (validCurve enforces this at build time).
   quietLevels = [
-    [ 0 0 55 ]
-    [ 2 48 66 ]
-    [ 4 60 76 ]
-    [ 5 70 84 ]
-    [ 7 78 90 ]
-    [ "level disengaged" 88 32767 ]
+    [0 0 55]
+    [2 48 66]
+    [4 60 76]
+    [5 70 84]
+    [7 78 90]
+    ["level disengaged" 88 32767]
   ];
   perfLevels = [
-    [ 0 0 50 ]
-    [ 2 44 55 ]
-    [ 3 49 60 ]
-    [ 4 54 64 ]
-    [ 5 58 68 ]
-    [ 6 62 73 ]
-    [ 7 67 78 ]
-    [ "level disengaged" 76 32767 ]
+    [0 0 50]
+    [2 44 55]
+    [3 49 60]
+    [4 54 64]
+    [5 58 68]
+    [6 62 73]
+    [7 67 78]
+    ["level disengaged" 76 32767]
   ];
   mkThinkfanYaml = name: levels: let
     fmtLevel = l: let
       lvl = builtins.elemAt l 0;
-      lvlStr = if builtins.isInt lvl then builtins.toString lvl else lvl;
+      lvlStr =
+        if builtins.isInt lvl
+        then builtins.toString lvl
+        else lvl;
       lo = builtins.toString (builtins.elemAt l 1);
       hi = builtins.toString (builtins.elemAt l 2);
     in "- - ${lvlStr}\n  - ${lo}\n  - ${hi}";
     body = lib.concatStringsSep "\n" (map fmtLevel levels);
-  in pkgs.writeText name ''
-    fans:
-    - tpacpi: /proc/acpi/ibm/fan
-    sensors:
-    - hwmon: /run/thinkfan/temp
-    levels:
-    ${body}
-  '';
+  in
+    pkgs.writeText name ''
+      fans:
+      - tpacpi: /proc/acpi/ibm/fan
+      sensors:
+      - hwmon: /run/thinkfan/temp
+      levels:
+      ${body}
+    '';
   # low_k < high_{k-1} for every adjacent pair.
   validCurve = levels: let
     lows = map (l: builtins.elemAt l 1) levels;
     highs = map (l: builtins.elemAt l 2) levels;
     n = builtins.length levels;
     idxs = builtins.genList (i: i + 1) (n - 1);
-  in builtins.all (k: (builtins.elemAt lows k) < (builtins.elemAt highs (k - 1))) idxs;
+  in
+    builtins.all (k: (builtins.elemAt lows k) < (builtins.elemAt highs (k - 1))) idxs;
   quietYaml = mkThinkfanYaml "thinkfan-quiet.yaml" quietLevels;
   perfYaml = mkThinkfanYaml "thinkfan-perf.yaml" perfLevels;
   fanCurveApply = pkgs.writeShellApplication {
     name = "fan-curve-apply";
-    runtimeInputs = [ pkgs.coreutils pkgs.systemd ];
+    runtimeInputs = [pkgs.coreutils pkgs.systemd];
     text = ''
       mode="$(cat /run/thinkfan/mode-resolved 2>/dev/null || echo quiet)"
       case "$mode" in
@@ -427,30 +433,6 @@ in {
       wantedBy = lib.mkForce [];
       serviceConfig = kanataRtSched;
     };
-
-    # Hide the raw internal (i8042) keyboard from libinput/Hyprland. kanata
-    # grabs it via EVIOCGRAB and re-emits through its own uinput device, but the
-    # compositor still enumerates the physical device and keeps a PER-DEVICE xkb
-    # lock state for it. During the brief ungrab window on every kanata restart
-    # (each nixos-rebuild activation stops/starts the unit), Hyprland reads the
-    # raw keyboard and can latch Caps Lock on that device; kanata then re-grabs,
-    # freezing a stale caps=on state that desyncs from the hardware LED and gets
-    # re-applied to every window on focus change -- the reproducible "switching
-    # window focus turns on Caps Lock" bug. Ignoring the device makes kanata's
-    # uinput output the only keyboard the session tracks, so there is nothing to
-    # latch or leak. kanata reads evdev directly and is unaffected; the kernel VT
-    # also bypasses libinput, so a text-console keyboard still works if kanata is
-    # down. Tradeoff: the physical Caps Lock LED no longer lights (Hyprland only
-    # drives LEDs on devices it manages); the Esc->caps remap itself still works.
-    #
-    # CRITICAL: gate this on services.kanata.enable. Without kanata delivering
-    # remapped events, an ignored internal keyboard is dead INSIDE the Wayland
-    # session; tying the rule to kanata being enabled means `enable = false`
-    # automatically restores the plain keyboard. (An external USB keyboard has a
-    # different ID_PATH, is never ignored, and is always a recovery path.)
-    services.udev.extraRules = lib.mkIf config.services.kanata.enable ''
-      ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_PATH}=="platform-i8042-serio-0", ENV{ID_INPUT_KEYBOARD}=="1", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-    '';
 
     # Build-time validation of every kanata config. runCommand runs `kanata
     # --check` on the same body the module will run (wrapped in a minimal defcfg;
