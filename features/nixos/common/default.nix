@@ -282,6 +282,16 @@ in {
     systemd.settings.Manager = {
       DefaultTimeoutStopSec = "10s";
     };
+
+    # Reload each user's session bus after a rebuild so it re-reads its D-Bus
+    # service units -- dbus-broker caches them at session start, so activated
+    # services keep launching the previous store path. Runs in the user's own
+    # systemd manager, so `systemctl --user` reaches the right bus. reload, never
+    # restart: a restart drops every session-bus connection. HM side in
+    # features/hm/common/dbus-activation-reload.nix (separate commands).
+    system.userActivationScripts.reloadDbusActivation = ''
+      ${pkgs.systemd}/bin/systemctl --user reload dbus.service || true
+    '';
     # NOTE: gives a really nice diff between generations
     # src: https://github.com/luishfonseca/dotfiles/blob/32c10e775d9ec7cc55e44592a060c1c9aadf113e/modules/upgrade-diff.nix
     system.activationScripts.diff = {
