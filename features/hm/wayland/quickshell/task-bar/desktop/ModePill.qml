@@ -4,7 +4,7 @@ import "../lib" as Lib
 
 // Bar-center mode indicator: the active Hyprland submap's icon + label, hidden in
 // the default map. Hover opens a key-hints popup (hover-persist + hide-bridge, per
-// the bar idiom). Sits in centerRow and rides the layout; svc may be null-guarded.
+// the bar idiom). Sits in rightRow and rides the layout; svc may be null-guarded.
 // Uses Lib.Pill so it shares the other clusters' floating layer (glass fill, drop
 // shadow, width spring, BarStyle) -- distinguished by an accent ring + accent text.
 Item {
@@ -22,24 +22,24 @@ Item {
         anchors.centerIn: parent
         theme: root.theme
         ringColor: root.theme.accent
-        gap: 6
+        pulseColor: root.theme.accent
+        // 4300 is Pill's default, tuned for an ambient weather alert. A "you are
+        // in a mode" signal wants a faster cadence.
+        pulseGapMs: 1200
+        // Pulse only while this bar is actually on screen. An animation left
+        // running in a hidden layer surface still paints at the monitor refresh
+        // rate (112 fps measured on a hidden 120 Hz bar), and desktop/
+        // ModeOverlay.qml carries the signal while the bar is covered. On a
+        // single monitor the two conditions are complements, so exactly one of
+        // them ever animates. The root.visible term is what actually stops the
+        // timer when no submap is active: Lib.Pill's own pulse Timer is not
+        // gated by its parent Item's visibility, so without it the timer would
+        // free-run every 33ms forever, on every monitor, even at idle.
+        pulseActive: root.visible && (root.barWindow ? root.barWindow.surfaceVisible : false)
 
-        Lib.BarText {
-            Layout.alignment: Qt.AlignVCenter
-            visible: root.svc && root.svc.iconCp() !== ""
-            text: (root.svc && root.svc.iconCp() !== "")
-                ? String.fromCharCode(parseInt(root.svc.iconCp(), 16)) : ""
-            font.family: root.theme.faFont
-            font.pixelSize: 12
-            color: root.theme.accent
-        }
-        Lib.BarText {
-            Layout.alignment: Qt.AlignVCenter
-            text: root.svc ? root.svc.label() : ""
-            font.family: root.theme.iconFont
-            font.pixelSize: 11
-            font.weight: Font.DemiBold
-            color: root.theme.accent
+        Lib.ModeBadge {
+            theme: root.theme
+            svc: root.svc
         }
     }
 
