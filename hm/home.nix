@@ -311,6 +311,7 @@ in {
       claude-code
       # fluffychat
       playground.workstyle
+      kdePackages.kate
     ];
 
   services.udiskie = {
