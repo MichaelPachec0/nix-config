@@ -294,6 +294,51 @@ Lib.BasePopup {
                 }
             }
 
+            // Its own row rather than beside the tab strip or the
+            // shuffle/repeat column, both of which are conditionally visible on
+            // player capabilities while this setting is always meaningful.
+            //
+            // Not cosmetic: scrolling continuously keeps the bar repainting, and
+            // the bar layer is blurred, so the compositor re-runs its blur
+            // passes on every frame. Measured over 10 idle minutes with it on:
+            // quickshell 6.68% CPU, Hyprland 3.65%, 9.12 W total -- a bigger
+            // battery item than any scheduler or runtime-PM tuning here.
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+
+                Item {
+                    Layout.fillWidth: true
+                }
+                Rectangle {
+                    id: marqueeChip
+                    implicitHeight: 22
+                    implicitWidth: marqueeChipText.implicitWidth + 18
+                    radius: 8
+                    color: Lib.MediaState.marqueeAlways ? pop.theme.accent : pop.theme.bgItem
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: 120
+                        }
+                    }
+                    Text {
+                        id: marqueeChipText
+                        anchors.centerIn: parent
+                        text: Lib.MediaState.marqueeAlways ? "scroll: always" : "scroll: on hover"
+                        color: Lib.MediaState.marqueeAlways ? pop.theme.textOnAccent : pop.theme.textSecondary
+                        font.family: pop.theme.textFont
+                        font.pixelSize: 10
+                        font.weight: Lib.MediaState.marqueeAlways ? Font.DemiBold : Font.Normal
+                    }
+                    HoverHandler {
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                    TapHandler {
+                        onTapped: Lib.MediaState.marqueeAlways = !Lib.MediaState.marqueeAlways
+                    }
+                }
+            }
+
             // Queue tab.
             ColumnLayout {
                 Layout.fillWidth: true

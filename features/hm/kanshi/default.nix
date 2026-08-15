@@ -14,7 +14,7 @@
         hyprctl = "${bin}/bin/hyprctl";
       in {
         enable = false;
-        package = pkgs.nw.kanshi;
+        # package = pkgs.nw.kanshi;
         systemdTarget = "graphical-session.target";
         profiles = {
           default-setup = {

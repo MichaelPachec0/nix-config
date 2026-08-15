@@ -1,0 +1,79 @@
+--- a/src/protocols/ImageCaptureSource.cpp
++++ b/src/protocols/ImageCaptureSource.cpp
+@@ -75,18 +75,26 @@
+             return;
+         }
+ 
++        // A monitor that is gone is NOT a client error. wl_registry.global_remove:
++        // "The object remains valid and requests to the object will be ignored
++        // until the client destroys it, to avoid races between the global going
++        // away and a client sending a request to it." A client that sent
++        // create_source before it processed global_remove is behaving correctly,
++        // and ext-image-capture-source-v1 declares no error enum at all, so there
++        // is no conforming code to reject it with either -- the -1 that used to go
++        // out here reaches the client as 4294967295.
++        //
++        // Hand out an inert source instead. CImageCopyCaptureSession already
++        // answers a source whose monitor is gone with `stopped`, which is exactly
++        // what ext-image-copy-capture-v1 documents that event for.
+         PHLMONITOR pMonitor = OUTPUT->m_monitor.lock();
+-        if (!pMonitor) {
+-            LOGM(Log::ERR, "Client tried to create source from invalid output resource");
+-            pMgr->error(-1, "invalid output resource");
+-            return;
+-        }
+ 
+-        auto PSOURCE =
++        auto       PSOURCE =
+             PROTO::imageCaptureSource->m_sources.emplace_back(makeShared<CImageCaptureSource>(makeShared<CExtImageCaptureSourceV1>(pMgr->client(), pMgr->version(), id), pMonitor));
+         PSOURCE->m_self = PSOURCE;
+ 
+-        LOGM(Log::INFO, "New capture source for monitor: {}", pMonitor->m_name);
++        // getName() handles the expired case; pMonitor may legitimately be null.
++        LOGM(Log::INFO, "New capture source for monitor: {}", PSOURCE->getName());
+     });
+ }
+ 
+@@ -106,18 +114,16 @@
+     RESOURCE->setDestroy([](CExtForeignToplevelImageCaptureSourceManagerV1* pMgr) { PROTO::imageCaptureSource->destroyResource(pMgr); });
+     RESOURCE->setOnDestroy([](CExtForeignToplevelImageCaptureSourceManagerV1* pMgr) { PROTO::imageCaptureSource->destroyResource(pMgr); });
+     RESOURCE->setCreateSource([](CExtForeignToplevelImageCaptureSourceManagerV1* pMgr, uint32_t id, wl_resource* handle) {
++        // Same race as the output manager above: the toplevel handle can go
++        // stale in flight when a window closes, and the client cannot have known.
++        // Inert source, not a fatal error.
+         PHLWINDOW pWindow = PROTO::foreignToplevel->windowFromHandleResource(handle);
+-        if (!pWindow) {
+-            LOGM(Log::ERR, "Client tried to create source from invalid foreign toplevel handle resource");
+-            pMgr->error(-1, "invalid foreign toplevel resource");
+-            return;
+-        }
+ 
+-        auto PSOURCE =
++        auto      PSOURCE =
+             PROTO::imageCaptureSource->m_sources.emplace_back(makeShared<CImageCaptureSource>(makeShared<CExtImageCaptureSourceV1>(pMgr->client(), pMgr->version(), id), pWindow));
+         PSOURCE->m_self = PSOURCE;
+ 
+-        LOGM(Log::INFO, "New capture source for foreign toplevel: {}", pWindow->m_title);
++        LOGM(Log::INFO, "New capture source for foreign toplevel: {}", PSOURCE->getName());
+     });
+ }
+ 
+--- a/src/protocols/ImageCopyCapture.cpp
++++ b/src/protocols/ImageCopyCapture.cpp
+@@ -21,6 +21,16 @@
+     m_resource->setOnDestroy([this](CExtImageCopyCaptureSessionV1* pMgr) { PROTO::imageCopyCapture->destroyResource(this); });
+ 
+     m_resource->setCreateFrame([this](CExtImageCopyCaptureSessionV1* pMgr, uint32_t id) {
++        // This handler is registered BEFORE m_session is assigned below, and a
++        // session whose source is already gone keeps a live resource after
++        // sendStopped(). Without this guard, a create_frame on such a session
++        // reaches CImageCopyCaptureFrame's ctor, which dereferences
++        // m_session->m_session unconditionally -- a compositor crash driven by
++        // client behaviour. CImageCopyCaptureCursorSession already guards its
++        // own create_frame this way.
++        if UNLIKELY (!m_session)
++            return;
++
+         if (!m_frame.expired()) {
+             LOGM(Log::ERR, "Duplicate frame in session for source: \"{}\"", m_source->getName());
+             m_resource->error(EXT_IMAGE_COPY_CAPTURE_SESSION_V1_ERROR_DUPLICATE_FRAME, "duplicate frame");

@@ -257,11 +257,20 @@ Item {
             border.color: root.context.showFailure ? root.wxTheme.accentRed : root.wxTheme.bgItemHover
 
             Row {
+                id: dots
                 anchors.centerIn: parent
                 spacing: 10
+                // Keeps the row clear of the field's edges.
+                readonly property int inset: 20
+                // How many 12px dots fit in the password field at this width.
+                readonly property int maxDots:
+                  Math.max(1, Math.floor((field.width - 2 * inset + spacing) / (12 + spacing)))
+
                 Repeater {
-                    model: root.context.currentText.length
-                    Rectangle { width: 12; height: 12; radius: 6; color: root.wxTheme.textPrimary }
+                    // Cap the dots at what fits, so a long password cannot
+                    // overflow the field.
+                    model: Math.min(root.context.currentText.length, dots.maxDots)
+                    Rectangle { id: dot; width: 12; height: 12; radius: 6; color: root.wxTheme.textPrimary }
                 }
             }
 
