@@ -687,7 +687,20 @@ in {
     };
 
     services.logid.enable = true;
-    services.graphicalLogin.enable = true;
+    services.graphicalLogin = {
+      enable = true;
+      # Quickshell greeter (XP skin). Rolling back is this one line set to
+      # "regreet": the ReGreet block in features/nixos/login is still fully
+      # configured and is only gated off, not deleted.
+      backend = "qsGreeter";
+    };
+    # Every host sharing this file is a laptop, so the internal panel is the
+    # one output that must hold the keyboard: only a single layer-shell
+    # surface may take exclusive keyboard focus, and picking the first output
+    # Quickshell happens to list can hand it to a closed-lid or external
+    # screen when docked. Falls back to that first-listed output on its own if
+    # eDP-1 is not connected.
+    programs.qsGreeter.primaryOutput = "eDP-1";
 
     hardware.openrazer = {
       enable = false;

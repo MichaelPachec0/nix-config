@@ -8,17 +8,19 @@
   cfgGL = config.services.graphicalLogin;
   cfg = config;
 in {
+  imports = [./qs-greeter.nix];
   #imports = [ ../../../pkgs/regreet ];
   options = {
     services = {
       graphicalLogin = {
-        enable =
-          lib.mkEnableOption "Setups greetd and other login configuration.";
-        wallpaper = lib.mkOption {
-          default = null;
-          type = lib.types.nullOr lib.types.path;
-          description = lib.mdDoc ''
-            path to the wallpaper wanted
+        enable = lib.mkEnableOption "Setups greetd and other login configuration.";
+        backend = lib.mkOption {
+          type = lib.types.enum ["regreet" "qsGreeter"];
+          default = "regreet";
+          description = ''
+            Which greeter the greetd session runs. Both are fully configured;
+            switching is a one-line change and is the intended rollback path
+            for the Quickshell greeter.
           '';
         };
       };
@@ -29,7 +31,7 @@ in {
     # Do not set anything else, sway on nixos at least already has sane defaults
     # User setup can happen on home-manager for the user
     # use regreet as the greetd DM
-    programs.regreet = {
+    programs.regreet = lib.mkIf (cfgGL.backend == "regreet") {
       enable = true;
       # HACK: because of https://github.com/rharish101/ReGreet/issues/32
       # use commit before the multimonitor fix.
@@ -136,6 +138,7 @@ in {
         }
       '';
     };
+    programs.qsGreeter.enable = cfgGL.backend == "qsGreeter";
     # TODO: (low prio) move this away from here.
     # It is here for the dbus commands usage.
     environment.systemPackages = with pkgs; [
@@ -285,11 +288,15 @@ in {
         -b 'Reboot' 'systemctl reboot'
 
       # TODO: make sure to clean up the log file here.
-      exec "${lib.getExe cfg.programs.regreet.package} -L trace -l /tmp/regreet_$(date +%Y-%m-%d_%H:%M).log;  swaymsg exit"
+      ${
+        if cfgGL.backend == "qsGreeter"
+        then ''exec "${lib.getExe config.programs.qsGreeter.wrapperPackage}; swaymsg exit"''
+        else ''exec "${lib.getExe cfg.programs.regreet.package} -L trace -l /tmp/regreet_$(date +%Y-%m-%d_%H:%M).log;  swaymsg exit"''
+      }
       include /etc/sway/config.d/*
     '';
 
-    systemd.tmpfiles.rules = [
+    systemd.tmpfiles.rules = lib.mkIf (cfgGL.backend == "regreet") [
       "d /var/log/regreet 0755 greeter greeter - -"
       "d /var/cache/regreet 0755 greeter greeter - -"
     ];

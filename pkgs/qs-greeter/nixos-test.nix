@@ -1,0 +1,288 @@
+{pkgs, ...}:
+# pkgs.nixosTest was renamed to pkgs.testers.nixosTest upstream (converted
+# to a hard `throw` alias, not just deprecated) on the nixpkgs revision this
+# flake is pinned to.
+pkgs.testers.nixosTest {
+  name = "qs-greeter";
+
+  nodes.machine = {
+    pkgs,
+    lib,
+    ...
+  }: {
+    imports = [../../features/nixos/login];
+
+    services.graphicalLogin = {
+      enable = true;
+      backend = "qsGreeter";
+    };
+
+    # programs.qsGreeter.package defaults to the overlay-provided
+    # pkgs.qs-greeter (helpers/overlays.nix's qsGreeter overlay). This test
+    # imports only features/nixos/login, not that overlay chain, so build
+    # the package straight from its own directory instead of depending on
+    # whether the VM's module pkgs happens to carry the flake's overlays --
+    # every other package the module touches (sway, zsh, bashInteractive,
+    # jq, quickshell, winePackages.fonts, gruvbox-gtk-theme, ...) is stock
+    # nixpkgs and needs no overlay at all.
+    programs.qsGreeter.package = pkgs.callPackage ../qs-greeter {};
+
+    # Only the wrapper's own writeShellApplication closure carries jq; this
+    # minimal test node has no desktop environment pulling it onto the
+    # system PATH, but the test script itself needs it to inspect
+    # sessions.json from the outside.
+    environment.systemPackages = [pkgs.jq];
+
+    users.users.tester = {
+      isNormalUser = true;
+      password = "testpw";
+    };
+
+    # No u2f in the VM: this test covers the module and the greetd flow,
+    # not the second factor -- a VM has no YubiKey, and 2FA needs the real
+    # hardware verification in Task 14. u2fAuth is the built-in NixOS PAM
+    # option (nixos/modules/security/pam.nix, security.pam.services.<name>);
+    # it already defaults to false here since this test never imports the
+    # yubikey feature, but is forced off explicitly so this stays correct
+    # even if that ever changes.
+    security.pam.services.greetd.u2fAuth = lib.mkForce false;
+
+    # Reproduces the exact host condition that killed the first real cutover.
+    # greetd sources /etc/profile for the greeter session (source_profile,
+    # documented as defaulting to true in greetd.5), and NixOS's /etc/profile
+    # sources /etc/set-environment -- so the host's whole environment.variables
+    # set reaches the greeter after all, including the QT_QPA_PLATFORMTHEME
+    # that qt.platformTheme writes. With "gtk2" that is fatal rather than
+    # cosmetic: Qt loads the qt6gtk2 platform theme, which links GTK and calls
+    # gtk_init(), and gtk_init() (unlike gtk_init_check()) prints
+    # "cannot open display:" and calls exit(1) on the whole process when no X
+    # display exists. The greeter compositor runs "xwayland disable", so one
+    # never does, and quickshell died inside the QGuiApplication constructor
+    # before loading a line of QML.
+    #
+    # This must be the real qt module and not just a hand-set
+    # environment.variables entry: without the plugin actually installed, Qt
+    # merely warns that the platform theme could not be loaded and carries on,
+    # so a hand-set variable would pass this test whether or not the bug came
+    # back. It is the plugin being present AND selected that reproduces it.
+    qt = {
+      enable = true;
+      platformTheme = "gtk2";
+    };
+
+    # environment.sessionVariables reaches the greeter through PAM: NixOS
+    # wires it into every PAM service's session stack via pam_env
+    # (security.pam.services.<name>.setEnvironment, on by default), which is
+    # how greetd's exec'd sway process picks this up. It is used here rather
+    # than environment.variables only because it needs no profile sourcing to
+    # work -- NOT, as this comment previously claimed, because
+    # environment.variables fails to reach a greeter session. It does reach
+    # it, via greetd's own source_profile; assuming otherwise is exactly what
+    # let the QT_QPA_PLATFORMTHEME failure above ship.
+    # WLR_RENDERER=pixman is needed because GLES2 does not work under this
+    # VM's virtio-gpu without virgl -- the identical problem and fix
+    # nixos/tests/sway.nix uses, for the same underlying reason.
+    environment.sessionVariables.WLR_RENDERER = "pixman";
+
+    # QEMU's own default display (-vga std, once virtualisation.graphics
+    # enables one at all) leaves sway unable to acquire a working DRM
+    # output inside this VM -- switch to virtio-gpu, exactly as
+    # nixos/tests/sway.nix does and for the same reason.
+    virtualisation.qemu.options = ["-vga" "none" "-device" "virtio-gpu-pci"];
+
+    virtualisation.memorySize = 2048;
+  };
+
+  testScript = ''
+    machine.wait_for_unit("greetd.service")
+    machine.wait_until_succeeds("test -s /run/qs-greeter/sessions.json")
+    machine.succeed("jq -e 'length > 0' /run/qs-greeter/sessions.json")
+
+    # "settings ready" is logged from Settings._recompute() once the
+    # tiered merge (Nix defaults + the writable user file) settles -- it
+    # says nothing about the skin by itself, skin resolution is a separate
+    # binding in shell.qml that happens to settle in the same reactive
+    # pass. The real evidence the skin loaded is the negative greps for
+    # the skin-failure patterns further down, not this line. The sessions
+    # line below fires once Sessions.qml parsed the file the wrapper wrote
+    # above.
+    machine.wait_until_succeeds(
+        "journalctl -t qs-greeter | grep -q 'settings ready'")
+    machine.wait_until_succeeds(
+        "journalctl -t qs-greeter | grep -q 'sessions: '")
+
+    # The greeter's Qt process was not killed before it could load any QML by
+    # an inherited platform theme that links GTK (see the qt.platformTheme
+    # note on the node above). Checked explicitly rather than relying on the
+    # assertions around it: every one of those would also fail here, but they
+    # would fail as "settings ready never appeared" or "the screen stayed
+    # black", which is what made this cost an evening of bisecting the wrong
+    # layer. This line names the actual cause. The message comes from GTK
+    # itself, straight to stderr, bypassing Qt's logger -- which is why it is
+    # the ONLY surviving evidence when this happens.
+    machine.fail("journalctl -t qs-greeter | grep -q 'cannot open display'")
+
+    # Neither fallback path was taken: greetd was available to the greeter,
+    # and the configured skin actually instantiated rather than the Loader
+    # erroring or Skins.resolve() falling all the way through to "fatal".
+    machine.fail(
+        "journalctl -t qs-greeter | grep -q 'greetd is not available'")
+    machine.fail(
+        "journalctl -t qs-greeter | grep -qE "
+        "'skin failed to instantiate|rejected \\(not a valid|failed to load; no usable skin'"
+    )
+
+    # NOT a proof of the redaction invariant -- an absence-of-evidence check.
+    # This test never sends a keystroke (see the real-login note below), so
+    # the PAM conversation is never entered and "testpw" is never handed to
+    # the greeter process at all; this can only ever pass, whether or not
+    # log scrubbing is correct, broken, or absent. Kept because it costs
+    # nothing and becomes meaningful the moment a login can be driven
+    # in-VM; until then the redaction invariant is verified only by code
+    # inspection and by Session.qml's own unit-level test suite.
+    # machine.fail(grep -rq ...) on /var/log/qs-greeter cannot distinguish
+    # "no match" from "directory missing/unreadable" -- grep exits non-zero
+    # either way -- so a silently-broken log path would pass this line too.
+    machine.fail("journalctl -t qs-greeter | grep -q testpw")
+    machine.fail("grep -rq testpw /var/log/qs-greeter")
+
+    # --- proof of real rendering --------------------------------------
+    # Every test up to this one runs QML under QT_QPA_PLATFORM=offscreen,
+    # which has no Wayland backend and never constructs anything rooted in
+    # a PanelWindow -- shell.qml's login window and screens/Backdrop.qml
+    # have never actually been instantiated by any test before this one.
+    # "greetd came up and nothing crashed" is not proof that changed: a
+    # QEMU screendump of the virtual framebuffer is, because it captures
+    # whatever the VM's GPU is actually displaying, observed from outside
+    # quickshell entirely. A blank or uniform frame here would mean the
+    # PanelWindow/layer-shell path never painted anything, crash or not.
+
+    def read_ppm():
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = f"{tmp}/probe.ppm"
+            machine.send_monitor_command(f"screendump {path}")
+            with open(path, "rb") as f:
+                return f.read()
+
+    def parse_ppm(data):
+        assert data[:2] == b"P6", f"not a raw-binary PPM: {data[:16]!r}"
+        idx = 2
+        tokens = []
+        while len(tokens) < 3:
+            while data[idx] in b" \t\r\n":
+                idx += 1
+            start = idx
+            while data[idx] not in b" \t\r\n":
+                idx += 1
+            tokens.append(int(data[start:idx]))
+            idx += 1
+        width, height, _maxval = tokens
+        return width, height, data[idx:]
+
+    def pixel(pixels, width, x, y):
+        off = (y * width + x) * 3
+        return tuple(pixels[off : off + 3])
+
+    # programs.qsGreeter.backdrop defaults to kind = "color", color =
+    # "#3A6EA5". screens/Backdrop.qml paints that full-screen underneath
+    # everything else, on its own PanelWindow (WlrLayer.Background); the
+    # XP login dialog is a fixed-size box centered on screen (Skin.qml:
+    # anchors.centerIn: parent), not full-screen. So a corner pixel should
+    # still show raw backdrop, and a center pixel -- inside the dialog's
+    # chrome -- should not, if the whole PanelWindow/layer-shell stack
+    # actually rendered. This ties the check to a value that came from
+    # this test's own Nix config, through defaults.json, through
+    # Settings.qml, into the compositor's real composited output, not
+    # just "some pixels happen to exist".
+    expected_backdrop = (0x3A, 0x6E, 0xA5)
+
+    def close(a, b, tol=24):
+        return all(abs(x - y) <= tol for x, y in zip(a, b))
+
+    def rendered(last_chance):
+        width, height, pixels = parse_ppm(read_ppm())
+        corner = pixel(pixels, width, 4, 4)
+        center = pixel(pixels, width, width // 2, height // 2)
+        if last_chance:
+            machine.log(
+                f"screendump {width}x{height}: corner={corner} "
+                f"center={center} expected_backdrop~{expected_backdrop}"
+            )
+        return close(corner, expected_backdrop) and not close(corner, center, tol=8)
+
+    retry(rendered)
+
+    # machine.screenshot() must run AFTER retry(rendered) settles, not
+    # before: it captures whatever is on screen at the moment it is called,
+    # and the compositor has not necessarily painted anything yet the
+    # instant this test script reaches this point (retry(rendered) is what
+    # actually waits for that). Calling it earlier captured a uniformly
+    # black frame every run -- a screenshot that told a human nothing about
+    # what actually failed the one time this test caught a real defect.
+    machine.screenshot("login")
+
+    # --- QML runtime-error scan -----------------------------------------
+    # This is the check that would have caught the skins/xp/ bare-singleton
+    # bug (ReferenceError: Settings/Log/CapsLock/GreeterState is not
+    # defined, then 46 follow-on TypeErrors reading theme.* off the
+    # now-undefined theme): every headless dev/tests/ suite -- including
+    # widgets-gallery.sh, which already runs exactly this class of scan --
+    # reaches the skin through a STATIC directory import from an entrypoint
+    # that sits right next to symlinks for the singletons the skin needs,
+    # so those bare references resolve there. Production reaches the same
+    # skin only through shell.qml's Loader, whose `source` is a
+    # runtime-computed path string invisible to Quickshell's import-graph
+    # scan (see shell.qml's and Skin.qml's own comments on the mechanism);
+    # the bug was real only on that path, so only a check against the
+    # REAL store package under a REAL compositor -- this VM test -- could
+    # ever see it. journalctl is read here, after retry(rendered) has
+    # already proven the compositor painted a real frame, so every QML
+    # warning the whole boot produced has had time to land in the journal
+    # (qs-greeter-run.sh pipes the wrapped `qs` process's stdout/stderr
+    # through `systemd-cat -t qs-greeter`).
+    qml_log = machine.succeed("journalctl -t qs-greeter --no-pager")
+
+    # Known-benign lines that would otherwise trip the checks below --
+    # same convention as widgets-gallery.sh's own allowlist (a "prove it's
+    # benign" entry, not a silence-the-noise reflex). GreeterState's own
+    # state file has no tmpfiles rule (see qs-greeter.nix's own comment on
+    # stateFile: "written by the unprivileged greeter user itself... only
+    # dataDir's own directory has to exist first"), so a brand-new VM's
+    # very first boot genuinely has no state.json yet -- FileView logs
+    # that as a "scene" warning by design, and it is not one of the four
+    # named danger classes below, so it is listed here only for the record,
+    # not because the loop needs it to pass.
+    benign_allowlist = [
+        "Read of /var/lib/qs-greeter/state.json failed: File does not exist",
+    ]
+
+    # The same four classes widgets-gallery.sh's own danger_patterns
+    # names: Binding loop (a self-referential property binding), Unable to
+    # assign (a theme.* reference that resolved to undefined being fed to
+    # a typed property), ReferenceError (a bare singleton reference that
+    # does not resolve at all -- this bug), and TypeError (calling a
+    # method on, or reading a property off, something that resolved to
+    # undefined -- this bug's 46 follow-on failures once `theme` itself
+    # went undefined).
+    danger_patterns = [
+        "Binding loop",
+        "Unable to assign",
+        "ReferenceError",
+        "TypeError",
+    ]
+
+    offending = []
+    for line in qml_log.splitlines():
+        if not line.strip():
+            continue
+        if any(pat in line for pat in benign_allowlist):
+            continue
+        if any(pat in line for pat in danger_patterns):
+            offending.append(line)
+
+    assert not offending, (
+        "qs-greeter logged disallowed QML warnings:\n" + "\n".join(offending)
+    )
+  '';
+}

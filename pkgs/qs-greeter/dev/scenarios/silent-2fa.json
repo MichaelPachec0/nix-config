@@ -1,0 +1,5 @@
+{ "name": "silent-2fa",
+  "steps": [
+    { "after": 50, "authMessage": { "message": "Password:", "error": false,
+      "responseRequired": true, "echoResponse": false } },
+    { "onRespond": 1, "after": 4000, "readyToLaunch": true } ] }

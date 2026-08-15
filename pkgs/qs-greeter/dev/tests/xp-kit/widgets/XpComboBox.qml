@@ -1,0 +1,1 @@
+../../../../greeter/skins/xp/widgets/XpComboBox.qml

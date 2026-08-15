@@ -458,6 +458,16 @@
     # TODO: (low prio) still working on this, dont know if going to keep this, but at least this should make it easy start.
     # might be worthwhile if this is starting out from a recovery disk since this can install needed pkgs in the future (like sops, alejandra, nil_ls, neovim ect)
     devShells."x86_64-linux" = import ./shell.nix {pkgs = nixpkgs.legacyPackages."x86_64-linux";};
+    checks."x86_64-linux" = {
+      # Boots greetd with the qsGreeter backend under a real compositor
+      # (offscreen QT_QPA_PLATFORM everywhere else in this plan never
+      # constructs a PanelWindow at all) and asserts the session list is
+      # generated, settings and the skin resolve, the layer-shell surfaces
+      # actually render, and no credential reaches the log.
+      qs-greeter = import ./pkgs/qs-greeter/nixos-test.nix {
+        pkgs = nixpkgs.legacyPackages."x86_64-linux";
+      };
+    };
     # packages = {
     #
     #   }

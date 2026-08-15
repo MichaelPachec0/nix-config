@@ -1,0 +1,5 @@
+[Desktop Entry]
+Name=Hyprland (uwsm-managed)
+Comment=Hyprland launched through uwsm
+Exec=uwsm start -S -F /nix/store/fake-hyprland/bin/Hyprland
+Type=Application
