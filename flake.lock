@@ -151,11 +151,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1785913325,
-        "narHash": "sha256-5U4dDz66QwuM2qDQi3+eFGG0Jq4YEg3nRrxY7zWmvwc=",
+        "lastModified": 1786714319,
+        "narHash": "sha256-CQ4HWw4LvnL69grxgyhbXTTC2qJKzaMBU6jI/B7+LB8=",
         "owner": "MichaelPachec0",
         "repo": "claude-for-linux",
-        "rev": "91aa60b4fa0e154f986fd38228d420f1878b1a5a",
+        "rev": "ff91539070e1b52e75385259051f727a3863fa7a",
         "type": "github"
       },
       "original": {
@@ -1124,6 +1124,26 @@
       "original": {
         "owner": "glide-browser",
         "repo": "glide.nix",
+        "type": "github"
+      }
+    },
+    "gruvbox-gtk-theme": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786770274,
+        "narHash": "sha256-pYJW8fRC3Z+1VobW98YxBUDCUE+yOF0vLFz2GHkmvVI=",
+        "owner": "MichaelPachec0",
+        "repo": "Gruvbox-GTK-Theme",
+        "rev": "712853e0439b650b74c92901a73b4f086e51d950",
+        "type": "github"
+      },
+      "original": {
+        "owner": "MichaelPachec0",
+        "repo": "Gruvbox-GTK-Theme",
         "type": "github"
       }
     },
@@ -2125,6 +2145,7 @@
         "flake-playground": "flake-playground",
         "flake-utils": "flake-utils_5",
         "glide": "glide",
+        "gruvbox-gtk-theme": "gruvbox-gtk-theme",
         "hardware": "hardware",
         "home-manager": "home-manager_2",
         "home-manager-stable": "home-manager-stable",

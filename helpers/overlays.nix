@@ -483,6 +483,7 @@ in {
           ++ vimPluginsOverlayList
           ++ [
             inputs.nix-vscode-extensions.overlays.default
+            inputs.gruvbox-gtk-theme.overlays.default
           ]
           ++ lspServers
         ))
@@ -534,6 +535,7 @@ in {
           ++ [
             latest
             inputs.nix-vscode-extensions.overlays.default
+            inputs.gruvbox-gtk-theme.overlays.default
           ]
           ++ lspServers
         ))

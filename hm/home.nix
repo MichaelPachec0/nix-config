@@ -274,6 +274,7 @@ in {
     inputs.flake-playground.homeManagerModules.nvchad
     inputs.flake-playground.homeManagerModules.cspell
     inputs.glide.homeModules.default
+    inputs.gruvbox-gtk-theme.homeManagerModules.default
   ];
   # Only applied for standalone HM; when integrated (useGlobalPkgs) the system pkgs
   # already carry this overlay via helpers/overlays.nix hmIntegrationOverlays.
@@ -655,6 +656,13 @@ in {
   services.kdeconnect = {
     enable = true;
     indicator = true;
+  };
+  programs.gruvbox-gtk-theme = {
+    enable = true;
+    themeVariants = ["yellow"];
+    colorVariants = ["dark"];
+    iconTheme.enable = true;
+    tweaks = ["macos"];
   };
   systemd.user.startServices = "sd-switch";
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
