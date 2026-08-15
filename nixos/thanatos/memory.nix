@@ -36,12 +36,32 @@ in {
     # starving this deadlocks reclaim (zram needs free pages to compress into).
     "vm.min_free_kbytes" = memTotalKb / 100;
 
-    # Bound writeback by bytes, not by percent-of-RAM. The 20%/10% defaults let
-    # ~4.2G of dirty pages queue up, and draining that stalls swap-in behind it
-    # on the same NVMe. Setting *_bytes zeroes the matching *_ratio; they are
-    # mutually exclusive, so do not reintroduce vm.dirty_ratio here.
-    "vm.dirty_bytes" = 256 * 1024 * 1024;
-    "vm.dirty_background_bytes" = 64 * 1024 * 1024;
+    # Bound writeback by bytes, not by percent-of-RAM. Setting *_bytes zeroes
+    # the matching *_ratio; they are mutually exclusive, so do not reintroduce
+    # vm.dirty_ratio here.
+    #
+    # 64M/16M measured against the previous 256M/64M and against the 20%/10%
+    # defaults, under a bulk writer plus 6 GiB of actively-touched anon (the
+    # workload that motivated this: a build under memory pressure, where reclaim
+    # and swap compete with writeback). 64M won read p99 by ~1.4ms and took a
+    # quarter of the swap-ins, costing ~7% write throughput. Latency is the
+    # right side of that trade here for the same reason it is for bfq below.
+    # The defaults arm hit a position confound and is still unmeasured, so it
+    # remains an open option.
+    #
+    # Do not judge a re-test by PSI io.full: run-to-run spread swamped the gap
+    # between arms. Read p99 under load is what separates them. Both values are
+    # live-tunable, so no rebuild is needed; writing either pair zeroes the
+    # other, so read BOTH back:
+    #   sysctl -w vm.dirty_bytes=67108864 vm.dirty_background_bytes=16777216
+    #   sysctl -w vm.dirty_ratio=20 vm.dirty_background_ratio=10   # defaults
+    #
+    # Note powertop reports "Bad: VM dirty ratio" here. That is a false
+    # positive: it reads vm.dirty_ratio, which is 0 precisely BECAUSE the byte
+    # limits are in force. Never let `powertop --auto-tune` near this -- it
+    # would set the ratio, silently zero the byte limits, and undo the bound.
+    "vm.dirty_bytes" = 64 * 1024 * 1024;
+    "vm.dirty_background_bytes" = 16 * 1024 * 1024;
 
     # THP is madvise-only, so proactive compaction only spends latency building
     # huge pages nothing asked for. compact_stall was ~10k before this.
@@ -49,11 +69,12 @@ in {
   };
 
   # ---- zram ---------------------------------------------------------------
-  # Measured ratio is ~4.2x (3.77G orig -> 922M compressed), so 100% of RAM as
-  # disksize holds roughly all of it in ~5G of actual RAM. disksize is virtual;
-  # real consumption is the compressed size. At 50% zram filled and spilled ~8G
-  # onto the NVMe swap, which is the slow tier this whole file exists to avoid.
-  zramSwap.memoryPercent = lib.mkForce 100;
+  # disksize is virtual: real consumption is the compressed size, and the
+  # measured ratio here is ~4.2x (3.77G orig -> 922M compressed), so 200% of RAM
+  # of disksize costs under half of RAM even when fully filled. Oversubscribing
+  # is the point -- at 50% zram filled and spilled ~8G onto the NVMe swap, which
+  # is the slow tier this whole file exists to avoid.
+  zramSwap.memoryPercent = lib.mkForce 200;
 
   # Secondary (higher-ratio) compression tier for cold pages. CONFIG_ZRAM_MULTI_COMP=y
   # and CONFIG_ZRAM_WRITEBACK=y on this kernel, but CONFIG_ZRAM_TRACK_ENTRY_ACTIME
@@ -164,17 +185,33 @@ in {
   # left alone. See the mq-deadline rule below -- this is inert without it.
   nix.daemonIOSchedClass = "idle";
 
-  # I/O priority classes are implemented by the I/O scheduler, and nvme0n1 was on
-  # `none`, which does no reordering and therefore ignores ioprio entirely --
-  # daemonIOSchedClass would have been decorative. mq-deadline has honoured the
-  # rt/be/idle classes since 5.14 (CONFIG_MQ_IOSCHED_DEADLINE=y here).
+  # BFQ is a module (CONFIG_IOSCHED_BFQ=m), so it must be loaded before udev can
+  # select it below.
+  boot.kernelModules = ["bfq"];
+
+  # bfq, measured against none / mq-deadline / kyber under a nix-build-shaped
+  # load. It wins every latency metric by 2-6x and its worst round still beats
+  # the others' medians; mq-deadline produced 534ms fsync stalls, the exact
+  # shape that hung Firefox's Quota Manager until its watchdog killed it. The
+  # cost is bulk throughput -- a cold Firefox launch during a build is 1.7x
+  # slower than under mq-deadline -- and that trade is accepted deliberately,
+  # because this machine's complaint is stutter during builds, not launch time
+  # during builds. Set this back to `none` to undo it.
   #
-  # Trade-off: mq-deadline funnels requests through one sorted dispatch queue, so
-  # peak synthetic IOPS drops versus `none`. That ceiling is far above any desktop
-  # or build workload, and the exchange buys real isolation between builds and the
-  # desktop on a single shared NVMe. Delete this rule to go back to `none`.
+  # BFQ TUNING WAS MEASURED AND REJECTED, do not reach for it: slice_idle=0
+  # (the standard "SSDs do not need idling" advice), slice_idle_us=0 and
+  # low_latency=0 each cost 1.3-2.9x on reads, and strict_guarantees=1 explodes
+  # the tails. Every one of them bought fsync p99 at the expense of reads, which
+  # is the wrong direction for desktop feel. Also not worth revisiting: a
+  # read_ahead_kb bump, flat across 128-2048 because max_hw_sectors_kb is 128
+  # here and large read()s bypass readahead entirely.
+  #
+  # bfq also keeps the reason mq-deadline was chosen before it -- it honours the
+  # rt/be/idle ioprio classes, so nix.daemonIOSchedClass above is not decorative
+  # the way it was under `none` -- and adds cgroup io.weight, which mq-deadline
+  # does not implement and iocost is not active to provide.
   services.udev.extraRules = ''
-    ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="mq-deadline"
+    ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="bfq"
   '';
 
   # Build width. Both of these defaulted to `auto`, which on this 8C/16T part
@@ -234,7 +271,34 @@ in {
   # kernel then distributes proportionally between whichever children are
   # actually claiming. Splitting would just under-protect whichever side happens
   # to be busy.
-  systemd.slices.user = protectSlice;
+  # I/O latency protection for the desktop, the half ionice alone cannot give.
+  #
+  # io.latency is set on the group to PROTECT, not the one to punish: the kernel
+  # watches this group's completion latency and, when it exceeds the target,
+  # throttles peer cgroups that have no target of their own. system.slice (where
+  # nix-daemon builds) is such a peer, so a build gets squeezed exactly when the
+  # desktop starts suffering and not before -- unlike a hard IOReadBandwidthMax,
+  # which would slow builds even on an idle machine.
+  #
+  # Target 10ms: this drive answers a cold 4K read in ~600us and a durable commit
+  # in ~3ms, so 10ms is ~16x headroom over healthy operation and still trips well
+  # before a human notices. Raise toward 25-50ms if builds crawl while the
+  # desktop is idle; lower only if video playback during a build still breaks up.
+  #   cat /sys/fs/cgroup/user.slice/io.latency     -> "259:0 target=10000"
+  #   cat /sys/fs/cgroup/system.slice/io.pressure  -> "some" rises when throttled
+  #
+  # Device is the physical nvme, not the dm-crypt mapper: bio cgroup association
+  # is preserved down through dm, and 259:0 is where the real queue contention
+  # happens (io.stat in these cgroups accounts both 254:x and 259:0).
+  systemd.slices.user =
+    protectSlice
+    // {
+      sliceConfig =
+        protectSlice.sliceConfig
+        // {
+          IODeviceLatencyTargetSec = "/dev/nvme0n1 10ms";
+        };
+    };
   systemd.slices."user-" = protectSlice;
   systemd.services."user@" = {
     overrideStrategy = "asDropin";
@@ -254,13 +318,59 @@ in {
   systemd.user.slices.background-graphical = protectSlice;
 
   # ---- sched_ext ----------------------------------------------------------
-  # sched_ext is compiled into this XanMod kernel (/sys/kernel/sched_ext/state
-  # was "disabled", i.e. available but unloaded). scx_lavd is latency-first and
-  # is the closest replacement for the CFS tunables EEVDF removed in 6.6.
-  # Most experimental item in this file; flip enable to false to fall straight
-  # back to EEVDF without touching anything else.
+  # scx_flash -m all, picked by paired per-round measurement against EEVDF and
+  # six other scx schedulers. It beats EEVDF on cold launch, wakeup p99 under
+  # build (22us vs 747us) and runqueue wait, and costs ~95ms on launch during a
+  # build. beerland, cake, cosmos, flow and p2dq were each disqualified on a
+  # reproduced regression; rusty never attached at all (its own bug).
+  #
+  # Traps this file has already fallen into:
+  #   - scx_lavd, which this shipped before, IS the "Firefox was snappier
+  #     before" regression: ~450ms on every cold launch. Do not restore it on
+  #     the strength of its latency-first description.
+  #   - --performance made lavd WORSE, not better, so the intuitive "pin it to
+  #     performance on AC" fix is backwards. An ac-responsiveness.nix that did
+  #     exactly that was written and deleted on those numbers.
+  #   - NEVER add -f/--cpufreq: +41% cold launch, the largest regression
+  #     measured. Scheduler-driven frequency selection ramps slower than
+  #     schedutil's own, and a cold launch is the burst that needs the ramp.
+  #   - Wakeup latency does NOT govern launch time. Every scx scheduler beats
+  #     EEVDF on wakeup tail by 20-30x and several still launch Firefox slower.
+  #   - The CachyOS wiki's flash profiles ("-m performance -w -C 0") do not
+  #     apply to scx_flash 1.1.2 as packaged in nixpkgs: no -w, no -C, and it
+  #     refuses to start if given them.
+  #
+  # -m takes auto|turbo|performance|powersave|all|none; on this 8-core Zen 2
+  # part `all` is near a no-op for latency but consistently halved the
+  # throughput cost versus the auto default.
   services.scx = {
     enable = true;
-    scheduler = "scx_lavd";
+    scheduler = "scx_flash";
+    extraArgs = ["-m" "all"];
+  };
+
+  # Retry hard, because attaching a sched_ext scheduler is inherently racy and
+  # the packaged unit gives up almost immediately.
+  #
+  # Attaching walks every existing task and cgroup, allocating BPF local storage
+  # for each in a tight loop. Anything creating a task or a cgroup during that
+  # walk can make one of those allocations return NULL, which the scheduler
+  # reports as -ENOMEM and the kernel treats as fatal. Nothing about the
+  # scheduler or its flags is wrong when this happens and no tunable prevents
+  # it; boot lost 3 attaches out of 4. The stock unit is what made a lost round
+  # permanent: Restart=on-failure with no RestartSec retries in under a second,
+  # and StartLimitBurst=2 inside 30s puts both attempts inside the same storm.
+  #
+  # 12 attempts 5s apart covers ~60s against a boot storm that settles by ~35s,
+  # and stays bounded so a genuinely broken scheduler (a kernel upgrade
+  # outrunning the scx package) still gives up instead of respawning forever.
+  #
+  # Do NOT "fix" this by ordering scx after some other unit. waydroid-container
+  # was the obvious suspect and is not the cause -- restarting it under a live
+  # attach never reproduced the failure. Any task creation anywhere will do it.
+  systemd.services.scx = {
+    startLimitIntervalSec = lib.mkForce 300;
+    startLimitBurst = lib.mkForce 12;
+    serviceConfig.RestartSec = 5;
   };
 }

@@ -88,6 +88,9 @@ Scope {
         if (LockConfig.secEnable)
             secFreshness.restart();
         if (!root.workspaceMode) {
+            // Named explicitly: a wallpaper-mode lock and a workspace-mode lock
+            // whose capture never ran look identical on screen.
+            console.log(lockCapture, "wallpaper mode (backdropMode=" + LockConfig.backdropMode + "), no capture");
             root.locked = true;
             return;
         }
@@ -338,6 +341,33 @@ Scope {
 
     readonly property bool workspaceMode: LockConfig.backdropMode === "workspace"
 
+    // ---- Capture diagnostics -------------------------------------------------
+    //
+    // The workspace backdrop has twice come up as the plain wallpaper with no
+    // trace of why, and every input to that outcome is internal: captureArmed,
+    // how long the settle gate waited, whether the pool built delegates, which
+    // frames landed and whether they beat the lock. A healthy workspace-mode
+    // lock reads arm -> pool built N of N -> settle armed -> frame
+    // (preLock=true) -> "all captured", and any other shape names its own
+    // failure.
+    //
+    // Gated at EMIT time: below Debug the category drops the message outright,
+    // so it never reaches the .qslog either and there is no "off but still
+    // recorded" fallback. Its own variable rather than HYPR_WL_DEBUG because
+    // this costs six lines per lock and the protocol trace costs a line per
+    // request; the debug session (features/nixos/desktop/wayland/
+    // hyprland-wldebug.nix) sets both. For one run by hand, and it is read only
+    // at startup so a reload will not do:
+    //
+    //   QS_LOCK_DEBUG=1 qs -c task-bar
+    //   qs log -r 'lock.capture=true' \
+    //     "$XDG_RUNTIME_DIR/quickshell/by-pid/$(pgrep -f 'quickshell -c task-bar')/log.qslog"
+    LoggingCategory {
+        id: lockCapture
+        name: "lock.capture"
+        defaultLogLevel: Quickshell.env("QS_LOCK_DEBUG") === "1" ? LoggingCategory.Debug : LoggingCategory.Warning
+    }
+
     // Per-output capture holders: `{ screenName: holderItem }`, consumed by the
     // pool delegates below.
     //
@@ -388,7 +418,10 @@ Scope {
         // Re-check when the pool finishes building: a hasContent that arrives
         // while count < screens.length is rejected by _allCaptured() and would
         // otherwise never be re-polled.
-        onObjectAdded: root._noteCapture()
+        onObjectAdded: {
+            console.log(lockCapture, "pool built " + capturePool.count + " of " + Quickshell.screens.length);
+            root._noteCapture();
+        }
         delegate: ScreencopyView {
             id: view
             required property var modelData
@@ -422,6 +455,14 @@ Scope {
             onHasContentChanged: {
                 if (hasContent && !root.locked)
                     preLockContent = true;
+                // preLock=false is the interesting failure: the capture worked
+                // but lost the race, which looks identical on screen to a
+                // capture that never ran.
+                console.log(lockCapture, "frame " + (view.modelData ? view.modelData.name : "?")
+                    + " hasContent=" + view.hasContent
+                    + " preLock=" + view.preLockContent
+                    + " locked=" + root.locked
+                    + " parented=" + (view.parent !== null));
                 root._noteCapture();
             }
         }
@@ -446,6 +487,7 @@ Scope {
     // Every capture landed -> stop waiting and lock immediately.
     function _noteCapture() {
         if (root.captureArmed && !root.locked && root._allCaptured()) {
+            console.log(lockCapture, "all captured, locking");
             captureTimer.stop();
             root.locked = true;
         }
@@ -468,7 +510,12 @@ Scope {
     Timer {
         id: captureTimer
         interval: 250
-        onTriggered: root.locked = true
+        onTriggered: {
+            // Reaching here at all means at least one output's frame did not
+            // land in time; the lock proceeds on the wallpaper fallback.
+            console.log(lockCapture, "safety net fired after " + captureTimer.interval + "ms, locking without a full capture");
+            root.locked = true;
+        }
     }
 
     // ---- Output-settle gate (compositor-crash mitigation) --------------------
@@ -506,6 +553,7 @@ Scope {
 
     function _armCaptureWhenSettled() {
         root._settleStartMs = Date.now();
+        console.log(lockCapture, "arm requested, screens=" + Quickshell.screens.length);
         settleTimer.restart();
     }
 
@@ -532,11 +580,14 @@ Scope {
         onTriggered: {
             if (root.locked)
                 return;
-            if (Date.now() - root._settleStartMs >= root.screenSettleCapMs) {
+            var waited = Date.now() - root._settleStartMs;
+            if (waited >= root.screenSettleCapMs) {
+                console.log(lockCapture, "settle hit the cap after " + waited + "ms, capture sacrificed");
                 root.locked = true; // capture sacrificed, lock is not
                 return;
             }
             root.captureArmed = true;
+            console.log(lockCapture, "settle armed after " + waited + "ms, screens=" + Quickshell.screens.length);
             captureTimer.start();
         }
     }

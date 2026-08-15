@@ -80,23 +80,6 @@
     inputs.flake-playground.overlays.vimPlugins
     local
   ];
-  powertop-unstable = final: prev: {
-    powertop-git = prev.powertop.overrideAttrs (oldAttrs: {
-      version = "2.15-pre";
-      src = prev.fetchFromGitHub {
-        owner = "fenrus75";
-        repo = oldAttrs.pname;
-        rev = "9beafe3bd5e9d4c6cf2596dacdf6ab9c9be0c85e";
-        hash = "sha256-hmEu8tpbk0fdRyySZJdlFMyksOJALlp8NGjonZjLzhQ=";
-      };
-      buildInputs =
-        (oldAttrs.buildInputs or [])
-        ++ [
-          prev.libtraceevent
-          prev.libtracefs
-        ];
-    });
-  };
   wayland = final: prev: {
     swaylock-effects-pr =
       prev.swaylock-effects.overrideAttrs
@@ -165,21 +148,6 @@
         swayfx = prev.swayfx.override {inherit swayfx-unwrapped;};
       };
   };
-  figma-linux = final: prev: {
-    figma-linux = prev.figma-linux.overrideAttrs (old: rec {
-      version = "0.11.4";
-      src = prev.fetchurl {
-        url = "https://github.com/Figma-Linux/figma-linux/releases/download/v${version}/figma-linux_${version}_linux_amd64.deb";
-        hash = "sha256-ukUsNgWOtIRe54vsmRdI62syjIPwSsgNV7kITCw0YUQ=";
-      };
-      # runtimeDependenciesPath = (old.runtimeDependenciesPath or []) ++ (lib.makeLibraryPath [ prev.libGL]);
-      preFixup = ''
-         gappsWrapperArgs+=(
-          --prefix LD_LIBRARY_PATH : ${prev.lib.makeLibraryPath [prev.libGL]}
-        )
-      '';
-    });
-  };
 
   pam_rssh = final: prev: {
     pam_rssh = prev.callPackage ../overlays/pam_rssh {};
@@ -188,36 +156,49 @@
     qs-greeter = prev.callPackage ../pkgs/qs-greeter {};
   };
   latest = final: prev: {
-    # Hyprland CORE: bumped to the v0.56.1 point release and carrying the two
+    # Hyprland's backend, patched against permanent loss of every input device
+    # present at compositor start: libinput enumerates as soon as it gets its
+    # seat, and if the libseat session is not active yet (VT still being handed
+    # over from the greeter) logind revokes every fd and nothing re-enumerates
+    # afterwards. Leaves the session with no keyboard or touchpad at all.
+    # Written against the v0.14.0 tag, which is what nixpkgs builds.
+    aquamarine = prev.aquamarine.overrideAttrs (old: {
+      patches = (old.patches or []) ++ [../overlays/aquamarine-libinput-inactive-session-devices.patch];
+    });
+    # Hyprland CORE: bumped to the v0.56.2 point release and carrying the two
     # crash patches. Overrides the TOP-LEVEL `hyprland` (not just latest.hyprland
     # below) so the compositor AND hy3 -- which builds against final.hyprland --
     # share the one binary and the plugin hash check still matches.
     #
     # nixpkgs is still on 0.56.0; we already build the compositor from source for
-    # the patches, so taking the point release costs nothing extra. 0.56.1 is a
-    # pure bugfix bump (28 files) and every header change in it is ADDITIVE (a
-    # new signal, a method decl, an event, an enum entry) -- nothing hy3 uses is
-    # removed or renamed, so the pinned hy3 needs no source change. hy3 is also
-    # already at its newest tag (hl0.56.0.1 = 42b7ed8 = its master HEAD).
-    hyprland = prev.hyprland.overrideAttrs (old: {
-      version = "0.56.1";
+    # the patches, so taking the point release costs nothing extra. Both crash
+    # patches re-verified against v0.56.2, and its header diff touches nothing
+    # hy3 uses, so the pinned hy3 needs no source change.
+    #
+    # `.override` (not just `.overrideAttrs`) so the compositor links the patched
+    # aquamarine above: `prev.hyprland` was instantiated against the previous
+    # overlay stage, where `aquamarine` is still the stock one.
+    hyprland = (prev.hyprland.override {inherit (final) aquamarine;}).overrideAttrs (old: {
+      version = "0.56.2";
       src = prev.fetchFromGitHub {
         owner = "hyprwm";
         repo = "hyprland";
         fetchSubmodules = true;
-        tag = "v0.56.1";
-        hash = "sha256-u3DU6wmJ2PZk8kAOnx64MTlVxp/hZH+oUtXouj1E3+0=";
+        tag = "v0.56.2";
+        hash = "sha256-jOcfiv+Zs2iz5oTIQcJXZ0+5MfqW0oLgGxD0cKdmXpE=";
       };
       # `hyprctl version` is fed from nixpkgs' pkgs/by-name/hy/hyprland/info.json,
       # which still describes 0.56.0 -- restate it for the bumped src, or crash
-      # reports name a commit we are not running.
+      # reports name a commit we are not running. Note the v0.56.2 tag does NOT
+      # sit on the "version: bump to 0.56.2" commit (34170f65); it is one commit
+      # later, on the gha inputs update, which is what the src above fetches.
       env =
         (old.env or {})
         // {
-          GIT_COMMIT_HASH = "5c9377c15f85c50648f35ca5a213754f95b93ca0";
-          GIT_COMMIT_MESSAGE = "version: bump to 0.56.1";
-          GIT_COMMIT_DATE = "2026-07-27";
-          GIT_TAG = "v0.56.1";
+          GIT_COMMIT_HASH = "efb50993780079460b0cbed1363e2166a2de1d9f";
+          GIT_COMMIT_MESSAGE = "[gha] Nix: update inputs";
+          GIT_COMMIT_DATE = "2026-08-05";
+          GIT_TAG = "v0.56.2";
         };
       patches =
         (old.patches or [])
@@ -239,6 +220,14 @@
           # on the 0.56.x branch. The patch therefore does NOT apply past
           # 0.56.x -- DROP it, do not rebase it, when leaving this series.
           ../overlays/hyprland-screencopy-dead-output-crash.patch
+          # Third site in that same family and the one that actually kills the
+          # bar: create_source posts a FATAL protocol error when the wl_output's
+          # monitor is already gone, which the client cannot avoid because the
+          # request predates global_remove. Qt answers the killed connection with
+          # _exit(1), so it reads as "quickshell crashed" with no core.
+          # Unlike the backport above this applies to main too, so it survives a
+          # bump and is upstreamable as-is.
+          ../overlays/hyprland-capture-source-stale-output.patch
         ];
     });
     # xdg-desktop-portal-hyprland past its v1.4.0 tag, for 71ae1a3a
@@ -249,7 +238,7 @@
     # captures, and for output captures only keeps the transform when the frame
     # dimensions are actually swapped relative to the output.
     #
-    # Deliberately paired with the 0.56.1 compositor above, which PREDATES
+    # Deliberately paired with the 0.56.2 compositor above, which PREDATES
     # #15714 and so still renders transformed buffers. The heuristic is written
     # to straddle both (its own comment: "always fall back to new... 180 will be
     # wrong on old hl"), and on non-rotated outputs -- every monitor here -- both
@@ -273,6 +262,52 @@
         // {
           changelog = "https://github.com/hyprwm/xdg-desktop-portal-hyprland/compare/v1.4.0...b653ab53a435e92cc00f34771e6823bc59f2f740";
         };
+      # Five separate bugs, all unfixed upstream as of b653ab53. Kept as separate
+      # patches so each can be dropped on its own as it lands upstream; each
+      # patch header carries the root cause.
+      patches =
+        (old.patches or [])
+        ++ [
+          # THE ONE THAT MATTERS. One EIS socket leaked per input-capture client
+          # that goes away, each stranding its unread device advertisement as
+          # IN-FLIGHT AF_UNIX fds, which sit below the kernel's GC threshold and
+          # so are pinned until reboot. Past the per-UID budget every process on
+          # the default 1024 RLIMIT_NOFILE loses fd passing, i.e. no GUI app can
+          # connect to Wayland at all.
+          ../overlays/xdph-input-capture-eis-fd-leak.patch
+          # Slow leak, one fd per dmabuf format_table event, so it accumulates
+          # over monitor hotplugs. Does not strand in-flight fds.
+          ../overlays/xdph-dmabuf-format-table-fd-leak.patch
+          # Error-path only: createBuffer's SHM branch abandons its fd where the
+          # DMABUF branch above it closes correctly. Fixed for consistency.
+          ../overlays/xdph-screencopy-shm-error-path-fd-leak.patch
+          # SIGSEGV on EVERY session teardown, from wayland proxies marshalling
+          # destroy requests onto an already-gone display at exit. On greetd that
+          # is a core dump per login, which masks real portal crashes.
+          ../overlays/xdph-exit-wayland-proxy-segv.patch
+          # Whole desktop wedges: a Release without activation_id never reaches
+          # the compositor, so input capture is never lifted -- no cursor, no
+          # keys, compositor otherwise healthy, only a monitor hotplug clears it.
+          # kdeconnectd omits that key on every Release.
+          ../overlays/xdph-input-capture-release-without-activation-id.patch
+        ];
+    });
+    # KDE Connect's share-input-devices plugin marshals SetPointerBarriers with
+    # two wrong D-Bus signatures (`i` for barrier_id where the spec says `u`, and
+    # `ai` for position where it says the struct `(iiii)`), so any portal that
+    # validates the payload rejects EVERY barrier and the feature is silently
+    # inert: crossing a screen edge never triggers input capture. Unfixed
+    # upstream as of 26.04.3, and likely invisible on Plasma, whose Qt-based
+    # portal demarshals leniently (UNVERIFIED, not tested there).
+    #
+    # Overriding the scope rather than the leaf so every consumer picks it up:
+    # programs.kdeconnect (nixos/nyx/configuration.nix) defaults to
+    # pkgs.kdePackages.kdeconnect-kde, and hm/home.nix services.kdeconnect
+    # resolves it separately.
+    kdePackages = prev.kdePackages.overrideScope (_kfinal: kprev: {
+      kdeconnect-kde = kprev.kdeconnect-kde.overrideAttrs (old: {
+        patches = (old.patches or []) ++ [../overlays/kdeconnect-inputcapture-barrier-type.patch];
+      });
     });
     # Patch Quickshell: the forked PAM subprocess frees the caller's
     # `pam_response**` out-param (a stack address) on any IPC write failure, so
@@ -281,12 +316,51 @@
     # 28771c7. Patched at the TOP-LEVEL `quickshell` so the raw `pkgs.quickshell`
     # uses (swayidle.nix, quickshell-lock.nix) and the HM module's own
     # overrideAttrs (features/hm/wayland/quickshell.nix) all stack on the fix.
+    #
+    # Second patch: a ScreencopyView created before its item is in a scene
+    # latches WlBufferManager permanently (the retry guard is a never-reset
+    # function-static), so no capture ever starts and no screencopy protocol is
+    # bound. That is exactly the lock backdrop's per-output pool, whose
+    # delegates are reparented into place only after the lock engages, so the
+    # backdrop silently falls back to the wallpaper on every lock until the
+    # config is reloaded. Also unfixed upstream as of 28771c7.
     quickshell = prev.quickshell.overrideAttrs (old: {
-      patches = (old.patches or []) ++ [../overlays/quickshell-pam-conversation-invalid-free.patch];
+      buildInputs = (old.buildInputs or []) ++ [final.qt6.qt5compat];
+      # wrapQtAppsHook applies these when wrapping bin/qs and bin/quickshell, so the
+      # shell's child processes (bash -lc lib/*.sh) inherit the deps on PATH.
+      qtWrapperArgs = let
+        runtimeDeps = with final; [
+          bash
+          coreutils
+          gnugrep
+          gnused
+          gawk
+          bluez # bluetoothctl
+          pipewire # pw-dump
+          wireplumber # wpctl
+          pulseaudio # pactl
+          python3
+          systemd # busctl (mpris-extra.sh)
+          pbpctrl # Pixel Buds control (btinfo.sh pbp/set)
+          wl-clipboard # wl-copy (network widget middle-click copy)
+          networkmanager # nmcli (NetworkService)
+          iproute2 # ip (NetworkService default-route lookup)
+          awww
+          # config.services.awww.package # awww query (LockBackdrop reads per-output wallpaper)
+        ];
+      in
+        (old.qtWrapperArgs or [])
+        ++ ["--prefix PATH : ${prev.lib.makeBinPath runtimeDeps}"];
+      patches =
+        (old.patches or [])
+        ++ [
+          ../overlays/quickshell-pam-conversation-invalid-free.patch
+          ../overlays/quickshell-screencopy-buffer-manager-latch.patch
+        ];
     });
     latest = {
       # nixpkgs ships Hyprland 0.56.0; the `hyprland` attr above bumps it to
-      # v0.56.1 and carries the two crash patches. The old 0005 popup-coords
+      # v0.56.2 and carries the two crash patches. The old 0005 popup-coords
       # SIGSEGV patch is obsolete (fixed upstream in 0.56, #15416) and dropped.
       # nixpkgs' hyprlandPlugins.hy3 is still hl0.55.0, which will not load
       # against a 0.56 compositor, so hy3's src is pinned to the matching
@@ -297,11 +371,13 @@
       sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
       # nixpkgs' hy3 is hl0.55.0; pin the src to the hl0.56.0.1 release (built
       # against final.hyprland, so the plugin hash always matches whatever that
-      # attr resolves to -- 0.56.1 now) and re-apply our dispatcher patches --
+      # attr resolves to -- 0.56.2 now) and re-apply our dispatcher patches --
       # 0004 rebased onto the 0.56 workspace API (getWorkspaceByID ->
       # State::workspaceState()->query().id().run()). hl0.56.0.1 is still hy3's
-      # newest tag AND its master HEAD, and 0.56.1 removes/renames nothing it
-      # uses, so there is nothing to resync here for the point release.
+      # newest tag AND its master HEAD, and neither 0.56.1 nor 0.56.2
+      # removes/renames anything it uses (0.56.2 only drops InputMethodPopup
+      # internals, a WorkspaceRule member default and a PointerManager signature
+      # arg), so there is nothing to resync here for the point releases.
       hy3 = (final.hyprlandPlugins.hy3.override {inherit (final) hyprland;}).overrideAttrs (old: {
         src = final.fetchFromGitHub {
           owner = "outfoxxed";
@@ -345,7 +421,6 @@
     inputs.rust-overlay.overlays.default
     # (import ./pkgs/charles)
     wayland
-    figma-linux
     # fastanime
   ];
   # TODO: decide if abstracting this is worthwhile.
@@ -390,8 +465,6 @@ in {
       (mkOverlayModules
         (base
           ++ [
-            # NOTE: this is needed since powertop has extra fixes for stable.
-            powertop-unstable
           ]))
     ];
     nixosDesktop = [
@@ -409,14 +482,8 @@ in {
           ++ baseDesktop
           ++ vimPluginsOverlayList
           ++ [
-            powertop-unstable
-            # TODO: neovim nightly has changed how neotest works.
-            # ...ry.nvim-scm-1-unstable-scm-1/lua/luassert/assertions.lua:115: the 'equals' function requires a minimum of 2 arguments, got: 1.3
-            # switching over to stable neovim
-            #
-            # inputs.neovim.overlays.default
-            powertop-unstable
             inputs.nix-vscode-extensions.overlays.default
+            inputs.gruvbox-gtk-theme.overlays.default
           ]
           ++ lspServers
         ))
@@ -437,7 +504,6 @@ in {
       ++ [inputs.llm-agents.overlays.shared-nixpkgs];
     nixosServer = mkOverlayModules (base
       ++ [
-        powertop-unstable
       ]);
     nixosDesktop =
       [
@@ -446,7 +512,6 @@ in {
             base
             ++ baseDesktop
             ++ [
-              powertop-unstable
               latest
               inputs.nix-your-shell.overlays.default
               # inputs.neovim.overlays.default
@@ -468,11 +533,9 @@ in {
           ++ baseDesktop
           ++ vimPluginsOverlayList
           ++ [
-            powertop-unstable
             latest
-            # inputs.neovim.overlays.default
-            powertop-unstable
             inputs.nix-vscode-extensions.overlays.default
+            inputs.gruvbox-gtk-theme.overlays.default
           ]
           ++ lspServers
         ))

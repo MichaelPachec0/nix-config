@@ -59,6 +59,7 @@ Lib.BasePopup {
     // --- idle-policy seam (Task 2 Nix file) ---
     property int lockSec: 0
     property int dpmsSec: 0
+    property int suspendSec: 0
     FileView {
         path: Quickshell.env("HOME") + "/.config/quickshell-idle/policy.json"
         watchChanges: true
@@ -68,9 +69,11 @@ Lib.BasePopup {
                 var p = JSON.parse(text());
                 pop.lockSec = p.lockSec || 0;
                 pop.dpmsSec = p.dpmsSec || 0;
+                pop.suspendSec = p.suspendSec || 0;
             } catch (e) {
                 pop.lockSec = 0;
                 pop.dpmsSec = 0;
+                pop.suspendSec = 0;
             }
         }
         Component.onCompleted: reload()
@@ -350,7 +353,9 @@ Lib.BasePopup {
             Lib.BarText {
                 visible: pop.lockSec > 0
                 Layout.fillWidth: true
-                text: "When off: locks " + pop.fmtDur(pop.lockSec) + " . screen off " + pop.fmtDur(pop.dpmsSec)
+                text: "When off: locks " + pop.fmtDur(pop.lockSec)
+                      + " . screen off " + pop.fmtDur(pop.dpmsSec)
+                      + (pop.suspendSec > 0 ? " . suspend " + pop.fmtDur(pop.suspendSec) : "")
                 color: pop.theme.textSecondary
                 font.family: pop.theme.textFont
                 font.pixelSize: 11

@@ -16,10 +16,12 @@
     ./waybar
     ./rofi.nix
     ./common.nix
+    ./hypr-wl-debug.nix
     ./hyprland.nix
     ./hypr-window-keeper.nix
     ./hypr-monitor-arrange.nix
     ./hypr-scratchpad-guard.nix
+    ./fix-stuck-keys.nix
     ./sway.nix
   ];
   config = {
@@ -112,10 +114,11 @@
       # A real icon theme so themed names (drive-removable-media, nm/bluetooth,
       # app icons, mimetypes) resolve -- without this Qt/Quickshell only sees the
       # sparse hicolor fallback, leaving tray/window icons blank.
-      iconTheme = {
-        name = "Papirus-Dark";
-        package = pkgs.papirus-icon-theme;
-      };
+      # this is now taken care of by the gruvbox module
+      # iconTheme = {
+      #   name = "Papirus-Dark";
+      #   package = pkgs.papirus-icon-theme;
+      # };
       font = {
         package = pkgs.dejavu_fonts;
         name = "DejaVu Sans";
@@ -127,24 +130,24 @@
         gtk-cursor-theme-size = 24;
       };
 
-      theme = {
-        # name = "Adwaita-dark";
-        # package = pkgs.flat-remix-gtk;
-        # name = "Flat-Remix-GTK-Blue-Dark";
-        name = "Gruvbox-Yellow-Dark";
-
-        package = pkgs.gruvbox-gtk-theme.override {
-          themeVariants = ["all"];
-          tweakVariants = ["macos"];
-          iconVariants = ["Dark"];
-        };
-      };
+      # No `theme` here: gruvbox-gtk-theme was removed from nixpkgs (it needed
+      # gtk-engine-murrine, dropped as unmaintained GTK 2). Apps fall back to
+      # the default until a replacement is picked.
     };
     qt = {
       enable = true;
-      platformTheme.name = "gtk";
+      # "gtk3", not "gtk": home-manager maps the name "gtk" onto
+      # QT_QPA_PLATFORMTHEME=gtk2, which pulls the X11-only GTK2 bridge into
+      # every Qt process and segfaults in gdk_display_open the moment anything
+      # instantiates that style. "gtk3" asks for the qgtk3 platform theme, which
+      # is the one that actually works on Wayland.
+      platformTheme.name = "gtk3";
       # style.package = with pkgs; [adwaita-qt adwaita-qt6];
-      style.name = "Gruvbox-Yellow-Dark";
+      # NOTE: no style.name. It sets QT_STYLE_OVERRIDE, which takes a *Qt style*
+      # name (adwaita, breeze, kvantum, ...). "Gruvbox-Yellow-Dark" is a GTK
+      # theme name, so Qt found no such style and silently fell back -- the
+      # override never did anything. GTK theming for Qt apps comes from the
+      # gtk3 platform theme reading the GTK settings above.
     };
     systemd.user.services = let
       # NOTE: for later reading:

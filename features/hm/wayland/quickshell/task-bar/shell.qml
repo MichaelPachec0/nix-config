@@ -331,6 +331,20 @@ ShellRoot {
                 wakeSvc: resumeMonitor
             }
 
+            // Submap indicator for a monitor whose bar is covered by a
+            // fullscreen window. Sibling of the taskbar so it can read that
+            // bar's own surfaceVisible and height directly; both are per
+            // monitor, so a fullscreen app on one output leaves the other
+            // showing its normal rightRow pill.
+            Desktop.ModeOverlay {
+                screen: v.modelData
+                theme: screenTheme
+                svc: submapSvc
+                covered: !taskbar.surfaceVisible
+                locked: lockScreen.locked || lockScreen.captureArmed
+                barHeight: taskbar.implicitHeight
+            }
+
             // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a
             // `global, quickshell:hubToggle` dispatch (see hyprland.nix hubBind),
             // which fires the single ShellRoot GlobalShortcut; that toggles the

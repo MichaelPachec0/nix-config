@@ -1,230 +1,156 @@
+# TLP power policy for thanatos (ThinkPad P14s Gen 1, Ryzen 7 PRO 4750U).
+#
+# Every setting here was checked against this hardware with `tlp-stat` and the
+# corresponding sysfs attribute; knobs that TLP accepts but that have nowhere to
+# land on Renoir were removed rather than left as decoration. The removals are
+# recorded in the comments below so they do not get re-added from a generic
+# ThinkPad guide.
 {...}: {
   services.tlp = {
     enable = true;
     settings = {
-      # RUNTIME_PM_DRIVER_DENYLIST = ""; # empty = no driver exceptions
-      # Power mode: use battery settings by default
-      # TLP_DEFAULT_MODE = "BAT";
-      # TLP_PERSISTENT_DEFAULT = 1; # stick to battery mode
-
-      # CPU: power-efficient governor and disable boost on battery
-      CPU_SCALING_GOVERNOR_ON_BAT = "powersave";
+      # ---- CPU ------------------------------------------------------------
+      # Deliberately conservative on battery: runtime hours are the goal and
+      # on-battery responsiveness is explicitly not. acpi-cpufreq exposes only
+      # three P-states (1.7 / 1.6 / 1.4 GHz) and its `powersave` governor pins
+      # the lowest one, so battery runs at 1.4 GHz. That is intended.
+      #
+      # amd_pstate is NOT usable here and must not be re-proposed: this Zen2
+      # Renoir part has no `cppc` flag, so the driver never binds and the
+      # kernel parameter is a no-op (see nixos/thanatos/gaming.nix).
       CPU_SCALING_GOVERNOR_ON_AC = "schedutil";
-      CPU_ENERGY_PERF_POLICY_ON_AC = "performance";
-      CPU_ENERGY_PERF_POLICY_ON_BAT = "power";
+      CPU_SCALING_GOVERNOR_ON_BAT = "powersave";
+
+      # `tlp-stat -p` annotates this "(CPU not supported)", but the value
+      # demonstrably lands anyway: checked live, boost reads 1 with AC plugged
+      # in and 0 on battery, matching CPU_BOOST_ON_AC/CPU_BOOST_ON_BAT below --
+      # so TLP IS driving this knob despite the "not supported" annotation. It
+      # is kept because the kernel default is boost-enabled, and re-enabling
+      # boost on battery is the opposite of what this file is for. Verify
+      # after any change that /sys/devices/system/cpu/cpufreq/boost still
+      # reads 0 ON BATTERY specifically -- it is expected to read 1 on AC.
+      CPU_BOOST_ON_AC = 1;
+      CPU_BOOST_ON_BAT = 0;
+
+      # REMOVED: CPU_ENERGY_PERF_POLICY_ON_{AC,BAT}. Needs an
+      # energy_performance_preference attribute; acpi-cpufreq exposes none, so
+      # both values were silently discarded.
+
       PLATFORM_PROFILE_ON_AC = "performance";
       PLATFORM_PROFILE_ON_BAT = "low-power";
-      CPU_BOOST_ON_BAT = 0;
-      CPU_BOOST_ON_AC = 1;
 
-      # Disk: aggressive APM and faster spindown
-      DISK_APM_LEVEL_ON_BAT = "128 128";
-      DISK_SPINDOWN_TIMEOUT_ON_BAT = "120 120";
-      # DISK_IOSCHED = "mq-deadline"; # fallback if supported
-
-      # Radeon iGPU: lowest power levels
-      # RADEON_POWER_PROFILE_ON_BAT = "low";
-      RADEON_DPM_PERF_LEVEL_ON_BAT = "mid";
-
-      RADEON_DPM_STATE_ON_BAT = "battery";
-      # AMDGPU_ABM_LEVEL_ON_AC = 0;
-      AMDGPU_ABM_LEVEL_ON_BAT = 3;
-
-      # 04:00.0 Unassigned class [ff00]: Realtek Semiconductor Co., Ltd. RTS522A PCI Express Card Reader (rev 01)
-      #         Subsystem: Lenovo Device 5082
-      #         Control: I/O- Mem+ BusMaster+ SpecCycle- MemWINV- VGASnoop- ParErr+ Stepping- SERR+ FastB2B- DisINTx+
-      #         Status: Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- >SERR+ <PERR- INTx-
-      #         Latency: 0, Cache Line Size: 1020 bytes
-      #         Interrupt: pin A routed to IRQ 38
-      #         IOMMU group: 15
-      #         Region 0: Memory at fd600000 (32-bit, non-prefetchable) [size=4K]
-      #         Capabilities: [40] Power Management version 3
-      #                 Flags: PMEClk- DSI- D1+ D2+ AuxCurrent=375mA PME(D0-,D1+,D2+,D3hot+,D3cold+)
-      #                 Status: D0 NoSoftRst- PME-Enable- DSel=0 DScale=0 PME-
-      #         Capabilities: [50] MSI: Enable+ Count=1/1 Maskable- 64bit+
-      #                 Address: 00000000fee00000  Data: 0000
-      #         Capabilities: [70] Express (v2) Endpoint, IntMsgNum 0
-      #                 DevCap: MaxPayload 128 bytes, PhantFunc 0, Latency L0s unlimited, L1 unlimited
-      #                         ExtTag- AttnBtn- AttnInd- PwrInd- RBE+ FLReset- SlotPowerLimit 0W TEE-IO-
-      #                 DevCtl: CorrErr+ NonFatalErr+ FatalErr+ UnsupReq+
-      #                         RlxdOrd+ ExtTag+ PhantFunc- AuxPwr+ NoSnoop-
-      #                         MaxPayload 16384 bytes, MaxReadReq 16384 bytes
-      #                 DevSta: CorrErr+ NonFatalErr+ FatalErr- UnsupReq+ AuxPwr+ TransPend-
-      #                 LnkCap: Port #0, Speed 2.5GT/s, Width x1, ASPM L0s L1, Exit Latency L0s unlimited, L1 <64us
-      #                         ClockPM+ Surprise- LLActRep- BwNot- ASPMOptComp+
-      #                 LnkCtl: ASPM L1 Enabled; RCB 128 bytes, LnkDisable- CommClk+
-      #                         ExtSynch+ ClockPM+ AutWidDis- BWInt- AutBWInt- FltModeDis-
-      #                 LnkSta: Speed 2.5GT/s, Width x1
-      #                         TrErr- Train- SlotClk+ DLActive- BWMgmt- ABWMgmt-
-      #                 DevCap2: Completion Timeout: Not Supported, TimeoutDis+ NROPrPrP- LTR+
-      #                         10BitTagComp- 10BitTagReq- OBFF Via message/WAKE#, ExtFmt- EETLPPrefix-
-      #                         EmergencyPowerReduction Not Supported, EmergencyPowerReductionInit-
-      #                         FRS- TPHComp- ExtTPHComp-
-      #                         AtomicOpsCap: 32bit- 64bit- 128bitCAS-
-      #                 DevCtl2: Completion Timeout: 50us to 50ms, TimeoutDis+
-      #                         AtomicOpsCtl: ReqEn-
-      #                         IDOReq- IDOCompl- LTR+ EmergencyPowerReductionReq-
-      #                         10BitTagReq- OBFF Via WAKE#, EETLPPrefixBlk-
-      #                 LnkCtl2: Target Link Speed: Unknown, EnterCompliance+ SpeedDis+
-      #                         Transmit Margin: Unknown, EnterModifiedCompliance+ ComplianceSOS+
-      #                         Compliance Preset/De-emphasis: Unknown
-      #                 LnkSta2: Current De-emphasis Level: -3.5dB, EqualizationComplete- EqualizationPhase1-
-      #                         EqualizationPhase2- EqualizationPhase3- LinkEqualizationRequest-
-      #                         Retimer- 2Retimers- CrosslinkRes: unsupported, FltMode-
-      #         Capabilities: [100 v2] Advanced Error Reporting
-      #                 UESta:  DLP- SDES- TLP- FCP- CmpltTO- CmpltAbrt- UnxCmplt- RxOF- MalfTLP-
-      #                         ECRC- UnsupReq+ ACSViol- UncorrIntErr- BlockedTLP- AtomicOpBlocked- TLPBlockedErr-
-      #                         PoisonTLPBlocked- DMWrReqBlocked- IDECheck- MisIDETLP- PCRC_CHECK- TLPXlatBlocked-
-      #                 UEMsk:  DLP- SDES- TLP- FCP- CmpltTO- CmpltAbrt- UnxCmplt- RxOF- MalfTLP-
-      #                         ECRC- UnsupReq- ACSViol- UncorrIntErr+ BlockedTLP- AtomicOpBlocked- TLPBlockedErr-
-      #                         PoisonTLPBlocked- DMWrReqBlocked- IDECheck- MisIDETLP- PCRC_CHECK- TLPXlatBlocked-
-      #                 UESvrt: DLP+ SDES+ TLP- FCP+ CmpltTO- CmpltAbrt- UnxCmplt- RxOF+ MalfTLP+
-      #                         ECRC- UnsupReq- ACSViol- UncorrIntErr+ BlockedTLP- AtomicOpBlocked- TLPBlockedErr-
-      #                         PoisonTLPBlocked- DMWrReqBlocked- IDECheck- MisIDETLP- PCRC_CHECK- TLPXlatBlocked-
-      #                 CESta:  RxErr- BadTLP- BadDLLP- Rollover- Timeout- AdvNonFatalErr+ CorrIntErr- HeaderOF-
-      #                 CEMsk:  RxErr- BadTLP- BadDLLP- Rollover- Timeout- AdvNonFatalErr+ CorrIntErr+ HeaderOF-
-      #                 AERCap: First Error Pointer: 14, ECRCGenCap+ ECRCGenEn- ECRCChkCap+ ECRCChkEn-
-      #                         MultHdrRecCap- MultHdrRecEn- TLPPfxPres- HdrLogCap-
-      #                 HeaderLog: 40001001 0000000f fd600010 00000000
-      #         Capabilities: [140 v1] Device Serial Number 00-00-00-01-00-4c-e0-00
-      #         Capabilities: [150 v1] Latency Tolerance Reporting
-      #                 Max snoop latency: 1048576ns
-      #                 Max no snoop latency: 1048576ns
-      #         Capabilities: [158 v1] L1 PM Substates
-      #                 L1SubCap: PCI-PM_L1.2+ PCI-PM_L1.1+ ASPM_L1.2+ ASPM_L1.1+ L1_PM_Substates+
-      #                          PortCommonModeRestoreTime=60us PortTPowerOnTime=60us
-      #                 L1SubCtl1: PCI-PM_L1.2- PCI-PM_L1.1- ASPM_L1.2- ASPM_L1.1-
-      #                           T_CommonMode=0us LTR1.2_Threshold=<error>
-      #                 L1SubCtl2: T_PwrOn=<error>
-      #         Kernel driver in use: rtsx_pci
-      #         Kernel modules: rtsx_pci
-      # PCIe power management
-      # PCIE_ASPM_ON_BAT = "powersave"; # might be too agressive, some devices wont come back from this
-      PCIE_ASPM_ON_BAT = "powersupersave"; # might be too agressive, some devices wont come back from this
-      # PCIE_ASPM_ON_AC = "powersave";
-      RUNTIME_PM_DENYLIST = "04:00.0 00:02.4";
-      RUNTIME_PM_DRIVER_DENYLIST="rtsx_pci";
-      # PCIE_ASPM_ON_AC = "powersupersave";
-
-      # Runtime PM for PCI devices
-      RUNTIME_PM_ON_BAT = "on";
+      # ---- PCIe / runtime PM ----------------------------------------------
+      # THE important setting in this file. TLP's "on" means "hold the device
+      # powered"; "auto" means "may runtime-suspend". This read "on" on battery,
+      # i.e. runtime PM was disabled exactly when it was wanted, and every PCI
+      # device sat at power/control=on, runtime_status=active.
+      #
+      # It matters out of proportion to the devices themselves: a device held in
+      # D0 keeps its parent bridge and root port awake, which blocks the SoC
+      # from reaching deep package C-states. One un-suspended device taxes the
+      # whole platform.
       RUNTIME_PM_ON_AC = "on";
-      # RUNTIME_PM_ON_AC = "auto";
+      RUNTIME_PM_ON_BAT = "auto";
 
-      # USB autosuspend
+      # Empty string, NOT omission. Leaving this key out does not mean "no
+      # driver denylist" -- TLP falls back to the baseline baked into
+      # share/tlp/defaults.conf, which is
+      #   "mei_me nouveau radeon xhci_hcd"
+      # and would pin BOTH onboard USB 3.1 controllers (07:00.3 and 07:00.4,
+      # driver xhci_hcd) at control=on forever. Those two sit under bridge
+      # 00:08.1 together with the GPU, HDMI audio, the PSP and HD audio, and a
+      # bridge only suspends once every child is idle -- so the stock default
+      # would hold that entire root port awake and defeat the setting above.
+      # "" is TLP's documented way to disable the driver denylist completely.
+      #
+      # Trade-off accepted deliberately: xhci_hcd is in TLP's default list
+      # because USB controller runtime PM has a history of wake regressions.
+      # If USB wake or a specific device misbehaves, restore the stock list
+      # rather than reverting RUNTIME_PM_ON_BAT.
+      RUNTIME_PM_DRIVER_DENYLIST = "";
+
+      # No address denylist either. The previous RUNTIME_PM_DENYLIST
+      # "04:00.0 00:02.4" named ONE device twice over: 00:02.4 is a GPP bridge
+      # whose only child is 04:00.0, the Realtek RTS522A card reader. The NVMe
+      # hangs off a different root port (00:02.1 -> 01:00.0), so an aggressive
+      # policy cannot wedge storage; the worst case is a card needing a replug.
+      # If the reader does misbehave, re-add:
+      #   RUNTIME_PM_DENYLIST = "04:00.0 00:02.4";
+
+      # ---- PCIe ASPM ------------------------------------------------------
+      # "default" is byte-identical to TLP's own stock default for AC; stated
+      # explicitly (rather than omitted) so the AC/BAT pair reads symmetrically
+      # next to each other, matching how the rest of this file always states
+      # both sides.
+      PCIE_ASPM_ON_AC = "default";
+      PCIE_ASPM_ON_BAT = "powersupersave";
+
+      # ---- USB ------------------------------------------------------------
+      # USB_EXCLUDE_BTUSB is the TLP 1.9 name; USB_BLACKLIST_BTUSB is a
+      # deprecated alias. 0 = do not exclude, i.e. Bluetooth may autosuspend.
+      # If a YubiKey or the KM003C meter starts dropping out once runtime PM is
+      # aggressive, add its VID:PID to USB_DENYLIST rather than turning
+      # USB_AUTOSUSPEND off wholesale.
       USB_AUTOSUSPEND = 1;
-      USB_BLACKLIST_BTUSB = 0; # allow Bluetooth to suspend
+      USB_EXCLUDE_BTUSB = 0;
 
-      # Sound: power saving enabled
+      # ---- Radio / audio ---------------------------------------------------
+      WIFI_PWR_ON_AC = "off";
+      WIFI_PWR_ON_BAT = "on";
+      # 0 on AC deviates from TLP's own default of 1. This is NOT a power
+      # optimisation -- it costs a little AC draw, not saves it -- it avoids
+      # the audible HDA codec resume pop when the codec is woken from
+      # power-save while plugged in. On battery the pop is an acceptable
+      # trade for the power saved.
+      SOUND_POWER_SAVE_ON_AC = 0;
       SOUND_POWER_SAVE_ON_BAT = 1;
       SOUND_POWER_SAVE_CONTROLLER = 1;
 
-      # Wi-Fi power save
-      WIFI_PWR_ON_BAT = "on";
+      # ---- Panel ------------------------------------------------------------
+      # Adaptive Backlight Management. The panel is the single largest consumer
+      # left on this machine, so this is the one graphics knob here that is not
+      # decoration.
+      #
+      # This was briefly removed on the strength of a BAD PROBE: a
+      # `find /sys -name panel_power_savings` without -L, which silently never
+      # traversed /sys/class/drm/card1-eDP-1 because that is a symlink, and so
+      # reported the attribute as absent. It is not. The real path is
+      #   /sys/class/drm/card1-eDP-1/amdgpu/panel_power_savings
+      # and it is writable. Verify with `find -L`, or just cat that path -- do
+      # not re-derive this with a bare `find`.
+      #
+      # Levels are 0 (off) to 4 (most aggressive). ABM dims the backlight and
+      # compensates in the pixel pipeline, so higher levels trade colour
+      # accuracy and visible shifts on gradients for power. 3 is the level TLP
+      # documents as a strong-but-usable default; drop to 1-2 if the shifting is
+      # distracting on photos or video. AC is left at 0: there is no reason to
+      # pay the image-quality cost while plugged in.
+      AMDGPU_ABM_LEVEL_ON_AC = 0;
+      AMDGPU_ABM_LEVEL_ON_BAT = 3;
 
-      # Disable hardware when on battery
-      # DEVICES_TO_DISABLE_ON_BAT = ["bluetooth" "wwan"];
-      # DEVICES_TO_ENABLE_ON_AC = ["bluetooth"];
-
-      # Disable noisy NMI watchdog
+      # ---- Misc ------------------------------------------------------------
       NMI_WATCHDOG = 0;
 
-      # Battery charge thresholds (if supported)
+      # Charge thresholds. NOTE the tension: capping at 80% removes a fifth of
+      # usable capacity and so costs more runtime than everything else in this
+      # file recovers. It is kept anyway, as a deliberate trade of runtime for
+      # calendar life on a 2020 pack. Raising STOP to 90/100 is the single
+      # fastest way to get hours back if that trade is ever revisited.
       START_CHARGE_THRESH_BAT0 = 60;
       STOP_CHARGE_THRESH_BAT0 = 80;
+
+      # REMOVED, all verified to do nothing on this machine:
+      #   DISK_APM_LEVEL_ON_BAT, DISK_SPINDOWN_TIMEOUT_ON_BAT
+      #     ATA-only; this host is NVMe-only. The NVMe already runtime-suspends
+      #     (power/control=auto) with a 100 ms latency tolerance permitting deep
+      #     APST states, which TLP is not involved in.
+      #   RADEON_DPM_PERF_LEVEL_ON_BAT, RADEON_DPM_STATE_ON_BAT
+      #     `tlp-stat -g` returns an empty graphics section and
+      #     power_dpm_force_performance_level still read `auto` on battery.
+      #     Additionally, the old setting was "mid", which is not in TLP's valid
+      #     domain (auto|low|high), so it may have been rejected as invalid.
+      # (AMDGPU_ABM_LEVEL_ON_BAT was listed here as inert. That was wrong -- see
+      # the Panel section above. It is back, and it is real.)
     };
-    # settings = {
-    #   # Default power mode (can be overridden by AC/BAT state)
-    #   TLP_DEFAULT_MODE = "AC";
-    #   TLP_PERSISTENT_DEFAULT = 1;
-    #
-    #   ###################
-    #   # CPU GOVERNORS
-    #   ###################
-    #   CPU_SCALING_GOVERNOR_ON_AC = "performance";
-    #   CPU_SCALING_GOVERNOR_ON_BAT = "powersave";
-    #
-    #   CPU_ENERGY_PERF_POLICY_ON_AC = "performance";
-    #   # CPU_ENERGY_PERF_POLICY_ON_BAT = "power";
-    #
-    #   CPU_MIN_PERF_ON_AC = 0;
-    #   CPU_MAX_PERF_ON_AC = 100;
-    #   CPU_MIN_PERF_ON_BAT = 0;
-    #   CPU_MAX_PERF_ON_BAT = 30;
-    #
-    #   AMD_CPU_BOOST_ON_AC = 1;
-    #   AMD_CPU_BOOST_ON_BAT = 0;
-    #
-    #   #####################
-    #   # PCIe Runtime Power
-    #   #####################
-    #   RUNTIME_PM_ON_AC = "on";
-    #   RUNTIME_PM_ON_BAT = "auto";
-    #
-    #   PCIE_ASPM_ON_AC = "default";
-    #   PCIE_ASPM_ON_BAT = "powersupersave";
-    #
-    #   #################
-    #   # USB AUTOSUSPEND
-    #   #################
-    #   USB_AUTOSUSPEND = 1;
-    #   USB_BLACKLIST_BTUSB = 0;
-    #   USB_ALLOWLIST = "";
-    #
-    #   ##################
-    #   # AUDIO & BLUETOOTH
-    #   ##################
-    #   SOUND_POWER_SAVE_ON_AC = 1;
-    #   SOUND_POWER_SAVE_ON_BAT = 10;
-    #
-    #   WIFI_PWR_ON_AC = "off";
-    #   WIFI_PWR_ON_BAT = "on";
-    #
-    #   BT_POWER_ON_AC = 1;
-    #   BT_POWER_ON_BAT = 0;
-    #
-    #   #################
-    #   # THINKPAD-SPECIFIC
-    #   #################
-    #   NATACPI_ENABLE = 1;
-    #   TPACPI_ENABLE = 1;
-    #   TPACPI_IGNORE_BIOS = 1;
-    #
-    #   START_CHARGE_THRESH_BAT0 = 50;
-    #   STOP_CHARGE_THRESH_BAT0 = 80;
-    #
-    #   #################
-    #   # DISK SETTINGS
-    #   #################
-    #   DISK_APM_LEVEL_ON_AC = "254 254";
-    #   DISK_APM_LEVEL_ON_BAT = "128 128";
-    #
-    #   SATA_LINKPWR_ON_AC = "max_performance";
-    #   SATA_LINKPWR_ON_BAT = "min_power";
-    #
-    #   #######################
-    #   # GPU (RADEON/AMDGPU)
-    #   #######################
-    #   # RADEON_POWER_PROFILE_ON_AC = "high";
-    #   # RADEON_POWER_PROFILE_ON_BAT = "low";
-    #   # RADEON_DPM_PERF_LEVEL_ON_AC = "auto";
-    #   # RADEON_DPM_PERF_LEVEL_ON_BAT = "low";
-    #
-    #   # Uncomment if you use amdgpu instead of radeon:
-    #   AMDGPU_DPM_PERF_LEVEL_ON_AC = "auto";
-    #   AMDGPU_DPM_PERF_LEVEL_ON_BAT = "low";
-    #
-    #   #################
-    #   # MISC
-    #   #################
-    #   RESTORE_DEVICE_STATE_ON_STARTUP = 1;
-    #   TLP_STATS = 1;
-    # };
   };
-
-  # Optional: If you're using amd_pstate, include this in your boot kernel params
-  # boot.kernelParams = ["amd_pstate=active"];
-
-  # Optional: enable CPU frequency scaling frontend
-  # powerManagement.cpuFreqGovernor = "performance"; # fallback
 }

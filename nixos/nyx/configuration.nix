@@ -1178,7 +1178,7 @@ in {
         feh
         fastfetch
         nix-output-monitor
-        # figma-linux
+        figma-linux
         rquickshare
         stable.libreoffice
         sbctl
@@ -1401,7 +1401,13 @@ in {
     programs.yubikey-touch-detector.enable = true;
     qt = {
       enable = true;
-      platformTheme = "gtk2";
+      # No platformTheme here. The NixOS qt module's enum has no "gtk3" value,
+      # and "gtk2" installs the X11-only GTK2 bridge and exports
+      # QT_QPA_PLATFORMTHEME=gtk2 system-wide -- that combination segfaults Qt6
+      # apps in gdk_display_open and also exit(1)s Qt greeters that inherit it.
+      # enable = true is still wanted: it is what puts QT_PLUGIN_PATH and
+      # QML2_IMPORT_PATH on the session. The platform theme itself is selected
+      # per-user by home-manager (qt.platformTheme.name = "gtk3").
     };
     programs.zoxide.enable = true;
 
