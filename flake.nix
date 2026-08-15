@@ -175,6 +175,10 @@
       url = "github:MichaelPachec0/ncspot";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    gruvbox-gtk-theme = {
+      url = "github:MichaelPachec0/Gruvbox-GTK-Theme";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
