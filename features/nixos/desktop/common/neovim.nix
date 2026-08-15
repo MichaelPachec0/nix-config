@@ -122,6 +122,7 @@ in {
         arduino-language-server
         arduino-cli
         nodejs
+        yaml-language-server
       ]
       # ++ (with pkgs.nodePackages; [
       ++ (with pkgs; [
