@@ -3,6 +3,7 @@
   lib,
   pkgs,
   inputs,
+  appRun,
   ...
 }: let
   cfg = config;
@@ -80,6 +81,26 @@ in {
         show-icons = true;
         sidebar-mode = true;
         config-modi = "window,drun";
+
+        # ---- uwsm app launching ------------------------------------------
+        # Put this in rofi's CONFIG rather than on the `rofi -show ...` command
+        # line so every entry point inherits it: the Super+Space combi menu,
+        # the plugin modi, rofi-power-menu, and hy3-project's picker. rofi's
+        # `run-command` is consumed by helper_execute_command(), which is the
+        # single launch path for both `run` and `drun`, so one setting covers
+        # both -- despite the manual filing it under "Run settings".
+        #
+        # app-run (../app-run.nix) is what decides whether a scope is created at
+        # all; it degrades to a plain exec outside a uwsm session. Without this,
+        # an app started from the launcher inherits rofi's own scope and is torn
+        # down with it the moment the launcher closes.
+        run-command = "${appRun}/bin/app-run {cmd}";
+        # Default is "{terminal} -e {cmd}". app-run -T maps to app2unit's -T,
+        # which resolves the terminal through xdg-terminal-exec (pinned into the
+        # app2unit package by nixpkgs) and falls back to "$TERMINAL -e" off the
+        # uwsm path -- so the terminal gets its own scope instead of being
+        # parented to rofi.
+        run-shell-command = "${appRun}/bin/app-run -T -- {cmd}";
       };
       plugins = with pkgs;
         [

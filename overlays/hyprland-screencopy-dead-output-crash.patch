@@ -1,0 +1,62 @@
+Fix Hyprland compositor crash when a screencopy client asks for a capture
+frame on an output that has just been removed (SIGSEGV in
+Screenshare::CScreenshareFrame::transform).
+
+Root cause: CScreenshareSession::monitor() deliberately returns nullptr once
+its PHLMONITORREF expires, and every other consumer in ScreenshareFrame.cpp
+(done(), share()) null-checks it. CScreenshareFrame::transform() does not --
+it dereferences m_session->monitor() straight into ->m_transform. The
+ext-image-copy-capture frame constructor calls it unconditionally at the end
+of CImageCopyCaptureFrame::CImageCopyCaptureFrame (sendTransform), so any
+create_frame request that is already in flight when the output disappears
+faults the compositor.
+
+Observed on resume from S3 with an external monitor unplugged while asleep:
+aquamarine drops HDMI-A-1 ("Connector HDMI-A-1 disconnected / Disabling
+output"), the session's monitorDestroyed listener stops the session and sends
+`stopped`, but the client (a Quickshell ScreencopyView lock backdrop built
+from a Quickshell.screens model that has not yet observed the wl_output going
+away) has already queued create_frame. The protocol requires the compositor to
+tolerate requests sent before the client processes `stopped`.
+
+With the guard the frame is still created and simply reports the default
+transform; the client's subsequent capture request fails cleanly through the
+existing CScreenshareFrame::share() -> ERROR_STOPPED -> sendFailed(STOPPED)
+path, so no further change is needed.
+
+Applies to Hyprland v0.56.0 and v0.56.1 (the deref is byte-identical in both;
+nothing in the v0.56.0..v0.56.1 diff touches this file).
+
+Upstream: the crash site no longer exists on main -- 901881c9 "render: always
+render in normal transform (#15714)" (2026-08-04) reduced transform() to
+`return WL_OUTPUT_TRANSFORM_NORMAL;` as a side effect of a rendering refactor,
+not as a crash fix. That commit is NOT on the 0.56.x release branch, so every
+shipped 0.56.x is still vulnerable and this patch is the backport. It does not
+apply to main (the context is gone); drop it when moving past 0.56.x.
+
+See docs/hyprland-screencopy-dead-output-crash for the full analysis.
+---
+diff --git a/src/managers/screenshare/ScreenshareFrame.cpp b/src/managers/screenshare/ScreenshareFrame.cpp
+--- a/src/managers/screenshare/ScreenshareFrame.cpp
++++ b/src/managers/screenshare/ScreenshareFrame.cpp
+@@ -508,9 +508,19 @@ Vector2D CScreenshareFrame::bufferSize() const {
+ }
+
+ wl_output_transform CScreenshareFrame::transform() const {
++    if UNLIKELY (m_session.expired())
++        return WL_OUTPUT_TRANSFORM_NORMAL;
++
+     switch (m_session->m_type) {
+         case SHARE_REGION:
+-        case SHARE_MONITOR: return m_session->monitor()->m_transform;
++        case SHARE_MONITOR: {
++            // The shared monitor can be gone by the time a client asks for the
++            // frame's transform: CScreenshareSession::monitor() returns nullptr
++            // once m_monitor expires, and dereferencing it faults. done() and
++            // share() already null-check it, this path did not.
++            const auto MON = m_session->monitor();
++            return MON ? MON->m_transform : WL_OUTPUT_TRANSFORM_NORMAL;
++        }
+         default:
+         case SHARE_WINDOW: return WL_OUTPUT_TRANSFORM_NORMAL;
+     }

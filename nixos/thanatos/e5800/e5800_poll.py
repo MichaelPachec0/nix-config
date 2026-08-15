@@ -24,20 +24,58 @@ HOSTPORT = (HOST.split("//")[-1].split("/")[0], 80)
 
 WEB_INTERVAL = 4.0
 SSH_INTERVAL = 20.0
+# One batched session per cycle carries every command, so it needs more room
+# than a single call did.
+SSH_TIMEOUT = 45
 RECOVER_INTERVAL = 2.0
 RECOVER_TIMEOUT = 120.0
-QENG_INTERVAL = 30.0  # serving-cell bands change slowly; refresh sparingly
-QCAINFO_INTERVAL = 10.0  # SCC activation changes with traffic; refresh often
+# A reboot is now the whole router, not just the modem, and the box takes
+# 60-90s to come back -- long enough that the window sized for a modem reset
+# would report "timeout" while it was still booting normally.
+REBOOT_TIMEOUT = 240.0
+# One debug_at_info call now carries QENG, QCAINFO and CEREG together, so the
+# three separate intervals they used to have collapse into this one.
+#
+# 30s is a deliberate compromise. Those commands used to be gated individually
+# (QENG 30s, CEREG 60s, QCAINFO 10s), but debug_at_info is all-or-nothing --
+# its signature is {bus, slot} with no command filter -- so every call runs all
+# 32 AT commands the firmware puts in that batch. Keeping QCAINFO's old 10s
+# would mean ~192 AT commands a minute against the ~9 we issue today. 30s costs
+# some carrier-aggregation responsiveness and buys back registration freshness,
+# at ~64/minute. Do not lower it without measuring what the modem does under
+# that load.
+DEBUG_AT_INTERVAL = 30.0
+SIM_INTERVAL = 900.0  # the SIM's own name changes only on a SIM swap
+# How soon to try again when a reading has never landed. Gating solely on
+# "cache is empty" retries every 4s cycle forever on a router that cannot
+# answer, which defeats the interval; gating solely on elapsed time makes a
+# failed first read wait the full 900s before the operator name can appear.
+SIM_RETRY = 30.0
+# Battery level moves slowly and the MCU's warning thresholds are static
+# config, so neither belongs on the 4s cycle. The web-RPC mirror already
+# carries a percent every cycle; these two add cycle count, the abnormal flag
+# and the thresholds.
+MCU_INTERVAL = 60.0
 
-# Last good raw QENG payload + when it was last fetched. Kept across cycles so a
-# transient SSH/AT miss does not blank cellular.ca and flicker the widget.
+# Last good raw QENG payload + when the batch that carries it last ran. Kept
+# across cycles so a transient SSH/AT miss does not blank cellular.ca and
+# flicker the widget. Latched per reading rather than per call: one command
+# inside the batch can come back empty while the others are good.
 _QENG_CACHE = None
-_QENG_LAST = 0.0
-
-# Last good raw QCAINFO payload + fetch time, latched like QENG so a transient
-# SSH/AT miss does not blank cellular.ca.
+_CEREG_CACHE = None
 _QCAINFO_CACHE = None
-_QCAINFO_LAST = 0.0
+_QENG_NBR_CACHE = None
+_DEBUG_AT_LAST = 0.0
+
+# The SIM's brand, straight from cellular.sim status -- no longer parsed out of
+# AT+QSPN, which this modem answers with a bare OK because the SIM carries no
+# SPN record.
+_SIM_CACHE = None
+_SIM_LAST = 0.0
+
+_MCU_CACHE = None
+_WARN_CACHE = None
+_MCU_LAST = 0.0
 
 
 def _read(path):
@@ -99,69 +137,115 @@ def _ssh(cmd):
             "-o", "ConnectTimeout=5",
             "{}@{}".format(USER, HOSTPORT[0]), cmd]
     try:
-        p = subprocess.run(args, capture_output=True, timeout=15)
+        p = subprocess.run(args, capture_output=True, timeout=SSH_TIMEOUT)
         return p.stdout.decode(), p.returncode
     except subprocess.SubprocessError:
         return "", 255
 
 
-def _signals():
-    """Returns (signals_list_or_None, ssh_auth_failed)."""
-    out, rc = _ssh("ubus call cellular.collect get_signals '{\"bus\":\"x\"}'")
+# Marker framing for the batched session below. Chosen to be impossible in ubus
+# JSON, AT responses or /proc/net/dev output, so a payload can never forge one.
+_MARK = "@@e5800:{}@@"
+
+
+def _ssh_batch(steps):
+    """Run several remote commands over ONE ssh connection, in order.
+
+    steps: [(name, remote_command)] -> ({name: stdout}, ssh_auth_failed)
+
+    One connection rather than one per command: every extra connect pays a full
+    SSH handshake against a router whose sshd is slow under load, and the AT
+    passthrough commands share a single modem channel that answers better when
+    they are issued back to back in one session than across reconnects.
+
+    Commands run synchronously and in the given order -- the remote shell moves
+    to the next only after the previous exits -- so AT calls never overlap.
+    Output is framed by markers rather than split by position, because any
+    single command may print nothing at all.
+
+    A command that fails does not abort the rest: each is followed by `|| true`
+    so one missing binary or a busy modem cannot blank every other reading.
+    """
+    if not steps:
+        return {}, False
+    script = []
+    for name, cmd in steps:
+        script.append("printf '\\n%s\\n'" % _MARK.format(name))
+        script.append("{ %s ; } 2>/dev/null || true" % cmd)
+    script.append("printf '\\n%s\\n'" % _MARK.format("end"))
+    out, rc = _ssh("; ".join(script))
     if rc == 255:
-        return None, True
+        return {}, True
+    result = {}
+    names = [n for n, _ in steps] + ["end"]
+    # Walk the markers in order; anything between one marker and the next
+    # belongs to that command.
+    pos = {}
+    for n in names:
+        idx = out.find(_MARK.format(n))
+        if idx >= 0:
+            pos[n] = idx
+    ordered = [(pos[n], n) for n in names if n in pos]
+    ordered.sort()
+    for i, (idx, n) in enumerate(ordered):
+        if n == "end":
+            continue
+        start = idx + len(_MARK.format(n))
+        stop = ordered[i + 1][0] if i + 1 < len(ordered) else len(out)
+        result[n] = out[start:stop].strip()
+    return result, False
+
+
+def _parse_signals(out):
+    """Interpret the get_signals payload from the batched session."""
+    if not out:
+        return None
     try:
-        return (json.loads(out) or {}).get("signals"), False
+        return (json.loads(out) or {}).get("signals")
     except (ValueError, json.JSONDecodeError):
-        return None, False
+        return None
 
 
-# AT+QENG="servingcell" via the modem AT passthrough. The inner quotes around
-# servingcell must survive the JSON string (\") and the remote shell's single
-# quotes, hence the double-escaping. get_result_AT returns {"data": <raw AT>}.
-_QENG_CMD = ("ubus call modem.CPU.AT get_result_AT "
-             "'{\"cmd\":\"AT+QENG=\\\"servingcell\\\"\","
-             "\"timeout\":5,\"source_flag\":0,\"sub_id\":0}'")
+# Every AT reading now arrives through cellular_manager's own debug_at_info,
+# which runs the commands behind the lock held by the process that owns
+# /dev/smd9. Writing to modem.CPU.AT ourselves -- which is what the four
+# separate commands here used to do -- shares that channel with GL's gl_modem
+# poller, and under contention the modem answers with CROSSED responses:
+# another command's reply arriving for yours, indistinguishable from a real
+# answer. One call now returns 32 AT results; we consume three of them.
+_DEBUG_AT_CMD = ("ubus call cellular.network debug_at_info "
+                 "'{\"bus\":\"cpu\",\"slot\":1}'")
+
+# The SIM's brand. Replaces AT+QSPN entirely: this modem's SIM carries no SPN
+# record and answered a bare OK, while cellular.sim status reports "Mint".
+_SIM_STATUS_CMD = "ubus call cellular.sim status '{\"bus\":\"cpu\"}'"
+
+# Keys into the debug_at_info result. These must match the firmware's `cmd`
+# strings byte for byte -- including the inner quotes on QENG -- or the reading
+# silently goes missing and the cache never refreshes.
+#
+# QENG: the camped serving cells, which populate even in RRC idle ("NOCONN"),
+#   and the source of the registered PLMN.
+# QCAINFO: the PCC plus every SCC -> the full carrier-aggregation view.
+# CEREG: the EPS registration state, whose <stat> is the only authoritative
+#   roaming signal (1 = home, 5 = roaming). Comparing PLMNs cannot answer this:
+#   an MVNO rides its host's PLMN, so Mint on T-Mobile would read as roaming.
+_AT_QENG = "AT+QENG=\"servingcell\""
+_AT_QCAINFO = "AT+QCAINFO"
+_AT_CEREG = "AT+CEREG?"
+# Neighbour cells the modem could hand off to. Free -- same debug_at_info
+# response as the three above.
+_AT_QENG_NBR = "AT+QENG=\"neighbourcell\""
 
 
-def _qeng():
-    """Camped serving-cell bands via AT passthrough (populates even in RRC
-    idle, unlike QCAINFO/QNWINFO). Returns (raw_at_data_or_None, ssh_auth)."""
-    out, rc = _ssh(_QENG_CMD)
-    if rc == 255:
-        return None, True
-    try:
-        return (json.loads(out) or {}).get("data"), False
-    except (ValueError, json.JSONDecodeError):
-        return None, False
 
 
-# AT+QCAINFO via the modem AT passthrough (same channel/escaping as QENG). Lists
-# the PCC + every SCC with activation state -> the full carrier-aggregation view.
-_QCAINFO_CMD = ("ubus call modem.CPU.AT get_result_AT "
-                "'{\"cmd\":\"AT+QCAINFO\",\"timeout\":5,"
-                "\"source_flag\":0,\"sub_id\":0}'")
-
-
-def _qcainfo():
-    """Component-carrier aggregation via AT passthrough.
-    Returns (raw_at_data_or_None, ssh_auth)."""
-    out, rc = _ssh(_QCAINFO_CMD)
-    if rc == 255:
-        return None, True
-    try:
-        return (json.loads(out) or {}).get("data"), False
-    except (ValueError, json.JSONDecodeError):
-        return None, False
-
-
-def _netdev_bytes():
-    """Cumulative rx/tx bytes for the modem uplink netdev via /proc/net/dev on the
-    router. Returns ((rx, tx) or None, ssh_auth_failed)."""
+def _parse_netdev(out):
+    """Cumulative (rx, tx) for the modem uplink netdev, from /proc/net/dev text
+    supplied by the batched session. None when the device is absent."""
+    if not out:
+        return None
     dev = NETDEV
-    out, rc = _ssh("cat /proc/net/dev")
-    if rc == 255:
-        return None, True
     try:
         for line in out.splitlines():
             if ":" not in line:
@@ -174,10 +258,10 @@ def _netdev_bytes():
                                 or name.startswith("modem")):
                 continue
             f = rest.split()
-            return (int(f[0]), int(f[8])), False
+            return (int(f[0]), int(f[8]))
     except (ValueError, IndexError):
         pass
-    return None, False
+    return None
 
 
 def _load_state():
@@ -224,8 +308,10 @@ def collect_once():
     ts = int(time.time())
     if not _reachable():
         return L.build_status({"ts": ts, "reachable": False})
-    parts = {"ts": ts, "reachable": True, "carrier": "T-Mobile",
-             "reset_day": RESET_DAY}
+    # No hardcoded carrier: device.carrier is derived from the SIM and the
+    # registered network in build_status. A literal here read "T-Mobile" on any
+    # SIM and while roaming on anyone else's network.
+    parts = {"ts": ts, "reachable": True, "reset_day": RESET_DAY}
     try:
         sid = _login()
         parts["get_status"] = _call(sid, "system", "get_status")
@@ -236,34 +322,107 @@ def collect_once():
         parts["plugged"] = bool((_call(sid, "lpm", "get_status") or {}).get("power_insert"))
     except (urllib.error.URLError, OSError, KeyError, ValueError):
         pass
-    sig, sig_auth = _signals()
+    # ONE ssh session per cycle carries every remote read. Each of these used to
+    # open its own connection -- six per cycle -- paying a full SSH handshake
+    # each time against a router whose sshd is slow under load, and issuing the
+    # AT passthrough calls across separate sessions rather than back to back on
+    # one channel. They run synchronously and in this order; the remote shell
+    # starts each only after the previous exits, so AT calls never overlap.
+    #
+    # Interval gating still applies, but only to decide what goes INTO the
+    # batch: QSPN changes on a SIM swap and QCAINFO with traffic, so there is
+    # no reason to ask for both every cycle even when they are free to carry.
+    global _QENG_CACHE, _QCAINFO_CACHE, _CEREG_CACHE, _DEBUG_AT_LAST
+    global _QENG_NBR_CACHE
+    global _SIM_CACHE, _SIM_LAST, _MCU_CACHE, _WARN_CACHE, _MCU_LAST
+
+    steps = [("signals", "ubus call cellular.collect get_signals '{\"bus\":\"x\"}'"),
+             # The uplink interface itself: how long since it dialled, plus the
+             # lease it got. Every cycle -- it is a netifd status read and never
+             # touches the modem.
+             ("iface", "ubus call network.interface.modem_cpu status")]
+    at_due = _DEBUG_AT_LAST == 0.0 or ts - _DEBUG_AT_LAST >= DEBUG_AT_INTERVAL
+    if at_due:
+        steps.append(("atinfo", _DEBUG_AT_CMD))
+    sim_gap = SIM_INTERVAL if _SIM_CACHE else SIM_RETRY
+    if _SIM_LAST == 0.0 or ts - _SIM_LAST >= sim_gap:
+        steps.append(("simstatus", _SIM_STATUS_CMD))
+    if _MCU_LAST == 0.0 or ts - _MCU_LAST >= MCU_INTERVAL:
+        steps.append(("mcu", "ubus call mcu status"))
+        steps.append(("mcuwarn", "ubus call mcu get_warning"))
+    # NOT replaced by cellular.collect get_traffic. That method reports a single
+    # combined `traffic_total` per slot, which would collapse the rx/tx split
+    # the popup shows. /proc/net/dev is a plain file read and never touches the
+    # AT channel, so there is nothing to gain by trading data away for it.
+    steps.append(("netdev", "cat /proc/net/dev"))
+
+    got, ssh_auth = _ssh_batch(steps)
+
+    sig = _parse_signals(got.get("signals"))
     parts["signals"] = sig
-    # Refresh the serving-cell bands sparingly and latch the last good value:
-    # QENG shares the modem AT channel and the router's SSH is flaky under load,
-    # so a per-cycle fetch flickers cellular.ca. Retry every cycle only until the
-    # first success, then throttle; never overwrite a good value with a miss.
-    global _QENG_CACHE, _QENG_LAST
-    qeng_auth = False
-    if not sig_auth and (_QENG_CACHE is None or ts - _QENG_LAST >= QENG_INTERVAL):
-        raw, qeng_auth = _qeng()
-        _QENG_LAST = ts
-        if raw:
-            _QENG_CACHE = raw
+    parts["iface"] = L.parse_iface_status(got.get("iface"))
+
+    # Latch each reading on whether it PARSES, not on whether the response was
+    # merely non-empty. The modem answers a bare "OK" often enough that a plain
+    # truthiness check cached that as a good value and then refused to retry for
+    # the whole interval -- which is what left sim_operator null.
+    #
+    # The three readings are latched independently even though they arrive in
+    # one call: any single command inside the batch can come back empty or
+    # ERROR while its neighbours are fine, and one bad line must not blank the
+    # rest. A wholly failed call yields {} and latches nothing, so every cached
+    # value survives exactly as it did when these were separate commands.
+    if "atinfo" in got:
+        _DEBUG_AT_LAST = ts
+        at = L.parse_debug_at(got["atinfo"])
+
+        _qeng_raw = at.get(_AT_QENG, "")
+        if L.parse_qeng(_qeng_raw):
+            _QENG_CACHE = _qeng_raw
+
+        # QCAINFO keys on a PCC line rather than a parser: a valid PCC-only idle
+        # read must be allowed through so the badge honestly drops when SCCs
+        # deconfigure, while a total miss keeps the last value.
+        _qcainfo_raw = at.get(_AT_QCAINFO, "")
+        if '"PCC"' in _qcainfo_raw:
+            _QCAINFO_CACHE = _qcainfo_raw
+
+        _cereg_raw = at.get(_AT_CEREG, "")
+        if L.parse_cereg(_cereg_raw):
+            _CEREG_CACHE = _cereg_raw
+
+        _nbr_raw = at.get(_AT_QENG_NBR, "")
+        if L.parse_qeng_neighbours(_nbr_raw):
+            _QENG_NBR_CACHE = _nbr_raw
+
     parts["qeng"] = _QENG_CACHE
-    # QCAINFO carries the full aggregation (PCC + all SCCs with activation
-    # state). Latch like QENG but keyed on a PCC line: a total SSH/AT miss keeps
-    # the last value (no blank), while a valid PCC-only idle read is allowed
-    # through so the badge honestly drops when SCCs deconfigure (track-real-state).
-    global _QCAINFO_CACHE, _QCAINFO_LAST
-    qcainfo_auth = False
-    if not sig_auth and (_QCAINFO_CACHE is None
-                         or ts - _QCAINFO_LAST >= QCAINFO_INTERVAL):
-        raw, qcainfo_auth = _qcainfo()
-        _QCAINFO_LAST = ts
-        if raw and '"PCC"' in raw:
-            _QCAINFO_CACHE = raw
     parts["qcainfo"] = _QCAINFO_CACHE
-    nb, nb_auth = _netdev_bytes()
+    parts["cereg"] = _CEREG_CACHE
+    parts["qeng_nbr"] = _QENG_NBR_CACHE
+
+    if "simstatus" in got:
+        _SIM_LAST = ts
+        _sim = L.parse_sim_status(got["simstatus"])
+        if _sim:
+            _SIM_CACHE = _sim
+    parts["sim_operator"] = (_SIM_CACHE or {}).get("carrier")
+    parts["apn"] = (_SIM_CACHE or {}).get("apn")
+
+    # Latched like the AT readings: the thresholds and the status arrive in the
+    # same window but from different calls, so one failing must not blank the
+    # other's last good value.
+    if "mcu" in got or "mcuwarn" in got:
+        _MCU_LAST = ts
+        _mcu = L.parse_mcu_status(got.get("mcu"))
+        if _mcu:
+            _MCU_CACHE = _mcu
+        _warn = L.parse_mcu_warning(got.get("mcuwarn"))
+        if _warn:
+            _WARN_CACHE = _warn
+    parts["mcu"] = _MCU_CACHE
+    parts["mcu_warning"] = _WARN_CACHE
+
+    nb = _parse_netdev(got.get("netdev"))
     if nb is not None:
         st = L.usage_step(_load_state(), nb[0], nb[1], ts, RESET_DAY)
         _save_state(st)
@@ -272,7 +431,7 @@ def collect_once():
     # Reachable at the network layer but SSH rejected (exit 255) => the key no
     # longer works (e.g. router was factory-reset). Surface it so the widget can
     # prompt re-authentication.
-    parts["auth_error"] = bool(sig_auth or nb_auth or qeng_auth or qcainfo_auth)
+    parts["auth_error"] = bool(ssh_auth)
     parts["recovery"] = _marker()
     return L.build_status(parts)
 
@@ -286,8 +445,10 @@ def loop():
         # Recovery constant-check + settle/timeout handling.
         if marker is not None:
             started = marker.get("started", int(time.time()))
+            budget = (REBOOT_TIMEOUT if marker.get("action") == "reboot"
+                      else RECOVER_TIMEOUT)
             online_streak = 0
-            while time.time() - started < RECOVER_TIMEOUT:
+            while time.time() - started < budget:
                 time.sleep(RECOVER_INTERVAL)
                 s = collect_once()
                 _write(s)

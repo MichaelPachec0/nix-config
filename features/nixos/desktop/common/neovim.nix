@@ -88,7 +88,7 @@ in {
         # c stuff
         # clang_format, clangd, clang_check
         clang-tools
-        # ERROR: DOES NOT COMPILE 
+        # ERROR: DOES NOT COMPILE
         # autotools-language-server # make lsp
         bear # for helping clangd with compile_commands.json
 
@@ -121,6 +121,7 @@ in {
         # lazygit
         arduino-language-server
         arduino-cli
+        nodejs
       ]
       # ++ (with pkgs.nodePackages; [
       ++ (with pkgs; [
@@ -135,7 +136,6 @@ in {
 # Doing so means a more predictable path for the server.
 # vscode-extensions.ms-python.vscode-pylance
 # vscode-lldb
-
 # extraPackages = with pkgs;
 #   [
 #     # lldb

@@ -184,21 +184,124 @@
   pam_rssh = final: prev: {
     pam_rssh = prev.callPackage ../overlays/pam_rssh {};
   };
+  qsGreeter = final: prev: {
+    qs-greeter = prev.callPackage ../pkgs/qs-greeter {};
+  };
   latest = final: prev: {
+    # Hyprland CORE: bumped to the v0.56.1 point release and carrying the two
+    # crash patches. Overrides the TOP-LEVEL `hyprland` (not just latest.hyprland
+    # below) so the compositor AND hy3 -- which builds against final.hyprland --
+    # share the one binary and the plugin hash check still matches.
+    #
+    # nixpkgs is still on 0.56.0; we already build the compositor from source for
+    # the patches, so taking the point release costs nothing extra. 0.56.1 is a
+    # pure bugfix bump (28 files) and every header change in it is ADDITIVE (a
+    # new signal, a method decl, an event, an enum entry) -- nothing hy3 uses is
+    # removed or renamed, so the pinned hy3 needs no source change. hy3 is also
+    # already at its newest tag (hl0.56.0.1 = 42b7ed8 = its master HEAD).
+    hyprland = prev.hyprland.overrideAttrs (old: {
+      version = "0.56.1";
+      src = prev.fetchFromGitHub {
+        owner = "hyprwm";
+        repo = "hyprland";
+        fetchSubmodules = true;
+        tag = "v0.56.1";
+        hash = "sha256-u3DU6wmJ2PZk8kAOnx64MTlVxp/hZH+oUtXouj1E3+0=";
+      };
+      # `hyprctl version` is fed from nixpkgs' pkgs/by-name/hy/hyprland/info.json,
+      # which still describes 0.56.0 -- restate it for the bumped src, or crash
+      # reports name a commit we are not running.
+      env =
+        (old.env or {})
+        // {
+          GIT_COMMIT_HASH = "5c9377c15f85c50648f35ca5a213754f95b93ca0";
+          GIT_COMMIT_MESSAGE = "version: bump to 0.56.1";
+          GIT_COMMIT_DATE = "2026-07-27";
+          GIT_TAG = "v0.56.1";
+        };
+      patches =
+        (old.patches or [])
+        ++ [
+          # Compositor SIGSEGV when the session locks while a grabbing xdg_popup
+          # (a bar dropdown/menu) is open: newLock is emitted before m_locked is
+          # set, so the grab is torn down with isSessionLocked() still false.
+          # Still unfixed on main (SessionLock.cpp:198 is unchanged) and the
+          # patch still applies there, so this one survives a future bump.
+          ../overlays/hyprland-popup-sessionlock-crash.patch
+          # Same crash family, different site: a screencopy
+          # (ext-image-copy-capture) create_frame that lands after its output
+          # was removed derefs a null monitor in CScreenshareFrame::transform.
+          # Hit on every resume-with-monitor-unplugged, because the lock's
+          # ScreencopyView backdrop captures per Quickshell.screens entry.
+          #
+          # BACKPORT ONLY: main lost this crash site incidentally in 901881c9
+          # ("render: always render in normal transform", #15714), which is not
+          # on the 0.56.x branch. The patch therefore does NOT apply past
+          # 0.56.x -- DROP it, do not rebase it, when leaving this series.
+          ../overlays/hyprland-screencopy-dead-output-crash.patch
+        ];
+    });
+    # xdg-desktop-portal-hyprland past its v1.4.0 tag, for 71ae1a3a
+    # "screencopy: don't send bad transform information over wire"
+    # (ref hyprwm/hyprland#15714): the portal used to forward the output's
+    # transform verbatim, so a screencast could be handed a transform that does
+    # not describe the buffer it came with. It now reports NORMAL for region
+    # captures, and for output captures only keeps the transform when the frame
+    # dimensions are actually swapped relative to the output.
+    #
+    # Deliberately paired with the 0.56.1 compositor above, which PREDATES
+    # #15714 and so still renders transformed buffers. The heuristic is written
+    # to straddle both (its own comment: "always fall back to new... 180 will be
+    # wrong on old hl"), and on non-rotated outputs -- every monitor here -- both
+    # branches yield NORMAL, so the pairing is a no-op today and correct once the
+    # compositor moves past 0.56.x. Revisit if a display is ever rotated.
+    #
+    # The portal takes `hyprland` only to put it on the share-picker's PATH, so
+    # it follows the patched compositor above with no extra wiring.
+    xdg-desktop-portal-hyprland = prev.xdg-desktop-portal-hyprland.overrideAttrs (old: {
+      version = "1.4.0-unstable-b653ab5";
+      src = prev.fetchFromGitHub {
+        owner = "hyprwm";
+        repo = "xdg-desktop-portal-hyprland";
+        rev = "b653ab53a435e92cc00f34771e6823bc59f2f740";
+        hash = "sha256-sNIGmqZJiOM/lCWUuslV53zuk/p5sGCRcS3kHKfxQvA=";
+      };
+      # The packaged changelog interpolates v${version} into a releases URL,
+      # which does not exist for a between-tags pin.
+      meta =
+        (old.meta or {})
+        // {
+          changelog = "https://github.com/hyprwm/xdg-desktop-portal-hyprland/compare/v1.4.0...b653ab53a435e92cc00f34771e6823bc59f2f740";
+        };
+    });
+    # Patch Quickshell: the forked PAM subprocess frees the caller's
+    # `pam_response**` out-param (a stack address) on any IPC write failure, so
+    # a shell that dies while a PAM child is still blocked in pam_fprintd turns
+    # into a bogus "quickshell crashed" SIGSEGV report. Unfixed upstream as of
+    # 28771c7. Patched at the TOP-LEVEL `quickshell` so the raw `pkgs.quickshell`
+    # uses (swayidle.nix, quickshell-lock.nix) and the HM module's own
+    # overrideAttrs (features/hm/wayland/quickshell.nix) all stack on the fix.
+    quickshell = prev.quickshell.overrideAttrs (old: {
+      patches = (old.patches or []) ++ [../overlays/quickshell-pam-conversation-invalid-free.patch];
+    });
     latest = {
-      # nixpkgs ships Hyprland 0.56.0 -- the old 0005 popup-coords SIGSEGV patch
-      # is obsolete (fixed upstream in 0.56) and is dropped. But nixpkgs'
-      # hyprlandPlugins.hy3 is still hl0.55.0, which will not load against a 0.56
-      # compositor, so hy3's src is pinned to the matching hl0.56.0.1 release
-      # (see the hy3 attr below) with our patches re-applied.
+      # nixpkgs ships Hyprland 0.56.0; the `hyprland` attr above bumps it to
+      # v0.56.1 and carries the two crash patches. The old 0005 popup-coords
+      # SIGSEGV patch is obsolete (fixed upstream in 0.56, #15416) and dropped.
+      # nixpkgs' hyprlandPlugins.hy3 is still hl0.55.0, which will not load
+      # against a 0.56 compositor, so hy3's src is pinned to the matching
+      # hl0.56.0.1 release (see the hy3 attr below) with our patches re-applied.
       inherit (final) hyprland;
       inherit (prev) waybar;
 
       sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
       # nixpkgs' hy3 is hl0.55.0; pin the src to the hl0.56.0.1 release (built
-      # against nixpkgs' 0.56.0 hyprland so the plugin ABI matches) and re-apply
-      # our dispatcher patches -- 0004 rebased onto the 0.56 workspace API
-      # (getWorkspaceByID -> State::workspaceState()->query().id().run()).
+      # against final.hyprland, so the plugin hash always matches whatever that
+      # attr resolves to -- 0.56.1 now) and re-apply our dispatcher patches --
+      # 0004 rebased onto the 0.56 workspace API (getWorkspaceByID ->
+      # State::workspaceState()->query().id().run()). hl0.56.0.1 is still hy3's
+      # newest tag AND its master HEAD, and 0.56.1 removes/renames nothing it
+      # uses, so there is nothing to resync here for the point release.
       hy3 = (final.hyprlandPlugins.hy3.override {inherit (final) hyprland;}).overrideAttrs (old: {
         src = final.fetchFromGitHub {
           owner = "outfoxxed";
@@ -222,6 +325,11 @@
             # workspaces -- lets hy3-layout `show --wk N/--wk all` read a
             # non-active workspace's tree without switching to it.
             ../overlays/0004-feat-hy3-dump-tree-workspace-scope.patch
+            # hy3:ungroup [node|group] / hl.plugin.hy3.ungroup -- lift the
+            # focused node out of its group (node, the default) or dissolve the
+            # whole group into its parent (group). Upstream has neither:
+            # makegroup's `toggle` only collapses a single-CHILD group.
+            ../overlays/0005-feat-hy3-ungroup-dispatcher.patch
           ];
       });
       firefox-devedition-bin = inputs.firefox.packages.${prev.stdenv.hostPlatform.system}.firefox-devedition-bin.override {
@@ -254,6 +362,7 @@
     channels
     inputs.flake-playground.overlays.default
     pam_rssh
+    qsGreeter
   ];
 in {
   stable = let

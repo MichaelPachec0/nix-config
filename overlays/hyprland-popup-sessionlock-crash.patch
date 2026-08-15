@@ -1,0 +1,101 @@
+Fix Hyprland compositor crash when the session is locked while a grabbing
+xdg_popup (owned by a layer surface, e.g. a bar dropdown/menu) is open.
+
+Root cause: CSessionLockProtocol::onLock emits `newLock` -- which runs the
+entire session-lock setup, including CSeatManager::setGrab(nullptr) -- BEFORE
+setting m_locked = true, so the popup grab is torn down while isSessionLocked()
+is still false and the lock-time guards in the focus/grab paths are bypassed.
+Ending the grab dismisses the popup (CSeatGrab end -> done() -> dismissed ->
+CPopup::onUnmap) mid-transition. Several CPopup / CSeatManager sites guard an
+OUTER weak pointer with operator bool / valid() (which stays true while the
+object is destroying()) then dereference an INNER pointer with no check, so the
+inner wl_surface (or owner) being null/destroying during the teardown race
+faults. Hardened to the .expired()+inner-check convention already used by
+CPopup::coordsRelativeToParent() and CPopup::t1ParentCoords().
+
+Applies to Hyprland v0.56.0. Not fixed upstream as of main@36b2e0c.
+See docs/hyprland-popup-lock-crash for the full analysis and upstream PR text.
+---
+diff --git a/src/desktop/view/Popup.cpp b/src/desktop/view/Popup.cpp
+index e21ce7b..194f6fd 100644
+--- a/src/desktop/view/Popup.cpp
++++ b/src/desktop/view/Popup.cpp
+@@ -77,7 +77,7 @@ eViewType CPopup::type() const {
+ }
+ 
+ bool CPopup::visible() const {
+-    if (!m_mapped || !m_wlSurface->resource())
++    if (!m_mapped || !m_wlSurface || !m_wlSurface->resource())
+         return false;
+ 
+     if (!m_windowOwner.expired())
+@@ -239,7 +239,7 @@ void CPopup::onUnmap() {
+     if (!m_mapped)
+         return;
+ 
+-    if (!m_resource || !m_resource->m_surface) {
++    if (!m_resource || m_resource->m_surface.expired() || m_resource->m_surface->m_surface.expired() || !m_wlSurface || !m_wlSurface->resource()) {
+         Log::logger->log(Log::ERR, "CPopup: orphaned (no surface/resource) and unmaps??");
+         onDestroy();
+         return;
+@@ -305,7 +305,7 @@ void CPopup::onUnmap() {
+ }
+ 
+ void CPopup::onCommit(bool ignoreSiblings) {
+-    if (!m_resource || !m_resource->m_surface) {
++    if (!m_resource || m_resource->m_surface.expired() || m_resource->m_surface->m_surface.expired()) {
+         Log::logger->log(Log::ERR, "CPopup: orphaned (no surface/resource) and commits??");
+         onDestroy();
+         return;
+@@ -382,10 +382,11 @@ void CPopup::reposition() {
+ }
+ 
+ SP<Desktop::View::CWLSurface> CPopup::getT1Owner() const {
+-    if (m_windowOwner)
++    if (!m_windowOwner.expired())
+         return m_windowOwner->wlSurface();
+-    else
++    if (!m_layerOwner.expired())
+         return m_layerOwner->wlSurface();
++    return nullptr;
+ }
+ 
+ PHLLS CPopup::layerOwner() const {
+@@ -672,7 +673,10 @@ SP<CPopup> CPopup::at(const Vector2D& globalCoords, bool allowsInput) {
+                 return p;
+             }
+         } else {
+-            const auto REGION = p->wlSurface()->resource()->m_current.effectiveInputRegion().translate(p->coordsGlobal());
++            const auto PRESOURCE = p->wlSurface() ? p->wlSurface()->resource() : nullptr;
++            if (!PRESOURCE)
++                continue;
++            const auto REGION = PRESOURCE->m_current.effectiveInputRegion().translate(p->coordsGlobal());
+             if (REGION.containsPoint(globalCoords)) {
+                 popups.clear();
+                 return p;
+diff --git a/src/managers/SeatManager.cpp b/src/managers/SeatManager.cpp
+index 2f93c42..e7be047 100644
+--- a/src/managers/SeatManager.cpp
++++ b/src/managers/SeatManager.cpp
+@@ -728,8 +728,9 @@ void CSeatManager::setGrab(SP<CSeatGrab> grab) {
+ 
+         m_seatGrab.reset();
+ 
+-        if (parentLayer && parentLayer->m_layerSurface->m_current.interactivity != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE) {
+-            Desktop::focusState()->rawSurfaceFocus(parentLayer->wlSurface()->resource());
++        const auto PARENTLAYERSURF = parentLayer ? parentLayer->wlSurface() : nullptr;
++        if (parentLayer && parentLayer->m_layerSurface && parentLayer->m_layerSurface->m_current.interactivity != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE && PARENTLAYERSURF && PARENTLAYERSURF->resource()) {
++            Desktop::focusState()->rawSurfaceFocus(PARENTLAYERSURF->resource());
+         } else {
+             static auto PFOLLOWMOUSE = CConfigValue<Config::INTEGER>("input:follow_mouse");
+             if (*PFOLLOWMOUSE == 0 || *PFOLLOWMOUSE == 2 || *PFOLLOWMOUSE == 3) {
+@@ -760,7 +761,8 @@ void CSeatManager::setGrab(SP<CSeatGrab> grab) {
+             auto popup = surf ? Desktop::View::CPopup::fromView(surf->view()) : nullptr;
+             if (popup) {
+                 auto parent = popup->getT1Owner();
+-                layer       = Desktop::View::CLayerSurface::fromView(parent->view());
++                if (parent)
++                    layer = Desktop::View::CLayerSurface::fromView(parent->view());
+             }
+         }
+ 

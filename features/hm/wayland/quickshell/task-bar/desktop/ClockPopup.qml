@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import "../lib" as Lib
 import "../lib/datemath.js" as DateMath
 
 // Hover popup for the bar clock: Local / UTC / New York with live seconds, plus
@@ -8,34 +9,16 @@ import "../lib/datemath.js" as DateMath
 // (themed card, anchored under the clock, contentHovered + hide-timer). Time
 // math is pure JS; the bar toggles `tick` every second and the bindings read it
 // to re-evaluate. Read-only.
-PopupWindow {
+Lib.BasePopup {
     id: pop
-    required property QtObject theme
-    required property var barWindow
-    required property var anchorItem
     property bool h12: false
     property bool tick: false // toggled every second by the bar; read to re-eval
-    property bool contentHovered: cardHover.hovered
+    contentHovered: cardHover.hovered
 
     implicitWidth: card.implicitWidth
     implicitHeight: card.implicitHeight
     onImplicitWidthChanged: if (pop.visible) Qt.callLater(pop.reclamp)
-    color: "transparent"
-    visible: false
     grabFocus: false
-    anchor.window: pop.barWindow
-    anchor.edges: Edges.Bottom
-    anchor.gravity: Edges.Bottom | Edges.Right
-
-    function reclamp() {
-        var x = pop.anchorItem.mapToItem(null, 0, 0).x;
-        pop.anchor.rect.x = Math.max(4, Math.min(x, pop.barWindow.width - pop.implicitWidth - 8));
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
-    }
-    function show() { if (!pop.visible) { pop.reclamp(); pop.visible = true; } }
-    function hide() { pop.visible = false; }
 
     // --- pure time formatting (seconds-aware) ---
     function pad(n) { return (n < 10 ? "0" : "") + n; }

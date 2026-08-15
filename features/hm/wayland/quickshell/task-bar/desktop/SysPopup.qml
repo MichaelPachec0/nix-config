@@ -7,13 +7,10 @@ import "../lib" as Lib
 // System stats popup shown on hover over the bar CPU/RAM block. Read-only.
 // Mirrors RouterPopup's anchor/hover/reclamp. All text JetBrainsMono; glyphs faFont.
 // Layout mode (0=tall 1=tabs 2=grid) persisted in sys-ui.json via CalState idiom.
-PopupWindow {
+Lib.BasePopup {
     id: pop
-    required property QtObject theme
     required property var stats
-    required property var barWindow
-    required property var anchorItem
-    property bool contentHovered: cardHover.hovered
+    contentHovered: cardHover.hovered
 
     readonly property string _stateDir: (Quickshell.env("XDG_STATE_HOME")
         || (Quickshell.env("HOME") + "/.local/state")) + "/quickshell"
@@ -21,22 +18,7 @@ PopupWindow {
     implicitWidth: card.implicitWidth
     implicitHeight: card.implicitHeight
     onImplicitWidthChanged: if (pop.visible) Qt.callLater(pop.reclamp)
-    color: "transparent"
-    visible: false
     grabFocus: false
-    anchor.window: pop.barWindow
-    anchor.edges: Edges.Bottom
-    anchor.gravity: Edges.Bottom | Edges.Right
-
-    function reclamp() {
-        var x = pop.anchorItem.mapToItem(null, 0, 0).x;
-        pop.anchor.rect.x = Math.max(4, Math.min(x, pop.barWindow.width - pop.implicitWidth - 8));
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
-    }
-    function show() { if (!pop.visible) { pop.reclamp(); pop.visible = true; } }
-    function hide() { pop.visible = false; }
 
     function fmtUptime(s) {
         var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);

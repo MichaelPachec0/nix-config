@@ -3,7 +3,7 @@
   lib,
   ...
 }: {
-  imports = [./yubikey];
+  imports = [./yubikey ./pam/quickshell-lock.nix];
   options = {
     yubiAuth = {
       enable =

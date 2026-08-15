@@ -49,9 +49,14 @@
           # dbus-broker cgroups, ...). Home Manager reloads kitty on switch
           # instead (see home.activation.reloadKitty below).
           auto_reload_config = -0.1;
-          # NOTE: want a *huge* buffer, dont really care about the memory usuage,
-          #   should have enough.
-          scrollback_lines = 100000;
+          # Want a huge buffer. 100000 in-memory lines is the wrong way to get
+          # it -- upstream: "very large scrollback ... can slow down performance
+          # of the terminal and also use large amounts of RAM. Instead, consider
+          # using scrollback_pager_history_size". So: a modest live buffer plus a
+          # large on-disk history that the pager (kitty_scrollback_nvim, bound to
+          # kitty_mod+f below) reads.
+          scrollback_lines = 10000;
+          scrollback_pager_history_size = 1024; # MB on disk
           enable_audio_bell = true;
           bold_font = bold_font;
           italic_font = italic_font;
@@ -68,16 +73,39 @@
           allow_remote_control = "socket-only";
           listen_on = "unix:/tmp/kitty";
           disable_ligatures = "always";
-          "input_delay" = "0";
-          "repaint_delay" = "2";
-          "sync_to_monitor" = "no";
+          # PERF: input_delay/repaint_delay/sync_to_monitor are back at their
+          # upstream defaults. The old 0/2/no trio targeted ~500 FPS with the
+          # vblank cap removed, and every one of those frames is a wl_surface
+          # commit Hyprland has to composite -- with blur, because the global
+          # `opacity-all` window_rule (features/hm/wayland/hyprland.nix) makes
+          # every window translucent, so no opaque-region cull applies. Measured
+          # ~3 points of extra Hyprland CPU under a 200 lines/sec workload, on a
+          # box whose Renoir iGPU already sits at 60-68% busy.
+          #
+          # input_delay = 0 was also the direct cause of the "erratic" redraws:
+          # upstream warns it "might cause flicker in full screen programs that
+          # redraw the entire screen on each loop, because kitty is so fast that
+          # partial screen updates will be drawn" -- i.e. nvim.
+          #
+          # Kept: IME off is a real input-latency win with no cost here.
           "wayland_enable_ime" = "no";
           # only works in macos
           # background_blur = 1;
           # background_opacity = 0.9;
           cursor_shape_unfocused = "beam";
-          cursor_blink_interval = "0.5 ease-in-out";
-          cursor_trail = 1;
+          # Plain blink, no easing. The easing function turns a 2-state toggle
+          # into a continuous fade -- upstream: "turning on animations uses extra
+          # power as it means the screen is redrawn multiple times per blink
+          # interval" -- which redraws the focused window every repaint_delay for
+          # the 15s cursor_stop_blinking_after window following each keystroke.
+          cursor_blink_interval = "0.5";
+          # cursor_trail's value is a dwell threshold in MILLISECONDS: the trail
+          # only follows a cursor that held its position longer than this, which
+          # is upstream's guard against trails firing "during UI updates in
+          # complex applications". 1ms defeated the guard, so nvim/shell redraws
+          # animated a trail (0.1-0.4s decay each). 40ms keeps the effect for
+          # deliberate jumps and drops it for redraw churn.
+          cursor_trail = 40;
         };
         # TODO: (low prio) need to set more keybindings
         # ref: https://sw.kovidgoyal.net/kitty/layouts/#the-splits-layout
@@ -102,7 +130,7 @@
 
         extraConfig = ''
           action_alias kitty_scrollback_nvim kitten ${pkgs.vimPlugins.kitty-scrollback-nvim}/python/kitty_scrollback_nvim.py
-          mouse_map⋅ctrl+shift+right⋅press⋅ungrabbed⋅combine⋅:⋅mouse_select_command_output⋅:⋅kitty_scrollback_nvim⋅--config⋅ksb_builtin_last_visited_cmd_output↴
+          mouse_map ctrl+shift+right press ungrabbed combine : mouse_select_command_output : kitty_scrollback_nvim --config ksb_builtin_last_visited_cmd_output
           # PERF: disable ligatures
           font_features ${font} -liga
           font_features ${bold_font} -liga

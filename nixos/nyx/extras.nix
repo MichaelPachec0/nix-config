@@ -1,4 +1,4 @@
-# Integrated home-manager for nyx (useGlobalPkgs). See docs/hm-nixos-integration.md.
+# Integrated home-manager for nyx (useGlobalPkgs).
 #
 # The standalone path keeps working independently:
 #   home-manager switch --flake .#michael-nyx

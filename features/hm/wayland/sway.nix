@@ -324,6 +324,11 @@
       extraConfig = let
         # TODO: better way of doing this?
         firefox = "${lib.getExe config.programs.firefox.package}";
+        # activate-linux watermark params -- single source of truth also
+        # consumed by quickshell-lock.nix's config.json (see LockConfig.qml /
+        # LockSurface.qml).
+        wm = config.quickshellLock.watermark;
+        activateLinuxCmd = ''${lib.getExe pkgs.activate-linux} -t "${wm.title}" -m "${wm.message}" -x ${toString wm.width} -y ${toString wm.height} -c "${wm.color}"'';
         # NOTE: Tries and gets the entry point for spotify, spotifywm -> spotify theme/spotify
         # found out using the repl (builtins.elemAt homeConfigurations.michael-nyx.config.programs.spicetify.createdPackages 0)
         # exec sleep 2 && swaymsg "workspace number 2; exec
@@ -385,6 +390,31 @@
           default_floating_border normal 2
         '';
       in ''
+        # NOTE (deferred, 2026-08-06): the app launches in THIS block still
+        # inherit the compositor's cgroup. Hyprland's side was converted to the
+        # app-run wrapper (../app-run.nix) -- binds, autostart, rofi's
+        # run-command, quickshell, hy3-project.sh and hy3_layout.py's
+        # _launch_string all front their spawns with it, so only Hyprland +
+        # Xwayland are left in wayland-wm@hyprland.desktop.service. Sway is
+        # registered in programs.uwsm.waylandCompositors too, so it would
+        # benefit identically, but it is not the compositor in daily use and
+        # this startup block is untested, so it was left alone rather than
+        # changed blind. The shared KEYBINDS (../common.nix) are already
+        # wrapped -- both compositors derive from them -- so what remains here
+        # is only startup:
+        #   - `exec "''${waybarLaunch}"`     -> app-run -s b -a waybar
+        #   - `exec sworkstyle`             -> app-run -s b -a sworkstyle
+        #   - the activate-linux exec       -> app-run -s b -a activate-linux
+        #   - mkWorkspace's `swaymsg "... exec ''${appCommand}"` -> app-run per app,
+        #     which is the fiddly one: appCommand joins several apps with "; ",
+        #     so the wrapper has to go on each element BEFORE the join, not on
+        #     the joined string.
+        # Do NOT wrap `exec systemctl enable --user shikane@sway.service` (a
+        # one-shot; nothing for a scope to hold).
+        # While in here: mkWorkspace 3 launches `telegram` lowercase, but the
+        # binary is `Telegram`. That is the same silent no-op already fixed on
+        # the Hyprland side.
+        #
         # NOTE: This lets nixos know that we prefer to use wayland for electron
         # apps.
         # https://github.com/swaywm/sway/wiki#gtk-applications-take-20-seconds-to-start
@@ -423,7 +453,7 @@
         exec sworkstyle &> /tmp/sworkstyle.log
         # exec_always ${lib.getExe fastanime-notifier}
         # do this differently
-        exec ${lib.getExe pkgs.activate-linux} -t "Activate NixOS" -m "Edit configuration.nix to activate NixOS." -x 360 -c "1-1-1-0.10"
+        ${lib.optionalString wm.enable "exec ${activateLinuxCmd}"}
       '';
 
       # ${mkWorkspace 9 [

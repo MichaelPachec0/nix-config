@@ -1,35 +1,18 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import "../lib" as Lib
 import "../lib/routerfmt.js" as RouterFmt
 
-PopupWindow {
+Lib.BasePopup {
     id: pop
-    required property QtObject theme
     required property var svc
-    required property var barWindow
-    required property var anchorItem
-    property bool contentHovered: cardHover.hovered
+    contentHovered: cardHover.hovered
 
     implicitWidth: card.implicitWidth
     implicitHeight: card.implicitHeight
     onImplicitWidthChanged: if (pop.visible) Qt.callLater(pop.reclamp)
-    color: "transparent"
-    visible: false
     grabFocus: false
-    anchor.window: pop.barWindow
-    anchor.edges: Edges.Bottom
-    anchor.gravity: Edges.Bottom | Edges.Right
-
-    function reclamp() {
-        var x = pop.anchorItem.mapToItem(null, 0, 0).x;
-        pop.anchor.rect.x = Math.max(4, Math.min(x, pop.barWindow.width - pop.implicitWidth - 8));
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
-    }
-    function show() { if (!pop.visible) { pop.reclamp(); pop.visible = true; } }
-    function hide() { pop.visible = false; }
 
     function qColor(q) {
         return q === "excellent" ? pop.theme.accentGreen
@@ -37,9 +20,65 @@ PopupWindow {
              : q === "fair" ? pop.theme.accentYellow : pop.theme.accentRed;
     }
 
+    // An absent reading arrives from JSON as null, and `null` is neither
+    // undefined nor NaN -- string-concatenating it yields "null%". Every
+    // numeric field below is optional, so they all route through this.
+    function hasVal(v) {
+        return v !== null && v !== undefined && !isNaN(v);
+    }
+
+    // A neighbour stronger than the serving cell means the modem is camped on
+    // a worse cell than one it can see. Compared against the LTE anchor's RSRP
+    // from QENG rather than cellular.rsrp, which reports the NR leg -- an NR
+    // RSRP against an LTE neighbour's is not a comparison.
+    readonly property bool betterNeighbour: {
+        var n = pop.svc.cellular.neighbours;
+        var s = pop.svc.cellular.serving;
+        if (!n || !s || !pop.hasVal(n.best_rsrp))
+            return false;
+        var lte = (s.cells || []).filter(function (c) { return c.rat === "LTE"; });
+        if (lte.length === 0 || !pop.hasVal(s.rsrp))
+            return false;
+        return n.best_rsrp > s.rsrp;
+    }
+
+    readonly property bool lowBattery: pop.hasVal(pop.svc.battery.percent)
+        && pop.hasVal(pop.svc.battery.warn_capacity)
+        && pop.svc.battery.percent <= pop.svc.battery.warn_capacity
+
+    // Tint from the MCU's own high-temperature threshold, IGNORING its enable
+    // flag. Both warnings ship disabled on this router, so inheriting `enable`
+    // would leave the popup green at 51C -- the router declining to alert is
+    // not a reason for the popup to stay quiet. Yellow enters 10C below the
+    // threshold so the number is actionable before it is a warning.
+    function tempColor(t, warn) {
+        if (!pop.hasVal(t) || !pop.hasVal(warn))
+            return pop.theme.textSecondary;
+        if (t >= warn)
+            return pop.theme.accentRed;
+        return t >= warn - 10 ? pop.theme.accentYellow : pop.theme.textSecondary;
+    }
+
+    // Minimum keeps the card from shrinking to the width of a sparse payload
+    // (a router that is merely reachable renders two short lines); maximum
+    // keeps a long DNS list or APN from stretching it across the screen.
+    readonly property int minCardWidth: 380
+    readonly property int maxCardWidth: 560
+
     Rectangle {
         id: card
-        implicitWidth: 380
+        // Grow to fit the widest row rather than clipping it. The card was
+        // pinned at 380 while `col` was anchored to its edges, so any row wider
+        // than 356 was silently cut off -- Rectangle does not clip, so the text
+        // painted outside the window and the compositor discarded it, which
+        // looked like the information was simply missing.
+        //
+        // No binding loop: a Layout's implicitWidth is derived from its
+        // children's implicit sizes, not from its own assigned width. That is
+        // also why nothing here may use Flow, whose implicitWidth DOES depend
+        // on the width it is given.
+        implicitWidth: Math.max(pop.minCardWidth,
+                                Math.min(pop.maxCardWidth, col.implicitWidth + 24))
         implicitHeight: col.implicitHeight + 24
         radius: pop.theme.radiusOuter
         color: pop.theme.bgCard
@@ -84,10 +123,16 @@ PopupWindow {
                         color: pop.svc.uplink.online ? pop.theme.accentGreen : pop.theme.accentRed
                     }
                 }
+                // `!== undefined` alone was not enough: an absent reading
+                // arrives from JSON as null, not undefined, and rendered
+                // literally as "null%".
                 Text {
-                    text: (pop.svc.battery.percent !== undefined ? pop.svc.battery.percent + "%" : "--")
+                    text: pop.hasVal(pop.svc.battery.percent)
+                        ? (pop.svc.battery.percent + "%") : "--"
                     font.family: pop.theme.iconFont; font.pixelSize: 12
-                    color: pop.svc.battery.charging ? pop.theme.accentGreen : pop.theme.textPrimary
+                    color: pop.svc.battery.charging ? pop.theme.accentGreen
+                         : pop.lowBattery ? pop.theme.accentRed
+                         : pop.theme.textPrimary
                 }
             }
 
@@ -136,10 +181,51 @@ PopupWindow {
                 spacing: 2
                 RowLayout {
                     spacing: 8
+                    // operator_label carries the SIM's own brand beside the
+                    // network it rides ("Mint (T-Mobile)"), marked "R:" while
+                    // roaming. Falls back to device.carrier, which is now
+                    // derived from the same values rather than hardcoded.
                     Text {
-                        text: (pop.svc.cellular.gen || "?") + "   " + (pop.svc.device.carrier || "")
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        text: (pop.svc.cellular.gen || "?") + "   "
+                            + (pop.svc.cellular.operator_label || pop.svc.device.carrier || "")
                         font.family: pop.theme.iconFont; font.pixelSize: 12; font.weight: Font.DemiBold
                         color: pop.theme.textPrimary
+                    }
+                    // Roaming is worth its own mark, not just a prefix buried
+                    // in the name: it is the state that costs money.
+                    Text {
+                        visible: pop.svc.cellular.roaming === true
+                        text: "ROAMING"
+                        font.family: pop.theme.iconFont; font.pixelSize: 9; font.weight: Font.DemiBold
+                        color: pop.theme.accentYellow
+                    }
+                }
+                // Registration + PLMN: the facts behind the name above. Shown
+                // only once known, so nothing renders "undefined" before the
+                // first AT read lands.
+                RowLayout {
+                    spacing: 12
+                    visible: !!pop.svc.cellular.plmn || !!pop.svc.cellular.registration
+                    Text {
+                        visible: !!pop.svc.cellular.plmn
+                        text: "PLMN " + (pop.svc.cellular.plmn || "")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Text {
+                        visible: !!pop.svc.cellular.registration
+                        text: pop.svc.cellular.registration || ""
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.svc.cellular.roaming === true
+                            ? pop.theme.accentYellow : pop.theme.textSecondary
+                    }
+                    Text {
+                        visible: !!pop.svc.cellular.sim_operator
+                        text: "SIM " + (pop.svc.cellular.sim_operator || "")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
                     }
                 }
                 RowLayout {
@@ -195,11 +281,53 @@ PopupWindow {
                     }
                     Item { Layout.fillWidth: true }
                 }
-                // Serving cell (from AT+QENG="servingcell").
-                Text {
+                // Serving cell (from AT+QENG="servingcell"), plus its identity.
+                // Cell id and TAC are here because a CHANGE in either is a
+                // handover -- the value itself is only a landmark.
+                // Bands and neighbours share a line; the cell identity gets its
+                // own. Three chips of this length on one row overflowed even a
+                // widened card, and the identity is the least glanceable of
+                // them -- it is a landmark you compare against later, not a
+                // number you read every time.
+                RowLayout {
+                    id: servingRow
                     property var serving: pop.svc.cellular.serving
-                    visible: !!serving
-                    text: serving ? ("Serving  " + (serving.bands || []).join(" + ")) : ""
+                    property var nbr: pop.svc.cellular.neighbours
+                    visible: !!servingRow.serving
+                    Layout.fillWidth: true
+                    spacing: 12
+                    Text {
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        text: servingRow.serving
+                            ? ("Serving  " + (servingRow.serving.bands || []).join(" + ")) : ""
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    // Neighbours, with the serving cell already filtered out.
+                    // Yellow when one is stronger than the cell we are camped
+                    // on, which is the only actionable reading here -- a list
+                    // of weaker cells is just noise.
+                    Text {
+                        visible: !!servingRow.nbr
+                        text: servingRow.nbr
+                            ? (servingRow.nbr.count + " nbr"
+                               + (pop.hasVal(servingRow.nbr.best_rsrp)
+                                  ? ("  best " + servingRow.nbr.best_rsrp) : ""))
+                            : ""
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.betterNeighbour ? pop.theme.accentYellow
+                                                   : pop.theme.textSecondary
+                    }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                    visible: !!(servingRow.serving && servingRow.serving.cellid)
+                    text: servingRow.serving
+                        ? ("cell " + servingRow.serving.cellid
+                           + (servingRow.serving.tac ? ("   TAC " + servingRow.serving.tac) : ""))
+                        : ""
                     font.family: pop.theme.iconFont; font.pixelSize: 10
                     color: pop.theme.textSecondary
                 }
@@ -225,14 +353,173 @@ PopupWindow {
                 }
             }
 
+            // --- Connection facts ---
+            // What the uplink actually got: the bearer it dialled and the lease
+            // behind it. All of this comes from calls already being made -- the
+            // APN rides along in cellular.sim status, the rest in the
+            // network.interface.modem_cpu status read that carries the uptime.
+            ColumnLayout {
+                visible: pop.svc.reachable && (!!pop.svc.cellular.apn
+                         || !!pop.svc.uplink.ip)
+                Layout.fillWidth: true
+                spacing: 2
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    Text {
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        visible: !!pop.svc.cellular.apn
+                        text: "APN  " + (pop.svc.cellular.apn || "")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Text {
+                        visible: !!pop.svc.uplink.device
+                        text: pop.svc.uplink.device || ""
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    visible: !!pop.svc.uplink.ip
+                    Text {
+                        text: "IP  " + (pop.svc.uplink.ip || "")
+                            + (pop.hasVal(pop.svc.uplink.mask)
+                               ? ("/" + pop.svc.uplink.mask) : "")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        visible: !!pop.svc.uplink.gateway
+                        text: "gw " + (pop.svc.uplink.gateway || "")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                }
+                // Wraps rather than elides: this is a LIST, and a resolver you
+                // cannot see is the same as one that is not reported. The other
+                // long fields elide because they are single tokens, where
+                // wrapping mid-string reads worse than a visible cut.
+                //
+                // preferredWidth 0 keeps it from inflating the card: its
+                // implicit width is the whole unwrapped list, which with IPv6
+                // resolvers would pin the popup to the clamp on every render.
+                // fillWidth still hands it the full column to wrap into.
+                Text {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 0
+                    visible: (pop.svc.uplink.dns || []).length > 0
+                    text: "DNS  " + (pop.svc.uplink.dns || []).join("   ")
+                    wrapMode: Text.WordWrap
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
+            }
+
+            // --- Battery ---
+            // This is a battery-powered router and the popup showed nothing
+            // but a bare percentage in the header. Temperature, wear and the
+            // abnormal flag all come from `mcu status`.
+            RowLayout {
+                visible: pop.svc.reachable && (pop.hasVal(pop.svc.battery.temp)
+                         || pop.hasVal(pop.svc.battery.cycles))
+                Layout.fillWidth: true
+                spacing: 12
+                Text {
+                    text: String.fromCharCode(pop.svc.battery.charging ? 0xF0E7 // bolt
+                                                                       : 0xF241) // battery-half
+                    font.family: pop.theme.faFont; font.pixelSize: 10
+                    color: pop.svc.battery.charging ? pop.theme.accentGreen
+                                                    : pop.theme.textSecondary
+                }
+                Text {
+                    text: pop.svc.battery.charging
+                        ? (pop.svc.battery.fastcharge ? "fast charging" : "charging")
+                        : (pop.svc.battery.plugged ? "plugged" : "on battery")
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
+                Text {
+                    visible: pop.hasVal(pop.svc.battery.temp)
+                    text: pop.svc.battery.temp + "C"
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.tempColor(pop.svc.battery.temp,
+                                         pop.svc.battery.warn_temp)
+                }
+                Item { Layout.fillWidth: true }
+                // Charge cycles: wear, not state. Worth knowing on a device
+                // that lives on its battery.
+                Text {
+                    visible: pop.hasVal(pop.svc.battery.cycles)
+                    text: pop.svc.battery.cycles + " cycles"
+                    font.family: pop.theme.iconFont; font.pixelSize: 10
+                    color: pop.theme.textSecondary
+                }
+                // The MCU's own fault flag. Rare enough that it earns red.
+                Text {
+                    visible: pop.svc.battery.abnormal === true
+                    text: "ABNORMAL"
+                    font.family: pop.theme.iconFont; font.pixelSize: 9
+                    font.weight: Font.DemiBold
+                    color: pop.theme.accentRed
+                }
+            }
+
             // --- Health ---
-            Text {
+            // Two uptimes, deliberately. `system` is how long the router has
+            // been powered; `modem` is how long since the uplink last dialled.
+            // The GAP between them is the signal -- a link that keeps
+            // redialling sits far below the system uptime while a stable one
+            // tracks it, and neither number alone carries that.
+            // Four chips on one row was the widest line in the card and the
+            // first thing to overflow. Split: load and memory answer "is the
+            // router struggling", the two uptimes answer "is the link stable".
+            ColumnLayout {
                 visible: pop.svc.reachable
-                text: "CPU " + (pop.svc.system.cpu_temp || "--") + "C   load "
-                    + ((pop.svc.system.load || [])[0] || "--") + "   up "
-                    + Math.floor((pop.svc.system.uptime || 0) / 3600) + "h"
-                font.family: pop.theme.iconFont; font.pixelSize: 10
-                color: pop.theme.textSecondary
+                Layout.fillWidth: true
+                spacing: 2
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    Text {
+                        text: "CPU " + (pop.svc.system.cpu_temp || "--") + "C   load "
+                            + ((pop.svc.system.load || [])[0] || "--")
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Item { Layout.fillWidth: true }
+                    // Free memory, not used: the number that answers "is the
+                    // web UI about to crawl". buff/cache is reclaimable so it
+                    // counts as free, matching what the router itself reports.
+                    Text {
+                        visible: pop.hasVal(pop.svc.system.mem_total)
+                            && pop.hasVal(pop.svc.system.mem_free)
+                        text: "mem " + RouterFmt.fmtBytes((pop.svc.system.mem_free || 0)
+                                                          + (pop.svc.system.mem_buff || 0))
+                            + " free"
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    Text {
+                        text: "up  sys " + RouterFmt.fmtDuration(pop.svc.system.uptime)
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: "modem " + RouterFmt.fmtDuration(pop.svc.uplink.uptime)
+                        font.family: pop.theme.iconFont; font.pixelSize: 10
+                        color: pop.theme.textSecondary
+                    }
+                }
             }
 
             // --- WiFi (one token per radio, green when active; guest shown as "g") + VPN ---
@@ -293,7 +580,7 @@ PopupWindow {
                     model: [
                         { label: "Redial", action: "redial" },
                         { label: "Airplane", action: "airplane" },
-                        { label: "Reboot", action: "reboot" }
+                        { label: "Reboot router", action: "reboot" }
                     ]
                     delegate: Rectangle {
                         id: btn

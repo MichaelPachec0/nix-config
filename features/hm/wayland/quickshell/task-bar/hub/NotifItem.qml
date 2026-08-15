@@ -23,6 +23,13 @@ Rectangle {
     // stack -- the click falls through to the stack's expand catcher).
     property bool compact: false
     property bool interactive: true
+    // How many identical notifications this card stands for (see
+    // lib/notifstack.js). 1 renders no badge, so existing callers are unchanged.
+    property int stackCount: 1
+    // Pre-formatted arrival time, e.g. "14:32 (2m ago)", from lib/notiftime.js.
+    // Empty renders nothing -- a notification with no recorded arrival stamp
+    // must show no time rather than a wrong one.
+    property string stamp: ""
 
     signal dismissRequested
 
@@ -30,14 +37,82 @@ Rectangle {
     // App-set image: already a usable URL (image:// provider for raw D-Bus
     // pixels, or a file/icon URL for image-path). Empty when none was sent.
     readonly property string imageUrl: (root.source && root.source.image) ? String(root.source.image) : ""
-    // App icon resolved to a path. Pass through real paths; resolve names.
-    readonly property string appIconUrl: {
-        if (!root.source || !root.source.appIcon)
+    // App icon resolved to a path, with a FALLBACK CHAIN so a notification that
+    // sends no `app_icon` still shows its originating app's icon instead of the
+    // generic bell:
+    //   1. the notification's own appIcon -- a real path/file:/image: URL passes
+    //      through, a bare name goes through the icon theme;
+    //   2. its `desktop-entry` hint, looked up in DesktopEntries for that app's
+    //      Icon= (this is the step that fixes most icon-less notifications);
+    //   3. appName as a desktop-entry heuristic (matches an entry ID or startup
+    //      class), then against each entry's human-readable Name= -- an app that
+    //      names itself after Name= is invisible to the heuristic (see
+    //      _nameEntryIcon), then as a bare icon name, lowercased because theme
+    //      icon names are conventionally lower case.
+    // Each step is skipped when it resolves to nothing, so a bogus app_icon
+    // falls through rather than pinning the card to a blank. All empty leaves
+    // the bell glyph, which suits a notification better than a generic
+    // executable icon.
+    // NB: mirrored by lock/LockNotifications.qml's _appIconUrl. The lock cannot
+    // import shared code from ../lib (quickshell -p sandboxes a test
+    // entrypoint's imports to its own directory), so keep the two in step.
+    function _themeIcon(name) {
+        if (!name)
             return "";
-        var a = String(root.source.appIcon);
-        if (a.startsWith("/") || a.startsWith("file:") || a.startsWith("image:"))
-            return a;
-        return Quickshell.iconPath(a, "");
+        var s = String(name);
+        if (s.startsWith("/") || s.startsWith("file:") || s.startsWith("image:"))
+            return s;
+        // `true` = CHECK the icon theme and return "" when there is no such
+        // icon. Without it iconPath hands back an image://icon/<name> URL even
+        // for names that do not exist, which would make every fall-through
+        // below dead code (a bogus app_icon would pin the card to a broken
+        // image instead of trying the desktop entry).
+        return Quickshell.iconPath(s, true);
+    }
+    function _entryIcon(hint) {
+        if (!hint)
+            return "";
+        var e = DesktopEntries.heuristicLookup(String(hint));
+        return (e && e.icon) ? root._themeIcon(e.icon) : "";
+    }
+    // Match appName against each desktop entry's human-readable Name=.
+    // heuristicLookup only matches an entry's ID / startup class, so an app that
+    // names itself after its Name= field misses it entirely: Firefox Developer
+    // Edition sends app_name "Firefox Developer Edition" with no desktop-entry
+    // hint, and firefox-devedition.desktop declares exactly that Name with
+    // Icon=firefox-devedition -- findable, but not by ID. Exact and
+    // case-insensitive; a substring match could pick the wrong app.
+    function _nameEntryIcon(appName) {
+        var want = String(appName || "").toLowerCase();
+        if (!want)
+            return "";
+        var apps = DesktopEntries.applications;
+        var vals = apps ? apps.values : null;
+        if (!vals)
+            return "";
+        for (var i = 0; i < vals.length; i++) {
+            var e = vals[i];
+            if (e && String(e.name || "").toLowerCase() === want)
+                return root._themeIcon(e.icon);
+        }
+        return "";
+    }
+    readonly property string appIconUrl: {
+        if (!root.source)
+            return "";
+        var u = root._themeIcon(root.source.appIcon);
+        if (u !== "")
+            return u;
+        u = root._entryIcon(root.source.desktopEntry);
+        if (u !== "")
+            return u;
+        u = root._entryIcon(root.source.appName);
+        if (u !== "")
+            return u;
+        u = root._nameEntryIcon(root.source.appName);
+        if (u !== "")
+            return u;
+        return root._themeIcon(String(root.source.appName || "").toLowerCase());
     }
     readonly property var actions: root.source ? root.source.actions : []
     // The conventional click-the-body action; not shown as a button.
@@ -154,14 +229,35 @@ Rectangle {
             Layout.fillWidth: true
             spacing: 2
 
-            Text {
+            // App name, then the stack count, then the arrival time. The app
+            // name takes the slack so the badge and stamp stay right-aligned.
+            RowLayout {
                 Layout.fillWidth: true
-                text: String(root.app).toUpperCase().replace(/\n/g, ' ')
-                font.family: root.theme.textFont
-                font.pixelSize: 9
-                font.weight: Font.Bold
-                color: root.critical ? root.theme.accentRed : root.theme.textSecondary
-                elide: Text.ElideRight
+                spacing: 6
+                Text {
+                    Layout.fillWidth: true
+                    text: String(root.app).toUpperCase().replace(/\n/g, ' ')
+                    font.family: root.theme.textFont
+                    font.pixelSize: 9
+                    font.weight: Font.Bold
+                    color: root.critical ? root.theme.accentRed : root.theme.textSecondary
+                    elide: Text.ElideRight
+                }
+                Text {
+                    visible: root.stackCount > 1
+                    text: "x" + root.stackCount
+                    font.family: root.theme.textFont
+                    font.pixelSize: 9
+                    font.weight: Font.Bold
+                    color: root.theme.accent
+                }
+                Text {
+                    visible: root.stamp !== ""
+                    text: root.stamp
+                    font.family: root.theme.textFont
+                    font.pixelSize: 9
+                    color: root.theme.textSecondary
+                }
             }
             Text {
                 Layout.fillWidth: true

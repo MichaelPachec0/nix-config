@@ -31,6 +31,7 @@
     pkgs.wl-clipboard # wl-copy (network widget middle-click copy)
     pkgs.networkmanager # nmcli (NetworkService)
     pkgs.iproute2 # ip (NetworkService default-route lookup)
+    config.services.awww.package # awww query (LockBackdrop reads per-output wallpaper)
   ];
 
   quickshell' = pkgs.quickshell.overrideAttrs (o: {
@@ -61,8 +62,29 @@
       printf '%s\n' "$style" >"$dir/bar-style"
     '';
   };
+  # Toggle the raised-glyph halo at runtime: `bar-glow off` / `bar-glow on`.
+  # Same state-file mechanism as bar-style. Worth having as a lever rather than
+  # a source constant: BarText.qml/BarStyle.qml are files Quickshell's hot reload
+  # does NOT pick up, so changing the halo in source means a full bar restart,
+  # whereas this is a live property change.
+  barGlowCmd = pkgs.writeShellApplication {
+    name = "bar-glow";
+    text = ''
+      state="''${1:-}"
+      case "$state" in
+        on | off) ;;
+        *)
+          echo "usage: bar-glow <on|off>" >&2
+          exit 1
+          ;;
+      esac
+      dir="''${XDG_STATE_HOME:-$HOME/.local/state}/quickshell"
+      mkdir -p "$dir"
+      printf '%s\n' "$state" >"$dir/bar-glow"
+    '';
+  };
 in {
-  home.packages = [quickshell' barStyleCmd];
+  home.packages = [quickshell' barStyleCmd barGlowCmd];
 
   # DEV: live-editable config tree. Hardcoded thanatos repo path on purpose --
   # this is temporary; the port plan's 2g task replaces it with a baked install.

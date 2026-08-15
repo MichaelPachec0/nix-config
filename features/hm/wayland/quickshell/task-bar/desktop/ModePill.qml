@@ -52,20 +52,13 @@ Item {
     }
     HoverHandler {
         id: hov
-        onHoveredChanged: hov.hovered ? popup.show() : hideTimer.restart()
     }
-    Timer {
-        id: hideTimer
-        interval: 250
-        onTriggered: if (!hov.hovered && !popup.contentHovered) popup.hide()
+    Lib.HoverBridge {
+        id: bridge
+        popup: popup
+        widgetHovered: hov.hovered
     }
-    // Hide-bridge: leaving the popup surface directly must also re-arm the timer.
-    Connections {
-        target: popup
-        function onContentHoveredChanged() {
-            if (!popup.contentHovered && !hov.hovered) hideTimer.restart();
-        }
-    }
-    // Close the popup if the submap ends while it is open.
-    onVisibleChanged: if (!root.visible) popup.hide()
+    // Close the popup if the submap ends while it is open -- no grace period,
+    // the thing it describes is already gone.
+    onVisibleChanged: if (!root.visible) bridge.hideNow()
 }

@@ -121,8 +121,12 @@
           '';
         in {
           # nix specific
-          hmsf = "home-manager switch -L --option access-tokens \"github.com=$(gh auth token)\" --flake";
-          nrsf = "sudo nixos-rebuild switch -L --option access-tokens \"github.com=$(gh auth token)\" --flake";
+          # nix-daemon runs at SCHED_IDLE (see nixos/thanatos/memory.nix), but that
+          # only covers what the *daemon* forks. The evaluator runs here, in the
+          # client process, and on this flake it is the slow, memory-hungry half of
+          # a rebuild. nice/ionice are inherited across exec, sudo included.
+          hmsf = "nice -n 19 ionice -c 3 home-manager switch -L --option access-tokens \"github.com=$(gh auth token)\" --flake";
+          nrsf = "nice -n 19 ionice -c 3 sudo nixos-rebuild switch -L --option access-tokens \"github.com=$(gh auth token)\" --flake";
 
           # kitty specific
           icat = "kitty +kitten icat";

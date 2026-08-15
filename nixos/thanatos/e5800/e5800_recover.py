@@ -25,9 +25,19 @@ RECOVER_CMDS = {
         "sleep 3",
         "ubus call cellular.modem set_airplane_mode '{\"enable\":false}'",
     ],
+    # A full Linux reboot of the router, NOT a modem reset.
+    #
+    # This used to send AT+CFUN=1,1 through modem.CPU.AT, which opened the AT
+    # channel that cellular_manager owns -- the one thing the poller must never
+    # do, because a shared channel returns crossed responses. `system reboot` is
+    # a plain ubus call with no arguments and touches no modem interface.
+    #
+    # The scope is wider than what it replaces. CFUN=1,1 reset only the modem
+    # and left Wi-Fi serving clients throughout; this drops every client for the
+    # 60-90s the router takes to come back. The action is named and labelled
+    # "router" everywhere so the button does not understate that.
     "reboot": [
-        "ubus call modem.CPU.AT get_result_AT "
-        "'{\"cmd\":\"AT+CFUN=1,1\",\"timeout\":10,\"source_flag\":0,\"sub_id\":0}'",
+        "ubus call system reboot",
     ],
 }
 
@@ -40,7 +50,16 @@ def _ssh(cmd):
             "-o", "UserKnownHostsFile={}/known_hosts".format(STATE),
             "-o", "ConnectTimeout=5",
             "{}@{}".format(USER, HOST), cmd]
-    subprocess.run(args, timeout=30)
+    # A command that takes the router down kills this connection while it is
+    # still open -- `system reboot` always does. ssh then exits non-zero or
+    # hangs until the timeout, neither of which is a failure of the action: the
+    # recovery marker is already written, so the poller is watching for the box
+    # to come back regardless. Swallow both rather than let the unit report a
+    # crash for a reboot that worked.
+    try:
+        subprocess.run(args, timeout=30)
+    except subprocess.SubprocessError:
+        pass
 
 
 def _mark(action):

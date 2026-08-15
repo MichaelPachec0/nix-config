@@ -27,6 +27,30 @@ in {
         lib.getExe pkgs.nw.swaylock
       } -f 2>&1 ) >> ~/swaylock_logfile
     '';
+    # `ipc call lock lock` returns as soon as the lock is REQUESTED. In workspace
+    # backdrop mode that is before the compositor lock actually engages (the
+    # desktop capture is armed first), so returning immediately would let
+    # lock.target -- and therefore sleep.target -- proceed on an unlocked
+    # session. Wait, bounded, for the lock marker that Lock.qml writes when
+    # `locked` becomes true.
+    lockTrigger = pkgs.writeShellApplication {
+      name = "qs-lock-trigger";
+      runtimeInputs = [ pkgs.quickshell pkgs.coreutils ];
+      text = ''
+        # Fail-open by design: if qs is down / ipc fails, nothing locks.
+        qs -c task-bar ipc call lock lock || exit 0
+        marker="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/quickshell-lock.locked"
+        i=0
+        while [ "$i" -lt 100 ]; do
+          if [ -e "$marker" ]; then
+            exit 0
+          fi
+          sleep 0.01
+          i=$((i + 1))
+        done
+        exit 0
+      '';
+    };
   in {
     xdg.configFile."swaylock/config".source = configPkg;
     # Idle-policy seam for the Quickshell "stay awake" popup: same numbers the
@@ -40,18 +64,15 @@ in {
         # NOTE: taken from example here: https://sr.ht/~whynothugo/systemd-lock-handler/#usage
         swaylock = {
           Unit = {
-            Description = "service runs on dbus lock event. (systemd-lock-handler is required)";
-            # if there any services that need to process an unlock event 
-            OnSuccess = ["unlock.target"];
-            # this is what activates the lock screen
+            Description = "Trigger the Quickshell lock on lock.target.";
             PartOf = ["lock.target"];
             After = ["lock.target"];
           };
           Service = {
-            Type = "forking";
-            # TODO: (med prio) change this so that it can configurable by the user.
-            ExecStart = "${lib.getExe pkgs.swaylock} -f -i %h/.local/share/lockscreen.png";
-            Restart = "on-failure";
+            Type = "oneshot";
+            # No swaylock fallback in the active path (manual backstop only).
+            # lockTrigger itself is fail-open (see its comment above).
+            ExecStart = "${lockTrigger}/bin/qs-lock-trigger";
           };
           Install = {WantedBy = ["lock.target"];};
         };

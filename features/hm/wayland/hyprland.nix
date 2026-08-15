@@ -14,11 +14,17 @@
   theme,
   generatedLuaBinds,
   generatedSwayBinds,
+  appRun,
   ...
 }: let
   firefox = "${lib.getExe config.programs.firefox.package}";
   inherit (lib.generators) mkLuaInline;
   luaStr = s: lib.generators.toLua {} s;
+
+  # activate-linux watermark params -- single source of truth also consumed by
+  # quickshell-lock.nix's config.json (see LockConfig.qml / LockSurface.qml).
+  wm = config.quickshellLock.watermark;
+  activateLinuxCmd = ''${lib.getExe pkgs.activate-linux} -t "${wm.title}" -m "${wm.message}" -x ${toString wm.width} -y ${toString wm.height} -c "${wm.color}"'';
 
   # hy3 dispatcher binds with no sway equivalent (appended to generatedLuaBinds).
   # Wrapped in `function() ...() end`: hl.plugin.hy3.* is nil at config-parse
@@ -157,13 +163,28 @@
   '';
 
   # exec-once -> a single hl.on("hyprland.start", ...) handler.
+  #
+  # Every entry is fronted by app-run (./app-run.nix) so it lands in its own
+  # systemd scope instead of the compositor's cgroup. Two slices are used:
+  #   -s b  background-graphical.slice -- the shell and the watermark overlay.
+  #         They are session furniture, not apps; keeping them out of
+  #         app-graphical.slice means a blanket `systemctl --user stop
+  #         app-graphical.slice` (or an oomd sweep of it) does not take the bar
+  #         down with the browser.
+  #   (default a)  app-graphical.slice -- the actual applications.
+  # The Hyprland window-rule prefix has to stay in FRONT of the wrapper:
+  # Hyprland strips "[...]" off the exec string itself and hands the remainder
+  # to /bin/sh, so the rule applies to whatever window eventually appears.
   autostartHook = mkLuaInline ''
     function()
-      hl.exec_cmd("qs -c task-bar")
-      hl.exec_cmd(${luaStr "${lib.getExe pkgs.activate-linux} -t \"Activate NixOS\" -m \"Edit configuration.nix to activate NixOS.\" -x 360 -c \"1-1-1-0.10\""})
-      hl.exec_cmd("[workspace special:magic silent] keepassxc")
-      hl.exec_cmd("[workspace special:magic silent] Windscribe")
-      hl.exec_cmd("[workspace 3 silent] telegram")
+      hl.exec_cmd("${appRun}/bin/app-run -s b -a quickshell qs -c task-bar")
+      ${lib.optionalString wm.enable ''hl.exec_cmd(${luaStr "${appRun}/bin/app-run -s b -a activate-linux ${activateLinuxCmd}"})''}
+      hl.exec_cmd("[workspace special:magic silent] ${appRun}/bin/app-run keepassxc")
+      hl.exec_cmd("[workspace special:magic silent] ${appRun}/bin/app-run Windscribe")
+      -- The binary is "Telegram", capital T (/run/current-system/sw/bin/Telegram);
+      -- the old lowercase "telegram" here was never on PATH, so this autostart
+      -- has been silently doing nothing.
+      hl.exec_cmd("[workspace 3 silent] ${appRun}/bin/app-run Telegram")
     end
   '';
   # hl.exec_cmd(${luaStr "[workspace 2 silent] ${firefox}"})
@@ -176,6 +197,58 @@
     p = lib.splitString "," e;
   in {
     _args = [(lib.head p) (lib.concatStringsSep "," (lib.tail p))];
+  };
+  envPairs = lib.mapAttrsToList (k: v: "${k},${v}");
+
+  # ---- session environment -------------------------------------------------
+  # Hyprland's `env` only ever reached the compositor's own children, which was
+  # every app back when Hyprland fork()ed them directly. Once launches go
+  # through the uwsm runner (see ./app-run.nix) that stops being true: a scope
+  # started by systemd inherits the SYSTEMD USER MANAGER's environment, not the
+  # compositor's. Verified against the live manager -- NIXOS_OZONE_WL and
+  # EDITOR were there (they arrive via home.sessionVariables -> ~/.profile,
+  # which uwsm's prepare-env sources), but MOZ_ENABLE_WAYLAND, GDK_BACKEND,
+  # QT_QPA_PLATFORM, SDL_VIDEODRIVER, CLUTTER_BACKEND, _JAVA_AWT_WM_NONREPARENTING
+  # and TERMINAL were NOT. Wrapping launches without fixing this would have
+  # quietly dropped Firefox onto XWayland and un-fixed the Java grey-window
+  # workaround.
+  #
+  # So the values live here once and are emitted twice:
+  #   - as hl.env(...) below, for a Hyprland started WITHOUT uwsm; and
+  #   - as ~/.config/uwsm/env-hyprland, which uwsm's prepare-env sources from
+  #     $XDG_CONFIG_HOME/uwsm/env-<lowercased desktop name> before the
+  #     compositor starts, so the manager, the compositor and every app scope
+  #     all agree.
+  # The uwsm file is strictly the better of the two: it is applied before
+  # compositor startup, whereas hl.env only lands at config-parse time.
+  sessionEnv = {
+    NIXOS_OZONE_WL = "1";
+    MOZ_ENABLE_WAYLAND = "1";
+    QT_WAYLAND_DISABLE_WINDOWDECORATION = "1";
+    EDITOR = "vim";
+    _JAVA_AWT_WM_NONREPARENTING = "1";
+    QT_AUTO_SCREEN_SCALE_FACTOR = "1";
+    QT_ENABLE_HIGHDPI_SCALING = "1";
+    SDL_VIDEO_DRIVER = "wayland";
+    XCURSOR_SIZE = "24";
+    QT_FONT_DPI = "96";
+    GDK_BACKEND = "wayland,x11";
+    QT_QPA_PLATFORM = "wayland;xcb";
+    SDL_VIDEODRIVER = "wayland";
+    CLUTTER_BACKEND = "wayland";
+    TERMINAL = "kitty";
+  };
+
+  # Compositor-scoped only, and NOT written to the uwsm env file: uwsm's
+  # prepare-env exports the three XDG_* ones itself from the session's
+  # DesktopNames, and re-declaring them in an env file that is sourced
+  # afterwards would just be a chance to disagree with it. AQ_NO_MODIFIERS is
+  # read by aquamarine, so it belongs to the compositor process.
+  compositorEnv = {
+    AQ_NO_MODIFIERS = "1";
+    XDG_CURRENT_DESKTOP = "Hyprland";
+    XDG_SESSION_DESKTOP = "Hyprland";
+    XDG_SESSION_TYPE = "wayland";
   };
 
   # A resize-submap bind: hl.bind("<key>", <dispatcher>, <opts>).
@@ -227,6 +300,19 @@
       else 0
     ));
   chRow = key: desc: "${chPad 24 key}${desc}";
+  # Drop the app-run wrapper (and any -s/-a flags) from a bind's command before
+  # describing it: the sheet should read "kitty", not the store path of the
+  # uwsm launcher that fronts it. See ./app-run.nix.
+  chStripAppRun = toks:
+    if toks == [] || !(lib.hasSuffix "/app-run" (builtins.head toks))
+    then toks
+    else let
+      dropFlags = ts:
+        if builtins.length ts >= 2 && builtins.elem (builtins.head ts) ["-s" "-a"]
+        then dropFlags (builtins.tail (builtins.tail ts))
+        else ts;
+    in
+      dropFlags (builtins.tail toks);
   chDescribe = cmd:
     if lib.hasInfix "grim" cmd
     then "Screenshot region"
@@ -235,7 +321,7 @@
     else if lib.hasPrefix "exec " cmd
     then
       (let
-        toks = lib.splitString " " (lib.removePrefix "exec " cmd);
+        toks = chStripAppRun (lib.splitString " " (lib.removePrefix "exec " cmd));
       in
         builtins.baseNameOf (builtins.head toks)
         + lib.optionalString (builtins.length toks > 1) " ${lib.concatStringsSep " " (builtins.tail toks)}")
@@ -313,7 +399,13 @@
   cheatsheetScript = pkgs.writeShellScriptBin "keybind-cheatsheet" ''
     exec rofi -dmenu -i -no-custom -p "keybinds" -mesg "Esc to close" < ${cheatFile}
   '';
-  cheatBind = {_args = ["SUPER + slash" (mkLuaInline ''hl.dsp.exec_cmd("${cheatsheetScript}/bin/keybind-cheatsheet")'')];};
+  # Fronted by app-run for the same reason Super+Space is (common.nix): rofi is
+  # a GUI surface the compositor forks, so unwrapped it accumulates in the
+  # compositor's cgroup. The stdin redirect lives inside the script, so wrapping
+  # at the bind is enough. Store path rather than a bare name because the
+  # compositor evaluates this string; the cheatsheet's own "Super+/" row is
+  # hand-written (chRow), so it never shows the wrapper.
+  cheatBind = {_args = ["SUPER + slash" (mkLuaInline ''hl.dsp.exec_cmd("${appRun}/bin/app-run ${cheatsheetScript}/bin/keybind-cheatsheet")'')];};
 
   # Submap hint data -- SINGLE SOURCE for both the mode pill's hover popup
   # (emitted as JSON below, read by lib/HyprSubmapService.qml) and the Super+/
@@ -360,6 +452,14 @@
           d = "Group w/ neighbour -> horizontal";
         }
         {
+          k = "d";
+          d = "Ungroup this window only";
+        }
+        {
+          k = "Shift+d";
+          d = "Dissolve group (children move up)";
+        }
+        {
           k = "Esc / Return";
           d = "Cancel";
         }
@@ -380,8 +480,7 @@
   # and the default browser is injected as an absolute path. runtimeInputs pin
   # only what the script itself runs; kitty/rofi/the browser are launched by the
   # compositor/session (rofi stays the themed one resolved from PATH, and
-  # --browser overrides the injected default). See
-  # docs/superpowers/plans/2026-06-21-hy3-project-dispatcher-notes.md.
+  # --browser overrides the injected default).
   hy3ProjectScript = pkgs.writeShellApplication {
     name = "hy3-project";
     runtimeInputs = [pkgs.jq pkgs.coreutils pkgs.findutils pkgs.latest.hyprland];
@@ -405,10 +504,11 @@
   # `hy3-layout build '<notation>'` constructs the layout live; `show` prints the
   # active (or --wk N / --wk all) workspace as notation; --visualize prints an
   # ASCII tree. stdlib-only Python -- only hyprctl is shelled out to (kitty/the
-  # browser are launched by the compositor via hl.exec_cmd). Wrapped via
+  # browser are launched by the compositor via hl.exec_cmd, so _launch_string
+  # fronts them with app-run to get them out of the compositor's cgroup, the
+  # same way hy3-project.sh does). Wrapped via
   # writeShellApplication (python3 on the .py) rather than writePython3Bin to
-  # skip the build-time flake8 gate. See
-  # docs/superpowers/specs/2026-06-22-hy3-layout-design.md.
+  # skip the build-time flake8 gate.
   hy3LayoutScript = pkgs.writeShellApplication {
     name = "hy3-layout";
     runtimeInputs = [pkgs.python3 pkgs.latest.hyprland];
@@ -423,8 +523,7 @@
   # hy3-layout-tui: Textual TUI over the engine. Needs the third-party `textual`
   # dep (so python3.withPackages, not the stdlib wrapper) and all four modules
   # importable together -- assemble them into one store dir and run the entry
-  # from there so `import hy3_layout*` resolves via sys.path[0]. See
-  # docs/superpowers/specs/2026-06-22-hy3-layout-tui-design.md.
+  # from there so `import hy3_layout*` resolves via sys.path[0].
   hy3LayoutTuiSrc = pkgs.runCommand "hy3-layout-tui-src" {} ''
     mkdir -p "$out"
     cp ${./hy3_layout.py}           "$out/hy3_layout.py"
@@ -473,6 +572,23 @@ in {
     # Submap hint data for the bar's mode pill. Emitted OUTSIDE ~/.config/quickshell
     # (that dir is a repo symlink); read by lib/HyprSubmapService.qml via FileView.
     xdg.configFile."quickshell-modes/hints.json".text = builtins.toJSON submapHints;
+
+    # The uwsm half of sessionEnv (see the let block). uwsm's prepare-env
+    # sources $XDG_CONFIG_HOME/uwsm/env-<desktop> -- lowercased XDG_CURRENT_DESKTOP,
+    # so "env-hyprland" -- as a POSIX shell fragment, before starting the
+    # compositor, and exports the result into the systemd user manager. That is
+    # what puts these in the environment of every app scope; the
+    # compositor inherits them too, so this is the earlier and broader of the
+    # two paths. Values are escapeShellArg'd because several contain shell
+    # metacharacters (QT_QPA_PLATFORM=wayland;xcb).
+    xdg.configFile."uwsm/env-hyprland".text =
+      ''
+        # Generated by home-manager (features/hm/wayland/hyprland.nix).
+        # Sourced by uwsm's prepare-env; keep it POSIX sh.
+      ''
+      + lib.concatMapStrings
+      (k: "export ${k}=${lib.escapeShellArg sessionEnv.${k}}\n")
+      (lib.attrNames sessionEnv);
 
     # Keep floating windows that drift on resize pinned in place. Windscribe
     # (Qt, empty app_id) shoves its own window up when the Locations panel
@@ -550,9 +666,9 @@ in {
             decoration = {
               rounding = 8;
               active_opacity = 1.0;
-              inactive_opacity = 0.9;
+              inactive_opacity = 0.95;
               dim_inactive = true;
-              dim_strength = 0.18;
+              dim_strength = 0.25;
               dim_around = 0.6;
 
               blur = {
@@ -561,16 +677,20 @@ in {
                 # quickshell bar. Blur strength is global in Hyprland (layerrule
                 # only toggles blur on/off, no per-layer size), so this also
                 # deepens window/popup blur.
-                size = 8;
+                size = 2;
                 # Heavy blur (4 passes + xray) only on strong-GPU hosts (thanatos);
                 # everything else falls back to a lighter 3-pass, no-xray blur.
                 passes =
                   if config.gpu.strong.enable
-                  then 4
-                  else 3;
+                  then 3
+                  else 2;
                 new_optimizations = true;
-                xray = config.gpu.strong.enable;
-                popups = true;
+                xray = true;
+                popups = false;
+                vibrancy = 0.35;
+                vibrancy_darkness = 0.4;
+                brightness = 0.75;
+                contrast = 1.5;
               };
 
               shadow = {
@@ -586,6 +706,10 @@ in {
               disable_hyprland_logo = true;
               animate_manual_resizes = true;
               enable_swallow = false; # keep GUI apps in their own window; don't hide the launching terminal
+              # Let a relaunched Quickshell re-acquire (then release) a stranded
+              # ext-session-lock -- the escape hatch's recovery path
+              # (lock-escape / QS_LOCK_ESCAPE). See quickshell-lock.nix.
+              allow_session_lock_restore = true;
             };
 
             render = {
@@ -722,28 +846,10 @@ in {
             }
           ];
 
-          # hl.env("KEY", "VALUE")
-          env = map toEnv [
-            "AQ_NO_MODIFIERS,1"
-            "XDG_CURRENT_DESKTOP,Hyprland"
-            "XDG_SESSION_DESKTOP,Hyprland"
-            "XDG_SESSION_TYPE,wayland"
-            "NIXOS_OZONE_WL,1"
-            "MOZ_ENABLE_WAYLAND,1"
-            "QT_WAYLAND_DISABLE_WINDOWDECORATION,1"
-            "EDITOR,vim"
-            "_JAVA_AWT_WM_NONREPARENTING,1"
-            "QT_AUTO_SCREEN_SCALE_FACTOR,1"
-            "QT_ENABLE_HIGHDPI_SCALING,1"
-            "SDL_VIDEO_DRIVER,wayland"
-            "XCURSOR_SIZE,24"
-            "QT_FONT_DPI,96"
-            "GDK_BACKEND,wayland,x11"
-            "QT_QPA_PLATFORM,wayland;xcb"
-            "SDL_VIDEODRIVER,wayland"
-            "CLUTTER_BACKEND,wayland"
-            "TERMINAL,kitty"
-          ];
+          # hl.env("KEY", "VALUE") -- see sessionEnv / compositorEnv above.
+          # This list is the NON-uwsm path only; the same values reach
+          # uwsm-launched apps through ~/.config/uwsm/env-hyprland.
+          env = map toEnv (envPairs (compositorEnv // sessionEnv));
 
           # hl.monitor({...}) -- the sway desc rules split into fields.
           monitor = [
@@ -834,7 +940,19 @@ in {
               cheatBind
               hy3ProjectBind
               hubBind
-            ];
+            ]
+            # Dev escape hatch: recover a stranded/crashed session lock. LOCKED
+            # bind (locked=true) so it fires WHILE the ext-session-lock holds
+            # input -- a plain bind is suppressed under lock. Gated by the same
+            # failOpenOnCrash flag as the watchdog (quickshell-lock.nix); dropped
+            # at v2. `lock-escape` is on PATH via that module.
+            ++ lib.optional config.quickshellLock.failOpenOnCrash {
+              _args = [
+                "SUPER + CONTROL + ALT + u"
+                (mkLuaInline ''hl.dsp.exec_cmd("lock-escape")'')
+                {locked = true;}
+              ];
+            };
 
           # hl.on("hyprland.start", function() ... end). hy3 setup runs first
           # (load + config), then the autostart apps.
@@ -1132,6 +1250,8 @@ in {
         #   bare h/j/k/l    -> vertical  (stack the pair)
         #   SHIFT  h/j/k/l  -> tabbed    (tab the pair together)
         #   CONTROL h/j/k/l -> horizontal (side-by-side, nested as a unit)
+        # `d` / `SHIFT d` are the inverse (hy3 0005 patch): ungroup just the
+        # focused node, or dissolve the whole group.
         # Each bind performs the group then exits the submap; Escape/Return and
         # the Super+Shift+g leader also exit. Waybar's hyprland/submap module
         # surfaces "groupwith mode" while active (parity with sway's resize mode).
@@ -1159,6 +1279,21 @@ in {
           (submapBind "CONTROL + j" (gw "d" "h") {})
           (submapBind "CONTROL + k" (gw "u" "h") {})
           (submapBind "CONTROL + l" (gw "r" "h") {})
+          # Ungroup: the inverse of the group binds above (hy3 0005 patch).
+          #   d       -> lift ONLY the focused node out of its group; the group
+          #              and its remaining children survive one level down --
+          #              ((a - b - c) | d) focused on a becomes ((b - c) | a | d).
+          #   Shift+d -> dissolve the WHOLE group; every child takes the group's
+          #              slot in the parent -- ((a - b) | c) becomes (a | b | c).
+          # Neither is expressible upstream: make_group's `toggle` only collapses
+          # a group that is already down to a SINGLE child.
+          # A group sitting directly on the workspace has no level above it (the
+          # hy3 root node holds exactly one child, drawn at full size), so there
+          # `d` first wraps the group in a split of its pre-tab orientation --
+          # tabs(a,b,c) focused on a becomes (tabs(b,c) | a) -- and Shift+d just
+          # untabs in place. Both are no-ops on a plain top-level split.
+          (submapBind "d" ''function() hl.plugin.hy3.ungroup("node")(); hl.dispatch(hl.dsp.submap("reset")) end'' {})
+          (submapBind "SHIFT + d" ''function() hl.plugin.hy3.ungroup("group")(); hl.dispatch(hl.dsp.submap("reset")) end'' {})
           # Exits.
           (submapBind "escape" "hl.dsp.submap(\"reset\")" {})
           (submapBind "return" "hl.dsp.submap(\"reset\")" {})

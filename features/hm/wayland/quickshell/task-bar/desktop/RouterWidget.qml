@@ -45,6 +45,7 @@ Item {
             Repeater {
                 model: 5
                 delegate: Rectangle {
+                    id: bar
                     required property int index
                     width: 3
                     height: 4 + index * 2
@@ -52,14 +53,56 @@ Item {
                     radius: 1
                     property int fill: RouterFmt.barFill(root.svc.cellular.strength)
                     // Empty segments: a solid dim grey (the pill's ring color), NOT a
-                    // translucent one. The pill casts a per-glyph drop shadow from each
-                    // child's alpha; at low alpha the dark shadow overpowers the bar and
-                    // it reads as sitting *below* the shadow. Full opacity keeps the empty
-                    // track on the same depth plane as the colored (opaque) bars; the
-                    // dim hue -- not transparency -- is what reads as "off".
+                    // translucent one. These cast their own drop below, and at low alpha
+                    // that dark copy shows through and the bar reads as sitting *below*
+                    // its own shadow. Full opacity keeps the empty track on the same
+                    // depth plane as the colored bars; the dim hue -- not transparency --
+                    // is what reads as "off".
                     color: index < fill
                         ? root.qColor(RouterFmt.quality("rsrp", root.svc.cellular.rsrp))
                         : root.theme.border
+
+                    // Match Lib.BarText's raised look. These bars are Rectangles, not
+                    // glyphs, so they get none of Text.Raised or BarText's lift -- and
+                    // since Pill's frosted shadow pass now covers only the capsule (not
+                    // its content), nothing else casts for them either. Same technique as
+                    // BarText: a copy at negative z, which draws behind the parent's own
+                    // content, offset by the shared BarStyle depth.
+                    // Lib.BarStyle, not a bare BarStyle: the singleton lives in ../lib,
+                    // so outside that directory it is only reachable through the import
+                    // alias. A bare reference silently resolves to nothing and throws
+                    // "BarStyle is not defined" per delegate, per frame.
+                    Repeater {
+                        model: Lib.BarStyle.glyphLifted ? Lib.BarStyle.glyphLiftSteps : 0
+                        delegate: Rectangle {
+                            required property int index
+                            // index 0 = deepest, created first so nearer steps stack on it.
+                            readonly property int step: Lib.BarStyle.glyphLiftSteps - index
+                            z: -1
+                            x: Math.round(step * Lib.BarStyle.glyphLiftX / Lib.BarStyle.glyphLiftSteps)
+                            y: Math.round(step * Lib.BarStyle.glyphLiftY / Lib.BarStyle.glyphLiftSteps)
+                            width: bar.width
+                            height: bar.height
+                            radius: bar.radius
+                            color: Qt.rgba(0, 0, 0, Lib.BarStyle.glyphLiftAlpha)
+
+                            // Halo on the deepest step only, matching BarText. A solid
+                            // shape needs no eight-way spread -- one inflated copy already
+                            // has a clean symmetric edge -- but that means it gets the
+                            // accumulated alpha in ONE draw where the text gets it from
+                            // eight overlapping ones, hence the 2x.
+                            Rectangle {
+                                visible: index === 0 && Lib.BarStyle.glyphGlowEnabled && Lib.BarStyle.glyphGlowAlpha > 0
+                                z: -1
+                                x: -Lib.BarStyle.glyphGlowSpread + Lib.BarStyle.glyphGlowOffsetX
+                                y: -Lib.BarStyle.glyphGlowSpread + Lib.BarStyle.glyphGlowOffsetY
+                                width: parent.width + 2 * Lib.BarStyle.glyphGlowSpread
+                                height: parent.height + 2 * Lib.BarStyle.glyphGlowSpread
+                                radius: parent.radius + Lib.BarStyle.glyphGlowSpread
+                                color: Qt.rgba(Lib.BarStyle.glyphGlowColor.r, Lib.BarStyle.glyphGlowColor.g, Lib.BarStyle.glyphGlowColor.b, Math.min(1, Lib.BarStyle.glyphGlowAlpha * 2))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -131,19 +174,9 @@ Item {
     }
     HoverHandler {
         id: hov
-        onHoveredChanged: hov.hovered ? pop.show() : hideTimer.restart()
     }
-    Timer {
-        id: hideTimer
-        interval: 250
-        onTriggered: if (!hov.hovered && !pop.contentHovered) pop.hide()
-    }
-    // Hide-bridge: leaving the popup surface directly (not back across the
-    // widget) must also re-arm the hide timer, else the popup hangs open.
-    Connections {
-        target: pop
-        function onContentHoveredChanged() {
-            if (!pop.contentHovered && !hov.hovered) hideTimer.restart();
-        }
+    Lib.HoverBridge {
+        popup: pop
+        widgetHovered: hov.hovered
     }
 }

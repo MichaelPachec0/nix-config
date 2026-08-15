@@ -1,0 +1,4 @@
+{ "name": "xp",
+  "provides": ["logon", "shutdown", "fatal"],
+  "palettes": ["luna", "gruvbox"],
+  "defaultPalette": "luna" }

@@ -9,6 +9,7 @@ import QtQuick
 import "lib" as Lib
 import "desktop" as Desktop
 import "hub" as Hub
+import "lock" as Lock
 
 ShellRoot {
     id: shellRoot
@@ -16,6 +17,40 @@ ShellRoot {
     // Global notification service (one server for all screens).
     Lib.NotifService {
         id: notifSvc
+    }
+
+    // Who is capturing right now (mic / camera / screencast), read by the bar's
+    // media pill. Id `captureSvc` MUST differ from the `capture` property it
+    // feeds on Taskbar: an own-property shadows the outer-component id across
+    // the Variants delegate, so a same-name binding resolves to the widget's
+    // own null property (see submapSvc / netSvc / powerzStats above).
+    Lib.CaptureService {
+        id: captureSvc
+        // captureArmed as well as locked: Lock.qml starts its backdrop
+        // ScreencopyView (which Hyprland counts as a screencast) 25-250ms
+        // BEFORE it sets locked, and the desktop is still composited in that
+        // window -- so the pill flashed a red recording glyph caused by the
+        // lock's own backdrop on every single lock. captureArmed is cleared
+        // again in Lock.qml's unlock branch, so this adds no lasting state.
+        locked: lockScreen.locked || lockScreen.captureArmed
+        castCount: shellRoot.screencastCount
+        castOwner: shellRoot.castOwner
+        castTarget: shellRoot.castTarget
+    }
+
+    // Global lock: one WlSessionLock manages every output. Instantiated once
+    // (not per-screen) -- the surface Component is created per output internally.
+    Lock.Lock {
+        id: lockScreen
+        audio: audioSvc
+        notifications: notifSvc
+        // Ids differ from the property names they feed (netSvc->net,
+        // e5800Svc->router, btSvc->bt): an own-property shadows an enclosing
+        // component's id in QML scope resolution, so a same-name binding
+        // silently resolves to the component's own null property.
+        net: netSvc
+        router: e5800Svc
+        bt: btSvc
     }
 
     // Global Bluetooth state (one default adapter, shared by all screens).
@@ -65,6 +100,13 @@ ShellRoot {
         id: e5800Svc
     }
 
+    // Last-resume publisher. One reader for all screens. The id differs from
+    // the Taskbar `wakeSvc` property it feeds, for the same shadowing reason as
+    // e5800Svc->routerSvc directly above.
+    Lib.WakeService {
+        id: resumeMonitor
+    }
+
     // Shared CPU/RAM poller, read by every bar + hub header. One /proc reader for
     // all screens (was one per monitor).
     Lib.SysStats {
@@ -96,13 +138,75 @@ ShellRoot {
     // are suppressed while screen sharing -- the QS-native replacement for the
     // swaync screencast inhibitor (see quickshell-notifications-cutover). The
     // `screencast` IPC event carries `state,owner`; state 1 = sharing, 0 = off.
-    // If qs restarts mid-cast it misses the opening event, but the next state
-    // change re-syncs (rare, and only costs a few un-suppressed toasts).
+    //
+    // This MUST be a refcount, not a last-write-wins flag: the event is PER
+    // SESSION, not a global refcount, and the lock's own workspace backdrop
+    // (ScreencopyView) opens a screencast session every lock and closes it at
+    // unlock. A last-write-wins flag latches false the moment our backdrop's
+    // session closes, even while a real capture (wf-recorder, a portal share)
+    // is still running and will never re-announce -- a false all-clear on the
+    // feature's flagship signal. Counting sessions instead means our own
+    // open/close pair nets to zero without touching a concurrent real one.
+    //
+    // Clamped at 0 with Math.max: if qs restarts mid-cast it misses that
+    // session's opening `1` and under-counts by one until the next state
+    // change re-syncs it (rare, and only costs a few un-suppressed toasts).
+    // Without the clamp, that missed-opening under-count could go negative on
+    // the matching `0` and latch `screencasting` false, reintroducing the
+    // exact false-all-clear this refcount exists to prevent.
+    //
+    // Qualified `shellRoot.` deliberately: an unqualified assignment to a
+    // property that no longer resolves fails SOFT in QML JS -- the read yields
+    // undefined, Math.max(0, NaN) is NaN, `NaN > 0` is false, and screencasting
+    // latches permanently false. That is silently the same false all-clear this
+    // refcount exists to prevent, so the reference must fail loudly instead.
+    property int screencastCount: 0
     Connections {
         target: Hyprland
         function onRawEvent(event) {
-            if (event.name === "screencast")
-                notifSvc.screencasting = event.parse(2)[0] === "1";
+            if (event.name === "screencast") {
+                var sharing = event.parse(2)[0] === "1";
+                shellRoot.screencastCount = Math.max(0, shellRoot.screencastCount + (sharing ? 1 : -1));
+                notifSvc.screencasting = shellRoot.screencastCount > 0;
+            }
+        }
+    }
+
+    // Active casts, newest last. A STACK rather than a single owner/target
+    // pair, because Hyprland's events carry no session identity: the lock's
+    // own workspace backdrop opens a screencast session on every lock, and a
+    // single pair would let that session's irrelevant values overwrite a real
+    // share's attribution with nothing to restore it afterwards.
+    //
+    // Stops are matched LIFO. That is an approximation -- the wire format
+    // gives nothing to correlate a stop with its start -- but it is exact for
+    // the case that actually occurs here: the backdrop's session opens after,
+    // and closes before, any share it overlaps.
+    //
+    // Deliberately does NOT consult screencastCount. That counter is
+    // maintained by a different handler on a different event, and gating the
+    // clear on it leaves a stale title behind whenever the two events arrive
+    // in the unexpected order.
+    property var castStack: []
+    readonly property string castOwner: shellRoot.castStack.length > 0 ? shellRoot.castStack[shellRoot.castStack.length - 1].owner : ""
+    readonly property string castTarget: shellRoot.castStack.length > 0 ? shellRoot.castStack[shellRoot.castStack.length - 1].target : ""
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            if (event.name !== "screencastv2")
+                return;
+            var f = event.parse(3);
+            // Copy-then-reassign: mutating the array in place does not fire a
+            // change notification, so bindings would silently never update.
+            var next = shellRoot.castStack.slice();
+            if (f[0] === "1")
+                next.push({
+                    owner: f[1] || "",
+                    target: f[2] || ""
+                });
+            else
+                next.pop();
+            shellRoot.castStack = next;
         }
     }
 
@@ -122,6 +226,12 @@ ShellRoot {
             case "closewindow":
             case "movewindowv2":
             case "activewindowv2":
+            // Taskbar.surfaceVisible reads each toplevel's fullscreen flag to
+            // decide whether this bar is covered, so it needs the same refresh.
+            // `fullscreen` is its own event, but it is NOT emitted when a
+            // fullscreen window simply closes -- that is closewindow, already
+            // above. Both paths must land here or the bar stays gated off.
+            case "fullscreen":
                 toplevelRefresh.restart();
                 break;
             }
@@ -210,6 +320,7 @@ ShellRoot {
                 weatherState: weatherState
                 bt: btSvc
                 audio: audioSvc
+                capture: captureSvc
                 submap: submapSvc
                 calState: calState
                 routerSvc: e5800Svc
@@ -217,6 +328,7 @@ ShellRoot {
                 inhibit: inhibitSvc
                 powerz: powerzStats
                 ecPd: ecPdSvc
+                wakeSvc: resumeMonitor
             }
 
             // The Hub overlay (SUPER+Right-Alt). Hyprland binds that key to a
@@ -233,6 +345,7 @@ ShellRoot {
                 weatherState: weatherState
                 notif: notifSvc
                 powerz: powerzStats
+                net: netSvc
                 Component.onCompleted: shellRoot.hubsByMonitor[v.modelData.name] = hub
             }
 

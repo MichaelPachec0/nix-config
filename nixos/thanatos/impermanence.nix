@@ -75,7 +75,14 @@
     # Only persisted once the corresponding service is enabled; both default
     # to false, so these no-op until then (upower is planned for thanatos).
     ++ lib.optional config.services.hardware.bolt.enable "/var/lib/boltd"  # Thunderbolt (boltd) device authorizations
-    ++ lib.optional config.services.upower.enable "/var/lib/upower";       # battery/power-usage history
+    ++ lib.optional config.services.upower.enable "/var/lib/upower"        # battery/power-usage history
+    # qs-greeter's writable settings tier and last-user/last-session state
+    # (programs.qsGreeter.dataDir); default false (backend stays "regreet"),
+    # so this no-ops until the qsGreeter backend is actually selected.
+    # Without it, both were wiped every boot despite the tmpfiles rule
+    # creating them under /var/lib -- ephemeral root erases anything not
+    # listed here regardless of ownership/permissions.
+    ++ lib.optional config.programs.qsGreeter.enable "/var/lib/qs-greeter";
     files = [
       "/etc/machine-id"
       "/etc/ssh/ssh_host_ed25519_key"

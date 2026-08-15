@@ -67,6 +67,10 @@ resolve_browser() {
   fi
   printf '%s\n' "${HY3_PROJECT_DEFAULT_BROWSER:-firefox} --new-window"
 }
+# NOTE: the app-run prefix (features/hm/wayland/app-run.nix, puts the window in
+# its own systemd scope under uwsm) is added at the spawn_and_wait call site,
+# not here, so --browser=CMD / $BROWSER / the injected default all get it while
+# the resolved command stays clean in --dry-run output and the log.
 
 # ---- hyprland / hy3 primitives (Lua-config: everything via `hyprctl eval`) -
 
@@ -84,7 +88,11 @@ hy3_groupwith() { hyprctl eval "hl.plugin.hy3.group_with(\"$1\",\"$2\")()" >/dev
 # launch string for a kitty whose spawned shell starts in $1. kitty's own
 # --directory is dropped by Hyprland's exec path, so cd inside an `sh -c`
 # wrapper instead; the dir is double-quoted so paths with spaces survive.
-kitty_cmd() { printf "sh -c 'cd \"%s\" && exec kitty --class %s'" "$1" "$KCLASS"; }
+# app-run puts the terminal in its own systemd scope under uwsm (see
+# features/hm/wayland/app-run.nix); it must sit INSIDE the sh -c, after the cd,
+# because the scope inherits the caller's working directory (verified) and the
+# cd is what makes the shell start in the project dir.
+kitty_cmd() { printf "sh -c 'cd \"%s\" && exec app-run kitty --class %s'" "$1" "$KCLASS"; }
 
 # spawn_and_wait <label> <launch...> -> echoes the new window address
 # Serialized: snapshot addresses, launch silently onto $WS, poll for the one
@@ -176,7 +184,7 @@ build_unit() {
   b="$(spawn_and_wait b "$(kitty_cmd "$dir")")" || exit 1
   focus "$b"
   # shellcheck disable=SC2086  # browser may carry flags, e.g. "firefox --new-window"
-  spawn_and_wait c $browser >/dev/null || exit 1   # c need only exist (b's right neighbour)
+  spawn_and_wait c app-run $browser >/dev/null || exit 1   # c need only exist (b's right neighbour)
   focus "$b"; hy3_groupwith r tab          # H[a,{b,c}]
   focus "$a"; hy3_top; hy3_maketab         # wrap into a root tab -> T[H[a,{b,c}]]
 }
@@ -204,7 +212,7 @@ append_unit() {
   b="$(spawn_and_wait b "$(kitty_cmd "$dir")")" || exit 1   # -> new root tab
   focus "$b"
   # shellcheck disable=SC2086
-  spawn_and_wait c $browser >/dev/null || exit 1            # c -> new root tab (b's right neighbour)
+  spawn_and_wait c app-run $browser >/dev/null || exit 1            # c -> new root tab (b's right neighbour)
   focus "$b"; hy3_groupwith r tab          # {b,c}
   focus "$a"; hy3_groupwith r h            # H[a,{b,c}] -> a new root tab
 }

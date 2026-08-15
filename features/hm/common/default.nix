@@ -4,7 +4,7 @@
   standalone ? true,
   ...
 }: {
-  imports = [./programs.nix ./services.nix];
+  imports = [./programs.nix ./services.nix ./dbus-fd-watch.nix];
   options = {
     graphical.enable =
       lib.mkEnableOption "Enable graphical programs common in all desktops";

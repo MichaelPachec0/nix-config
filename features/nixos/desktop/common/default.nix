@@ -28,6 +28,28 @@ in {
     ];
     fonts.fontDir.enable = true;
     security.rtkit.enable = true;
+
+    # Wake stamp: a world-readable marker of the last resume, so any session
+    # tool can ask "was this cache written before the machine last moved?".
+    #
+    # resumeCommands runs in the preStop of NixOS's sleep-actions.service, which
+    # is stopped when the system comes back -- so this executes on resume, not
+    # on the way down.
+    #
+    # /run is a tmpfs, so an ABSENT stamp means "no resume since boot", which is
+    # the correct answer for a freshly booted machine and must not be read as a
+    # wake. The epoch is written into the file as well as carried by its mtime:
+    # consumers that watch for content changes need a value that actually
+    # differs, and a bare touch leaves an empty file unchanged.
+    #
+    # Written via a temp file and renamed so a reader can never catch a
+    # half-written stamp; the rename is atomic within the tmpfs.
+    powerManagement.resumeCommands = ''
+      ${pkgs.coreutils}/bin/mkdir -m 0755 -p /run/qs-wake
+      ${pkgs.coreutils}/bin/date +%s > /run/qs-wake/stamp.tmp
+      ${pkgs.coreutils}/bin/chmod 0644 /run/qs-wake/stamp.tmp
+      ${pkgs.coreutils}/bin/mv -f /run/qs-wake/stamp.tmp /run/qs-wake/stamp
+    '';
     services.pipewire = {
       enable = true;
       audio.enable = true;
@@ -41,9 +63,7 @@ in {
     };
     programs.firefox = {
       enable = true;
-      # package = pkgs.firefox;
       package = pkgs.latest.firefox-devedition-bin;
-      # package = pkgs.firefox-beta-bin;
 
       # pkgs.firefox-devedition-bin.overrideAttrs (let
       #   # NOTE: This is for 116.0b8.
@@ -58,7 +78,7 @@ in {
       # tridactyl = true;
       # };
       nativeMessagingHosts = {
-        packages = [pkgs.tridactyl-native];
+        packages = with pkgs; [tridactyl-native];
       };
     };
     nixpkgs.overlays = [];
@@ -221,6 +241,12 @@ in {
         wantedBy = ["graphical-session.target"];
         wants = ["graphical-session.target"];
         after = ["graphical-session.target"];
+        # Without partOf, stopping the session leaves this running; the agent
+        # then exits 1 on the broken Wayland pipe and Restart=on-failure fires
+        # a second later, whose wants= drags graphical-session{,-pre}.target
+        # back up. uwsm then refuses to start ("A compositor or
+        # graphical-session* target is already active!").
+        partOf = ["graphical-session.target"];
         serviceConfig = {
           Type = "simple";
           ExecStart = "${pkgs.polkit_gnome}/libexec/polkit-gnome-authentication-agent-1";

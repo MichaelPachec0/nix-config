@@ -16,7 +16,22 @@ Item {
     signal forget
 
     implicitWidth: 250
-    implicitHeight: content.implicitHeight
+
+    // Height derived from the parts, NOT read back off the Column.
+    //
+    // A positioner recomputes its implicitHeight on Qt's POLISH pass, not
+    // synchronously when a child's `visible` flips. Binding the panel's height
+    // to content.implicitHeight therefore left one frame where `saved` was
+    // already true but the height still measured the card alone -- the Forget
+    // button drawn at y=0, on top of the card, until the polish landed. This
+    // arithmetic updates in the same binding pass as `saved`.
+    //
+    // (Measured: the stale frame was real but self-healed in ~16ms while the
+    // popup window was mapped. It persisted indefinitely while it was NOT --
+    // no polish is delivered to a hidden window -- which is the state the panel
+    // sits in between opens.)
+    readonly property int forgetH: 30
+    implicitHeight: infoCard.implicitHeight + (root.saved ? content.spacing + root.forgetH : 0)
 
     function band(f) {
         f = f || 0;
@@ -103,8 +118,11 @@ Item {
         spacing: 4
 
         Rectangle {
+            id: infoCard
             width: parent.width
-            implicitHeight: col.implicitHeight + 16
+            // +20, matching the ColumnLayout's 10px margins on both sides. It
+            // was +16, which left the bottom row 4px tighter than the title.
+            implicitHeight: col.implicitHeight + 20
             radius: 11
             color: root.theme.bgCard
             border.width: 1

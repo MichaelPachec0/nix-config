@@ -3,6 +3,7 @@ import Quickshell.Hyprland
 import Quickshell.Wayland
 import Quickshell.Services.SystemTray
 import QtQuick
+import QtQuick.Effects // MultiEffect: blackens the app-icon extrusion in one pass
 import QtQuick.Layouts
 import "../lib" as Lib
 import "../lib/sysfmt.js" as SysFmt
@@ -18,9 +19,13 @@ PanelWindow {
     property QtObject weatherState: null
     property QtObject bt: null
     property QtObject audio: null
+    property QtObject capture: null
     property var submap: null
     property var calState: null
     property var routerSvc: null
+    // Lib.WakeService, hoisted in shell.qml. Forwarded to the widgets that have
+    // something to re-read after a suspend.
+    property var wakeSvc: null
     property var net: null      // shared NetworkService (hoisted to ShellRoot)
     property var inhibit: null  // shared InhibitService (hoisted to ShellRoot)
     property var powerz: null   // shared PowerZStats (hoisted to ShellRoot)
@@ -57,6 +62,30 @@ PanelWindow {
             return a.id - b.id;
         });
         return out;
+    }
+
+    // False while a fullscreen window covers this bar. Hyprland fades the layer
+    // to alpha 0 but keeps delivering frame callbacks, so an indefinite
+    // animation left running here paints at the monitor's refresh rate into a
+    // surface nobody can see -- measured at 112 fps on a hidden 120Hz bar,
+    // roughly half the cost of the media marquee.
+    //
+    // Widgets gate their looping animations on this. They still loop forever;
+    // they just stop while there is nothing to look at.
+    //
+    // Read off the toplevels rather than activeWorkspace.hasfullscreen so this
+    // rides the refresh machinery that already exists: shell.qml runs a
+    // debounced refreshToplevels() on openwindow/closewindow/movewindowv2/
+    // activewindowv2/fullscreen, and toplevel lastIpcObject reactivity is
+    // already relied on below (the tab strip reads .class from it). Measured
+    // end to end: gate engages ~0.6s after a fullscreen window maps and
+    // releases ~0.6s after it goes away.
+    readonly property bool surfaceVisible: {
+        var list = Hyprland.toplevels?.values ?? [];
+        for (var i = 0; i < list.length; i++)
+            if ((list[i].workspace?.id ?? -2) === dock.activeWs && (list[i].lastIpcObject?.fullscreen ?? 0) > 0)
+                return false;
+        return true;
     }
 
     // Reactive: true when any toplevel is on the active workspace.
@@ -129,103 +158,224 @@ PanelWindow {
         theme: dock.theme
     }
 
+    // Clearance kept between the left pill and the right-hand cluster.
+    property int pillGutter: 12
+
+    // How much width the focused-window title may take before it runs under the
+    // right-hand pills.
+    //
+    // The three bar rows are anchored independently (left / centre / right), so
+    // the layout engine does NOT keep them apart -- a long title simply drew
+    // underneath the media pill. This is the constraint that was missing.
+    //
+    // Deliberately built from leftCore.width and rightRow.x, neither of which
+    // depends on the title: making it depend on the pill's own width instead
+    // would be a binding loop, since the pill is sized BY the title.
+    readonly property real titleRoom: rightRow.x - leftRow.x - leftCore.width
+        - leftPill.pad * 2 - leftPill.gap - dock.pillGutter
+
     // Left: workspaces + window icons, wrapped in a pill so it gets the same
     // glass fill / shadow / text treatment as the right-side clusters.
     RowLayout {
+        id: leftRow
         anchors.left: parent.left
         anchors.leftMargin: 10
         anchors.verticalCenter: parent.verticalCenter
         spacing: 8
 
         Lib.Pill {
+            id: leftPill
             Layout.alignment: Qt.AlignVCenter
             theme: dock.theme
+            // Tighter than the default 8: this pill holds far more items than
+            // any right-hand cluster (one chip per workspace, one tile per
+            // window, then the title), so the default gap compounds and pushes
+            // the pill into the media cluster.
+            gap: 6
 
-            Repeater {
-                model: dock.monitorWorkspaces
-                Rectangle {
-                    id: ws
-                    required property var modelData
-                    readonly property bool active: modelData.id === dock.activeWs
-                    implicitWidth: active ? 34 : 26
-                    implicitHeight: 22
-                    radius: 11
-                    color: active ? dock.theme.accent : dock.theme.bgItem
-                    Behavior on implicitWidth {
-                        NumberAnimation {
-                            duration: 150
-                            easing.type: Easing.OutBack
-                        }
-                    }
-                    Lib.BarText {
-                        anchors.centerIn: parent
-                        text: ws.modelData.id
-                        color: ws.active ? dock.theme.textOnAccent : dock.theme.textSecondary
-                        font.family: dock.theme.iconFont
-                        font.pixelSize: 11
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: Hyprland.dispatch("hl.dsp.focus({ workspace = " + ws.modelData.id + " })")
-                    }
-                }
-            }
-
-            // Divider (only when the active workspace has windows)
-            Rectangle {
-                visible: dock.hasWindows
-                Layout.preferredWidth: 1
-                Layout.preferredHeight: 18
-                color: dock.theme.border
-            }
-
-            // Windows on the active workspace -- real app icons, click to focus.
-            // Nested row so icon size + gap are independent of the workspace chips.
+            // Everything the title has to fit AROUND. Grouped so its width can be
+            // measured without involving the title -- see dock.titleRoom.
             RowLayout {
-                spacing: 0 // tiles already pad ~10px between glyphs; raise for more air
+                id: leftCore
+                spacing: leftPill.gap
+
                 Repeater {
-                    model: Hyprland.toplevels
-                    MouseArea {
-                        id: win
+                    model: dock.monitorWorkspaces
+                    Rectangle {
+                        id: ws
                         required property var modelData
-                        readonly property bool onActive: (modelData.workspace?.id ?? -2) === dock.activeWs
-                        readonly property bool isActive: modelData === Hyprland.activeToplevel
-                        readonly property string cls: modelData.lastIpcObject?.class ?? ""
-                        readonly property string addr: {
-                            var a = (modelData.address && modelData.address.length > 0) ? modelData.address : (modelData.lastIpcObject?.address ?? "");
-                            return (a.indexOf("0x") === 0) ? a : ("0x" + a);
-                        }
-                        visible: onActive
-                        implicitWidth: 26 // tile size (icon + padding == effective spacing)
-                        implicitHeight: 26
-                        onClicked: Hyprland.dispatch('hl.dsp.focus({ window = "address:' + win.addr + '" })')
-
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: 6
-                            color: win.isActive ? dock.theme.bgItemHover : "transparent"
-
-                            Image {
-                                anchors.centerIn: parent
-                                width: 16 // icon glyph size
-                                height: 16
-                                sourceSize.width: 32
-                                sourceSize.height: 32
-                                source: dock.iconFor(win.cls)
+                        readonly property bool active: modelData.id === dock.activeWs
+                        implicitWidth: active ? 30 : 22
+                        implicitHeight: 20
+                        radius: 10
+                        color: active ? dock.theme.accent : dock.theme.bgItem
+                        Behavior on implicitWidth {
+                            NumberAnimation {
+                                duration: 150
+                                easing.type: Easing.OutBack
                             }
+                        }
+                        Lib.BarText {
+                            anchors.centerIn: parent
+                            text: ws.modelData.id
+                            color: ws.active ? dock.theme.textOnAccent : dock.theme.textSecondary
+                            font.family: dock.theme.iconFont
+                            font.pixelSize: 11
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: Hyprland.dispatch("hl.dsp.focus({ workspace = " + ws.modelData.id + " })")
+                        }
+                    }
+                }
+
+                // Divider (only when the active workspace has windows)
+                Rectangle {
+                    visible: dock.hasWindows
+                    Layout.preferredWidth: 1
+                    Layout.preferredHeight: 18
+                    color: dock.theme.border
+                }
+
+                // Windows on the active workspace -- real app icons, click to focus.
+                // Nested row so icon size + gap are independent of the workspace chips.
+                RowLayout {
+                    spacing: 0 // tiles already pad ~10px between glyphs; raise for more air
+                    Repeater {
+                        model: Hyprland.toplevels
+                        MouseArea {
+                            id: win
+                            required property var modelData
+                            readonly property bool onActive: (modelData.workspace?.id ?? -2) === dock.activeWs
+                            readonly property bool isActive: modelData === Hyprland.activeToplevel
+                            readonly property string cls: modelData.lastIpcObject?.class ?? ""
+                            // Hoisted: the icon is drawn once for real and once per
+                            // extrusion step, and iconFor() walks DesktopEntries on every
+                            // call. Resolve the path once per window instead of per copy.
+                            readonly property string iconSrc: dock.iconFor(win.cls)
+                            readonly property string addr: {
+                                var a = (modelData.address && modelData.address.length > 0) ? modelData.address : (modelData.lastIpcObject?.address ?? "");
+                                return (a.indexOf("0x") === 0) ? a : ("0x" + a);
+                            }
+                            visible: onActive
+                            implicitWidth: 22 // tile size (icon + padding == effective spacing)
+                            implicitHeight: 22
+                            onClicked: Hyprland.dispatch('hl.dsp.focus({ window = "address:' + win.addr + '" })')
+
                             Rectangle {
-                                visible: win.isActive
-                                anchors.bottom: parent.bottom
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                width: 12
-                                height: 2
-                                radius: 1
-                                color: dock.theme.accent
+                                id: tile
+                                anchors.fill: parent
+                                radius: 6
+                                color: win.isActive ? dock.theme.bgItemHover : "transparent"
+
+                                // The focus chip, lifted the way the router's signal bars
+                                // are: a Rectangle gets none of Text.Raised or BarText's
+                                // lift, and Pill's frosted pass covers only the capsule, so
+                                // it casts its own. Copies at negative z draw behind the
+                                // parent's own fill.
+                                //
+                                // No halo on either lift here, unlike BarText and the
+                                // router -- these sit on the pill's own glass rather than
+                                // over raw wallpaper, so the extrusion alone carries the
+                                // depth and a white rim just fogs the icon art.
+                                //
+                                // Gated on isActive as well as glyphLifted: the copies are
+                                // opaque black whatever the tile's own color is, so running
+                                // this while the tile is transparent would park a black
+                                // square behind every inactive icon.
+                                Repeater {
+                                    model: (win.isActive && Lib.BarStyle.glyphLifted) ? Lib.BarStyle.glyphLiftSteps : 0
+                                    delegate: Rectangle {
+                                        required property int index
+                                        // index 0 = deepest, created first so nearer steps stack on it.
+                                        readonly property int step: Lib.BarStyle.glyphLiftSteps - index
+                                        z: -1
+                                        x: Math.round(step * Lib.BarStyle.glyphLiftX / Lib.BarStyle.glyphLiftSteps)
+                                        y: Math.round(step * Lib.BarStyle.glyphLiftY / Lib.BarStyle.glyphLiftSteps)
+                                        width: tile.width
+                                        height: tile.height
+                                        radius: tile.radius
+                                        color: Qt.rgba(0, 0, 0, Lib.BarStyle.glyphLiftAlpha)
+                                    }
+                                }
+
+                                // The icon's OWN extrusion, so it shares the tile's depth
+                                // plane instead of floating flat on a raised chip.
+                                //
+                                // An icon is arbitrary art with an alpha channel, so its
+                                // shadow has to be its silhouette -- no Rectangle
+                                // approximates that, which is why the tile lift above
+                                // cannot reach it. Blackening needs a shader (Image has no
+                                // tint property), and one MultiEffect per step would be one
+                                // offscreen pass per step. So the offset copies are stacked
+                                // RAW inside this Item and the whole stack is blackened by
+                                // a SINGLE layer effect: same solid slab, one pass, and it
+                                // re-renders only when the icon itself changes.
+                                //
+                                // Sized icon + lift because layer.enabled rasterises to the
+                                // item's bounding rect -- children past it would be clipped
+                                // out of the texture. No clip on the tile, so overhanging
+                                // the chip's bottom edge is fine.
+                                Item {
+                                    id: iconLift
+                                    visible: Lib.BarStyle.glyphLifted
+                                    x: appIcon.x
+                                    y: appIcon.y
+                                    width: appIcon.width + Lib.BarStyle.glyphLiftX
+                                    height: appIcon.height + Lib.BarStyle.glyphLiftY
+                                    opacity: Lib.BarStyle.glyphLiftAlpha
+                                    layer.enabled: true
+                                    // brightness -1 zeroes RGB and leaves alpha alone, which
+                                    // is the whole trick: the silhouette survives, the art
+                                    // does not. Measured byte-identical to colorization-to-
+                                    // black and to both stacked, so this is the one-property
+                                    // form of the same result -- no need for saturation or
+                                    // colorizationColor on top.
+                                    layer.effect: MultiEffect {
+                                        brightness: -1.0
+                                    }
+
+                                    Repeater {
+                                        model: Lib.BarStyle.glyphLifted ? Lib.BarStyle.glyphLiftSteps : 0
+                                        delegate: Image {
+                                            required property int index
+                                            readonly property int step: Lib.BarStyle.glyphLiftSteps - index
+                                            x: Math.round(step * Lib.BarStyle.glyphLiftX / Lib.BarStyle.glyphLiftSteps)
+                                            y: Math.round(step * Lib.BarStyle.glyphLiftY / Lib.BarStyle.glyphLiftSteps)
+                                            width: appIcon.width
+                                            height: appIcon.height
+                                            sourceSize.width: 32
+                                            sourceSize.height: 32
+                                            source: win.iconSrc
+                                        }
+                                    }
+                                }
+
+                                // Declared after iconLift so it draws on top of it: both
+                                // sit at the default z, where creation order decides.
+                                Image {
+                                    id: appIcon
+                                    anchors.centerIn: parent
+                                    width: 14 // icon glyph size
+                                    height: 14
+                                    sourceSize.width: 32
+                                    sourceSize.height: 32
+                                    source: win.iconSrc
+                                }
+                                Rectangle {
+                                    visible: win.isActive
+                                    anchors.bottom: parent.bottom
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: 10
+                                    height: 2
+                                    radius: 1
+                                    color: dock.theme.accent
+                                }
                             }
                         }
                     }
                 }
-            }
+            } // leftCore
 
             // Focused window title (elided), after the app icons. Scoped to this
             // monitor's active workspace so multi-monitor bars don't all mirror the
@@ -237,10 +387,35 @@ PanelWindow {
                 id: focusedTitle
                 readonly property var active: Hyprland.activeToplevel
                 Layout.alignment: Qt.AlignVCenter
-                Layout.maximumWidth: 240
+                // Grow into the room between the left pill's icons and the
+                // right-hand cluster, but keep hugging the text when it is short:
+                // a long title expands to the whole gap (less dock.pillGutter,
+                // which titleRoom already subtracts) and elides at the edge, while
+                // a short one leaves the wallpaper showing rather than padding the
+                // pill out with empty glass.
+                //
+                // implicitWidth is the UNELIDED natural text width and does not
+                // depend on the width assigned here (no wrapMode), so reading it
+                // back is not a loop. The rest is safe for the same reason the
+                // older hard cap was:
+                // titleRoom is built from leftCore.width and rightRow.x, and
+                // rightRow is anchored to the bar's right edge, so its x depends
+                // on its OWN width -- never on this pill's.
+                //
+                // This also makes the left pill's width a function of what is on
+                // the RIGHT rather than of the title text, so it stops resizing on
+                // every browser-tab/terminal title change; it now only springs
+                // when a right-hand pill appears or disappears (e.g. the ModePill
+                // on the group/resize submaps), which the Pill's implicitWidth
+                // Behavior animates.
+                Layout.preferredWidth: Math.min(focusedTitle.implicitWidth, Math.max(0, dock.titleRoom))
+                Layout.maximumWidth: Math.max(0, dock.titleRoom)
                 visible: focusedTitle.active !== null
                     && (focusedTitle.active.workspace?.id ?? -2) === dock.activeWs
                     && focusedTitle.text.length > 0
+                    // Below this the title is all ellipsis and no information;
+                    // dropping it gives the icons the space instead.
+                    && dock.titleRoom >= 48
                 text: focusedTitle.active?.title ?? ""
                 elide: Text.ElideRight
                 color: dock.theme.textPrimary
@@ -263,6 +438,7 @@ PanelWindow {
     // dividers are gone -- each pill IS the grouping. Bar stays opaque until the
     // transparent-bar step; pills use the translucent bgPill token either way.
     RowLayout {
+        id: rightRow
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
@@ -295,6 +471,16 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
                 theme: dock.theme
                 barWindow: dock
+                audio: dock.audio
+            }
+
+            // Privacy glyphs (camera / mic / screencast), trailing the volume
+            // readout. Collapses to zero width while nothing is capturing.
+            CaptureWidget {
+                Layout.alignment: Qt.AlignVCenter
+                theme: dock.theme
+                barWindow: dock
+                capture: dock.capture
                 audio: dock.audio
             }
         }
@@ -403,33 +589,16 @@ PanelWindow {
 
                 HoverHandler {
                     id: statsHover
-                    onHoveredChanged: {
-                        if (statsHover.hovered) {
-                            if (dock.stats)
-                                dock.stats.wantDetail = true;
-                            sysPopup.show();
-                        } else {
-                            statsHideTimer.restart();
-                        }
-                    }
                 }
-                Timer {
-                    id: statsHideTimer
-                    interval: 250
-                    onTriggered: if (!statsHover.hovered && !sysPopup.contentHovered) {
-                        sysPopup.hide();
-                        if (dock.stats)
-                            dock.stats.wantDetail = false;
-                    }
-                }
-                // Hide-bridge: leaving the popup surface directly (not back across
-                // the stats widget) must also re-arm the hide timer.
-                Connections {
-                    target: sysPopup
-                    function onContentHoveredChanged() {
-                        if (!sysPopup.contentHovered && !statsHover.hovered)
-                            statsHideTimer.restart();
-                    }
+                // The detail poll costs real work, so it runs only while the
+                // popup is actually up.
+                Lib.HoverBridge {
+                    popup: sysPopup
+                    widgetHovered: statsHover.hovered
+                    onOpened: if (dock.stats)
+                        dock.stats.wantDetail = true
+                    onClosed: if (dock.stats)
+                        dock.stats.wantDetail = false
                 }
                 SysPopup {
                     id: sysPopup
@@ -457,7 +626,17 @@ PanelWindow {
             // Notable weather (heat/rain) washes the whole capsule with the alert
             // hue; the pill owns the pulse so the colour fills it uniformly.
             pulseColor: weatherWidget.alertColor
-            pulseActive: weatherWidget.visible && weatherWidget.alert !== ""
+            // surfaceVisible keeps the flashing indefinite (an alert can stand
+            // for hours) without painting it into a bar hidden behind a
+            // fullscreen window.
+            pulseActive: weatherWidget.visible && weatherWidget.alert !== "" && dock.surfaceVisible
+            // The widget owns the rhythm: it decides how long to wait after
+            // each flash (short between the members of a multi-alert set, long
+            // after the last) and advances to the next alert when told a flash
+            // has finished. Driving that from a timer inside the widget drifted
+            // against this animation and swapped colours mid-flash.
+            pulseGapMs: weatherWidget.pulseGapMs
+            onPulsed: weatherWidget.advancePulse()
 
             // Weather: current condition glyph + temperature; hover for details.
             WeatherWidget {
@@ -466,6 +645,7 @@ PanelWindow {
                 theme: dock.theme
                 barWindow: dock
                 weatherState: dock.weatherState
+                wakeSvc: dock.wakeSvc
             }
         }
 
@@ -558,21 +738,10 @@ PanelWindow {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: dock.h12 = !dock.h12
-                    onContainsMouseChanged: clockMouse.containsMouse ? clockPop.show() : clockHideTimer.restart()
                 }
-                Timer {
-                    id: clockHideTimer
-                    interval: 250
-                    onTriggered: if (!clockMouse.containsMouse && !clockPop.contentHovered) clockPop.hide()
-                }
-                // Hide-bridge: leaving the popup surface directly (not back across
-                // the clock widget) must also re-arm the hide timer.
-                Connections {
-                    target: clockPop
-                    function onContentHoveredChanged() {
-                        if (!clockPop.contentHovered && !clockMouse.containsMouse)
-                            clockHideTimer.restart();
-                    }
+                Lib.HoverBridge {
+                    popup: clockPop
+                    widgetHovered: clockMouse.containsMouse
                 }
                 ClockPopup {
                     id: clockPop

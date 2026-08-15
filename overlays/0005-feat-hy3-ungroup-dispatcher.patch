@@ -1,0 +1,257 @@
+diff --git a/src/Hy3Layout.cpp b/src/Hy3Layout.cpp
+index 7d9c6fe..d472a9a 100644
+--- a/src/Hy3Layout.cpp
++++ b/src/Hy3Layout.cpp
+@@ -750,6 +750,146 @@ void Hy3Layout::groupWith(Hy3Node& node, ShiftDirection direction, Hy3GroupLayou
+ 	this->recalcGeometry();
+ }
+ 
++void Hy3Layout::ungroupOnWorkspace(const CWorkspace* workspace, UngroupOption scope) {
++	auto* node = this->getWorkspaceFocusedNode(workspace);
++	if (node == nullptr) return;
++
++	auto& actor = node->getPlacementActor();
++	if (scope == UngroupOption::Node) this->ungroupNode(actor);
++	else this->ungroup(actor);
++}
++
++// Lift `node` out of its group into the grandparent, leaving the group (and its
++// remaining children) intact -- ((a - b - c) | d) focused on `a` yields
++// ((b - c) | a | d). The group is collapsed by the usual rules if the removal
++// leaves it degenerate.
++void Hy3Layout::ungroupNode(Hy3Node& node) {
++	auto* group_node = node.parent.get();
++	if (group_node == nullptr || !group_node->is_group() || group_node->is_root()) return;
++
++	auto* parent_node = group_node->parent.get();
++	if (parent_node == nullptr || !parent_node->is_group()) return;
++
++	auto& group = group_node->as_group();
++
++	// A group parented to the ROOT node is the workspace's top-level group, and
++	// there is no level above it to move into: the root node lays every child
++	// out at the full workspace size, so it must keep exactly one child. Make
++	// room rather than refusing -- wrap the group in a new split of the layout
++	// it had before it was tabbed (the same one hy3's own `untab` restores) and
++	// pop the node out into that, so top-level tabs(a, b, c) focused on `a`
++	// becomes (tabs(b, c) | a).
++	if (parent_node->is_root()) {
++		// A split group at the top level already IS the outermost grouping --
++		// there is no enclosing group to lift the node out into.
++		if (!group.isTab()) return;
++
++		group_node->wrap(group.previous_nontab_layout, GroupEphemeralityOption::Standard);
++		parent_node = group_node->parent.get();
++		if (parent_node == nullptr || !parent_node->is_group() || parent_node->is_root()) return;
++	}
++
++	auto& parent = parent_node->as_group();
++
++	auto pos = parent.findChild(*group_node);
++	if (pos == parent.children.end()) return;
++
++	// extractChild redistributes the freed space across the group's remaining
++	// children and resets the extracted node's ratio to 1.0, which is exactly
++	// the ratio the parent's invariant (sum == children.size()) wants for a
++	// newly inserted child -- so no renormalization is needed here.
++	auto extracted = group.extractChild(node);
++	if (extracted == nullptr) return;
++
++	auto* refocus = extracted.get();
++	parent.insertChild(std::next(pos), std::move(extracted));
++	parent.group_focused = false;
++
++	// The group may now be degenerate (one child, or none if `node` was its last
++	// window); collapse it with the same policy hy3 uses when a window is moved
++	// out of a group. This can destroy group_node, so nothing touches it after.
++	group_node->updateTabBarRecursive();
++	group_node->collapseParents(CollapsePolicy::EmptySplits);
++	this->recalcGeometry();
++	refocus->focus(false, Desktop::FOCUS_REASON_KEYBIND);
++	this->recalcGeometry();
++}
++
++// Dissolve the group around `node`, splicing its children into the grandparent
++// at the group's old slot -- the inverse of makeGroup/groupWith and the one
++// thing makeGroup's `toggle` cannot do (it only collapses a group that has a
++// SINGLE child). With ((a - b) | c) focused on `a`, ungroup yields (a | b | c).
++// A focused group node dissolves itself; a focused window dissolves the group
++// holding it.
++void Hy3Layout::ungroup(Hy3Node& node) {
++	auto* group_node = node.is_group() ? &node : node.parent.get();
++	if (group_node == nullptr || !group_node->is_group() || group_node->is_root()) return;
++
++	auto* parent_node = group_node->parent.get();
++	if (parent_node == nullptr || !parent_node->is_group()) return;
++
++	auto& group = group_node->as_group();
++
++	auto child_count = group.children.size();
++	if (child_count == 0) return;
++
++	// The workspace's top-level group cannot be spliced into its parent: the
++	// root node lays every child out at the full workspace size, so it holds
++	// exactly one group by design. Dissolving the tabs there means untabbing
++	// them in place -- the children end up side by side at the same level,
++	// which is the same end state the splice below produces one level down.
++	if (parent_node->is_root()) {
++		if (!group.isTab()) return;
++
++		group.setLayout(group.previous_nontab_layout);
++		group_node->updateTabBarRecursive();
++		this->recalcGeometry();
++		return;
++	}
++
++	auto& parent = parent_node->as_group();
++
++	auto pos = parent.findChild(*group_node);
++	if (pos == parent.children.end()) return;
++
++	// Refocus a real window afterwards: `node` itself may be the group we are
++	// about to destroy, so resolve down to the focused leaf while it still
++	// exists. The leaf survives -- it just gets a new parent.
++	auto* refocus = &node.getFocusedNode(true);
++	if (refocus->is_group()) refocus = nullptr;
++
++	// Splice the children into the parent in order, ahead of the group's slot,
++	// scaling each by the group's share so relative sizes are preserved. hy3
++	// keeps sum(size_ratio) == children.size() within a group, so the parent is
++	// renormalized once the splice is done.
++	auto group_ratio = group_node->size_ratio;
++	while (!group.children.empty()) {
++		auto child = group.extractChildRaw(group.children.begin());
++		if (child == nullptr) break;
++		child->size_ratio *= group_ratio / static_cast<double>(child_count);
++		parent.insertChild(pos, std::move(child));
++	}
++
++	// Drop the now-empty group (the returned UP is discarded -> destroyed).
++	parent.extractChildRaw(*group_node);
++	parent.group_focused = false;
++
++	double sum = 0;
++	for (auto& child: parent.children) sum += child->size_ratio;
++	if (sum > 0) {
++		auto norm = static_cast<double>(parent.children.size()) / sum;
++		for (auto& child: parent.children) child->size_ratio *= norm;
++	}
++
++	// updateTabBarRecursive BEFORE collapseParents: collapsing can destroy
++	// parent_node (it is replaced by its sole child in the grandparent).
++	parent_node->updateTabBarRecursive();
++	parent_node->collapseParents(CollapsePolicy::InvalidOnly);
++	this->recalcGeometry();
++	if (refocus != nullptr) refocus->focus(false, Desktop::FOCUS_REASON_KEYBIND);
++	this->recalcGeometry();
++}
++
+ void Hy3Layout::makeOppositeGroupOn(Hy3Node& node, GroupEphemeralityOption ephemeral) {
+ 	node.assertNotRoot();
+ 
+diff --git a/src/Hy3Layout.hpp b/src/Hy3Layout.hpp
+index 10b7ea5..b909d2d 100644
+--- a/src/Hy3Layout.hpp
++++ b/src/Hy3Layout.hpp
+@@ -90,6 +90,13 @@ enum class ExpandOption {
+ 	Fullscreen,
+ };
+ 
++enum class UngroupOption {
++	// Remove only the focused node from its group; the group survives.
++	Node,
++	// Dissolve the whole group, moving every child up a level.
++	Group,
++};
++
+ enum class ExpandFullscreenOption {
+ 	MaximizeOnly,
+ 	MaximizeIntermediate,
+@@ -134,6 +141,7 @@ public:
+ 	void changeGroupToOppositeOnWorkspace(const CWorkspace* workspace);
+ 	void changeGroupEphemeralityOnWorkspace(const CWorkspace* workspace, bool ephemeral);
+ 	void groupWithOnWorkspace(const CWorkspace* workspace, ShiftDirection, Hy3GroupLayout);
++	void ungroupOnWorkspace(const CWorkspace* workspace, UngroupOption);
+ 	void makeGroupOn(Hy3Node&, Hy3GroupLayout, GroupEphemeralityOption);
+ 	void makeOppositeGroupOn(Hy3Node&, GroupEphemeralityOption);
+ 	void changeGroupOn(Hy3Node&, Hy3GroupLayout);
+@@ -142,6 +150,8 @@ public:
+ 	void changeGroupToOppositeOn(Hy3Node&);
+ 	void changeGroupEphemeralityOn(Hy3Node&, bool ephemeral);
+ 	void groupWith(Hy3Node&, ShiftDirection, Hy3GroupLayout);
++	void ungroup(Hy3Node&);
++	void ungroupNode(Hy3Node&);
+ 	void shiftNode(Hy3Node&, ShiftDirection, bool once, bool visible);
+ 	void shiftWindow(const CWorkspace* workspace, ShiftDirection, bool once, bool visible);
+ 	void shiftFocus(const CWorkspace* workspace, ShiftDirection, bool visible, bool warp);
+diff --git a/src/dispatchers.cpp b/src/dispatchers.cpp
+index bcf4880..046fb67 100644
+--- a/src/dispatchers.cpp
++++ b/src/dispatchers.cpp
+@@ -538,6 +538,50 @@ static SDispatchResult dispatch_groupwith(std::string value) {
+ 	return groupWith(*direction, action->layout);
+ }
+ 
++static std::optional<UngroupOption> parseUngroupArg(std::string_view arg) {
++	// No argument keeps the cheap, per-window meaning as the default.
++	if (arg == "" || arg == "node") return UngroupOption::Node;
++	if (arg == "group") return UngroupOption::Group;
++	return {};
++}
++
++static SDispatchResult ungroup(UngroupOption scope) {
++	auto* hy3 = hy3InstanceForAction();
++	if (!hy3) return SDispatchResult {};
++
++	hy3->ungroupOnWorkspace(hy3->workspace().get(), scope);
++	return SDispatchResult {};
++}
++
++static int luaUngroup(lua_State* L) {
++	static constexpr const char* FN = "hl.plugin.hy3.ungroup";
++	luaCheckArgCount(L, FN, 0, 1);
++
++	auto scope = UngroupOption::Node;
++	if (lua_gettop(L) >= 1) {
++		auto value = luaStringArg(L, 1, FN, "scope");
++		auto parsed = parseUngroupArg(value);
++		if (!parsed)
++			return luaL_error(L, "%s: invalid scope '%s' (expected node/group)", FN, value.c_str());
++		scope = *parsed;
++	}
++
++	auto dspUngroup = [](lua_State* L) -> int {
++		ungroup(static_cast<UngroupOption>(lua_tointeger(L, lua_upvalueindex(1))));
++		return 0;
++	};
++
++	lua_pushinteger(L, static_cast<lua_Integer>(scope));
++	lua_pushcclosure(L, dspUngroup, 1);
++	return 1;
++}
++
++static SDispatchResult dispatch_ungroup(std::string value) {
++	auto scope = parseUngroupArg(CVarList(value)[0]);
++	if (!scope) return SDispatchResult {};
++	return ungroup(*scope);
++}
++
+ static SDispatchResult moveToWorkspace(std::string workspace, bool follow, std::optional<bool> warp_override) {
+ 	auto* hy3 = hy3InstanceForAction(true);
+ 	if (!hy3) return SDispatchResult {};
+@@ -1144,6 +1188,7 @@ static SDispatchResult dispatch_debug(std::string arg) {
+ static void registerLuaDispatchers() {
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "make_group", luaMakeGroup);
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "group_with", luaGroupWith);
++	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "ungroup", luaUngroup);
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "change_group", luaChangeGroup);
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "set_ephemeral", luaSetEphemeral);
+ 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "move_focus", luaMoveFocus);
+@@ -1166,6 +1211,7 @@ static void registerLuaDispatchers() {
+ void registerDispatchers() {
+ 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:makegroup", dispatch_makegroup);
+ 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:groupwith", dispatch_groupwith);
++	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:ungroup", dispatch_ungroup);
+ 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:changegroup", dispatch_changegroup);
+ 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:setephemeral", dispatch_setephemeral);
+ 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:movefocus", dispatch_movefocus);

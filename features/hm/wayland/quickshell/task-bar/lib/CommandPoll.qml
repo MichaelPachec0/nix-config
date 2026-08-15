@@ -43,6 +43,17 @@ QtObject {
         proc.exec(command);
     }
 
+    // Drop the dedup baseline so the NEXT successful poll emits `updated()`
+    // even if its stdout is byte-identical to the last one. Needed by callers
+    // that discard `value` themselves (e.g. on a lock/unlock boundary): without
+    // this, the dedup below suppresses the very result that would restore them,
+    // and they stay stuck on whatever they cleared to. Does NOT emit updated()
+    // by itself -- there is no reading to report yet.
+    function resetDedup() {
+        root._primed = false;
+        root.text = "";
+    }
+
     property Process proc: Process {
         stdout: StdioCollector {
             id: stdoutCollector

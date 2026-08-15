@@ -9,12 +9,9 @@ import "../lib" as Lib
 // needs the read-only dbus policy on thanatos; until then those read "N/A".
 // Country code and PHY/protocol are not on D-Bus -> "N/A" pending a future `iw`
 // add. See memory wifi-widget-iw-followup.
-PopupWindow {
+Lib.BasePopup {
     id: pop
 
-    required property QtObject theme
-    required property var anchorItem
-    required property var barWindow
     required property var net // Lib.NetworkService
     property string title: ""
 
@@ -22,26 +19,17 @@ PopupWindow {
 
     implicitWidth: 280
     implicitHeight: card.implicitHeight
-    color: "transparent"
-    visible: false
     grabFocus: false // a tooltip; must not steal focus
 
-    anchor.window: pop.barWindow
-    anchor.edges: Edges.Bottom
+    // Bottom only -- this one does not pin its left edge like the others do.
     anchor.gravity: Edges.Bottom
 
+    // Left-aligned to the widget and NOT clamped, as before.
     function show() {
         if (pop.visible)
             return;
-        var x = pop.anchorItem.mapToItem(null, 0, 0).x;
-        pop.anchor.rect.x = x;
-        pop.anchor.rect.y = pop.barWindow.height + 4;
-        pop.anchor.rect.width = 0;
-        pop.anchor.rect.height = 0;
+        pop.placeAt(pop.anchorItem.mapToItem(null, 0, 0).x);
         pop.visible = true;
-    }
-    function hide() {
-        pop.visible = false;
     }
 
     // --- helpers ---

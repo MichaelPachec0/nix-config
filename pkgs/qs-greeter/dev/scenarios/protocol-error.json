@@ -1,0 +1,2 @@
+{ "name": "protocol-error",
+  "steps": [ { "after": 50, "error": "greetd socket closed" } ] }

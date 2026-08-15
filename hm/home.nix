@@ -4,8 +4,7 @@
   # config,
   pkgs,
   # true for `home-manager switch`; false when integrated as a NixOS module
-  # (useGlobalPkgs), where the system owns nixpkgs/nix config. See
-  # docs/hm-nixos-integration.md.
+  # (useGlobalPkgs), where the system owns nixpkgs/nix config.
   standalone ? true,
   ...
 }: let
@@ -319,7 +318,6 @@ in {
     automount = true;
     notify = true;
     tray = "always";
-    package = pkgs.udiskie;
   };
   programs.claude-desktop = {
     enable = true;
@@ -514,7 +512,23 @@ in {
   #   colorScheme = "gruvbox";
   # };
   xdg.desktopEntries = let
-    experimental-gpu = "--ignore-gpu-blacklist --enable-gpu-rasterization --enable-native-gpu-memory-buffers --use-vulkan --enable-angle-features";
+    # NOTE: VA-API decode runs in the GPU process, so never add --single-process
+    # here -- it collapses the GPU process into the browser process and disables
+    # accelerated video decode outright. Dropped flags and why (checked against
+    # electron-unwrapped-41.9.1, Chromium ~140, which is what legcord runs):
+    #   --ignore-gpu-blacklist          renamed upstream to --ignore-gpu-blocklist;
+    #                                   Chromium silently ignores unknown switches,
+    #                                   so the old spelling was a no-op
+    #   --enable-angle-features         takes a value (=<comma list>); bare = no-op
+    #   --use-vulkan                    takes a value (=native), and targets
+    #                                   rasterization, not video decode
+    #   --enable-native-gpu-memory-buffers  still exists, but experimental and
+    #                                   unrelated to VA-API decode
+    experimental-gpu = "--ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy";
+    # Chromium honours only ONE --enable-features switch (last one wins, the rest
+    # are silently dropped), so every entry below must merge its features into a
+    # single switch rather than emitting this alongside another one.
+    vaapiFeatures = "AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL";
   in {
     spotify = {
       name = "Spiced Spotify";
@@ -528,8 +542,12 @@ in {
       # exec = ''
       #   spotify --no-zygote --no-sandbox --ozone-platform-hint=auto --enable-zero-copy --single-process --uri=%U
       # '';VaapiVideoDecoder
+      # NOTE: 2026-08-05: spotify is NOT currently installed (the spicetify block
+      # above is commented out and nothing provides a `spotify` binary), so this
+      # entry points at a missing executable. Flags fixed for correctness only --
+      # nothing exercises them until spotify comes back.
       exec = ''
-        spotify --enable-features=VaapiVideoDecoder  --no-zygote --no-sandbox --ozone-platform-hint=auto --enable-zero-copy --single-process ${experimental-gpu} --uri=%U
+        spotify --enable-features=${vaapiFeatures} --ozone-platform-hint=auto ${experimental-gpu} --uri=%U
       '';
       icon = "spotify-client";
       type = "Application";
@@ -560,8 +578,11 @@ in {
     };
     legcord = {
       name = "legcord";
+      # UseOzonePlatform/WebRTCPipeWireCapturer kept as-is: unknown feature names
+      # are ignored harmlessly, and WebRTCPipeWireCapturer is what gives Wayland
+      # screen sharing. Only the VA-API decode features are added here.
       exec = ''
-        legcord --enable-features=UseOzonePlatform,WaylandWindowDecorations,WebRTCPipeWireCapturer --ozone-platform=wayland --enable-zero-copy ${experimental-gpu}
+        legcord --enable-features=UseOzonePlatform,WaylandWindowDecorations,WebRTCPipeWireCapturer,${vaapiFeatures} --ozone-platform=wayland ${experimental-gpu}
       '';
       type = "Application";
     };
@@ -630,6 +651,10 @@ in {
   };
   # Nicely reload system units when changing configs
   programs.glide-browser.enable = true;
+  services.kdeconnect = {
+    enable = true;
+    indicator = true;
+  };
   systemd.user.startServices = "sd-switch";
   # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
   home.stateVersion = "23.11";

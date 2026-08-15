@@ -76,54 +76,26 @@ in {
     ];
 
     boot.kernel.sysctl = {
-      # NOTE: more responsive memory options, defaults for some reason gave me issues during sleep after longer use.
-      # "vm.vfs_cache_pressure" = 200;
-      # "vm.dirty_ratio" = 3;
-      # "vm.swappiness" = 15;
-      # v2
-      # "vm.dirty_ratio" = 50;
-      # "vm.dirty_background_ratio" = 20;
-      # "vm.swappiness" = 90;
-      # "vm.swappiness" = 75;
-      # v3
-      # "vm.swappiness" = 190;
-      # "vm.vfs_cache_pressure" = 50;
+      # Reclaim policy for hosts running zram, which is every host importing
+      # this file. Host-specific / RAM-sized values (min_free_kbytes, dirty_*)
+      # live with the host -- see nixos/thanatos/memory.nix.
       #
-      # "vm.dirty_background_ratio" = 10;
-      # "vm.dirty_ratio" = 30;
-
-      # NOTE: dont recall what this was for, but this was apart of the memory issues
-      # "vm.page-cluster" = 3;
-
-      # v3
-      # "vm.page-cluster" = 0;
-
-      # "vm.watermark_scale_factor" = 150;
-
-      # v3
-      "fs.inotify.max_user_watches" = 65536;
-      # NOTE: zen stuff
-      # "kernel.sched_latency_ns" = 4000000;
-
-      # should be one-eighth of sched_latency (this ratio is not
-      # configurable, apparently -- so while zen changes that to
-      # one-tenth, we cannot):
-
-      # v3
-      # "kernel.sched_min_granularity_ns" = 500000;
-      # "kernel.sched_wakeup_granularity_ns" = 50000;
-      # "kernel.sched_migration_cost_ns" = 250000;
-      # "kernel.sched_cfs_bandwidth_slice_us" = 3000;
-      # "kernel.sched_nr_migrate" = 128;
-
       # NOTE: https://wiki.archlinux.org/title/Zram#Optimizing_swap_on_zram
+      #
+      # swappiness > 100 tells the kernel swap IO is cheaper than filesystem IO.
+      # True for zram, false for a disk swap -- swap *priority* is what keeps the
+      # disk tier out of reach, not this value.
+      "vm.swappiness" = 180;
+      # zram decompress is cheap and random, so swap readahead is pure waste.
+      "vm.page-cluster" = 0;
       "vm.watermark_boost_factor" = 0;
       "vm.watermark_scale_factor" = 125;
-      "vm.page-cluster" = 0;
-      "vm.swappiness" = 180;
-      # based on the at least 1% free
-      # ie 32714204 * 0.01 = 327142.04
-      "vm.min_free_kbytes" = 335544;
+
+      # kitty recursively watches /nix/store and alone approaches the old 65536
+      # ceiling; see features/hm/kitty/default.nix.
+      "fs.inotify.max_user_watches" = 524288;
+      "fs.inotify.max_user_instances" = 1024;
+      "fs.inotify.max_queued_events" = 65536;
     };
 
     services.fwupd.enable = false;
@@ -151,19 +123,10 @@ in {
     report-changes.enable = true;
     nixpkgs = {
       overlays = [
-        # (
-        #   final: prev: {
-        #     linux-firmware = pkgs.master.linux-firmware;
-        #   }
-        # )
       ];
       config = {
         allowUnfree = true;
         segger-jlink.acceptLicense = true;
-        # inputs.easy-tether.packages.${pkgs.system}.default
-        # permittedInsecurePackages = [
-        #   "openssl-1.1.1w"
-        # ];
       };
     };
     zramSwap = {
@@ -256,7 +219,12 @@ in {
         };
       };
 
-      firewall = {
+      firewall = let
+        kdeconnect = {
+          from = 1714;
+          to = 1764;
+        };
+      in {
         enable = true;
         allowedTCPPorts = [
           # rquickshare
@@ -278,6 +246,7 @@ in {
             from = 8888;
             to = 8889;
           }
+          kdeconnect
         ];
         allowedUDPPortRanges = [
           # scream
@@ -295,6 +264,7 @@ in {
             from = 9999;
             to = 9999;
           }
+          kdeconnect
         ];
       };
       nameservers = ["1.1.1.1" "8.8.8.8" "9.9.9.9"];
@@ -309,6 +279,23 @@ in {
       };
     };
     systemd.services."zerotierone" = {after = ["dhcpcd.service"];};
+
+    # The user session bus inherits systemd's legacy soft RLIMIT_NOFILE of 1024,
+    # because dbus-broker's own user unit (shipped by the package) sets no
+    # LimitNOFILE -- unlike the NixOS *system* dbus-broker unit, which gets
+    # LimitNOFILE=16384. dbus-broker costs 2 fds per connected peer, so the user
+    # bus dies at roughly 460 concurrent peers, and it dies *fatally*: an
+    # accept() that returns EMFILE is an unrecoverable error there
+    # (sockopt_get_peerpidfd -> peer_new_with_fd -> broker_run exits). Losing the
+    # session bus kills uwsm's `systemctl --user start --wait
+    # wayland-session-envelope@...`, which makes greetd tear the whole graphical
+    # session down -- i.e. it looks exactly like a compositor crash.
+    # Observed twice on thanatos (2026-07-31 16:28, 2026-08-05 00:48).
+    # Mirror the system bus's headroom instead.
+    systemd.user.services.dbus-broker = {
+      overrideStrategy = "asDropin";
+      serviceConfig.LimitNOFILE = 16384;
+    };
 
     # NOTE: still need to find how I can use this and have captive portal work.
 
@@ -474,10 +461,21 @@ in {
         # check=$(${
         #   lib.getExe yubikey-manager
         # } list | ${pkgs.busybox}/bin/wc -l)
+        # Fail-secure: if gpg is absent or the card cannot be read, lock.
+        # NOTE: gpg/grep/cut used to be unqualified, so under udev's minimal PATH
+        #   the query almost certainly failed and the branch always locked. They
+        #   are absolute now, which makes the "another owned key is still
+        #   inserted -> do not lock" case actually reachable for the first time.
         check = pkgs.writeShellScriptBin "yubicheck.sh" ''
           #!${pkgs.stdenv.shell}
-          sleep 1
-          check=$(gpg --card-status 2>/dev/null | grep "General key info" | cut -d " " -f 6)
+          # Let the USB stack settle before asking scdaemon about any remaining
+          # card. This sleep is why the script must not run inline from RUN+=:
+          # it would hold a udev event worker for a second. The rule dispatches
+          # it through systemd-run instead.
+          ${pkgs.coreutils}/bin/sleep 1
+          check=$(${pkgs.gnupg}/bin/gpg --card-status 2>/dev/null \
+            | ${pkgs.gnugrep}/bin/grep "General key info" \
+            | ${pkgs.coreutils}/bin/cut -d " " -f 6)
           if [[ $check != ${keyCheck} ]]; then
             ${command} lock-sessions --no-ask-password
           fi
@@ -487,8 +485,17 @@ in {
         pkgs.openocd
         (pkgs.writeTextFile {
           name = "yubikey-lock";
+          # DEVTYPE=="usb_device" is load-bearing: every usb_interface of the key
+          # inherits ENV{PRODUCT}, so without it the rule fires once per
+          # interface *plus* once for the device (4x for a YubiKey 5
+          # OTP+U2F+CCID). Each run called lock-sessions, which fans out to every
+          # lockable session, so a single unplug emitted 8 Session.Lock signals
+          # and a burst of lock.target starts.
+          # systemd-run --no-block detaches the check from the udev event worker;
+          # the fixed unit name collapses any residual duplicate events into one
+          # run.
           text = ''
-            SUBSYSTEM=="usb", ENV{PRODUCT}=="1050/407/543", ACTION=="remove", RUN+="${
+            SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{PRODUCT}=="1050/407/543", ACTION=="remove", RUN+="${pkgs.systemd}/bin/systemd-run --no-block --collect --unit=yubikey-lock-check ${
               lib.getExe check
             }"
           '';
@@ -680,7 +687,20 @@ in {
     };
 
     services.logid.enable = true;
-    services.graphicalLogin.enable = true;
+    services.graphicalLogin = {
+      enable = true;
+      # Quickshell greeter (XP skin). Rolling back is this one line set to
+      # "regreet": the ReGreet block in features/nixos/login is still fully
+      # configured and is only gated off, not deleted.
+      backend = "qsGreeter";
+    };
+    # Every host sharing this file is a laptop, so the internal panel is the
+    # one output that must hold the keyboard: only a single layer-shell
+    # surface may take exclusive keyboard focus, and picking the first output
+    # Quickshell happens to list can hand it to a closed-lid or external
+    # screen when docked. Falls back to that first-listed output on its own if
+    # eDP-1 is not connected.
+    programs.qsGreeter.primaryOutput = "eDP-1";
 
     hardware.openrazer = {
       enable = false;
@@ -1246,7 +1266,7 @@ in {
     };
 
     # TODO: move this to its own file
-    programs.kdeconnect.enable = false;
+    programs.kdeconnect.enable = true;
     programs.captive-browser = {
       enable = true;
       # WARN: this needs to be changed per wifi interface

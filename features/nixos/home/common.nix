@@ -1,6 +1,6 @@
 # Channel-agnostic core of the integrated home-manager NixOS module
 # (useGlobalPkgs = true), while the same modules remain usable standalone via
-# flake.nix homeConfigurations.* (see docs/hm-nixos-integration.md).
+# flake.nix homeConfigurations.*.
 #
 # Imported by ./default.nix (unstable) and ./stable.nix (stable), each of which
 # adds the matching home-manager NixOS module.

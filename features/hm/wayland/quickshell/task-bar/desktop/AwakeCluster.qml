@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell.Wayland
+import "../lib" as Lib
 
 // Single content item of the "awake" pill. Receives the shared InhibitService by
 // reference (hoisted to ShellRoot), owns the two thin icon widgets, the
@@ -67,20 +68,10 @@ RowLayout {
 
     HoverHandler {
         id: clusterHover
-        onHoveredChanged: clusterHover.hovered ? popup.show() : hideTimer.restart()
     }
-    Timer {
-        id: hideTimer
-        interval: 250
-        onTriggered: if (!clusterHover.hovered && !popup.contentHovered)
-            popup.hide()
-    }
-    Connections {
-        target: popup
-        function onContentHoveredChanged() {
-            if (!popup.contentHovered && !clusterHover.hovered)
-                hideTimer.restart();
-        }
+    Lib.HoverBridge {
+        popup: popup
+        widgetHovered: clusterHover.hovered
     }
     InhibitPopup {
         id: popup

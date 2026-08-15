@@ -35,6 +35,16 @@ Rectangle {
     // instead of a smaller rectangle behind a single widget's content.
     property color pulseColor: "transparent"
     property bool pulseActive: false
+    // Idle gap AFTER each flash, before the next one. Settable so a caller
+    // cycling several alerts through one pill can group them -- a short gap
+    // between the members of a set, a long one after the last. Read when the
+    // pause starts, so a handler for `pulsed` can set the next gap in time.
+    property int pulseGapMs: 4300
+    // Emitted when a flash has fully faded out, before the idle gap. A caller
+    // rotating pulseColor advances HERE rather than on its own timer: an
+    // independent timer drifts against this cycle and swaps the colour
+    // mid-flash, which reads as one stutter instead of two distinct alerts.
+    signal pulsed
 
     readonly property string style: BarStyle.current
     readonly property bool filled: pill.style !== "ghost"
@@ -53,22 +63,60 @@ Rectangle {
         NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
     }
     radius: height / 2
-    color: pill.filled ? pill.theme.bgPill : "transparent"
-    border.width: 1
+    // Ring width as a plain value rather than something read back off
+    // border.width: the frosted branch below draws its ring in `capsule` and
+    // leaves the root's own border off, which would collapse pulse's inset to 0.
+    readonly property int ringWidth: 1
+    color: (pill.filled && !pill.frostedText) ? pill.theme.bgPill : "transparent"
+    border.width: pill.frostedText ? 0 : pill.ringWidth
     border.color: pill.ringColor
 
-    // Outer pass: DROP shadow. frosted = soft straight-down elevation of the glass
-    // capsule; ghost / ghost-glass = a tighter down-right drop for the text. Its
-    // reach is kept above the inner halo's so nesting never clips it.
-    layer.enabled: true
+    // Outer pass: DROP shadow. Its reach is kept above the inner halo's so
+    // nesting never clips it.
+    //
+    // ghost / ghost-glass want a tighter down-right drop for the TEXT, so the
+    // shadow pass has to contain the content and stays here on the root.
+    //
+    // frosted wants a soft straight-down elevation of the glass CAPSULE, which
+    // is a function of the capsule's geometry -- not of what is written inside
+    // it. Layering the root swept the live content into that pass anyway, so
+    // every 1px marquee step re-rasterised the whole pill and re-ran a
+    // blurMax:14 blur over it. Measured via qt.quick.dirty: 15 label moves/sec
+    // produced 73 layer re-renders/sec, and dropping the layer halved both the
+    // frame count (32-35 -> 16 fps) and quickshell's CPU (8-10% -> 4.5%).
+    // frosted therefore casts from `capsule`, whose texture only invalidates
+    // when the pill resizes.
+    layer.enabled: !pill.frostedText
     layer.effect: MultiEffect {
         autoPaddingEnabled: true
         shadowEnabled: true
-        shadowColor: pill.frostedText ? Qt.rgba(0, 0, 0, 0.8) : Qt.rgba(0, 0, 0, 0.85)
-        shadowBlur: pill.frostedText ? 0.6 : 0.4
-        blurMax: pill.frostedText ? 14 : 10
-        shadowVerticalOffset: pill.frostedText ? 4 : 2
-        shadowHorizontalOffset: pill.frostedText ? 0 : 2
+        shadowColor: Qt.rgba(0, 0, 0, 0.85)
+        shadowBlur: 0.4
+        blurMax: 10
+        shadowVerticalOffset: 2
+        shadowHorizontalOffset: 2
+    }
+
+    // frosted's fill + ring. Declared first so it sits under the pulse and the
+    // content, and it is the ONLY thing inside frosted's shadow pass.
+    Rectangle {
+        id: capsule
+        visible: pill.frostedText
+        anchors.fill: parent
+        radius: pill.radius
+        color: pill.theme.bgPill
+        border.width: pill.ringWidth
+        border.color: pill.ringColor
+        layer.enabled: pill.frostedText
+        layer.effect: MultiEffect {
+            autoPaddingEnabled: true
+            shadowEnabled: true
+            shadowColor: Qt.rgba(0, 0, 0, 0.8)
+            shadowBlur: 0.6
+            blurMax: 14
+            shadowVerticalOffset: 4
+            shadowHorizontalOffset: 0
+        }
     }
 
     // Alert pulse fill: a capsule-shaped wash that fades in/out while pulseActive.
@@ -78,34 +126,90 @@ Rectangle {
     Rectangle {
         id: pulse
         anchors.fill: parent
-        anchors.margins: pill.border.width
-        radius: pill.radius - pill.border.width
+        anchors.margins: pill.ringWidth
+        radius: pill.radius - pill.ringWidth
         color: pill.pulseColor
         opacity: 0
         visible: pill.pulseActive || opacity > 0
 
-        SequentialAnimation {
-            id: pulseAnim
+        // Stepped from a timer, deliberately NOT a SequentialAnimation.
+        //
+        // Qt's threaded render loop advances the animation driver from the
+        // render loop itself, so while ANY animation is running it renders every
+        // vblank -- whether or not anything changed. The idle gap below is most
+        // of the cycle and changes nothing, but it still rendered: in a frame
+        // log of the media marquee (same shape, 1400ms pauses) there were 3 gaps
+        // in the 1200-1599ms range across the whole capture, where one per pause
+        // would have produced dozens. Median inter-frame gap was 8ms, i.e. 120Hz
+        // sustained. An alert can stand for hours, so this pulse held a visible
+        // bar at its full refresh rate indefinitely.
+        //
+        // Stepping opacity touches the scene only during the ~700ms flash and
+        // leaves the gap completely idle -- the timer's interval becomes the gap
+        // itself, so it wakes once rather than ~130 times. stepMs 33 therefore
+        // renders at ~30fps while flashing, ~14% of the time, instead of the
+        // display's full refresh rate continuously.
+        //
+        // (An earlier revision of this comment claimed each write cost ~2 frames.
+        // That was the whole-pill shadow layer being invalidated by the write,
+        // not a property of the write -- see the capsule/layer note above, which
+        // fixed it for frosted.)
+        readonly property int stepMs: 33
+        readonly property int riseMs: 220
+        readonly property int fallMs: 480
+        readonly property real peak: 0.55
+        // 0 = fade in, 1 = fade out, 2 = idle gap
+        property int phase: 0
+        property int elapsed: 0
+        // Latched when the gap starts, matching the old PauseAnimation, whose
+        // duration was read at pause start (i.e. after pulsed() below).
+        property int gapMs: pill.pulseGapMs
+
+        // Easing.OutQuad / Easing.InQuad, matching the animations this replaced.
+        function outQuad(t) {
+            return 1 - (1 - t) * (1 - t);
+        }
+        function inQuad(t) {
+            return t * t;
+        }
+        function resetPulse() {
+            pulse.phase = 0;
+            pulse.elapsed = 0;
+            pulse.opacity = 0;
+        }
+
+        Timer {
+            // In the gap the timer IS the pause: one wake-up, no repaint.
+            interval: pulse.phase === 2 ? pulse.gapMs : pulse.stepMs
+            repeat: true
             running: pill.pulseActive
-            loops: Animation.Infinite
-            NumberAnimation {
-                target: pulse
-                property: "opacity"
-                from: 0
-                to: 0.55
-                duration: 220
-                easing.type: Easing.OutQuad
-            }
-            NumberAnimation {
-                target: pulse
-                property: "opacity"
-                to: 0
-                duration: 480
-                easing.type: Easing.InQuad
-            }
-            // Idle gap so the total cycle stays ~5s (220 + 480 + 4300).
-            PauseAnimation {
-                duration: 4300
+            onTriggered: {
+                if (pulse.phase === 2) {
+                    pulse.phase = 0;
+                    pulse.elapsed = 0;
+                    return;
+                }
+                pulse.elapsed += pulse.stepMs;
+                if (pulse.phase === 0) {
+                    const tIn = Math.min(1, pulse.elapsed / pulse.riseMs);
+                    pulse.opacity = pulse.peak * pulse.outQuad(tIn);
+                    if (tIn >= 1) {
+                        pulse.phase = 1;
+                        pulse.elapsed = 0;
+                    }
+                    return;
+                }
+                const tOut = Math.min(1, pulse.elapsed / pulse.fallMs);
+                pulse.opacity = pulse.peak * (1 - pulse.inQuad(tOut));
+                if (tOut >= 1) {
+                    pulse.opacity = 0;
+                    // Fire AFTER the fade-out, so a caller advancing to the next
+                    // alert swaps the colour while the wash is fully transparent.
+                    pill.pulsed();
+                    pulse.gapMs = pill.pulseGapMs;
+                    pulse.phase = 2;
+                    pulse.elapsed = 0;
+                }
             }
         }
         // Reset when the alert clears mid-flash so no colour is left stranded.
@@ -113,7 +217,7 @@ Rectangle {
             target: pill
             function onPulseActiveChanged() {
                 if (!pill.pulseActive)
-                    pulse.opacity = 0;
+                    pulse.resetPulse();
             }
         }
     }
@@ -124,6 +228,14 @@ Rectangle {
     Item {
         id: contentWrap
         anchors.fill: parent
+        // Reveal the content THROUGH the capsule as it opens. The row lays out at
+        // its full target width the instant the content changes, but the capsule
+        // itself arrives over the implicitWidth Behavior below -- so without this
+        // the text drew at full length outside a capsule that was still growing
+        // into place, reading as "text first, pill catches up". Clipping to the
+        // animating bounds inverts that: the capsule leads and wipes the text in
+        // (and back out again as it closes).
+        clip: true
 
         RowLayout {
             id: row
