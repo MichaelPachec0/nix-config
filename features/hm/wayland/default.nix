@@ -135,9 +135,18 @@
     };
     qt = {
       enable = true;
-      platformTheme.name = "gtk";
+      # "gtk3", not "gtk": home-manager maps the name "gtk" onto
+      # QT_QPA_PLATFORMTHEME=gtk2, which pulls the X11-only GTK2 bridge into
+      # every Qt process and segfaults in gdk_display_open the moment anything
+      # instantiates that style. "gtk3" asks for the qgtk3 platform theme, which
+      # is the one that actually works on Wayland.
+      platformTheme.name = "gtk3";
       # style.package = with pkgs; [adwaita-qt adwaita-qt6];
-      style.name = "Gruvbox-Yellow-Dark";
+      # NOTE: no style.name. It sets QT_STYLE_OVERRIDE, which takes a *Qt style*
+      # name (adwaita, breeze, kvantum, ...). "Gruvbox-Yellow-Dark" is a GTK
+      # theme name, so Qt found no such style and silently fell back -- the
+      # override never did anything. GTK theming for Qt apps comes from the
+      # gtk3 platform theme reading the GTK settings above.
     };
     systemd.user.services = let
       # NOTE: for later reading:
