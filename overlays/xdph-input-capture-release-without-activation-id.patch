@@ -1,0 +1,133 @@
+Fix xdg-desktop-portal-hyprland leaving input capture engaged forever when a
+client sends Release without an activation_id.
+
+Symptom: the desktop goes completely unresponsive -- the cursor disappears and
+stops moving, no keystroke reaches any window -- and the ONLY thing that
+restores it is plugging or unplugging a monitor. The compositor is healthy
+throughout: its event loop keeps running and libinput keeps delivering events.
+They are simply still being captured.
+
+Root cause, src/portals/InputCapture.cpp, onRelease():
+
+    if (!opts.contains("activation_id")) {
+        Debug::log(WARN, "[input-capture] Release missing activation_id");
+        return {1, {}};
+    }
+
+The early return happens BEFORE sendRelease(), so the compositor is never told
+to lift the capture. The client believes it released and stops asking; the
+compositor believes input is still captured and keeps routing every pointer and
+keyboard event to libei instead of to the desktop. Nothing reconciles the two.
+
+Recovery only via a monitor hotplug is a direct consequence: a topology change
+bumps the zone set, the stale barriers are discarded ("Invalid zone set N,
+current M, discarding K barriers"), and the activation dies with them. That is
+why the fault looks display-related when it is not.
+
+org.kde.kdeconnect.daemon omits activation_id on every Release, so with its
+"share input devices" plugin enabled this is reachable in normal use: move the
+pointer across the barrier at a screen edge and the session wedges.
+
+Fix: record the activation the compositor hands us in activate(), clear it in
+deactivate() and after a successful Release, and fall back to it when the client
+omits the key. A malformed Release now still lifts the capture. When no
+activation is live there is nothing to release, so that case keeps returning an
+error.
+
+This is deliberately fail-safe rather than spec-pedantic. Refusing a malformed
+Release is defensible in isolation, but the cost of being strict here is the
+user losing their whole session with no keyboard-reachable way out, while the
+cost of being lenient is releasing a capture that was going to end anyway.
+
+diff --git a/src/portals/InputCapture.cpp b/src/portals/InputCapture.cpp
+index 5b83f93..69fe059 100644
+--- a/src/portals/InputCapture.cpp
++++ b/src/portals/InputCapture.cpp
+@@ -485,18 +485,31 @@ dbUasv CInputCapturePortal::onRelease(sdbus::ObjectPath sessionHandle, std::stri
+     if (!sessionValid(sessionHandle))
+         return {1, {}};
+ 
+-    if (!opts.contains("activation_id")) {
+-        Debug::log(WARN, "[input-capture] Release missing activation_id");
+-        return {1, {}};
+-    }
++    const auto& session      = m_sessions[sessionHandle];
++    uint32_t    activationId = 0;
+ 
+-    uint32_t activationId = 0;
+-    try {
+-        activationId = opts["activation_id"].get<uint32_t>();
+-    } catch (std::exception& e) {
+-        Debug::log(WARN, "[input-capture] invalid activation_id: {}", e.what());
++    if (opts.contains("activation_id")) {
++        try {
++            activationId = opts["activation_id"].get<uint32_t>();
++        } catch (std::exception& e) {
++            Debug::log(WARN, "[input-capture] invalid activation_id: {}", e.what());
++            return {1, {}};
++        }
++    } else if (session->activationLive) {
++        // Returning early here strands the user: the client believes it
++        // released, but the compositor never hears it, so every key and pointer
++        // event keeps going to libei instead of the desktop. Nothing clears
++        // that except a zone-set invalidation (a monitor hotplug), so the
++        // session looks frozen -- no cursor, no keys -- until a display is
++        // plugged or unplugged. Honour the activation we know is live instead.
++        // org.kde.kdeconnect.daemon omits the key on every Release.
++        activationId = session->activeActivationId;
++        Debug::log(WARN, "[input-capture] Release missing activation_id, using live activation {}", activationId);
++    } else {
++        Debug::log(WARN, "[input-capture] Release missing activation_id and no activation is live, ignoring");
+         return {1, {}};
+     }
++
+     Debug::log(LOG, "[input-capture]  | activationId: {}", activationId);
+ 
+     double x = -1;
+@@ -509,7 +522,8 @@ dbUasv CInputCapturePortal::onRelease(sdbus::ObjectPath sessionHandle, std::stri
+             y = py;
+         } catch (std::exception& e) { Debug::log(WARN, "[input-capture] invalid cursor_position: {}", e.what()); }
+     }
+-    m_sessions[sessionHandle]->whandle->sendRelease(activationId, x, y); //TODO: send pointer position for warping
++    session->whandle->sendRelease(activationId, x, y); //TODO: send pointer position for warping
++    session->activationLive = false;
+ 
+     return {0, {}};
+ }
+@@ -586,6 +600,9 @@ void CInputCapturePortal::activate(sdbus::ObjectPath sessionHandle, uint32_t act
+     const auto     mappedBarrierId = session->barrierIdMap.find(borderId);
+     const uint32_t clientBarrierId = mappedBarrierId != session->barrierIdMap.end() ? mappedBarrierId->second : borderId;
+ 
++    session->activeActivationId = activationId;
++    session->activationLive     = true;
++
+     Debug::log(LOG, "[input-capture]  | activation mapping: internal barrier {} -> client barrier {}, mapped: {}, activationId {}, x {}, y {}", borderId, clientBarrierId,
+                mappedBarrierId != session->barrierIdMap.end(), activationId, x, y);
+ 
+@@ -598,6 +615,9 @@ void CInputCapturePortal::activate(sdbus::ObjectPath sessionHandle, uint32_t act
+ }
+ 
+ void CInputCapturePortal::deactivate(sdbus::ObjectPath sessionHandle, uint32_t activationId) {
++    if (sessionValid(sessionHandle))
++        m_sessions[sessionHandle]->activationLive = false;
++
+     std::unordered_map<std::string, sdbus::Variant> options;
+     options["activation_id"] = sdbus::Variant{activationId};
+     m_pObject->emitSignal("Deactivated").onInterface(INTERFACE_NAME).withArguments(sessionHandle, options);
+diff --git a/src/portals/InputCapture.hpp b/src/portals/InputCapture.hpp
+index 209265e..4f2a311 100644
+--- a/src/portals/InputCapture.hpp
++++ b/src/portals/InputCapture.hpp
+@@ -44,6 +44,12 @@ class CInputCapturePortal {
+         bool                                   dead         = false;
+         std::unordered_map<uint32_t, uint32_t> barrierIdMap;
+ 
++        // The activation the compositor most recently handed us, retained so a
++        // Release that omits activation_id can still be honoured. Without it
++        // such a Release is dropped and the capture is never lifted.
++        uint32_t activeActivationId = 0;
++        bool     activationLive     = false;
++
+         //
+         std::unique_ptr<SDBusRequest>             request;
+         std::unique_ptr<SDBusSession>             session;

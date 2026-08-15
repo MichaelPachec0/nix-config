@@ -24,8 +24,10 @@ transform; the client's subsequent capture request fails cleanly through the
 existing CScreenshareFrame::share() -> ERROR_STOPPED -> sendFailed(STOPPED)
 path, so no further change is needed.
 
-Applies to Hyprland v0.56.0 and v0.56.1 (the deref is byte-identical in both;
-nothing in the v0.56.0..v0.56.1 diff touches this file).
+Applies to Hyprland v0.56.0, v0.56.1 and v0.56.2 (the deref is byte-identical
+in all three; nothing in the v0.56.0..v0.56.1 diff touches this file, and the
+only v0.56.2 change to it is 0f24ef39, a forceRender arg passed from
+renderWindow() ~150 lines above transform(), which shifts no line).
 
 Upstream: the crash site no longer exists on main -- 901881c9 "render: always
 render in normal transform (#15714)" (2026-08-04) reduced transform() to

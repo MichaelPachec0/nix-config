@@ -1,0 +1,84 @@
+shareinputdevices: send the pointer barrier position as (iiii), not ai
+
+InputCaptureSession::setUpBarrier built the SetPointerBarriers payload with two
+wrong D-Bus signatures:
+
+  * `barrier_id` was the int literal `1`, so QVariant(int) marshalled it as `i`.
+    The portal spec types it `u`.
+  * `position` was QVariant::fromValue(QList<int>{...}), which marshals as `ai`
+    -- an array. The portal spec types it `(iiii)`, a fixed-arity struct.
+
+`(iiii)` and `ai` are distinct D-Bus signatures with different wire encodings,
+and Qt performs no implicit conversion between them, correctly. A portal that
+validates the payload therefore rejects every barrier. Observed against
+xdg-desktop-portal-hyprland, which logs
+
+  [WARN] [input-capture] invalid barrier payload:
+    [System.Error.ENXIO] Failed to enter a variant (No such device or address)
+
+and returns the barrier id in `failed_barriers` -- the spec-defined channel for
+denied barriers. A dbus-monitor capture of the live call confirms the client
+side:
+
+  dict entry( string "barrier_id"  variant  int32 1 )
+  dict entry( string "position"    variant  array [ int32 0, int32 0,
+                                                    int32 0, int32 1079 ] )
+
+The practical effect is that no pointer barrier is ever armed, so crossing a
+screen edge never triggers input capture and the feature is silently inert.
+There is no user-visible error; the plugin logs "Failed barriers" at info level
+and carries on. Measured on one machine: zero barriers applied across the entire
+uptime.
+
+The geometry itself is correct (0,0 -> 0,1079 for a vertical barrier down the
+left edge of a 1080p output, including the deliberate QRect::bottom() handling),
+so this is purely a marshalling defect.
+
+Fixed by building the struct explicitly with QDBusArgument::beginStructure(),
+and by making the barrier_id literal unsigned. An inline QDBusArgument is used
+rather than a registered metatype to keep the change within one function and
+avoid introducing a new public type; a qDBusRegisterMetaType-based struct would
+also work if that is preferred.
+
+Reproduced on KDE Connect 26.04.3 with xdg-desktop-portal-hyprland b653ab53.
+Not tested against xdg-desktop-portal-kde, whose Qt-based demarshalling may be
+lenient enough to accept `ai` -- which would explain why this went unnoticed.
+
+--- a/plugins/shareinputdevices/inputcapturesession.cpp
++++ b/plugins/shareinputdevices/inputcapturesession.cpp
+@@ -11,6 +11,7 @@
+ #include "generated/systeminterfaces/request.h"
+ #include "generated/systeminterfaces/session.h"
+ 
++#include <QDBusArgument>
+ #include <QRandomGenerator>
+ #include <private/qxkbcommon_p.h>
+ 
+@@ -224,11 +225,22 @@
+     auto request = new OrgFreedesktopPortalRequestInterface(portalName(), requestPath(token), QDBusConnection::sessionBus(), this);
+     connect(request, &OrgFreedesktopPortalRequestInterface::Response, request, &QObject::deleteLater);
+     connect(request, &OrgFreedesktopPortalRequestInterface::Response, this, &InputCaptureSession::barriersSet);
+-    auto call = m_inputCapturePortal->SetPointerBarriers(
+-        QDBusObjectPath(m_session->path()),
+-        {{u"handle_token"_s, token}},
+-        {{{u"barrier_id"_s, 1}, {u"position"_s, QVariant::fromValue(QList<int>{m_barrier.x1(), m_barrier.y1(), m_barrier.x2(), m_barrier.y2()})}}},
+-        m_currentZoneSet);
++    // The portal types these keys as barrier_id `u` and position `(iiii)`.
++    // A bare `1` is an int literal and marshals as `i`, and QList<int> marshals
++    // as `ai` -- an array, not a struct -- so both keys went out with the wrong
++    // D-Bus signature. A portal that validates the payload rejects every barrier
++    // with ENXIO ("Failed to enter a variant"), which leaves input capture
++    // silently non-functional: barriers are never armed, so crossing a screen
++    // edge never triggers a capture.
++    QDBusArgument position;
++    position.beginStructure();
++    position << m_barrier.x1() << m_barrier.y1() << m_barrier.x2() << m_barrier.y2();
++    position.endStructure();
++
++    auto call = m_inputCapturePortal->SetPointerBarriers(QDBusObjectPath(m_session->path()),
++                                                        {{u"handle_token"_s, token}},
++                                                        {{{u"barrier_id"_s, 1u}, {u"position"_s, QVariant::fromValue(position)}}},
++                                                        m_currentZoneSet);
+     connect(new QDBusPendingCallWatcher(call, this), &QDBusPendingCallWatcher::finished, request, [request](QDBusPendingCallWatcher *watcher) {
+         watcher->deleteLater();
+         if (watcher->isError()) {

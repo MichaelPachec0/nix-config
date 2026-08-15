@@ -1,0 +1,56 @@
+Fix xdg-desktop-portal-hyprland leaking one file descriptor per
+zwp_linux_dmabuf_feedback_v1.format_table event.
+
+The format_table event transfers ownership of the fd to the client. The
+handler in CPortalManager mmap()s it and then returns without ever closing
+it -- on any of its three paths:
+
+  * the `if (dma.done) return;` early-out never touches the fd at all;
+  * the MAP_FAILED branch returns after the failed mmap;
+  * the success path falls off the end.
+
+mmap() takes its own reference to the underlying file, so the fd should be
+closed immediately after mapping; keeping it open buys nothing and holds the
+descriptor for the lifetime of the portal.
+
+This is not a one-shot: the compositor re-sends format_table whenever the
+feedback changes (an output being added or removed, a GPU change), so a
+long-running session accumulates descriptors. The `dma.done` early-out makes
+the post-initialisation case strictly worse -- those events leak the fd
+without even remapping the table.
+
+Found while auditing fd lifetimes in this codebase after an unrelated,
+much larger leak in the input-capture portal. This one is slow and does not
+strand in-flight AF_UNIX fds, so it does not produce the ETOOMANYREFS failure
+mode that motivated the audit -- but it is a plain descriptor leak on a path
+that fires on ordinary monitor hotplug.
+
+Not upstreamed yet.
+
+diff --git a/src/core/PortalManager.cpp b/src/core/PortalManager.cpp
+index 5dc98d4..3ee23c9 100644
+--- a/src/core/PortalManager.cpp
++++ b/src/core/PortalManager.cpp
+@@ -152,12 +152,21 @@ void CPortalManager::onGlobal(uint32_t name, const char* interface, uint32_t ver
+         m_sWaylandConnection.linuxDmabufFeedback->setFormatTable([this](CCZwpLinuxDmabufFeedbackV1* r, int fd, uint32_t size) {
+             Debug::log(TRACE, "[core] dmabufFeedbackFormatTable");
+ 
+-            if (m_sWaylandConnection.dma.done)
++            // The format_table event transfers ownership of the fd to us, and
++            // mmap() takes its own reference to the underlying file, so the fd
++            // must be closed on EVERY path -- including the early-outs, which
++            // otherwise leak one fd per event for the lifetime of the process.
++            // This is not a one-shot: the compositor re-sends format_table
++            // whenever the feedback changes, e.g. on an output or GPU change.
++            if (m_sWaylandConnection.dma.done) {
++                close(fd);
+                 return;
++            }
+ 
+             m_vDMABUFMods.clear();
+ 
+             m_sWaylandConnection.dma.formatTable = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
++            close(fd);
+ 
+             if (m_sWaylandConnection.dma.formatTable == MAP_FAILED) {
+                 Debug::log(ERR, "[core] format table failed to mmap");

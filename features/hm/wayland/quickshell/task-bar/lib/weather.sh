@@ -58,6 +58,14 @@ readonly GEO_CACHE="$CACHE_DIR/geo.json"
 # is published -- coordinates and place name stay in the private cache.
 readonly GEO_PUBLIC="${QS_GEO_PUBLIC:-/run/qs-weather/country}"
 readonly GEO_TTL=1800
+# Largest position uncertainty (metres) still treated as "where I am". geoclue
+# reports WiFi trilateration at tens of metres, but when it cannot use a WiFi
+# scan it silently degrades to an IP-derived position and still labels it
+# "WiFi" -- the reported accuracy is the ONLY thing telling the two apart. That
+# degraded answer can be hundreds of km wrong on a carrier-NAT uplink.
+readonly GEO_MAX_ACCURACY_M="${QS_GEO_MAX_ACCURACY_M:-2000}"
+# One line per rejected fix, so a wrong location is diagnosable after the fact.
+readonly GEO_REJECT_LOG="$CACHE_DIR/geo-rejects.log"
 # Last-resume marker, written by the NixOS resume hook
 # (powerManagement.resumeCommands in features/nixos/desktop/common). A cache
 # entry older than this was produced before the machine last woke, and the
@@ -402,10 +410,42 @@ publish_country() {
     mv -f "$GEO_PUBLIC.tmp" "$GEO_PUBLIC" 2>/dev/null || true
 }
 
+# Reduce a where-am-i transcript (stdin) to "<lat> <lon> <accuracy_m>".
+#
+# where-am-i prints a "New location:" block every time geoclue refines the fix,
+# until its -t timeout. Straight after a resume the FIRST block is the degraded
+# IP-derived one and the real WiFi fix lands seconds later, so reading the first
+# block picks the worst answer in exactly the situation a wake-stamp refresh
+# creates. Take the most accurate block instead.
+#
+# A block with missing, unparseable or negative accuracy (geoclue's "unknown")
+# sorts behind every measured one and is left to the caller's threshold; a block
+# without both coordinates is not a fix. Prints nothing when none qualifies.
+pick_best_fix() {
+  awk '
+    function flush(  a) {
+      if (!(have_lat && have_lon)) return
+      a = have_acc ? acc : -1
+      if (a < 0) a = 1000000000
+      if (best_acc < 0 || a < best_acc) { best_acc = a; best_lat = lat; best_lon = lon }
+    }
+    BEGIN { best_acc = -1 }
+    /^[[:space:]]*New location:/ { flush(); have_lat = 0; have_lon = 0; have_acc = 0; next }
+    /^[[:space:]]*Latitude:/  { v = $2; gsub(/[^0-9.-]/, "", v); if (v != "") { lat = v; have_lat = 1 } next }
+    /^[[:space:]]*Longitude:/ { v = $2; gsub(/[^0-9.-]/, "", v); if (v != "") { lon = v; have_lon = 1 } next }
+    /^[[:space:]]*Accuracy:/  { v = $2; gsub(/[^0-9.-]/, "", v); if (v != "") { acc = v + 0; have_acc = 1 } next }
+    END { flush(); if (best_acc >= 0) printf "%s %s %s\n", best_lat, best_lon, best_acc }
+  '
+}
+
+# True when $1 (metres) is a worse uncertainty than GEO_MAX_ACCURACY_M. Done in
+# awk because both values are decimal and [ -gt ] is integer-only.
+too_coarse() { awk -v a="$1" -v m="$GEO_MAX_ACCURACY_M" 'BEGIN { exit !(a > m) }'; }
+
 # Resolve the live location into LAT/LON/PLACE via geoclue, cached GEO_TTL secs.
 # Returns 1 only with no fix and no cache (caller then falls back to defaults).
 resolve_geo() {
-  local now mtime out lat lon place geo country
+  local now mtime out lat lon acc place geo country coarse_lat coarse_lon
   if [ -f "$GEO_CACHE" ]; then
     now=$(date +%s)
     mtime=$(stat -c %Y "$GEO_CACHE" 2>/dev/null || echo 0)
@@ -423,8 +463,22 @@ resolve_geo() {
   fi
   if [ -n "$WAI" ]; then
     out=$(timeout 18 "$WAI" -t 12 2>/dev/null)
-    lat=$(printf '%s' "$out" | awk -F: '/Latitude/{v=$2; gsub(/[^0-9.\-]/,"",v); print v; exit}')
-    lon=$(printf '%s' "$out" | awk -F: '/Longitude/{v=$2; gsub(/[^0-9.\-]/,"",v); print v; exit}')
+    read -r lat lon acc < <(printf '%s\n' "$out" | pick_best_fix)
+  fi
+  # A fix this coarse is not a position, it is the carrier's address book. Set
+  # it aside rather than caching it: cached, it would answer "where am I" with
+  # confidence for GEO_TTL, which is how a single bad wake pins the wrong city
+  # for half an hour. The stale-cache fallback below is the better answer, and
+  # the set-aside value is still used further down if there is no cache at all.
+  if [ -n "${lat:-}" ] && [ -n "${lon:-}" ] && [ -n "${acc:-}" ] && too_coarse "$acc"; then
+    if [ ! -f "$GEO_REJECT_LOG" ] || [ "$(stat -c %s "$GEO_REJECT_LOG" 2>/dev/null || echo 0)" -lt 65536 ]; then
+      printf '%s rejected %s,%s +/-%sm (limit %sm)\n' \
+        "$(date -Is)" "$lat" "$lon" "$acc" "$GEO_MAX_ACCURACY_M" >>"$GEO_REJECT_LOG" 2>/dev/null || true
+    fi
+    coarse_lat="$lat"
+    coarse_lon="$lon"
+    lat=""
+    lon=""
   fi
   if [ -n "${lat:-}" ] && [ -n "${lon:-}" ]; then
     geo=$(reverse_geocode "$lat" "$lon")
@@ -435,17 +489,36 @@ resolve_geo() {
     LON="$lon"
     PLACE="$place"
     COUNTRY="$country"
+    # accuracy rides along purely as evidence: nothing reads it back, but a
+    # cache entry that turns out to name the wrong city can then be judged.
     jq -n --arg lat "$lat" --arg lon "$lon" --arg place "$place" --arg country "$country" \
-      '{lat:$lat,lon:$lon,place:$place,country:$country}' >"$GEO_CACHE" 2>/dev/null
+      --arg acc "${acc:-}" \
+      '{lat:$lat,lon:$lon,place:$place,country:$country,accuracyM:$acc}' >"$GEO_CACHE" 2>/dev/null
     publish_country "$country"
     return 0
   fi
-  if [ -f "$GEO_CACHE" ]; then # a stale fix beats nothing
+  if [ -f "$GEO_CACHE" ]; then # a stale fix beats a coarse one
     LAT=$(jq -r '.lat // empty' "$GEO_CACHE")
     LON=$(jq -r '.lon // empty' "$GEO_CACHE")
     PLACE=$(jq -r '.place // ""' "$GEO_CACHE")
     COUNTRY=$(jq -r '.country // ""' "$GEO_CACHE")
     [ -n "$LAT" ] && [ -n "$LON" ] && return 0
+  fi
+  # Nothing cached: now even the rejected fix beats the hardcoded home city,
+  # because the one case it describes correctly is a first run somewhere else.
+  # Deliberately NOT written to the cache -- serving it once is a guess that the
+  # next poll can improve on, storing it is that guess made authoritative.
+  if [ -n "${coarse_lat:-}" ] && [ -n "${coarse_lon:-}" ]; then
+    geo=$(reverse_geocode "$coarse_lat" "$coarse_lon")
+    place=${geo%%	*}
+    country=""
+    case "$geo" in *"$(printf '\t')"*) country=${geo##*	} ;; esac
+    LAT="$coarse_lat"
+    LON="$coarse_lon"
+    PLACE="$place"
+    COUNTRY="$country"
+    publish_country "$country"
+    return 0
   fi
   return 1
 }
@@ -925,6 +998,79 @@ fetch_wttr() {
 #   weather.sh                       -> geo, cached under id "geo"
 #   weather.sh geo                   -> geo, cached under id "geo"
 #   weather.sh la 34.0522 -118.2437 "Los Angeles, CA, USA" America/Los_Angeles
+
+# Self-test for the geolocation parsing, on recorded where-am-i transcripts:
+# `weather.sh --selftest-geo`. Pure string handling, so it needs no geoclue, no
+# network and no cache -- the fix-selection rule is the part that silently
+# picked the wrong city, and it is the part worth pinning down.
+if [ "${1:-}" = "--selftest-geo" ]; then
+  fails=0
+  check() { # <name> <expected> <actual>
+    if [ "$2" = "$3" ]; then
+      printf 'ok   %s\n' "$1"
+    else
+      printf 'FAIL %s\n  expected: %s\n  actual:   %s\n' "$1" "$2" "$3"
+      fails=$((fails + 1))
+    fi
+  }
+
+  # The regression: geoclue refines, so the first block is not the best one.
+  refining='Client object: /org/freedesktop/GeoClue2/Client/1
+
+New location:
+Latitude:    34.959208
+Longitude:   -116.419389
+Accuracy:    24000 meters
+Description: WiFi
+
+New location:
+Latitude:    34.062269
+Longitude:   -118.294029
+Accuracy:    11.312000 meters
+Description: WiFi
+'
+  check "picks the most accurate block, not the first" \
+    "34.062269 -118.294029 11.312" "$(printf '%s' "$refining" | pick_best_fix)"
+
+  # Degraded-only transcript: still parsed, and recognised as unusable.
+  coarse='New location:
+Latitude:    34.959208
+Longitude:   -116.419389
+Accuracy:    24000 meters
+'
+  check "parses a lone coarse block" \
+    "34.959208 -116.419389 24000" "$(printf '%s' "$coarse" | pick_best_fix)"
+  verdict() { too_coarse "$1" && echo rejected || echo accepted; }
+  check "24km is rejected" "rejected" "$(verdict 24000)"
+  check "11m is accepted" "accepted" "$(verdict 11.312)"
+  check "the limit itself is accepted" "accepted" "$(verdict 2000)"
+  check "one metre past the limit is rejected" "rejected" "$(verdict 2000.5)"
+
+  # Unknown accuracy must lose to any measured block, whichever comes first.
+  unknown='New location:
+Latitude:    1.0
+Longitude:   2.0
+Accuracy:    unknown
+
+New location:
+Latitude:    3.0
+Longitude:   4.0
+Accuracy:    50 meters
+'
+  check "a measured block beats an unknown one" \
+    "3.0 4.0 50" "$(printf '%s' "$unknown" | pick_best_fix)"
+
+  # A block missing its coordinates is not a fix; a timeout prints no block.
+  check "no output without coordinates" \
+    "" "$(printf 'New location:\nAccuracy:    50 meters\n' | pick_best_fix)"
+  check "no output for an empty transcript" "" "$(printf '' | pick_best_fix)"
+  check "no output for unrelated text" \
+    "" "$(printf 'Client object: /x\nsomething else\n' | pick_best_fix)"
+
+  [ "$fails" -eq 0 ] && printf 'all geo parsing tests passed\n'
+  exit $((fails > 0))
+fi
+
 LOC_ID="${1:-geo}"
 # Target city IANA zone (5th arg; empty for the current location). Read by the
 # fmt_*_tz helpers so a non-local city's clock times show in its own zone.

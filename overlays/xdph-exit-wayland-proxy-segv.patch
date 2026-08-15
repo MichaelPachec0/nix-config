@@ -1,0 +1,77 @@
+Fix xdg-desktop-portal-hyprland dumping core on every session teardown.
+
+`g_pPortalManager` is a namespace-scope `std::unique_ptr<CPortalManager>`
+(src/core/PortalManager.hpp). `main()` calls `init()`, which only returns once
+the wayland connection is gone, and then returns 0 -- so `__run_exit_handlers`
+runs the manager's (compiler-generated) destructor at exit. That destructor
+destroys wayland proxy members, which marshal `destroy` requests onto a display
+that no longer exists:
+
+  #0  wl_map_insert_at              (libwayland-client)
+  #1  proxy_destroy                 (libwayland-client)
+  #2  wl_proxy_marshal_array_flags  (libwayland-client)
+  #3  wl_proxy_marshal_flags        (libwayland-client)
+  #4  CCZxdgOutputV1::~CCZxdgOutputV1()
+  #5  Hyprutils::Memory::CSharedPointer<CCZxdgOutputV1>::_delete
+  #6  std::unique_ptr<CPortalManager>::~unique_ptr()
+  #7  __run_exit_handlers           (libc)
+  #8  exit                          (libc)
+
+A textbook static-destruction-order problem: a global outliving the connection
+it depends on. There is no `~CPortalManager`, no signal handler anywhere in the
+tree, and the event loop thread is never joined -- a second core-dump thread was
+observed still parked in `CPortalManager::startEventLoop`'s condvar while the
+main thread was already inside `exit()`, so the destructor races it too.
+
+Reproduces 100% of the time on session teardown. On a greetd system, every
+single login dumps core as the greeter session ends, and because the unit has
+Restart=, systemd then logs
+
+  xdg-desktop-portal-hyprland.service: Main process exited, code=dumped, status=11/SEGV
+  xdg-desktop-portal-hyprland.service: Failed with result 'core-dump'
+  xdg-desktop-portal-hyprland.service: Scheduled restart job, restart counter is at 1
+  [CRITICAL] Couldn't connect to a wayland compositor
+
+i.e. a guaranteed crash plus a pointless restart that immediately fails, on
+every boot. Beyond the noise, it actively hampers debugging: a recurring
+xdph SIGSEGV in the journal masks real crashes and has to be ruled out by hand
+before any other portal fault can be trusted.
+
+Fixed by releasing the global before returning, so the destructor never runs.
+A deliberate leak-at-exit is the standard remedy here: the process is
+terminating, the kernel reclaims everything, and the portal has no state to
+flush. The more thorough fix -- marking proxies dead on disconnect so their
+destructors skip marshalling -- is a much larger change across the wayland
+wrapper layer and is not attempted here.
+
+Note upstream already treats shutdown as unreliable: `CPortalManager::terminate`
+forks a `sleep 5 && kill -9 <self>` watchdog rather than relying on a clean
+exit.
+
+Not upstreamed yet.
+
+diff --git a/src/main.cpp b/src/main.cpp
+index e5c3ed3..e3514ed 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -41,5 +41,20 @@ int main(int argc, char** argv, char** envp) {
+ 
+     g_pPortalManager->init();
+ 
++    // init() only returns once the wayland connection is gone -- which is
++    // exactly when destroying the manager is unsafe. g_pPortalManager is a
++    // namespace-scope unique_ptr, so returning here lets __run_exit_handlers run
++    // its destructor, and the CCZxdgOutputV1 (and sibling) members marshal wl
++    // destroy requests onto a display that no longer exists:
++    // wl_proxy_marshal_flags -> proxy_destroy -> SIGSEGV in wl_map_insert_at.
++    // Reproduces on every session teardown; logging out of a greeter session
++    // dumps core every time, which then trips Restart= and leaves a unit that
++    // immediately fails with "Couldn't connect to a wayland compositor".
++    //
++    // The event loop thread is never joined either, so running the destructor
++    // here races it as well. Deliberately leak instead: the process is exiting,
++    // the kernel reclaims everything, and there is no state to flush.
++    (void)g_pPortalManager.release();
++
+     return 0;
+ }

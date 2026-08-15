@@ -1,0 +1,157 @@
+Fix xdg-desktop-portal-hyprland leaking one EIS socket, and one dead session
+entry, for every input-capture client that goes away.
+
+Root cause, two halves in src/portals/InputCapture.cpp:
+
+  1. SSession stored the EIS fd handed over by hyprland-input-capture-v1 as a
+     raw `int32_t eisFD` and never closed it. There was no close() anywhere in
+     the file and SSession had no destructor. A wayland fd event transfers
+     ownership to the receiver, so that fd is the portal's to close.
+  2. removeSession() had no callers at all. session->onDestroy only set
+     `dead = true`, leaving the entry in m_sessions, so the map grew without
+     bound for the lifetime of the portal.
+
+Why it is worse than an ordinary fd leak: libei's EIS server writes its device
+advertisement (roughly one keymap fd per input device) into the socket as soon
+as the client connects. A client that dies before reading leaves that whole
+batch queued, and queued SCM_RIGHTS fds count as IN FLIGHT against the per-UID
+AF_UNIX budget. net/unix/scm.c too_many_unix_fds() then fails any further
+SCM_RIGHTS sendmsg() with ETOOMANYREFS for every process whose soft
+RLIMIT_NOFILE is below that count -- which is systemd's default 1024, i.e.
+almost everything. Worse, the queues hold fds referring to other unix sockets,
+so they are reference cycles that only unix_gc() can collect, and the kernel
+only runs that sweep above UNIX_INFLIGHT_TRIGGER_GC (16000). A few thousand
+stranded fds therefore sit below the collection threshold permanently: pinned
+until reboot.
+
+Measured on thanatos 2026-08-07 with a crash-looping input-capture client
+(kdeconnect_shareinputdevices, 88 core dumps in ~90s): 93 leaked EIS sockets,
+88 of them holding exactly 7160 unread bytes, pinning ~2470 fds. Since Hyprland
+hands its children the original soft limit (1024) while running at 524288
+itself, every GUI app launched from a keybind then died at Wayland connect with
+"[glfw error 65544]: Wayland: fatal display error: Too many references: cannot
+splice" -- presenting as "keybinds stopped working", not as an fd problem.
+
+Fix: close eisFD in onDestroy (and in a new ~SSession as a backstop for
+teardown paths where onDestroy never fires), prune dead sessions from
+m_sessions, and defensively close a previous fd if the compositor ever delivers
+a second one for the same session.
+
+Applies to b653ab53 (the rev pinned in helpers/overlays.nix) and to master
+688feb3 -- InputCapture.{cpp,hpp} are identical between them.
+
+Not upstreamed yet.
+
+diff --git a/src/portals/InputCapture.cpp b/src/portals/InputCapture.cpp
+index 1be6ee7..5b83f93 100644
+--- a/src/portals/InputCapture.cpp
++++ b/src/portals/InputCapture.cpp
+@@ -16,6 +16,7 @@
+ #include <string>
+ #include <sys/socket.h>
+ #include <sys/un.h>
++#include <unistd.h>
+ #include <unordered_map>
+ #include <vector>
+ #include <wayland-client-core.h>
+@@ -242,6 +243,10 @@ dbUasv CInputCapturePortal::onCreateSession(sdbus::ObjectPath requestHandle, sdb
+                                             std::unordered_map<std::string, sdbus::Variant> options) {
+     Debug::log(LOG, "[input-capture] New session:");
+ 
++    // A client that crash-loops re-creates its session on every restart, so this
++    // is the path that would otherwise accumulate dead entries fastest.
++    pruneDeadSessions();
++
+     uint32_t capabilities = 0;
+     if (options.contains("capabilities")) {
+         try {
+@@ -281,6 +286,21 @@ CInputCapturePortal::SSession::SSession(sdbus::ObjectPath requestHandle_, sdbus:
+         Debug::log(LOG, "[input-capture] Session {} destroyed", sessionHandle.c_str());
+         session.release();
+         whandle.reset();
++        // The EIS fd arrived over hyprland-input-capture-v1, and a wayland fd
++        // event transfers ownership to the receiver -- so it is ours to close.
++        // Without this, a client that goes away (crash or plain exit) leaves the
++        // socket open for the lifetime of the portal. Every message the EIS
++        // server already wrote into it, including the per-device keymap fds,
++        // stays queued and those fds stay counted as in-flight against the
++        // per-UID AF_UNIX limit. A crash-looping client therefore strands a
++        // batch of fds per restart, until nothing on the default soft
++        // RLIMIT_NOFILE can pass an fd at all (ETOOMANYREFS) -- and the kernel
++        // only garbage-collects such reference cycles above
++        // UNIX_INFLIGHT_TRIGGER_GC, so a few thousand are pinned until reboot.
++        if (eisFD >= 0) {
++            close(eisFD);
++            eisFD = -1;
++        }
+         dead = true;
+     };
+ 
+@@ -292,7 +312,24 @@ CInputCapturePortal::SSession::SSession(sdbus::ObjectPath requestHandle_, sdbus:
+     });
+     whandle->setDeactivated([this](CCHyprlandInputCaptureV1*, uint32_t activationId) { g_pPortalManager->m_sPortals.inputCapture->deactivate(sessionHandle, activationId); });
+     whandle->setDisabled([this](CCHyprlandInputCaptureV1*) { g_pPortalManager->m_sPortals.inputCapture->disable(sessionHandle); });
+-    whandle->setEisFd([this](CCHyprlandInputCaptureV1*, int32_t fd) { eisFD = fd; });
++    whandle->setEisFd([this](CCHyprlandInputCaptureV1*, int32_t fd) {
++        // Defensive: the compositor is not expected to hand us a second fd for
++        // one session, but if it ever does, silently overwriting the member
++        // would leak the previous one exactly like the missing teardown did.
++        if (eisFD >= 0 && eisFD != fd)
++            close(eisFD);
++        eisFD = fd;
++    });
++}
++
++// Backstop for any path that drops an SSession without onDestroy having fired
++// (e.g. the portal shutting down while sessions are still live). onDestroy sets
++// eisFD to -1 after closing, so this cannot double-close.
++CInputCapturePortal::SSession::~SSession() {
++    if (eisFD >= 0) {
++        close(eisFD);
++        eisFD = -1;
++    }
+ }
+ 
+ dbUasv CInputCapturePortal::onGetZones(sdbus::ObjectPath requestHandle, sdbus::ObjectPath sessionHandle, std::string appID, std::unordered_map<std::string, sdbus::Variant> opts) {
+@@ -509,7 +546,21 @@ void CInputCapturePortal::removeSession(sdbus::ObjectPath sessionHandle) {
+     m_sessions.erase(sessionHandle);
+ }
+ 
++// Dead sessions were previously never removed: onDestroy only flagged them, and
++// removeSession() had no callers at all, so m_sessions grew without bound for the
++// lifetime of the portal. A client that crash-loops (each restart creating a
++// fresh session) therefore accumulated one dead entry per restart. Pruning here
++// is safe because a dead session has already released its D-Bus session and
++// wayland handle in onDestroy; this just drops the last reference.
++void CInputCapturePortal::pruneDeadSessions() {
++    const auto REMOVED = std::erase_if(m_sessions, [](const auto& entry) { return entry.second->dead; });
++    if (REMOVED > 0)
++        Debug::log(LOG, "[input-capture] pruned {} dead session(s), {} remaining", REMOVED, m_sessions.size());
++}
++
+ void CInputCapturePortal::zonesChanged() {
++    pruneDeadSessions();
++
+     if (m_sessions.empty())
+         return;
+ 
+diff --git a/src/portals/InputCapture.hpp b/src/portals/InputCapture.hpp
+index 8391e4b..209265e 100644
+--- a/src/portals/InputCapture.hpp
++++ b/src/portals/InputCapture.hpp
+@@ -35,6 +35,7 @@ class CInputCapturePortal {
+ 
+     struct SSession {
+         SSession(sdbus::ObjectPath requestHandle, sdbus::ObjectPath sessionHandle, std::string sessionId, uint32_t capabilities, wl_proxy* proxy);
++        ~SSession();
+ 
+         sdbus::ObjectPath                      requestHandle, sessionHandle;
+         std::string                            sessionId;
+@@ -69,6 +70,7 @@ class CInputCapturePortal {
+ 
+     bool          sessionValid(sdbus::ObjectPath sessionHandle);
+     void          removeSession(sdbus::ObjectPath sessionHandle);
++    void          pruneDeadSessions();
+ 
+     void          activate(sdbus::ObjectPath sessionHandle, uint32_t activationId, double x, double y, uint32_t borderId);
+     void          deactivate(sdbus::ObjectPath sessionHandle, uint32_t activationId);

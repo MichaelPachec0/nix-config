@@ -130,6 +130,7 @@
     };
     flake-playground = {
       url = "github:MichaelPachec0/flake-playground";
+      inputs.nixpkgs.follows = "nixpkgs";
       # INFO: for local building
       # url = "path:/home/michael/git/personal/flake-playground";
     };
@@ -172,6 +173,10 @@
 
     ncspot = {
       url = "github:MichaelPachec0/ncspot";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    gruvbox-gtk-theme = {
+      url = "github:MichaelPachec0/Gruvbox-GTK-Theme";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

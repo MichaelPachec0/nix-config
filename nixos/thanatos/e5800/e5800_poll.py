@@ -196,14 +196,34 @@ def _ssh_batch(steps):
     return result, False
 
 
-def _parse_signals(out):
-    """Interpret the get_signals payload from the batched session."""
+def _parse_cell_info(out):
+    """Interpret the cell_info payload from the batched session."""
     if not out:
         return None
     try:
-        return (json.loads(out) or {}).get("signals")
+        return json.loads(out) or None
     except (ValueError, json.JSONDecodeError):
         return None
+
+
+# GL 4.10 keeps the radio metrics in `cellular.network cell_info`, called per
+# {bus, slot}, so the bus and the ACTIVE SIM slot come from `cellular.modem
+# status` first. Both run in one remote shell: one SSH session per cycle, and it
+# closes the window where a DSDS slot switch could land the idle SIM's radio
+# under the active slot's name.
+#
+# `cellular.modem status` must be called with NO arguments; passing {"bus": ...}
+# makes it answer a flat object with no modems[] at all. jsonfilter is OpenWrt's
+# stock JSON extractor. If either extraction comes back empty the guard skips
+# the call rather than sending ubus a malformed argument.
+_CELL_INFO_CMD = (
+    "M=$(ubus call cellular.modem status); "
+    "B=$(printf '%s' \"$M\" | jsonfilter -e '@.modems[0].bus'); "
+    "S=$(printf '%s' \"$M\" | jsonfilter -e '@.modems[0].current_sim_slot'); "
+    "[ -n \"$B\" ] && [ -n \"$S\" ] && "
+    "ubus call cellular.network cell_info "
+    "\"{\\\"bus\\\":\\\"$B\\\",\\\"slot\\\":$S}\""
+)
 
 
 # Every AT reading now arrives through cellular_manager's own debug_at_info,
@@ -336,7 +356,7 @@ def collect_once():
     global _QENG_NBR_CACHE
     global _SIM_CACHE, _SIM_LAST, _MCU_CACHE, _WARN_CACHE, _MCU_LAST
 
-    steps = [("signals", "ubus call cellular.collect get_signals '{\"bus\":\"x\"}'"),
+    steps = [("cellinfo", _CELL_INFO_CMD),
              # The uplink interface itself: how long since it dialled, plus the
              # lease it got. Every cycle -- it is a netifd status read and never
              # touches the modem.
@@ -358,8 +378,7 @@ def collect_once():
 
     got, ssh_auth = _ssh_batch(steps)
 
-    sig = _parse_signals(got.get("signals"))
-    parts["signals"] = sig
+    parts["cellinfo"] = _parse_cell_info(got.get("cellinfo"))
     parts["iface"] = L.parse_iface_status(got.get("iface"))
 
     # Latch each reading on whether it PARSES, not on whether the response was

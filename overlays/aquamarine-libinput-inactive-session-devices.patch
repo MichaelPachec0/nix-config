@@ -1,0 +1,43 @@
+--- a/src/backend/Session.cpp
++++ b/src/backend/Session.cpp
+@@ -76,14 +76,39 @@ static void libinputLog(libinput*, libinput_log_priority level, const char* fmt,
+ 
+ // ------------ Libseat
+ 
+ static void libseatEnableSeat(struct libseat* seat, void* data) {
+     auto PSESSION    = (Aquamarine::CSession*)data;
+     PSESSION->active = true;
+-    if (PSESSION->libinputHandle)
++    if (PSESSION->libinputHandle) {
++        // libinput_resume() only re-enumerates when the context is currently suspended:
++        // its udev backend (udev_input_enable(), udev-seat.c) returns early as long as
++        // the udev monitor is still alive. Suspending first turns this into an
++        // unconditional re-enumeration, which is what a seat becoming usable calls for.
++        //
++        // Without it, a session that was inactive when the libinput context got its seat
++        // never gets its devices back. libinput_udev_assign_seat() enumerates and opens
++        // every device the moment it is called, and logind answers TakeDevice on an
++        // inactive session with an already-revoked fd, so every EVIOC* ioctl fails, the
++        // device ends up with no capabilities and libinput drops it, logging
++        // "not using input device '/dev/input/eventN'". That is reachable whenever the
++        // compositor is started into a VT that is still being handed over (greeter ->
++        // session): the compositor then runs with no keyboard, no touchpad and no
++        // pointer for the rest of its life, and only hotplugged devices ever show up.
++        //
++        // libseatDisableSeat() below cannot pre-suspend that away, because on that path
++        // logind delivers the disable during the dispatchPendingEventsAsync() in
++        // CSession::attempt(), while libinputHandle is still null.
++        //
++        // On the ordinary path this costs nothing: the initial enable_seat is delivered
++        // by that same dispatchPendingEventsAsync(), before libinputHandle exists, so
++        // the first enable that reaches this branch is a VT switch back, where
++        // libseatDisableSeat() already suspended and the extra suspend is a no-op.
++        libinput_suspend(PSESSION->libinputHandle);
+         libinput_resume(PSESSION->libinputHandle);
++    }
+     PSESSION->events.changeActive.emit();
+ }
+ 
+ static void libseatDisableSeat(struct libseat* seat, void* data) {
+     auto PSESSION    = (Aquamarine::CSession*)data;
+     PSESSION->active = false;

@@ -36,6 +36,7 @@ in {
   imports = [
     # NOTE: this was already merged
     # ../../../../overlays/modules/systemd-lock-handler
+    ./hyprland-wldebug.nix
   ];
 
   config = lib.mkIf (cfg.wayland.laptop || cfg.wayland.desktop) {
@@ -295,6 +296,21 @@ in {
       NIXOS_OZONE_WL = "1";
     };
 
+    # Qt apps run with QT_QPA_PLATFORMTHEME=gtk3 (set by the home-manager qt
+    # module) dlopen libqgtk3 and build a real in-process GTK3 file chooser.
+    # GTK3 then opens the org.gtk.Settings.FileChooser GSettings schema, and an
+    # unknown schema is a g_error() -- an abort, not a warning. nixpkgs keeps
+    # schemas under share/gsettings-schemas/<pkg-name>/glib-2.0/schemas and only
+    # wrapGAppsHook'd GTK apps get that on their private XDG_DATA_DIRS, so the
+    # GTK code inside a wrapQtAppsHook'd binary (kate, File > Open) found no
+    # schemas at all and dumped core. Put the schema data dirs on the session
+    # XDG_DATA_DIRS so unwrapped GTK consumers can resolve them. Lists here are
+    # appended to the profile-relative entries, not substituted for them.
+    environment.sessionVariables.XDG_DATA_DIRS = [
+      "${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}"
+      "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}"
+    ];
+
     # Needed for sway/hyprland usage HM as per:
     # https://nixos.wiki/wiki/Sway#Using_Home_Manager
     security.polkit.enable = true;
@@ -342,7 +358,7 @@ in {
       # image viewer
       nw.imv
       # auto configure displays
-      nw.kanshi
+      kanshi
       # notification daemon
       #nw.mako
       # dunst
@@ -445,9 +461,15 @@ in {
       qt5.qtbase
       qadwaitadecorations
       qadwaitadecorations-qt6
+      # 2026-08-14: the GTK2 style bridges (qtstyleplugins for Qt5,
+      # qt6gtk2 for Qt6) are removed on purpose. GTK2 is X11-only and
+      # unmaintained; selecting the "qt6gtk2" style in a Qt6 app runs gtk_init
+      # inside the Qt process and segfaults in gdk_display_open (NULL write at
+      # +0x114), taking the app with it. Qt apps here theme through the GTK3
+      # platform theme instead, so nothing needs these plugins to be present --
+      # and while they are installed they stay selectable from KDE's style menu,
+      # which is exactly how the crash was hit.
       # 2026-06-18: change was made to remove the top level libsForQt5
-      libsForQt5.qtstyleplugins
-      qt6Packages.qt6gtk2
       activate-linux
       obs-studio
       # nw.zen-browser
