@@ -1178,7 +1178,7 @@ in {
         feh
         fastfetch
         nix-output-monitor
-        # figma-linux
+        figma-linux
         rquickshare
         stable.libreoffice
         sbctl
