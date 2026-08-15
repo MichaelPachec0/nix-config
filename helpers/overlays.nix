@@ -148,21 +148,6 @@
         swayfx = prev.swayfx.override {inherit swayfx-unwrapped;};
       };
   };
-  figma-linux = final: prev: {
-    figma-linux = prev.figma-linux.overrideAttrs (old: rec {
-      version = "0.11.4";
-      src = prev.fetchurl {
-        url = "https://github.com/Figma-Linux/figma-linux/releases/download/v${version}/figma-linux_${version}_linux_amd64.deb";
-        hash = "sha256-ukUsNgWOtIRe54vsmRdI62syjIPwSsgNV7kITCw0YUQ=";
-      };
-      # runtimeDependenciesPath = (old.runtimeDependenciesPath or []) ++ (lib.makeLibraryPath [ prev.libGL]);
-      preFixup = ''
-         gappsWrapperArgs+=(
-          --prefix LD_LIBRARY_PATH : ${prev.lib.makeLibraryPath [prev.libGL]}
-        )
-      '';
-    });
-  };
 
   pam_rssh = final: prev: {
     pam_rssh = prev.callPackage ../overlays/pam_rssh {};
@@ -436,7 +421,6 @@
     inputs.rust-overlay.overlays.default
     # (import ./pkgs/charles)
     wayland
-    figma-linux
     # fastanime
   ];
   # TODO: decide if abstracting this is worthwhile.
