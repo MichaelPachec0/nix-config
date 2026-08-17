@@ -227,6 +227,7 @@
         inputs.flake-playground.nixosModules.default
         ./nixos/nyx/boot.nix
         ./nixos/nyx/configuration.nix
+        ./features/nixos/cachyos-settings
         ./nixos/thanatos/amd.nix
         ./nixos/thanatos/kernel.nix
         ./nixos/thanatos/hardware-configuration.nix
@@ -273,6 +274,7 @@
             overlays.unstable.nixosDesktop
             ++ [
               cachyosOverlay
+              ./features/nixos/cachyos-settings
               # changed to precision 5530/9570
               # inputs.hardware.nixosModules.dell-xps-15-9560-intel
               # inputs.hardware.nixosModules.dell-precision-5530
