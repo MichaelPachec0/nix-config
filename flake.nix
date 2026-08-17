@@ -228,6 +228,7 @@
         ./nixos/nyx/boot.nix
         ./nixos/nyx/configuration.nix
         ./nixos/thanatos/amd.nix
+        ./nixos/thanatos/kernel.nix
         ./nixos/thanatos/hardware-configuration.nix
         inputs.disko.nixosModules.disko
         ./nixos/thanatos/e5800.nix
