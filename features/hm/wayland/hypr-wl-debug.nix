@@ -41,12 +41,20 @@
   # different command line would make the watchdog declare every legitimate lock
   # stranded and unlock it.
   #
-  # quickshell is deliberately NOT in runtimeInputs and `qs` is deliberately
-  # unqualified. ./quickshell.nix installs an overrideAttrs of pkgs.quickshell,
-  # not pkgs.quickshell itself, so putting the latter on PATH shadows the profile
-  # binary and the traced session fails to load the lock backdrop's
-  # Qt5Compat.GraphicalEffects import. Letting PATH resolve it is what makes both
-  # branches provably the same binary.
+  # `qs` is deliberately unqualified, so the traced branch provably runs the
+  # same binary as the untraced one below.
+  #
+  # This used to also be a correctness requirement: ./quickshell.nix installed
+  # an overrideAttrs of pkgs.quickshell rather than pkgs.quickshell itself, so
+  # naming the latter shadowed the profile binary and the traced session died
+  # on the lock backdrop's Qt5Compat.GraphicalEffects import. That is no longer
+  # true -- the qt5compat buildInput, the runtime-deps PATH prefix and both
+  # patches now live in the `quickshellPatched` overlay (helpers/overlays.nix,
+  # listed in baseDesktop), so pkgs.quickshell IS the patched package for both
+  # NixOS and home-manager. Verified 2026-08-16: nixosConfigurations.thanatos
+  # and homeConfigurations."michael-thanatos" evaluate pkgs.quickshell to the
+  # same drv. Leaving `qs` unqualified is now a simplicity choice, not a trap
+  # being avoided.
   tracedBar = pkgs.writeShellApplication {
     name = "qs-bar-traced";
     runtimeInputs = [pkgs.coreutils];
