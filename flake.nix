@@ -179,6 +179,10 @@
       url = "github:MichaelPachec0/Gruvbox-GTK-Theme";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    idrive-nix = {
+      url = "github:MichaelPachec0/idrive-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
