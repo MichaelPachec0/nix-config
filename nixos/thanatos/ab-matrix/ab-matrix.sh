@@ -22,11 +22,32 @@
 #
 #   nvme    bfq | kyber | adios        /sys/block/nvme0n1/queue/scheduler
 #   dirty   low (64M/16M) | high (256M/64M)   vm.dirty_bytes + _background_
-#   zram    200 | 100 (percent of RAM)  swapoff, reset, resize, swapon
 #   sched   flash | eevdf               systemctl start/stop scx
 #   iolat   on (10ms) | off             user.slice io.latency
 #
-#   3 x 2 x 2 x 2 x 2 = 48 cells.
+#   3 x 2 x 2 x 2 = 24 cells.
+#
+# ZRAM SIZE IS NOT A FACTOR HERE, BY DELIBERATE CHOICE.
+#
+# An earlier version cycled it in-run: swapoff, reset, resize, mkswap, swapon,
+# seven times across four hours. That run completed all 144 of its cells and
+# then the machine took a kernel panic 86 seconds later, while idle, with no
+# kernel output at all in those 86 seconds and no panic capture configured. The
+# cause was never established. But repeatedly tearing down and rebuilding the
+# swap device under memory pressure was by far the most invasive thing this
+# harness did, and carrying an unexplained panic risk is not worth saving the
+# operator two reboots.
+#
+# zram size is therefore an OPERATOR-DRIVEN blocking factor now: set the size,
+# reboot, run the matrix, change the size, reboot, run it again, then analyse
+# both result files together. Every row records the size actually observed, so
+# the cross-run comparison stays exact, and `analyze` takes several CSVs so it
+# stays one command.
+#
+# This is also better design than what it replaces. A reboot between the two
+# levels clears every trace of carried-over state -- page cache, memory
+# fragmentation, zram's own allocator, the swap cache -- that an in-run resize
+# necessarily leaves behind.
 #
 # DESIGN CHOICES THAT ARE NOT ARBITRARY
 #
@@ -63,7 +84,9 @@ readonly NVME_DEV="nvme0n1"
 readonly NVME_MAJMIN="259:0"
 readonly SCHED_PATH="/sys/block/${NVME_DEV}/queue/scheduler"
 readonly IOLAT_PATH="/sys/fs/cgroup/user.slice/io.latency"
-readonly ZRAM_DEV="/dev/zram0"
+# ZRAM_SYS is read-only here: the harness reports the size it observes and
+# never writes to the device. There is intentionally no /dev/zram0 constant,
+# because nothing in this script may swapoff, reset or resize it.
 readonly ZRAM_SYS="/sys/block/zram0"
 
 # Tunables. Defaults are sized so a 2-rep run lands near 2.75h, comfortably
@@ -95,7 +118,6 @@ FIO="${FIO:-fio}"
 # Levels.
 NVME_LEVELS=(bfq kyber adios)
 DIRTY_LEVELS=(low high)
-ZRAM_LEVELS=(200 100)
 SCHED_LEVELS=(flash eevdf)
 IOLAT_LEVELS=(on off)
 
@@ -105,7 +127,21 @@ IOLAT_LEVELS=(on off)
 
 # Total cells for one repetition.
 cell_count() {
-  echo $((${#NVME_LEVELS[@]} * ${#DIRTY_LEVELS[@]} * ${#SCHED_LEVELS[@]} * ${#IOLAT_LEVELS[@]} * ${#ZRAM_LEVELS[@]}))
+  echo $((${#NVME_LEVELS[@]} * ${#DIRTY_LEVELS[@]} * ${#SCHED_LEVELS[@]} * ${#IOLAT_LEVELS[@]}))
+}
+
+# zram size as a percentage of RAM, read from the device rather than from any
+# configured value: this is a recorded observation, not an applied setting, and
+# it is what ties the two operator-driven runs together at analysis time.
+observed_zram_pct() {
+  local disksize_bytes ramkb
+  disksize_bytes="$(cat "$ZRAM_SYS/disksize" 2>/dev/null || echo 0)"
+  ramkb="$(awk '/MemTotal/{print $2}' /proc/meminfo)"
+  [ "$ramkb" -gt 0 ] || {
+    echo 0
+    return
+  }
+  awk -v d="$disksize_bytes" -v r="$ramkb" 'BEGIN{printf "%.0f", d/1024/r*100}'
 }
 
 # Seconds one cell costs, including the fixed overhead of applying a config.
@@ -114,13 +150,11 @@ cell_seconds() {
   echo $((RUNTIME + SETTLE + 10))
 }
 
-# Whole-run estimate in seconds, including the zram block switches.
-# Each rep switches zram twice; a switch costs about a minute.
 estimate_seconds() {
   local cells reps
   cells="$(cell_count)"
   reps="$1"
-  echo $((cells * reps * $(cell_seconds) + reps * 2 * 60))
+  echo $((cells * reps * $(cell_seconds)))
 }
 
 fmt_hms() {
@@ -161,16 +195,6 @@ block_cells() {
   done
 }
 
-# Counterbalance zram across reps so it is not confounded with elapsed time.
-zram_order_for_rep() {
-  local rep="$1"
-  if [ $((rep % 2)) -eq 1 ]; then
-    echo "${ZRAM_LEVELS[0]} ${ZRAM_LEVELS[1]}"
-  else
-    echo "${ZRAM_LEVELS[1]} ${ZRAM_LEVELS[0]}"
-  fi
-}
-
 dirty_bytes_for() {
   case "$1" in
     low) echo "67108864 16777216" ;;
@@ -187,18 +211,21 @@ ORIG_SCHED=""
 ORIG_DIRTY=""
 ORIG_DIRTY_BG=""
 ORIG_IOLAT=""
-ORIG_ZRAM_DISKSIZE=""
 ORIG_SCX_ACTIVE=""
 RESTORED=0
 
+# zram is deliberately absent from capture and restore. This harness no longer
+# writes to the zram device at all -- not its size, not its swap state -- so
+# there is nothing of its to restore, and a restore path that touched it would
+# reintroduce exactly the teardown/rebuild cycle that was removed.
 capture_state() {
   ORIG_SCHED="$(sed -n 's/.*\[\(.*\)\].*/\1/p' "$SCHED_PATH")"
   ORIG_DIRTY="$(cat /proc/sys/vm/dirty_bytes)"
   ORIG_DIRTY_BG="$(cat /proc/sys/vm/dirty_background_bytes)"
   ORIG_IOLAT="$(cat "$IOLAT_PATH" 2>/dev/null || echo "")"
-  ORIG_ZRAM_DISKSIZE="$(cat "$ZRAM_SYS/disksize")"
   ORIG_SCX_ACTIVE="$(systemctl is-active scx 2>/dev/null || true)"
-  echo "captured: sched=$ORIG_SCHED dirty=$ORIG_DIRTY/$ORIG_DIRTY_BG iolat='$ORIG_IOLAT' zram=$ORIG_ZRAM_DISKSIZE scx=$ORIG_SCX_ACTIVE"
+  echo "captured: sched=$ORIG_SCHED dirty=$ORIG_DIRTY/$ORIG_DIRTY_BG iolat='$ORIG_IOLAT' scx=$ORIG_SCX_ACTIVE"
+  echo "observed: zram=$(observed_zram_pct)% of RAM (recorded, never modified)"
 }
 
 restore_state() {
@@ -212,13 +239,6 @@ restore_state() {
   [ -n "$ORIG_DIRTY_BG" ] && sysctl -q -w "vm.dirty_background_bytes=$ORIG_DIRTY_BG" 2>/dev/null
   if [ -n "$ORIG_IOLAT" ]; then
     echo "$ORIG_IOLAT" > "$IOLAT_PATH" 2>/dev/null
-  fi
-  # zram last: it is the slowest and the one most worth getting right.
-  local cur
-  cur="$(cat "$ZRAM_SYS/disksize")"
-  if [ -n "$ORIG_ZRAM_DISKSIZE" ] && [ "$cur" != "$ORIG_ZRAM_DISKSIZE" ]; then
-    echo "  restoring zram disksize to $ORIG_ZRAM_DISKSIZE"
-    set_zram_bytes "$ORIG_ZRAM_DISKSIZE" || echo "  WARNING: zram restore FAILED, check zramctl"
   fi
   if [ "$ORIG_SCX_ACTIVE" = "active" ]; then
     systemctl start scx 2>/dev/null || true
@@ -297,44 +317,10 @@ apply_sched() {
   esac
 }
 
-# zram resize. The dangerous one, hence the guards.
-set_zram_bytes() {
-  local want="$1" data_bytes avail_kb
-  # swapoff has to relocate whatever zram currently holds. With a 50G disk swap
-  # behind it that is survivable but slow, and if RAM is tight it is not
-  # survivable at all. Refuse rather than gamble.
-  data_bytes="$(cat "$ZRAM_SYS/mm_stat" 2>/dev/null | awk '{print $1}')"
-  data_bytes="${data_bytes:-0}"
-  avail_kb="$(awk '/MemAvailable/{print $2}' /proc/meminfo)"
-  if [ "$data_bytes" -gt $((4 * 1024 * 1024 * 1024)) ]; then
-    echo "  zram holds $((data_bytes / 1024 / 1024))MB; waiting for it to drain" >&2
-    sleep 30
-  fi
-  if [ "$avail_kb" -lt $((2 * 1024 * 1024)) ]; then
-    echo "ERROR: only $((avail_kb / 1024))MB available; refusing to swapoff zram" >&2
-    return 1
-  fi
-  swapoff "$ZRAM_DEV" || {
-    echo "ERROR: swapoff $ZRAM_DEV failed" >&2
-    return 1
-  }
-  echo 1 > "$ZRAM_SYS/reset"
-  echo "$want" > "$ZRAM_SYS/disksize"
-  mkswap "$ZRAM_DEV" >/dev/null 2>&1
-  # Priority 100 matches the configured value; the disk swap sits at -1 and
-  # must stay lower or the whole tiering inverts.
-  swapon -p 100 "$ZRAM_DEV" || {
-    echo "ERROR: swapon $ZRAM_DEV failed" >&2
-    return 1
-  }
-}
-
-apply_zram() {
-  local pct="$1" ramkb bytes
-  ramkb="$(awk '/MemTotal/{print $2}' /proc/meminfo)"
-  bytes=$((ramkb * 1024 / 100 * pct))
-  set_zram_bytes "$bytes"
-}
+# There is deliberately no zram resize function here any more. Resizing means
+# swapoff, reset, disksize, mkswap, swapon -- and the run that did that seven
+# times ended in an unexplained kernel panic. The operator sets the size and
+# reboots between the two levels instead.
 
 # ---------------------------------------------------------------------------
 # Load generation
@@ -589,10 +575,11 @@ cmd_estimate() {
   local cells est ceiling fits
   cells="$(cell_count)"
   ceiling=$((BUDGET_HOURS * 3600))
-  echo "cells per rep:      $cells  (nvme 3 x dirty 2 x zram 2 x sched 2 x iolat 2)"
+  echo "cells per rep:      $cells  (nvme 3 x dirty 2 x sched 2 x iolat 2)"
   echo "seconds per cell:   $(cell_seconds)  (runtime $RUNTIME + settle $SETTLE + 10 setup)"
+  echo "zram:               ${1:-$(observed_zram_pct)}% of RAM, fixed for this run (operator-driven)"
   local r
-  for r in 1 2 3 4; do
+  for r in 1 2 3 4 5 6; do
     est="$(estimate_seconds "$r")"
     printf '  %d rep(s): %-8s  %s\n' "$r" "$(fmt_hms "$est")" \
       "$([ "$est" -le "$ceiling" ] && echo "fits" || echo "OVER ${BUDGET_HOURS}h")"
@@ -632,29 +619,41 @@ cmd_run() {
   total=$(($(cell_count) * REPS))
   done_n=0
 
-  local rep zlevel cell
+  # Read once, up front. If it changed mid-run the rows would silently disagree
+  # about what they measured, so it is re-checked after every cell below.
+  local zpct
+  zpct="$(observed_zram_pct)"
+
+  local rep cell
   for rep in $(seq 1 "$REPS"); do
-    for zlevel in $(zram_order_for_rep "$rep"); do
-      echo "--- rep $rep, zram ${zlevel}% ---"
-      apply_zram "$zlevel" || {
-        echo "ERROR: could not set zram to ${zlevel}%, skipping this block" >&2
-        continue
-      }
-      # Seed varies per rep and block so the two reps are not the same order,
-      # but the whole run is still reproducible from the seed.
-      local seed="${rep}${zlevel}"
-      while read -r cell; do
-        IFS=: read -r n d s i <<< "$cell"
-        done_n=$((done_n + 1))
-        local elapsed remain
-        elapsed=$(($(date +%s) - start_ts))
-        remain=$((done_n > 0 ? elapsed * (total - done_n) / done_n : 0))
-        printf '[%2d/%2d] zram=%s nvme=%-5s dirty=%-4s sched=%-5s iolat=%-3s  eta %s\n' \
-          "$done_n" "$total" "$zlevel" "$n" "$d" "$s" "$i" "$(fmt_hms "$remain")"
-        run_cell "$n" "$d" "$zlevel" "$s" "$i" "$rep" >> "$csv" || \
-          echo "  cell FAILED, continuing" >&2
-      done < <(block_cells | shuffle_seeded "$seed")
-    done
+    echo "--- rep $rep of $REPS (zram ${zpct}%) ---"
+    # Seed varies per rep so the reps are not the same order, while the run as
+    # a whole stays reproducible from the seed.
+    local seed="$rep"
+    while read -r cell; do
+      IFS=: read -r n d s i <<< "$cell"
+      done_n=$((done_n + 1))
+      local elapsed remain
+      elapsed=$(($(date +%s) - start_ts))
+      remain=$((done_n > 0 ? elapsed * (total - done_n) / done_n : 0))
+      printf '[%2d/%2d] nvme=%-5s dirty=%-4s sched=%-5s iolat=%-3s  eta %s\n' \
+        "$done_n" "$total" "$n" "$d" "$s" "$i" "$(fmt_hms "$remain")"
+      run_cell "$n" "$d" "$zpct" "$s" "$i" "$rep" >> "$csv" ||
+        echo "  cell FAILED, continuing" >&2
+
+      # zram must not move under us. Nothing here changes it, but a stray
+      # zramctl or a systemd unit could, and every row is stamped with the
+      # value read at the start -- so a silent change would mislabel the data
+      # rather than announce itself.
+      local now_pct
+      now_pct="$(observed_zram_pct)"
+      if [ "$now_pct" != "$zpct" ]; then
+        echo "ABORT: zram changed from ${zpct}% to ${now_pct}% mid-run." >&2
+        echo "       Rows already written are labelled ${zpct}% and cannot be" >&2
+        echo "       trusted past this point. Stopping rather than mixing." >&2
+        return 1
+      fi
+    done < <(block_cells | shuffle_seeded "$seed")
   done
 
   # Drop the bulk scratch files; the CSV is the deliverable and the scratch is
@@ -686,25 +685,42 @@ cmd_run() {
 # including the repetition they came from. The difference within such a pair
 # cancels every other factor exactly, so the spread of those differences is
 # real run-to-run noise and nothing else.
+# Accepts several CSVs. That is how the zram factor gets analysed at all now:
+# each operator-driven run produces one file at one zram size, and passing both
+# makes zram a factor again across the merged rows. Passing one file simply
+# leaves zram constant, and it is reported as such rather than compared.
 cmd_analyze() {
-  local csv="${1:-}"
-  [ -n "$csv" ] || {
-    csv="$(ls -t "$OUTDIR"/matrix-*.csv 2>/dev/null | head -1)"
-  }
-  [ -f "$csv" ] || {
+  local -a csvs=()
+  if [ "$#" -gt 0 ]; then
+    csvs=("$@")
+  else
+    local latest
+    latest="$(ls -t "$OUTDIR"/matrix-*.csv 2>/dev/null | head -1)"
+    [ -n "$latest" ] && csvs=("$latest")
+  fi
+  [ "${#csvs[@]}" -gt 0 ] && [ -f "${csvs[0]}" ] || {
     echo "no results file" >&2
     return 1
   }
   echo ""
-  echo "=== main effects from $csv ==="
-  python3 - "$csv" <<'PY'
+  echo "=== main effects from ${#csvs[@]} file(s): ${csvs[*]} ==="
+  python3 - "${csvs[@]}" <<'PY'
 import csv, statistics, sys, itertools
 
-rows = list(csv.DictReader(open(sys.argv[1])))
+rows = []
+for path in sys.argv[1:]:
+    with open(path) as fh:
+        rows.extend(csv.DictReader(fh))
 if not rows:
     print("no rows"); sys.exit()
 
 factors = ["nvme", "dirty", "zram", "sched", "iolat"]
+# With a single run zram is constant, so it is not a factor -- drop it rather
+# than print a one-level "comparison" that looks like a result.
+zvals = {r.get("zram") for r in rows}
+if len(zvals) < 2:
+    factors.remove("zram")
+    print(f"   (zram constant at {zvals.pop()}% -- pass both runs' CSVs to compare it)")
 metrics = [("read_p99_us", "lower"), ("read_p50_us", "lower"),
            ("wake_p99_us", "lower"), ("write_bw_mbs", "higher")]
 
@@ -781,7 +797,10 @@ PY
 case "${1:-}" in
   estimate) cmd_estimate ;;
   run) cmd_run ;;
-  analyze) shift; cmd_analyze "${1:-}" ;;
+  analyze)
+    shift
+    cmd_analyze "$@"
+    ;;
   *)
     echo "usage: ab-matrix.sh {estimate|run|analyze [csv]}" >&2
     echo "env: REPS RUNTIME SETTLE BUDGET_HOURS BALLAST_MB TESTDIR OUTDIR FIO" >&2
