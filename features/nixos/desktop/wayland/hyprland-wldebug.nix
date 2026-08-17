@@ -17,12 +17,19 @@
 # debug session that has silently become either broken or identical to the
 # normal one would read as "the bug did not reproduce".
 #
-# The Hyprland config cannot drift either: there is only one, and the single
-# difference it makes is read from the environment at parse time
-# (debug.disable_logs, gated on HYPR_WL_DEBUG -- see ../../../hm/wayland/
-# hyprland.nix; the flag cannot be flipped at runtime, hence an env var).
-# ../../../hm/wayland/hypr-wl-debug.nix reads the same variable and starts the
-# bar under WAYLAND_DEBUG=client with the output ring-buffered.
+# The Hyprland config cannot drift either: there is only one, and as of
+# 2026-08-16 it makes NO difference between the two sessions at all.
+# debug.disable_logs used to be gated on HYPR_WL_DEBUG so only this session got
+# Hyprland's own logs; that gate meant a protocol-error death in the normal
+# session could not be attributed to an interface, which cost two
+# investigations, so ../../../hm/wayland/hyprland.nix now sets it false
+# unconditionally. Both sessions therefore get compositor logging.
+#
+# What this session still buys, and the only thing it buys:
+# ../../../hm/wayland/hypr-wl-debug.nix reads HYPR_WL_DEBUG and starts the bar
+# under WAYLAND_DEBUG=client with the output ring-buffered -- a line per
+# Wayland request and event, which names the offending object rather than only
+# the interface. That is the expensive half and stays opt-in at login.
 {
   config,
   lib,
