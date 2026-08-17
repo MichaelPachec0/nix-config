@@ -52,7 +52,37 @@ in {
       # Deeper per-CPU backlog before the netdev receive queue drops packets.
       # Was the 1000 default.
       "net.core.netdev_max_backlog" = 4096;
+
+      # ---- usr/lib/udev/rules.d/30-zram.rules --------------------------
+      # Upstream ships 100 in its sysctl file and then raises it to 150 from a
+      # udev rule the moment zram0 initialises. Every host here runs zram
+      # unconditionally, so the two-step is collapsed into the settled value:
+      # 150 is what a CachyOS box with zram actually ends up running, and the
+      # 100 baseline only ever applies to a machine without it.
+      #
+      # Above 100 tells the kernel that swap IO is cheaper than filesystem IO,
+      # which is true for zram and false for a disk swap. What keeps the disk
+      # tier out of reach is swap PRIORITY, not this value -- see
+      # zramSwap.priority below.
+      #
+      # Was 180 here. That was not arbitrary, but it was also never measured
+      # against 150, so it is a deviation and it goes back to upstream's value
+      # until an A/B says otherwise.
+      "vm.swappiness" = 150;
     };
+
+    # ---- usr/lib/systemd/zram-generator.conf ------------------------------
+    # Upstream's swap-priority. The absolute number carries no meaning on its
+    # own; all that matters is that zram outranks the encrypted disk swap, which
+    # sits at -1. NixOS defaults this to 5, which already outranks it, so this
+    # change is cosmetic alignment rather than a behaviour change -- recorded
+    # here so the mirror is a real mirror and the next reader does not have to
+    # rediscover that 5 and 100 rank identically against one disk tier.
+    #
+    # NOT mirrored from the same upstream file: zram-size. Upstream uses `ram`
+    # (100%); thanatos deliberately oversubscribes to 200% against a measured
+    # ~4.2x compression ratio. See nixos/thanatos/memory.nix.
+    zramSwap.priority = 100;
 
     # ---- usr/lib/udev/rules.d/30-zram.rules ------------------------------
     # Upstream disables zswap when zram initialises, because the two stack
@@ -169,11 +199,6 @@ in {
     #
     # Disagreements with settings this repo measured. Each stays at the local
     # value as the incumbent arm and is settled by an A/B, not by preference:
-    #
-    #   vm.swappiness = 100 (150 on zram init)
-    #     Ours is 180, in nixos/nyx/configuration.nix. Upstream's own comment
-    #     argues for "high values from 100"; 180 is further in the direction
-    #     upstream is already pointing.
     #
     #   vm.dirty_bytes = 256M / vm.dirty_background_bytes = 64M
     #     Ours is 64M/16M. 256M is the exact value an A/B on this SSD already

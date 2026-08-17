@@ -82,10 +82,10 @@ in {
       #
       # NOTE: https://wiki.archlinux.org/title/Zram#Optimizing_swap_on_zram
       #
-      # swappiness > 100 tells the kernel swap IO is cheaper than filesystem IO.
-      # True for zram, false for a disk swap -- swap *priority* is what keeps the
-      # disk tier out of reach, not this value.
-      "vm.swappiness" = 180;
+      # vm.swappiness and the zram swap priority both moved to the CachyOS
+      # settings mirror (features/nixos/cachyos-settings), which is where values
+      # taken from upstream live. They were 180 and 5 here.
+      #
       # zram decompress is cheap and random, so swap readahead is pure waste.
       "vm.page-cluster" = 0;
       "vm.watermark_boost_factor" = 0;
