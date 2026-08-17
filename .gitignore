@@ -10,3 +10,8 @@ logs/
 __pycache__
 
 docs/
+
+# Matrix benchmark scratch + results (nixos/thanatos/ab-matrix). Kept out of
+# git because the scratch is multi-GB fio fill; promote a results CSV with
+# `git add -f` if it is worth keeping.
+.ab-matrix/

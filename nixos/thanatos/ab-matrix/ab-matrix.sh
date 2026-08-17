@@ -73,9 +73,22 @@ SETTLE="${SETTLE:-15}"        # seconds after applying a config, before measurin
 REPS="${REPS:-2}"
 BALLAST_MB="${BALLAST_MB:-6144}"
 BALLAST_HIGH="${BALLAST_HIGH:-2G}"   # MemoryHigh on the ballast scope
-TESTDIR="${TESTDIR:-/var/tmp/ab-matrix}"
-OUTDIR="${OUTDIR:-/var/tmp/ab-matrix-results}"
 BUDGET_HOURS="${BUDGET_HOURS:-5}"
+
+# Paths MUST live under /home. This host runs erase-your-darlings: everything
+# outside /home, /persist and /nix is a fresh subvolume every boot, and
+# /var/tmp is on cryptsystem[/root], which is exactly what gets wiped. Writing
+# results there would silently destroy a four-hour run at the next reboot --
+# and the results would be gone precisely when someone rebooted to apply what
+# the run concluded.
+#
+# Derived from the script's own location rather than $PWD, because this is run
+# under sudo and often from elsewhere. Repo root is three levels up from
+# nixos/thanatos/ab-matrix/.
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+TESTDIR="${TESTDIR:-$REPO_ROOT/.ab-matrix/scratch}"
+OUTDIR="${OUTDIR:-$REPO_ROOT/.ab-matrix/results}"
 
 FIO="${FIO:-fio}"
 
@@ -402,6 +415,19 @@ print('%.1f %.1f' % (p50, p99))
 # Measurement
 # ---------------------------------------------------------------------------
 
+# NOTE ON WHICH FILESYSTEM THIS TESTS.
+#
+# TESTDIR lives under /home, which is crypthome -- a different LUKS container
+# and a different btrfs from cryptsystem, where the root lives. That is forced
+# by impermanence (see above) and it is fine for every factor here: both dm
+# devices sit on the same physical queue, nvme0n1 / 259:0, which is where the
+# scheduler is selected and where the io.latency target is applied. So the
+# scheduler, writeback and io.latency factors all act on exactly the queue
+# under test.
+#
+# What it does mean is that absolute numbers are not comparable with the
+# earlier bfq measurements, which ran against the system filesystem. Compare
+# arms within this run, never across runs on different subvolumes.
 make_fio_job() {
   cat > "$TESTDIR/job.fio" <<EOF
 [global]
@@ -517,6 +543,35 @@ preflight() {
     fail=1
   }
   mkdir -p "$TESTDIR" "$OUTDIR"
+
+  # Refuse to write anywhere erase-your-darlings will wipe. Checked against the
+  # actual mountpoint rather than the path string, so a symlink or a moved
+  # default cannot route around it.
+  local d mp
+  for d in "$TESTDIR" "$OUTDIR"; do
+    mp="$(findmnt -no TARGET --target "$d" 2>/dev/null)"
+    case "$mp" in
+      /home | /persist | /nix) ;;
+      "")
+        echo "FAIL: cannot resolve a mountpoint for $d. Failing closed rather" >&2
+        echo "      than risking a wiped results directory." >&2
+        fail=1
+        ;;
+      *)
+        echo "FAIL: $d is on '$mp', which is wiped on reboot." >&2
+        echo "      Only /home, /persist and /nix survive on this host. Four" >&2
+        echo "      hours of results would be destroyed by the next boot." >&2
+        fail=1
+        ;;
+    esac
+  done
+
+  # Give the results back to the invoking user; running under sudo would
+  # otherwise leave root-owned files inside their git repo.
+  if [ -n "${SUDO_UID:-}" ]; then
+    chown -R "${SUDO_UID}:${SUDO_GID:-$SUDO_UID}" "$(dirname "$TESTDIR")" 2>/dev/null || true
+  fi
+
   local free_g
   free_g="$(df -BG --output=avail "$TESTDIR" | tail -1 | tr -dc '0-9')"
   [ "$free_g" -ge 20 ] || {
@@ -601,6 +656,13 @@ cmd_run() {
       done < <(block_cells | shuffle_seeded "$seed")
     done
   done
+
+  # Drop the bulk scratch files; the CSV is the deliverable and the scratch is
+  # 4G+ of fio fill sitting inside a git repo.
+  rm -f "$TESTDIR"/writer.* "$TESTDIR"/reader.* 2>/dev/null || true
+  if [ -n "${SUDO_UID:-}" ]; then
+    chown -R "${SUDO_UID}:${SUDO_GID:-$SUDO_UID}" "$(dirname "$TESTDIR")" 2>/dev/null || true
+  fi
 
   echo ""
   echo "done in $(fmt_hms $(($(date +%s) - start_ts)))"
