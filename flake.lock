@@ -1245,6 +1245,26 @@
         "type": "github"
       }
     },
+    "idrive-nix": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786863096,
+        "narHash": "sha256-pjOvvn6an+rbgByCskqeWSJaiYPBDkY1VsOXDd1E57k=",
+        "owner": "MichaelPachec0",
+        "repo": "idrive-nix",
+        "rev": "1fe7ef8522d3b3e5f2b564f785aec4c320c26fb2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "MichaelPachec0",
+        "repo": "idrive-nix",
+        "type": "github"
+      }
+    },
     "impermanence": {
       "inputs": {
         "home-manager": "home-manager_3",
@@ -2149,6 +2169,7 @@
         "hardware": "hardware",
         "home-manager": "home-manager_2",
         "home-manager-stable": "home-manager-stable",
+        "idrive-nix": "idrive-nix",
         "impermanence": "impermanence",
         "jlink": "jlink",
         "joshuto": "joshuto",

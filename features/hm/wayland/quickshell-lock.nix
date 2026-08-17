@@ -12,7 +12,10 @@ let
     name = "lock-escape";
     # appRun so the relaunch resolves app-run hermetically rather than off
     # whatever PATH the compositor happens to hand the keybind.
-    runtimeInputs = [ pkgs.quickshell pkgs.procps pkgs.coreutils appRun ];
+    # systemd for `systemctl --user show-environment`: the script re-reads the
+    # session's live display environment because a unit that started before
+    # uwsm finalize has none of its own (see the note in lock-escape.sh).
+    runtimeInputs = [ pkgs.quickshell pkgs.procps pkgs.coreutils pkgs.systemd appRun ];
     text = builtins.readFile ./quickshell/task-bar/lock/lock-escape.sh;
   };
 in {

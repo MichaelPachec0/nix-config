@@ -35,6 +35,7 @@ in {
     ../../features/nixos/virtualization
     ../../features/nixos/common/deploy.nix
     inputs.nix-gaming.nixosModules.pipewireLowLatency
+    inputs.idrive-nix.nixosModules.idrive
   ];
   config = {
     boot.initrd.availableKernelModules = [
@@ -123,6 +124,7 @@ in {
     report-changes.enable = true;
     nixpkgs = {
       overlays = [
+        inputs.idrive-nix.overlays.default
       ];
       config = {
         allowUnfree = true;
@@ -1428,9 +1430,30 @@ in {
       workspaceId = "2f9183ef-deea-4c65-a514-add0f71aa92b";
       # toolProfile = "authoring";
     };
+    services.idrive = {
+      enable = false;
+      backupPaths = [
+        "/home/michael/Pictures/"
+      ];
+      usernameFile = config.sops.secrets."idrive/username".path;
+      passwordFile = config.sops.secrets."idrive/password".path;
+      encryptionKeyFile = config.sops.secrets."idrive/encryptionKey".path;
+    };
 
     sops.secrets."mcp/affine/username" = {};
     sops.secrets."mcp/affine/password" = {};
+    sops.secrets."idrive/username" = {
+      owner = config.services.idrive.user;
+      mode = "0400";
+    };
+    sops.secrets."idrive/password" = {
+      owner = config.services.idrive.user;
+      mode = "0400";
+    };
+    sops.secrets."idrive/encryptionKey" = {
+      owner = config.services.idrive.user;
+      mode = "0400";
+    };
     # 2f9183ef-deea-4c65-a514-add0f71aa92b
 
     # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion

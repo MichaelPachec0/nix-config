@@ -309,55 +309,6 @@
         patches = (old.patches or []) ++ [../overlays/kdeconnect-inputcapture-barrier-type.patch];
       });
     });
-    # Patch Quickshell: the forked PAM subprocess frees the caller's
-    # `pam_response**` out-param (a stack address) on any IPC write failure, so
-    # a shell that dies while a PAM child is still blocked in pam_fprintd turns
-    # into a bogus "quickshell crashed" SIGSEGV report. Unfixed upstream as of
-    # 28771c7. Patched at the TOP-LEVEL `quickshell` so the raw `pkgs.quickshell`
-    # uses (swayidle.nix, quickshell-lock.nix) and the HM module's own
-    # overrideAttrs (features/hm/wayland/quickshell.nix) all stack on the fix.
-    #
-    # Second patch: a ScreencopyView created before its item is in a scene
-    # latches WlBufferManager permanently (the retry guard is a never-reset
-    # function-static), so no capture ever starts and no screencopy protocol is
-    # bound. That is exactly the lock backdrop's per-output pool, whose
-    # delegates are reparented into place only after the lock engages, so the
-    # backdrop silently falls back to the wallpaper on every lock until the
-    # config is reloaded. Also unfixed upstream as of 28771c7.
-    quickshell = prev.quickshell.overrideAttrs (old: {
-      buildInputs = (old.buildInputs or []) ++ [final.qt6.qt5compat];
-      # wrapQtAppsHook applies these when wrapping bin/qs and bin/quickshell, so the
-      # shell's child processes (bash -lc lib/*.sh) inherit the deps on PATH.
-      qtWrapperArgs = let
-        runtimeDeps = with final; [
-          bash
-          coreutils
-          gnugrep
-          gnused
-          gawk
-          bluez # bluetoothctl
-          pipewire # pw-dump
-          wireplumber # wpctl
-          pulseaudio # pactl
-          python3
-          systemd # busctl (mpris-extra.sh)
-          pbpctrl # Pixel Buds control (btinfo.sh pbp/set)
-          wl-clipboard # wl-copy (network widget middle-click copy)
-          networkmanager # nmcli (NetworkService)
-          iproute2 # ip (NetworkService default-route lookup)
-          awww
-          # config.services.awww.package # awww query (LockBackdrop reads per-output wallpaper)
-        ];
-      in
-        (old.qtWrapperArgs or [])
-        ++ ["--prefix PATH : ${prev.lib.makeBinPath runtimeDeps}"];
-      patches =
-        (old.patches or [])
-        ++ [
-          ../overlays/quickshell-pam-conversation-invalid-free.patch
-          ../overlays/quickshell-screencopy-buffer-manager-latch.patch
-        ];
-    });
     latest = {
       # nixpkgs ships Hyprland 0.56.0; the `hyprland` attr above bumps it to
       # v0.56.2 and carries the two crash patches. The old 0005 popup-coords
@@ -415,7 +366,88 @@
       };
     };
   };
+  # Quickshell, patched -- deliberately its OWN overlay, and listed in
+  # baseDesktop rather than in `latest`.
+  #
+  # It used to live inside the `latest` overlay, which is only in the two
+  # UNSTABLE bundles. But `pkgs.quickshell` has consumers reached from `base`:
+  # pkgs/qs-greeter/default.nix puts `quickshell` in the greeter's
+  # runtimeInputs, and the qsGreeter overlay is in `base`, i.e. in every bundle
+  # including the stable ones. So a stable desktop host resolved a
+  # `pkgs.quickshell` that had NONE of this applied -- no qt6.qt5compat, so the
+  # config dies at load with `module "Qt5Compat.GraphicalEffects" is not
+  # installed`, and no runtime deps on PATH for the shell's helper scripts.
+  # baseDesktop is the narrowest list that covers all four desktop bundles
+  # (stable/unstable x nixos/homeManager), so NixOS and home-manager now get
+  # the same binary by construction rather than by which channel they are on.
+  # Overlays are lazy: a host that never references quickshell builds nothing.
+  #
+  # Patch 1: the forked PAM subprocess frees the caller's `pam_response**`
+  # out-param (a stack address) on any IPC write failure, so a shell that dies
+  # while a PAM child is still blocked in pam_fprintd turns into a bogus
+  # "quickshell crashed" SIGSEGV report. Unfixed upstream as of 28771c7.
+  #
+  # Patch 2: a ScreencopyView created before its item is in a scene latches
+  # WlBufferManager permanently (the retry guard is a never-reset
+  # function-static), so no capture ever starts and no screencopy protocol is
+  # bound. That is exactly the lock backdrop's per-output pool, whose delegates
+  # are reparented into place only after the lock engages, so the backdrop
+  # silently falls back to the wallpaper on every lock until the config is
+  # reloaded. Also unfixed upstream as of 28771c7.
+  quickshellPatched = final: prev: {
+    # Patch Quickshell: the forked PAM subprocess frees the caller's
+    # `pam_response**` out-param (a stack address) on any IPC write failure, so
+    # a shell that dies while a PAM child is still blocked in pam_fprintd turns
+    # into a bogus "quickshell crashed" SIGSEGV report. Unfixed upstream as of
+    # 28771c7. Patched at the TOP-LEVEL `quickshell` so the raw `pkgs.quickshell`
+    # uses (swayidle.nix, quickshell-lock.nix) and the HM module's own
+    # overrideAttrs (features/hm/wayland/quickshell.nix) all stack on the fix.
+    #
+    # Second patch: a ScreencopyView created before its item is in a scene
+    # latches WlBufferManager permanently (the retry guard is a never-reset
+    # function-static), so no capture ever starts and no screencopy protocol is
+    # bound. That is exactly the lock backdrop's per-output pool, whose
+    # delegates are reparented into place only after the lock engages, so the
+    # backdrop silently falls back to the wallpaper on every lock until the
+    # config is reloaded. Also unfixed upstream as of 28771c7.
+    quickshell = prev.quickshell.overrideAttrs (old: {
+      buildInputs = (old.buildInputs or []) ++ [final.qt6.qt5compat];
+      # wrapQtAppsHook applies these when wrapping bin/qs and bin/quickshell, so the
+      # shell's child processes (bash -lc lib/*.sh) inherit the deps on PATH.
+      qtWrapperArgs = let
+        runtimeDeps = with final; [
+          bash
+          coreutils
+          gnugrep
+          gnused
+          gawk
+          bluez # bluetoothctl
+          pipewire # pw-dump
+          wireplumber # wpctl
+          pulseaudio # pactl
+          python3
+          systemd # busctl (mpris-extra.sh)
+          pbpctrl # Pixel Buds control (btinfo.sh pbp/set)
+          wl-clipboard # wl-copy (network widget middle-click copy)
+          networkmanager # nmcli (NetworkService)
+          iproute2 # ip (NetworkService default-route lookup)
+          awww
+          # config.services.awww.package # awww query (LockBackdrop reads per-output wallpaper)
+        ];
+      in
+        (old.qtWrapperArgs or [])
+        ++ ["--prefix PATH : ${prev.lib.makeBinPath runtimeDeps}"];
+      patches =
+        (old.patches or [])
+        ++ [
+          ../overlays/quickshell-pam-conversation-invalid-free.patch
+          ../overlays/quickshell-screencopy-buffer-manager-latch.patch
+        ];
+    });
+  };
+
   baseDesktop = [
+    quickshellPatched
     inputs.nix-vscode-extensions.overlays.default
     inputs.nix-your-shell.overlays.default
     inputs.rust-overlay.overlays.default

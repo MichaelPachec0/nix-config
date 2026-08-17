@@ -714,15 +714,28 @@ in {
               };
             };
 
-            # Hyprland's own logging is off by default and cannot be enabled at
-            # runtime, so hyprland.log normally carries only aquamarine chatter
-            # and the protocol error that destroys the quickshell client leaves
-            # no compositor-side trace. Read from the environment at parse time
-            # so the debug session entry (features/nixos/desktop/wayland/
-            # hyprland-wldebug.nix) can ask for full logs and the normal session
-            # is untouched.
+            # Hyprland's own logging, UNCONDITIONALLY on.
+            #
+            # This used to be gated on HYPR_WL_DEBUG so only the Wayland-debug
+            # session paid for it. That gate cost two investigations. When the
+            # compositor posts a protocol error and destroys the quickshell
+            # client, the ONLY compositor-side record is Hyprland's own log
+            # line naming the interface -- and with logging off, hyprland.log
+            # is 99.8% aquamarine chatter (measured 2026-08-16: 11021 of 11043
+            # lines; the 22 Hyprland lines were all emitted before this option
+            # was parsed). So a death in the normal session cannot be
+            # attributed at all, and the flag is latched at startup:
+            # `hyprctl eval 'hl.config({debug = {disable_logs = false}})'`
+            # reports success, getoption then reads false, and no new lines
+            # appear. Verified by adding and removing an output and counting.
+            #
+            # The cost is nothing like WAYLAND_DEBUG's line per request and
+            # event -- this is a few thousand lines over a session, and
+            # hyprland.log already lives in the runtime dir and dies with it.
+            # Paying that always is a far better trade than losing the next
+            # incident, which is what happened on 2026-08-16.
             debug = {
-              disable_logs = mkLuaInline ''os.getenv("HYPR_WL_DEBUG") ~= "1"'';
+              disable_logs = false;
             };
 
             misc = {
