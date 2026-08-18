@@ -49,6 +49,16 @@
 # control that reasoning implies exists. Both currently sit at the default 100.
 set -uo pipefail
 
+# A systemd unit inherits systemd's own default PATH, which on NixOS is two
+# entries deep: /bin holds sh and /usr/bin holds env, and that is the whole of
+# it. No coreutils, no util-linux, no systemctl, no nix. Launched with
+# `systemd-run --unit=...` -- the only way to survive a four-hour run without
+# holding a terminal open for it -- preflight dies on `dd` and `dirname`
+# before it checks anything. Put the system profile in front unconditionally;
+# it is a no-op when launched from a login shell that already has it.
+PATH="/run/wrappers/bin:/run/current-system/sw/bin:${PATH:-}"
+export PATH
+
 readonly NVME_DEV="nvme0n1"
 readonly NVME_MAJMIN="259:0"
 readonly SCHED_PATH="/sys/block/${NVME_DEV}/queue/scheduler"
@@ -73,6 +83,36 @@ OUTDIR="${OUTDIR:-$REPO_ROOT/.ab-latency/results}"
 WORKDIR="${WORKDIR:-$REPO_ROOT/.ab-latency/work}"
 READFILE="$WORKDIR/probe-read.bin"
 FLAKE="${FLAKE:-/home/michael/nix-config}"
+
+# python3 is not in the system profile and not in this user's profile either;
+# it only ever appears on PATH by accident of a devshell. The probe and both
+# report writers need it, so resolve it once to an absolute path and fail in
+# preflight rather than at cell 37 of 48.
+PY3="${PY3:-}"
+
+resolve_python() {
+  local c
+  for c in "$PY3" \
+           /run/current-system/sw/bin/python3 \
+           "/etc/profiles/per-user/${PROBE_USER}/bin/python3" \
+           "$(command -v python3 2>/dev/null || true)"; do
+    [ -n "$c" ] && [ -x "$c" ] && { echo "$c"; return 0; }
+  done
+  # Nothing installed anywhere: materialise one. The `nixpkgs` registry entry
+  # is system-scoped and already pinned to a store path by this flake, so this
+  # resolves with no network, no git and no HOME -- all three of which a
+  # systemd unit lacks in the shape a login shell has them. Deliberately not
+  # --inputs-from "$FLAKE": that would re-copy a dirty working tree into the
+  # store and needs a readable git config, for the identical output path.
+  # --out-link makes it a GC root so a stray collect-garbage cannot pull the
+  # interpreter out from under a four-hour run.
+  local out
+  mkdir -p "$WORKDIR" 2>/dev/null || true
+  out="$(NIX_REMOTE=daemon nix build 'nixpkgs#python3' \
+    --out-link "$WORKDIR/python3" --print-out-paths 2>/dev/null)" || return 1
+  [ -n "$out" ] && [ -x "$out/bin/python3" ] && { echo "$out/bin/python3"; return 0; }
+  return 1
+}
 
 NVME_LEVELS=(bfq kyber adios)
 DIRTY_LEVELS=(low high)
@@ -330,7 +370,7 @@ run_cell() { # nvme dirty sched iolat cpuw rep
   local probe
   probe="$(systemd-run --scope --quiet --collect \
     --slice=user.slice --uid="$PROBE_USER" \
-    python3 "$SCRIPT_DIR/latency-probe.py" "$MEASURE" "$READFILE" 2>/dev/null)"
+    "$PY3" "$SCRIPT_DIR/latency-probe.py" "$MEASURE" "$READFILE" 2>/dev/null)"
 
   local cpu1 io1 mem1 iof1
   cpu1="$(psi_total "$USER_SLICE" cpu some)"
@@ -349,7 +389,7 @@ run_cell() { # nvme dirty sched iolat cpuw rep
   local pcpu pio piof pmem
   pcpu=$((cpu1 - cpu0)); pio=$((io1 - io0)); piof=$((iof1 - iof0)); pmem=$((mem1 - mem0))
 
-  python3 - "$rep" "$nvme" "$dirty" "$sched" "$iolat" "$cpuw" \
+  "$PY3" - "$rep" "$nvme" "$dirty" "$sched" "$iolat" "$cpuw" \
     "$pcpu" "$pio" "$piof" "$pmem" "$temp" "$builds_alive" "$probe" <<'PY'
 import json, sys
 a = sys.argv[1:]
@@ -374,9 +414,23 @@ PY
 # ---------------------------------------------------------------------------
 
 preflight() {
-  local fail=0 d mp
+  local fail=0 d mp c
   [ "$(id -u)" -eq 0 ] || { echo "FAIL: must run as root" >&2; fail=1; }
-  command -v jq >/dev/null || true
+
+  # Every external command the run reaches for, checked up front. Under
+  # systemd-run this is the difference between failing now and failing at the
+  # first cell with a bare "dd: command not found".
+  for c in awk cat chown date dd dirname findmnt grep mkdir nix pgrep pkill \
+           readlink sed seq shuf sleep sort sysctl systemctl systemd-run; do
+    command -v "$c" >/dev/null || { echo "FAIL: '$c' not on PATH" >&2; fail=1; }
+  done
+
+  PY3="$(resolve_python)" || {
+    echo "FAIL: no usable python3. The probe and both report writers need one." >&2
+    echo "      Set PY3=/path/to/python3, or install one system-wide." >&2
+    fail=1
+  }
+  [ -n "$PY3" ] && echo "python3:  $PY3"
   id "$PROBE_USER" >/dev/null 2>&1 || { echo "FAIL: no such user '$PROBE_USER'" >&2; fail=1; }
   [ "$(cat /sys/class/power_supply/AC/online 2>/dev/null || echo 0)" = "1" ] || {
     echo "FAIL: not on AC -- TLP changes governor/boost/ASPM at the transition," >&2
@@ -505,7 +559,7 @@ cmd_analyze() {
   [ "${#csvs[@]}" -gt 0 ] && [ -f "${csvs[0]}" ] || { echo "no results file" >&2; return 1; }
   echo ""
   echo "=== ${csvs[*]} ==="
-  python3 - "${csvs[@]}" <<'PY'
+  "$PY3" - "${csvs[@]}" <<'PY'
 import csv, itertools, statistics, sys
 
 rows = []
