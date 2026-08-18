@@ -13,11 +13,11 @@
   # avx512f absent. Re-check that before changing the tier, not the model
   # number.
   #
-  # Non-LTO on purpose. The -lto variants need the upstream flake's
-  # helpers.kernelModuleLLVMOverride wrapped around the whole package set before
-  # out-of-tree modules will compile, and this host has two of them. That is a
-  # second failure surface for a gain nobody has measured yet; it can be a
-  # separate, measured change later.
+  # -lto. The upstream flake already runs helpers.kernelModuleLLVMOverride over
+  # every linuxPackages-* set it exports, but that helper only rewrites a
+  # literal `gcc` inside a module's own Makefile, and neither of this host's two
+  # out-of-tree modules has one. See the toolchain fix next to
+  # boot.extraModulePackages in amd.nix -- without it zenpower fails to build.
   #
   # `latest` rather than `bore`. sched_ext replaces the fair class wholesale
   # while scx_flash is attached (see memory.nix), so the built-in scheduler only
@@ -25,5 +25,5 @@
   # documented there loses several attempts per boot -- but it is not where a
   # scheduler choice earns its keep, and picking `bore` would change the
   # variable under test for no measured reason.
-  kernel.mod.kernelPkg = pkgs.cachyosKernels.linuxPackages-cachyos-latest-x86_64-v3;
+  kernel.mod.kernelPkg = pkgs.cachyosKernels.linuxPackages-cachyos-latest-lto-x86_64-v3;
 }

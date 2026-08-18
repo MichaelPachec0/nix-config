@@ -216,10 +216,34 @@ in {
     boot.blacklistedKernelModules = [
       "k10temp"
     ];
-    boot.extraModulePackages = with config.kernel.mod.kernelPkg; [
-      ryzen-smu
-      zenpower
-    ];
+    # Both of these are out-of-tree modules, and nixpkgs builds them with the
+    # kernel's own stdenv ("in particular, use the same compiler by default").
+    # On a CachyOS -lto kernel that stdenv is clang with no gcc on PATH at all,
+    # while kbuild's default for an external module is still
+    # CC=$(CROSS_COMPILE)gcc -- so zenpower dies with "gcc: command not found"
+    # before it compiles a line. ryzen-smu happens to survive because its own
+    # derivation passes CC=cc, but that is luck, not a policy.
+    #
+    # kernel.commonMakeFlags is the exact toolchain the kernel itself was built
+    # with: absolute CC/LD/AR/NM/STRIP/OBJCOPY/OBJDUMP/READELF, plus the
+    # -I<clang>/lib/clang/<major>/include that a clang-built module needs to
+    # find the compiler's own headers. Appending it last makes it win over any
+    # CC= the module already set, and make forwards command-line variables into
+    # the `make -C $(KERNEL_BUILD)` sub-make, which is where kbuild reads them.
+    #
+    # Same shape the upstream cachyos flake uses for virtualbox. Harmless on a
+    # gcc kernel: the flags then simply name gcc.
+    boot.extraModulePackages = let
+      kpkg = config.kernel.mod.kernelPkg;
+      withKernelToolchain = drv:
+        drv.overrideAttrs (prev: {
+          makeFlags = (prev.makeFlags or []) ++ kpkg.kernel.commonMakeFlags;
+        });
+    in
+      map withKernelToolchain [
+        kpkg.ryzen-smu
+        kpkg.zenpower
+      ];
     boot.loader.systemd-boot.consoleMode = lib.mkForce "max";
     environment.systemPackages = with pkgs; [
       ryzenadj
