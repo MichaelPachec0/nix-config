@@ -266,7 +266,18 @@ start_load() { # <marker-prefix>
   local j
   BUILD_PIDS=()
   for j in $(seq 1 "$BUILD_JOBS"); do
-    nix build --impure --no-link --expr \
+    # NIX_REMOTE=daemon is load-bearing, not decoration. This harness runs as
+    # root, `store` is `auto`, and `auto` resolves to a direct LocalStore
+    # whenever the caller can write to /nix/store -- which root can. Left
+    # alone, the builders are forked by THIS process and inherit this
+    # process's cgroup, scheduling policy and ioprio instead of
+    # nix-daemon.service's CPUSchedulingPolicy=idle, IOSchedulingClass=idle
+    # and MemoryHigh=8G. Those three are exactly the protections under test,
+    # and under sudo from a terminal the builders would land in user.slice --
+    # the same slice the probe runs in -- so the iolat and cpuw factors would
+    # be measuring the load throttling itself. Forcing the daemon puts the
+    # compilers back where the design says they are.
+    NIX_REMOTE=daemon nix build --impure --no-link --expr \
       "import ${SCRIPT_DIR}/ncspot-load.nix { flake = \"${FLAKE}\"; marker = \"$1-$j\"; }" \
       >/dev/null 2>&1 &
     BUILD_PIDS+=($!)
@@ -379,6 +390,22 @@ preflight() {
   for pf in cpu io memory; do
     [ -r "$USER_SLICE/$pf.pressure" ] || { echo "FAIL: PSI $pf unavailable on user.slice" >&2; fail=1; }
   done
+  # The load only stands in for "a large build" if the compilers actually run
+  # under nix-daemon.service. Its SCHED_IDLE, idle ioprio and MemoryHigh are
+  # three of the mechanisms this matrix exists to judge, and root does not get
+  # them for free -- see start_load. Assert the routing rather than trust it.
+  if ! NIX_REMOTE=daemon nix store info 2>/dev/null | grep -q "^Store URL: daemon"; then
+    echo "FAIL: cannot reach the nix daemon; the load would build in this" >&2
+    echo "      process's cgroup and the iolat/cpuw factors would be invalid." >&2
+    fail=1
+  fi
+  local prop want got
+  for prop in "CPUSchedulingPolicy=5" "IOSchedulingClass=3" "MemoryHigh=8589934592"; do
+    want="${prop#*=}"
+    got="$(systemctl show nix-daemon.service -p "${prop%%=*}" --value 2>/dev/null)"
+    [ "$got" = "$want" ] || echo "WARN: nix-daemon.service ${prop%%=*}='$got', expected '$want'" >&2
+  done
+
   [ -n "$(hwmon_temp zenpower)" ] || echo "WARN: zenpower hwmon not found; temp column will be empty" >&2
 
   mkdir -p "$OUTDIR" "$WORKDIR"
