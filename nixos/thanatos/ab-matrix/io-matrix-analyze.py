@@ -137,8 +137,39 @@ def main():
               f"({statistics.median(rd)/dur:7,.0f} MB/s)   "
               f"write {statistics.median(wr):8,.0f} MB "
               f"({statistics.median(wr)/dur:7,.0f} MB/s)")
+    # A read profile whose device traffic falls well short of what fio asked
+    # for was answered from page cache, which means the scheduler under test
+    # never saw those requests and a "tie" for that profile is weak evidence
+    # rather than a finding. Say so rather than leaving it to be spotted.
+    for prof in sorted({r["profile"] for r in rows}):
+        sel = [r for r in rows if r["profile"] == prof]
+        fr = [x for x in (num(r, "fio_read_mbps") for r in sel) if x]
+        dr = [x for x in (num(r, "dev_read_mb") for r in sel) if x]
+        if not fr or not dr:
+            continue
+        asked, got = statistics.median(fr), statistics.median(dr) / 90.0
+        if asked > 10 and got < 0.7 * asked:
+            print(f"   WARNING: {prof} asked for {asked:,.0f} MB/s but the device "
+                  f"delivered {got:,.0f};")
+            print(f"            {100 * (1 - got / asked):.0f}% came from page cache, so the queue was "
+                  "under-pressured.")
+            print("            Raise WORKSET_GB and re-run before trusting this profile.")
+
     tot_w = sum(x for x in (num(r, "dev_write_mb") for r in rows) if x)
     print(f"   total written this run: {tot_w/1024:,.1f} GB")
+
+    print("\n-- write amplification: what fio asked the filesystem for against what")
+    print("   reached the device. /home is compress-force=zstd:1 CoW btrfs on LUKS,")
+    print("   so these are not the same number and the gap is the filesystem's cost.")
+    for prof in sorted({r["profile"] for r in rows}):
+        sel = [r for r in rows if r["profile"] == prof]
+        fw = [x for x in (num(r, "fio_write_mbps") for r in sel) if x]
+        dw = [x for x in (num(r, "dev_write_mb") for r in sel) if x]
+        if not fw or not dw or statistics.median(fw) < 1:
+            continue
+        asked, got = statistics.median(fw), statistics.median(dw) / 90.0
+        print(f"   {prof:8s} fio {asked:7,.1f} MB/s -> device {got:7,.1f} MB/s "
+              f"= {got/asked:5.1f}x")
 
     temps = [x for x in (num(r, "dev_temp_c") for r in rows) if x is not None]
     if temps:

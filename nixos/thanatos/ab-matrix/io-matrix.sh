@@ -36,10 +36,16 @@
 # confident "noise" that meant nothing.
 #
 # WHAT IS DELIBERATELY NOT TESTED. Sustained sequential WRITE. At this drive's
-# rate a 90s window is ~120 GB, and 24 write cells across 3 reps would be near
-# 3 TB of writes for one afternoon's benchmark. seqread saturates the same queue
-# at zero endurance cost. Run cmd_seqwrite_probe for a short opt-in burst if the
-# write ceiling is the actual question.
+# rate a 90s window is over 100 GB, and a full matrix of write cells would be
+# multiple TB of writes for one afternoon's benchmark. seqread saturates the
+# same queue at no endurance cost.
+#
+# ENDURANCE, MEASURED. A REPS=3 run wrote 1.14 TB, roughly 3x what a naive
+# fio-throughput estimate predicts. The gap is write amplification: on this
+# filesystem 4K random writes cost 10.8x at the device (fio 34.6 MB/s in, 375.6
+# MB/s out) because /home is CoW btrfs with compress-force=zstd:1 on LUKS.
+# Budget accordingly; the analyze pass prints both the amplification and the
+# run's total so the figure is measured rather than guessed.
 set -uo pipefail
 
 # A systemd unit inherits systemd's own default PATH, which on NixOS is two
@@ -61,9 +67,13 @@ MEASURE="${MEASURE:-90}"    # fio runtime and probe duration, aligned
 REPS="${REPS:-3}"
 BUDGET_HOURS="${BUDGET_HOURS:-5}"
 PROBE_USER="${PROBE_USER:-michael}"
-# Must exceed RAM (21.2 GiB here) or the page cache answers every read and the
-# scheduler under test never sees a request. 40G is ~1.9x RAM.
-WORKSET_GB="${WORKSET_GB:-40}"
+# Must exceed RAM by enough that the cache cannot answer a whole measurement
+# window, not merely exceed it. The first run used 40G against 21G of RAM and
+# still served 47% of seqread from cache: fio reported 465 MB/s while the device
+# delivered 220. At 80G a 90s window at ~500 MB/s touches 45G, so the reader
+# cannot revisit cached data within the window. Cells also drop caches first --
+# see run_cell.
+WORKSET_GB="${WORKSET_GB:-80}"
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -453,6 +463,13 @@ run_cell() { # nvme profile dirty iolat rep csv
   apply_nvme "$nvme" || { echo "ERROR: cannot select scheduler '$nvme'" >&2; return 1; }
   apply_dirty "$dirty" || { echo "ERROR: cannot set dirty '$dirty'" >&2; return 1; }
   apply_iolat "$iolat" || { echo "ERROR: cannot set iolat '$iolat'" >&2; return 1; }
+
+  # Drop the page cache before every cell. Without this the first cells of a
+  # run measure a cold cache and later ones a warm one, which aliases run order
+  # onto whatever factor the shuffle happened to vary slowly. Applied to every
+  # cell equally, so it cannot bias the comparison in either direction.
+  sync
+  echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 
   local fiojson="$WORKDIR/fio-out.json"
   rm -f "$fiojson"
