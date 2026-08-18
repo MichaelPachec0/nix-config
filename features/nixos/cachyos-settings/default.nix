@@ -207,7 +207,10 @@ in {
     #     adopting it unmeasured would undo a measured result.
     #
     #   60-ioschedulers.rules: kyber for NVMe
-    #     Ours is bfq, by an A/B where it won every latency metric by 2-6x.
+    #     No longer a deviation. We ran bfq on the strength of an A/B whose
+    #     load and probe shared one cgroup; re-measured properly, bfq stalled
+    #     the desktop on I/O 13x harder than kyber. memory.nix now selects
+    #     kyber too, which is what CachyOS ships.
     #     The new kernel also offers `adios`, which did not exist before and
     #     belongs in the same comparison.
     #

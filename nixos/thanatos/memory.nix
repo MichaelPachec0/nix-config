@@ -161,7 +161,9 @@ in {
   # Deliberately NO CPUWeight here: cgroup weights are relative among *siblings*,
   # so lowering nix-daemon's weight only ranks it against other system.slice
   # services. The desktop lives in user.slice, a different subtree, so it would
-  # not have been affected at all. SCHED_IDLE below is the cross-tree knob.
+  # not have been affected at all. The cross-tree knobs are SCHED_IDLE below and
+  # the user.slice/system.slice weights further down -- those two slices ARE
+  # siblings, under the root cgroup.
   systemd.services.nix-daemon.serviceConfig = {
     MemoryAccounting = true;
     MemoryHigh = "8G";
@@ -185,33 +187,48 @@ in {
   # left alone. See the mq-deadline rule below -- this is inert without it.
   nix.daemonIOSchedClass = "idle";
 
-  # BFQ is a module (CONFIG_IOSCHED_BFQ=m), so it must be loaded before udev can
-  # select it below.
-  boot.kernelModules = ["bfq"];
-
-  # bfq, measured against none / mq-deadline / kyber under a nix-build-shaped
-  # load. It wins every latency metric by 2-6x and its worst round still beats
-  # the others' medians; mq-deadline produced 534ms fsync stalls, the exact
-  # shape that hung Firefox's Quota Manager until its watchdog killed it. The
-  # cost is bulk throughput -- a cold Firefox launch during a build is 1.7x
-  # slower than under mq-deadline -- and that trade is accepted deliberately,
-  # because this machine's complaint is stutter during builds, not launch time
-  # during builds. Set this back to `none` to undo it.
+  # kyber. CONFIG_MQ_IOSCHED_KYBER=y, so unlike bfq (CONFIG_IOSCHED_BFQ=m) it
+  # needs no boot.kernelModules entry.
   #
-  # BFQ TUNING WAS MEASURED AND REJECTED, do not reach for it: slice_idle=0
-  # (the standard "SSDs do not need idling" advice), slice_idle_us=0 and
-  # low_latency=0 each cost 1.3-2.9x on reads, and strict_guarantees=1 explodes
-  # the tails. Every one of them bought fsync p99 at the expense of reads, which
-  # is the wrong direction for desktop feel. Also not worth revisiting: a
-  # read_ahead_kb bump, flat across 128-2048 because max_hw_sectors_kb is 128
-  # here and large read()s bypass readahead entirely.
+  # THIS REPLACES BFQ, and it reverses an earlier decision recorded here, so the
+  # reason matters. The old choice came from an A/B whose load and probe both
+  # ran inside one privileged cgroup, which meant the desktop's own I/O was
+  # never in the picture -- it measured fio's read latency against a synthetic
+  # burner, not a desktop against a build. Re-measured with the probe running as
+  # the user in user.slice and the load running as real nix builds under
+  # nix-daemon, full factorial over 48 cells, bfq loses badly:
   #
-  # bfq also keeps the reason mq-deadline was chosen before it -- it honours the
-  # rt/be/idle ioprio classes, so nix.daemonIOSchedClass above is not decorative
-  # the way it was under `none` -- and adds cgroup io.weight, which mq-deadline
-  # does not implement and iocost is not active to provide.
+  #   desktop us stalled on I/O per 210s window, median of 16 cells each
+  #     kyber   232264      adios   263490      bfq  3065494
+  #   the probe's own read p99
+  #     kyber    21403us    adios    20369us    bfq   244345us
+  #
+  # Paired within-cell, adios-vs-bfq and bfq-vs-kyber are both resolvable and
+  # adios-vs-kyber is noise, so the two survivors tie on the median. kyber wins
+  # the tail, which is the thing a desktop feels: its 16 cells span 131-608ms
+  # while adios has outliers at 1.47s and 3.10s. All five worst cells in the
+  # matrix were bfq.
+  #
+  # Scope of that result: the load was compile-bound (four concurrent Rust
+  # builds), so this is "the desktop during a big build" and not "the desktop
+  # during a sustained sequential copy". bfq losing by 13x at only moderate
+  # queue depth is if anything the harsher reading -- its per-request cost shows
+  # up before the queue is even busy.
+  #
+  # What is NOT lost by leaving bfq: it honoured the rt/be/idle ioprio classes,
+  # which is what made nix.daemonIOSchedClass above non-decorative. kyber does
+  # not implement ioprio classes, so that setting is now inert for the queue and
+  # earns its keep only via the daemon's own SCHED_IDLE and the slice weights
+  # below. That is an accepted cost: the measurement above already includes it,
+  # since every cell ran with the same daemon settings.
+  #
+  # BFQ TUNING WAS MEASURED AND REJECTED and is now moot, but keep it recorded
+  # so nobody re-runs it: slice_idle=0, slice_idle_us=0 and low_latency=0 each
+  # cost 1.3-2.9x on reads, and strict_guarantees=1 explodes the tails. Also
+  # not worth revisiting: a read_ahead_kb bump, flat across 128-2048 because
+  # max_hw_sectors_kb is 128 here and large read()s bypass readahead entirely.
   services.udev.extraRules = ''
-    ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="bfq"
+    ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="kyber"
   '';
 
   # Build width. Both of these defaulted to `auto`, which on this 8C/16T part
@@ -271,34 +288,72 @@ in {
   # kernel then distributes proportionally between whichever children are
   # actually claiming. Splitting would just under-protect whichever side happens
   # to be busy.
-  # I/O latency protection for the desktop, the half ionice alone cannot give.
+  # NO IODeviceLatencyTargetSec here, and that is a measured removal rather than
+  # an oversight.
   #
-  # io.latency is set on the group to PROTECT, not the one to punish: the kernel
-  # watches this group's completion latency and, when it exceeds the target,
-  # throttles peer cgroups that have no target of their own. system.slice (where
-  # nix-daemon builds) is such a peer, so a build gets squeezed exactly when the
-  # desktop starts suffering and not before -- unlike a hard IOReadBandwidthMax,
-  # which would slow builds even on an idle machine.
+  # The mechanism is sound on paper: io.latency set on the group to PROTECT
+  # makes the kernel throttle peer cgroups with no target of their own once this
+  # group misses its target, so a build is squeezed exactly when the desktop
+  # suffers and not before. It was carried at "/dev/nvme0n1 10ms".
   #
-  # Target 10ms: this drive answers a cold 4K read in ~600us and a durable commit
-  # in ~3ms, so 10ms is ~16x headroom over healthy operation and still trips well
-  # before a human notices. Raise toward 25-50ms if builds crawl while the
-  # desktop is idle; lower only if video playback during a build still breaks up.
-  #   cat /sys/fs/cgroup/user.slice/io.latency     -> "259:0 target=10000"
-  #   cat /sys/fs/cgroup/system.slice/io.pressure  -> "some" rises when throttled
+  # In the 48-cell matrix it was one of the five factors, on against off, and it
+  # did nothing at any resolution: noise on I/O stall, CPU stall, memory stall,
+  # longest stall and wakeup p99.9, and a dead-even 13-vs-12 split of the 25
+  # dropped frames. The plausible reason is that the desktop's I/O never
+  # approaches 10ms of queueing to begin with -- the probe measured its own read
+  # p99 at 21ms only under bfq, and at ~200us of actual queue wait under kyber,
+  # so the trigger simply never fires in the workload that motivated it.
   #
-  # Device is the physical nvme, not the dm-crypt mapper: bio cgroup association
-  # is preserved down through dm, and 259:0 is where the real queue contention
-  # happens (io.stat in these cgroups accounts both 254:x and 259:0).
+  # Left off because an unfiring throttle is a knob to reason about with no
+  # measured benefit. To retry it, lower the target rather than raise it, and
+  # re-measure against this file's harness rather than by feel.
+  # CPUWeight 1000 against system.slice's 20 -- see the block above for why the
+  # 50:1 split and what it bought. Kept here rather than in that block so the
+  # protectSlice memory settings and the CPU weight for the same unit stay in
+  # one place.
   systemd.slices.user =
     protectSlice
     // {
       sliceConfig =
         protectSlice.sliceConfig
         // {
-          IODeviceLatencyTargetSec = "/dev/nvme0n1 10ms";
+          CPUAccounting = true;
+          CPUWeight = 1000;
         };
     };
+  # ---- CPU weight across the two subtrees ---------------------------------
+  # user.slice and system.slice are siblings under the root cgroup, so weighting
+  # them is the cross-tree CPU control that the nix-daemon comment above says
+  # does not exist at service level. Both sat at the default 100 until now, i.e.
+  # this lever had never been pulled.
+  #
+  # It turned out to be the largest GUI-relevant effect in the 48-cell matrix,
+  # and one that only showed up once frame misses were counted rather than
+  # averaged. Of 25 missed 120Hz frame deadlines across the whole run, 24 landed
+  # on the weight=100/100 arm and 1 on this one; 12 of the 13 cells that dropped
+  # any frame were the default arm (p ~= 0.003, sign test over 13 cells). The
+  # paired-median test reported it as "noise" on every stall metric because most
+  # cells drop zero frames, so the median difference is structurally zero. The
+  # corroborating signals: longest single stall 2ms here against 4ms at the
+  # default, and psi_cpu missing resolvability by 0.4%.
+  #
+  # 1000/20 is a 50:1 split, chosen deliberately over something timid: a weight
+  # ratio only bites while both sides are runnable, and a 2:1 split would have
+  # landed inside the noise and proven nothing either way. On an idle desktop it
+  # costs nothing at all, because weights do not cap anything -- system.slice
+  # gets the whole machine when user.slice is not asking.
+  #
+  # Nothing in system.slice is latency-critical enough to mind: those units are
+  # event-driven and near-idle in CPU terms, and the one CPU-heavy resident,
+  # nix-daemon, is already SCHED_IDLE by choice.
+  systemd.slices.system = {
+    overrideStrategy = "asDropin";
+    sliceConfig = {
+      CPUAccounting = true;
+      CPUWeight = 20;
+    };
+  };
+
   systemd.slices."user-" = protectSlice;
   systemd.services."user@" = {
     overrideStrategy = "asDropin";
