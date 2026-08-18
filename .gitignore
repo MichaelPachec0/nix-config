@@ -18,3 +18,8 @@ docs/
 
 # Desktop-latency matrix scratch + results (nixos/thanatos/ab-matrix).
 .ab-latency/
+
+# I/O-bound matrix scratch + results (nixos/thanatos/ab-matrix). The scratch
+# holds a 40G fio working set, deliberately larger than RAM so the page cache
+# cannot answer the reads.
+.io-matrix/
