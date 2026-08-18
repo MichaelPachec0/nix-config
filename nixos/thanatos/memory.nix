@@ -184,7 +184,23 @@ in {
   # case during a rebuild.
   nix.daemonCPUSchedPolicy = "idle";
   # Class 3 (idle) ignores the numeric priority, so daemonIOSchedPriority is
-  # left alone. See the mq-deadline rule below -- this is inert without it.
+  # left alone.
+  #
+  # CURRENTLY INERT, kept for the day the elevator changes back. An I/O
+  # scheduler has to look at the ioprio class for this to do anything, and the
+  # one selected below does not. Checked against the kernel source rather than
+  # assumed -- occurrences of ioprio in block/:
+  #
+  #   adios.c 0    kyber-iosched.c 0    mq-deadline.c 18
+  #
+  # bfq honoured it too, which was its one real advantage, and bfq lost by 13x
+  # on desktop I/O stall. So the class is priced at zero today. The
+  # work-conserving I/O equivalent of the slice CPUWeights below would be
+  # blk-iocost (io.weight), which sits above the elevator and so is unaffected
+  # by this; it is not enabled here, and given that io.latency and ioprio have
+  # both turned out to buy nothing on this machine it should be measured with
+  # ab-matrix's io-matrix.sh before being adopted rather than switched on
+  # because the mechanism sounds right.
   nix.daemonIOSchedClass = "idle";
 
   # adios. CONFIG_MQ_IOSCHED_ADIOS=y, so unlike bfq (CONFIG_IOSCHED_BFQ=m) it
