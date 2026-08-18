@@ -155,4 +155,19 @@ check "analyzer emits a verdict per profile" \
 check "analyzer never pools profiles" \
   "$(grep -c '^PROFILE ' "$TMP/an.txt")" "3"
 
+
+# Every scheduler this harness asks preflight to validate must actually be
+# selectable. preflight needs root so no test runs it; this is the non-root
+# equivalent, and it is what was missing when bfq was dropped from the kernel
+# and left behind in a level list.
+avail="$(cat /sys/block/nvme0n1/queue/scheduler 2>/dev/null)"
+for lv in "${NVME_LEVELS[@]}"; do
+  if echo "$avail" | grep -qw "$lv"; then
+    echo "ok   - nvme scheduler '$lv' is selectable"
+  else
+    echo "FAIL - nvme scheduler '$lv' is in NVME_LEVELS but not in '$avail'"
+    fail=1
+  fi
+done
+
 exit "$fail"

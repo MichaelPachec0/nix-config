@@ -140,7 +140,14 @@ daemon_ok() {
   return 1
 }
 
-NVME_LEVELS=(bfq kyber adios)
+# bfq is deliberately absent. This matrix is what excluded it -- 13x worse on
+# desktop I/O stall than either survivor -- and memory.nix has since dropped
+# boot.kernelModules = ["bfq"] as a result, so the module is not loaded and the
+# scheduler cannot be selected at all. Leaving it here made preflight fail with
+# "nvme scheduler 'bfq' unavailable" and the whole harness unrunnable. The
+# numbers are recorded in memory.nix; re-running the arm would need the module
+# back first.
+NVME_LEVELS=(kyber adios)
 DIRTY_LEVELS=(low high)
 SCHED_LEVELS=(flash eevdf)
 IOLAT_LEVELS=(on off)

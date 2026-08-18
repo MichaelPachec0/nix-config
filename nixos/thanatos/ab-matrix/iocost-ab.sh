@@ -57,6 +57,12 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # there rather than being reimplemented and re-debugged.
 AB_LATENCY_SOURCED=1 . "$SCRIPT_DIR/ab-latency.sh"
 
+# ab-latency.sh's preflight validates ITS OWN factor levels, which are not this
+# harness's. This run holds nvme=adios, so adios is the only scheduler it needs
+# to exist; inheriting a wider list means failing preflight over an arm that is
+# never applied.
+NVME_LEVELS=(adios)
+
 REPS="${REPS:-20}"
 IOCOST_LEVELS=(on off)
 IOC_QOS="/sys/fs/cgroup/io.cost.qos"

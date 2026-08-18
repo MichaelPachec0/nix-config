@@ -137,4 +137,19 @@ fi
 check "estimate produced real output under systemd's PATH" \
   "$(grep -c 'seconds per cell' "$TMP/sysenv.txt")" "1"
 
+
+# Every scheduler this harness will ask preflight to validate must actually be
+# selectable on this machine. preflight itself needs root, so no test runs it;
+# this is the non-root equivalent and it is exactly what was missing when bfq
+# was dropped from the kernel and left in a level list.
+avail="$(cat /sys/block/nvme0n1/queue/scheduler 2>/dev/null)"
+for lv in "${NVME_LEVELS[@]}"; do
+  if echo "$avail" | grep -qw "$lv"; then
+    echo "ok   - nvme scheduler '$lv' is selectable"
+  else
+    echo "FAIL - nvme scheduler '$lv' is in NVME_LEVELS but not in '$avail'"
+    fail=1
+  fi
+done
+
 exit "$fail"

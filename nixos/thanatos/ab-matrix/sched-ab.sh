@@ -57,6 +57,12 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # the signal traps all come from there rather than being rewritten.
 AB_LATENCY_SOURCED=1 . "$SCRIPT_DIR/ab-latency.sh"
 
+# ab-latency.sh's preflight validates ITS OWN factor levels, which are not this
+# harness's. This run holds nvme=adios, so adios is the only scheduler it needs
+# to exist; inheriting a wider list means failing preflight over an arm that is
+# never applied.
+NVME_LEVELS=(adios)
+
 REPS="${REPS:-15}"
 SCHED_LEVELS_AB=(flash bore eevdf)
 BORE_SYSCTL="/proc/sys/kernel/sched_bore"
