@@ -41,6 +41,16 @@
 # drift cannot accumulate on whichever arm always ran first.
 set -uo pipefail
 
+# THIS MUST COME BEFORE SCRIPT_DIR. A systemd unit inherits systemd's own
+# default PATH, which on NixOS is two entries deep: /bin holds sh, /usr/bin
+# holds env, and the other four directories do not exist. SCRIPT_DIR below
+# calls readlink and dirname, so under `systemd-run --unit=` they are not found,
+# SCRIPT_DIR comes out empty, and the source of ab-latency.sh -- which carries
+# its own copy of this prelude -- never happens. Sourcing it cannot fix a PATH
+# that is already needed to reach it.
+PATH="/run/wrappers/bin:/run/current-system/sw/bin:${PATH:-}"
+export PATH
+
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # Reuse the validated harness: PSI readers, hwmon-by-name, the nix-build load,
 # the probe invocation, apply_sched's attach/detach waits, capture/restore and

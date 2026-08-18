@@ -114,4 +114,27 @@ out3="$("$PY3" "$HERE/iocost-analyze.py" "$TMP/dead.csv" 2>&1)"
 check "rows with no compiler alive are excluded" \
   "$(echo "$out3" | grep -c 'had no compiler running')" "1"
 
+
+# The environment the run ACTUALLY gets. `systemd-run --unit=` hands the script
+# systemd's own default PATH, which on NixOS holds exactly two binaries: /bin/sh
+# and /usr/bin/env. Everything else -- readlink, dirname, cat, awk, systemctl,
+# nix -- is absent. This harness computes SCRIPT_DIR with readlink and dirname
+# BEFORE it can source anything, so a missing prelude here is not a degraded
+# run, it is an immediate "command not found" and no run at all.
+#
+# Running the estimate under `env -i` with that exact PATH is the only check
+# that catches it. Testing from an interactive shell cannot: the shell's PATH
+# hides the bug completely.
+SYSPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+if env -i PATH="$SYSPATH" /run/current-system/sw/bin/bash "$TARGET" estimate \
+     >"$TMP/sysenv.txt" 2>&1; then
+  echo "ok   - runs under systemd's default PATH"
+else
+  echo "FAIL - dies under systemd's default PATH:"
+  sed 's/^/         /' "$TMP/sysenv.txt" | head -5
+  fail=1
+fi
+check "estimate produced real output under systemd's PATH" \
+  "$(grep -c 'seconds per cell' "$TMP/sysenv.txt")" "1"
+
 exit "$fail"
