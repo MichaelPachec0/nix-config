@@ -25,5 +25,5 @@
   # documented there loses several attempts per boot -- but it is not where a
   # scheduler choice earns its keep, and picking `bore` would change the
   # variable under test for no measured reason.
-  kernel.mod.kernelPkg = pkgs.cachyosKernels.linuxPackages-cachyos-latest-lto-x86_64-v3;
+  kernel.mod.kernelPkg = pkgs.cachyosKernels.linuxPackages-cachyos-bore-lto-x86_64-v3;
 }
