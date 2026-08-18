@@ -187,40 +187,64 @@ in {
   # left alone. See the mq-deadline rule below -- this is inert without it.
   nix.daemonIOSchedClass = "idle";
 
-  # kyber. CONFIG_MQ_IOSCHED_KYBER=y, so unlike bfq (CONFIG_IOSCHED_BFQ=m) it
-  # needs no boot.kernelModules entry.
+  # adios. CONFIG_MQ_IOSCHED_ADIOS=y, so unlike bfq (CONFIG_IOSCHED_BFQ=m) it
+  # needs no boot.kernelModules entry. It is a CachyOS-kernel scheduler and does
+  # not exist on stock nixpkgs kernels, so this line and nixos/thanatos/kernel.nix
+  # move together.
   #
-  # THIS REPLACES BFQ, and it reverses an earlier decision recorded here, so the
-  # reason matters. The old choice came from an A/B whose load and probe both
-  # ran inside one privileged cgroup, which meant the desktop's own I/O was
-  # never in the picture -- it measured fio's read latency against a synthetic
-  # burner, not a desktop against a build. Re-measured with the probe running as
-  # the user in user.slice and the load running as real nix builds under
-  # nix-daemon, full factorial over 48 cells, bfq loses badly:
+  # THIS REPLACES BFQ, and bfq was itself a recorded decision, so the reason
+  # matters. That choice came from an A/B whose load and probe both ran inside
+  # one privileged cgroup: the desktop's own I/O was never in the picture, so it
+  # measured fio's read latency against a synthetic burner rather than a desktop
+  # against a build. Re-measured with the probe running as the user in
+  # user.slice and the load as real nix builds under nix-daemon, 48 cells, bfq
+  # loses by an order of magnitude:
   #
   #   desktop us stalled on I/O per 210s window, median of 16 cells each
   #     kyber   232264      adios   263490      bfq  3065494
   #   the probe's own read p99
   #     kyber    21403us    adios    20369us    bfq   244345us
   #
-  # Paired within-cell, adios-vs-bfq and bfq-vs-kyber are both resolvable and
-  # adios-vs-kyber is noise, so the two survivors tie on the median. kyber wins
-  # the tail, which is the thing a desktop feels: its 16 cells span 131-608ms
-  # while adios has outliers at 1.47s and 3.10s. All five worst cells in the
-  # matrix were bfq.
+  # bfq is thus excluded on evidence. Choosing between the two survivors took a
+  # second, I/O-bound matrix (see io-matrix.sh): 24 cells x 3 reps of fio in
+  # system.slice against the same probe in user.slice, across three load shapes.
+  # Sequential-read and random-mixed came out a genuine tie. Durable-commit --
+  # small writes with an fsync every 16, the shape that historically produced
+  # 534ms stalls here and hung Firefox's Quota Manager -- did not:
   #
-  # Scope of that result: the load was compile-bound (four concurrent Rust
-  # builds), so this is "the desktop during a big build" and not "the desktop
-  # during a sustained sequential copy". bfq losing by 13x at only moderate
-  # queue depth is if anything the harsher reading -- its per-request cost shows
-  # up before the queue is even busy.
+  #                             adios       kyber
+  #     desktop read p99      4549us     17453us    3.8x, resolvable
+  #     desktop wakeup p99.9   269us       616us    2.3x, resolvable
+  #     load commit p99      21758us     70779us    3.3x
+  #     load commit p99.9    42467us    190054us    4.5x
+  #     write throughput    207 MB/s    143 MB/s    +45%
+  #
+  # Only the first two clear a |median| > sd bar on their own. The weight is in
+  # the agreement: all 9 informative metrics favour adios and none favour kyber,
+  # which is p ~= 0.004 by sign test. There is also no trade to price, since
+  # adios leads on throughput as well as on latency.
+  #
+  # WHY NOT KYBER, given the first matrix showed adios with a worse tail (16
+  # cells spanning 136ms-3.10s against kyber's 131-608ms). Both adios outliers
+  # were sched=eevdf AND cpuw=off, and this file now ships scx_flash with
+  # 1000/20 slice weights. Restricted to the configuration actually in use, the
+  # two are indistinguishable on every metric (n=4, all noise). The tail
+  # argument was real for the machine as configured then, and stopped applying
+  # the moment those two arms were dropped.
+  #
+  # KNOWN WEAKNESS in the above, recorded so it is not rediscovered as news: the
+  # two tied profiles were partly served from page cache (53% and 40%, caught by
+  # the harness's own device counters), so their ties are the weakest evidence
+  # in the set. fsync reached the device unimpeded and is the one that resolved.
+  # io-matrix.sh has since been fixed to use an 80G working set and drop caches
+  # per cell; a re-run would firm up the ties, not the fsync result.
   #
   # What is NOT lost by leaving bfq: it honoured the rt/be/idle ioprio classes,
-  # which is what made nix.daemonIOSchedClass above non-decorative. kyber does
-  # not implement ioprio classes, so that setting is now inert for the queue and
-  # earns its keep only via the daemon's own SCHED_IDLE and the slice weights
-  # below. That is an accepted cost: the measurement above already includes it,
-  # since every cell ran with the same daemon settings.
+  # which is what made nix.daemonIOSchedClass above non-decorative. Neither
+  # adios nor kyber implements ioprio classes, so that setting is now inert for
+  # the queue and earns its keep only through the daemon's own SCHED_IDLE and
+  # the slice weights below. Accepted cost: every cell of both matrices ran with
+  # the same daemon settings, so it is already priced into the numbers.
   #
   # BFQ TUNING WAS MEASURED AND REJECTED and is now moot, but keep it recorded
   # so nobody re-runs it: slice_idle=0, slice_idle_us=0 and low_latency=0 each
@@ -228,7 +252,7 @@ in {
   # not worth revisiting: a read_ahead_kb bump, flat across 128-2048 because
   # max_hw_sectors_kb is 128 here and large read()s bypass readahead entirely.
   services.udev.extraRules = ''
-    ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="kyber"
+    ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="adios"
   '';
 
   # Build width. Both of these defaulted to `auto`, which on this 8C/16T part
@@ -301,8 +325,14 @@ in {
   # longest stall and wakeup p99.9, and a dead-even 13-vs-12 split of the 25
   # dropped frames. The plausible reason is that the desktop's I/O never
   # approaches 10ms of queueing to begin with -- the probe measured its own read
-  # p99 at 21ms only under bfq, and at ~200us of actual queue wait under kyber,
-  # so the trigger simply never fires in the workload that motivated it.
+  # p99 at 21ms only under bfq, and at a small fraction of that under either
+  # survivor, so the trigger never fires in the workload that motivated it.
+  #
+  # Retested since at n=36 in the I/O-bound matrix, under a genuine 376 MB/s of
+  # sustained writes rather than a build's incidental traffic, and still noise
+  # on every metric. That is a far stronger negative than the original run
+  # could give: the earlier verdict rested on a load that never pressured the
+  # queue, which is exactly the objection this one answers.
   #
   # Left off because an unfiring throttle is a knob to reason about with no
   # measured benefit. To retry it, lower the target rather than raise it, and

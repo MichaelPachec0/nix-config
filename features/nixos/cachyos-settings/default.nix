@@ -207,10 +207,11 @@ in {
     #     adopting it unmeasured would undo a measured result.
     #
     #   60-ioschedulers.rules: kyber for NVMe
-    #     No longer a deviation. We ran bfq on the strength of an A/B whose
-    #     load and probe shared one cgroup; re-measured properly, bfq stalled
-    #     the desktop on I/O 13x harder than kyber. memory.nix now selects
-    #     kyber too, which is what CachyOS ships.
+    #     Ours is adios, which is a CachyOS-kernel scheduler CachyOS's own rule
+    #     predates. Both beat bfq (our previous choice) by an order of magnitude
+    #     on desktop I/O stall; adios then beat kyber on durable-commit latency
+    #     by 2-4x with no throughput cost, and tied elsewhere. See the scheduler
+    #     block in nixos/thanatos/memory.nix for the numbers.
     #     The new kernel also offers `adios`, which did not exist before and
     #     belongs in the same comparison.
     #
