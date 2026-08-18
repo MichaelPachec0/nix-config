@@ -63,7 +63,10 @@ AB_LATENCY_SOURCED=1 . "$SCRIPT_DIR/ab-latency.sh"
 # never applied.
 NVME_LEVELS=(adios)
 
-REPS="${REPS:-15}"
+# NOT REPS="${REPS:-15}". Sourcing ab-latency.sh above already set REPS=1 via
+# its own "${REPS:-1}", so a :- default here can never fire and the run
+# silently did 1 repetition instead of 15. A distinct variable cannot collide.
+REPS="${SCHED_REPS:-15}"
 SCHED_LEVELS_AB=(flash bore eevdf)
 BORE_SYSCTL="/proc/sys/kernel/sched_bore"
 SCX_STATE="/sys/kernel/sched_ext/state"
@@ -147,7 +150,10 @@ SCH_RESTORED=0
 capture_sched() {
   ORIG_BORE="$(cat "$BORE_SYSCTL" 2>/dev/null || echo 1)"
   echo "captured: sched_bore=$ORIG_BORE scx=$(systemctl is-active scx 2>/dev/null)"
-  echo "          kernel=$(readlink -f /run/booted-system/kernel 2>/dev/null | sed 's|.*/||;s|/bzImage||')"
+  # Strip the /bzImage suffix FIRST, then the store directory, then the hash.
+  # Taking the basename first just yields "bzImage", which names nothing.
+  echo "          kernel=$(readlink -f /run/booted-system/kernel 2>/dev/null \
+    | sed 's|/bzImage$||; s|.*/||; s|^[a-z0-9]\{32\}-||')"
 }
 
 restore_sched() {
@@ -228,7 +234,12 @@ sch_run_cell() { # <level> <rep> <csv>
   iof1="$(psi_total "$USER_SLICE" io full)"
   mem1="$(psi_total "$USER_SLICE" memory some)"
   temp="$(hwmon_temp zenpower)"
-  alive="$(pgrep -c -x rustc 2>/dev/null || echo 0)"
+  # `pgrep -c` prints 0 AND exits 1 when nothing matches, so `|| echo 0`
+  # appended a SECOND 0 and the value became "0\n0". That newline landed
+  # mid-row and split every CSV line in two. `|| true` keeps pgrep's own
+  # count and swallows only the exit status.
+  alive="$(pgrep -c -x rustc 2>/dev/null || true)"
+  alive="${alive:-0}"
   stop_load
 
   "$PY3" "$SCRIPT_DIR/probe-row.py" "$rep" "$level" \
@@ -267,6 +278,8 @@ sch_cmd_run() {
   local csv
   csv="$OUTDIR/sched-$(date +%Y%m%d-%H%M%S).csv"
   echo "$SCH_HEADER" > "$csv"
+
+  resolve_load_drvs $(( $(sch_cell_count) * REPS * BUILD_JOBS )) || return 1
 
   capture_state
   capture_sched

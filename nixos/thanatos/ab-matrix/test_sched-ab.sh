@@ -162,4 +162,26 @@ for lv in "${NVME_LEVELS[@]}"; do
   fi
 done
 
+
+# The row writer must REFUSE a field containing a newline. `pgrep -c` prints 0
+# and exits 1 when nothing matches, so `$(pgrep -c ... || echo 0)` produced
+# "0\n0" and split every CSV line in two; the analyzer then read the tail halves
+# as data and reported arm names of "0", "1" and "5". A corrupt row must fail
+# the cell loudly instead of being written.
+if "$PY3" "$HERE/probe-row.py" 1 flash 1 2 3 4 88.5 "$(printf '0\n0')" '{}' \
+     >/dev/null 2>&1; then
+  echo "FAIL - probe-row.py accepted a field containing a newline"
+  fail=1
+else
+  echo "ok   - probe-row.py refuses a field containing a newline"
+fi
+check "probe-row.py refuses a field containing a comma" \
+  "$("$PY3" "$HERE/probe-row.py" 1 flash 1 2 3 4 88.5 '1,2' '{}' >/dev/null 2>&1 \
+     && echo accepted || echo rejected)" "rejected"
+
+# And the shell idiom that produced it must now yield exactly one line.
+alive="$(pgrep -c -x definitely-no-such-process 2>/dev/null || true)"
+alive="${alive:-0}"
+check "the pgrep idiom yields a single line" "$(printf '%s' "$alive" | wc -l)" "0"
+
 exit "$fail"

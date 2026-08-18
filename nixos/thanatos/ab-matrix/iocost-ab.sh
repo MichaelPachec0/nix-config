@@ -63,7 +63,10 @@ AB_LATENCY_SOURCED=1 . "$SCRIPT_DIR/ab-latency.sh"
 # never applied.
 NVME_LEVELS=(adios)
 
-REPS="${REPS:-20}"
+# NOT REPS="${REPS:-20}". Sourcing ab-latency.sh above already set REPS=1 via
+# its own "${REPS:-1}", so a :- default here can never fire. A distinct
+# variable cannot collide.
+REPS="${IOCOST_REPS:-20}"
 IOCOST_LEVELS=(on off)
 IOC_QOS="/sys/fs/cgroup/io.cost.qos"
 USER_IOW="$USER_SLICE/io.weight"
@@ -229,7 +232,12 @@ ioc_run_cell() { # <on|off> <rep> <csv>
   iof1="$(psi_total "$USER_SLICE" io full)"
   mem1="$(psi_total "$USER_SLICE" memory some)"
   temp="$(hwmon_temp zenpower)"
-  alive="$(pgrep -c -x rustc 2>/dev/null || echo 0)"
+  # `pgrep -c` prints 0 AND exits 1 when nothing matches, so `|| echo 0`
+  # appended a SECOND 0 and the value became "0\n0". That newline landed
+  # mid-row and split every CSV line in two. `|| true` keeps pgrep's own
+  # count and swallows only the exit status.
+  alive="$(pgrep -c -x rustc 2>/dev/null || true)"
+  alive="${alive:-0}"
   stop_load
 
   "$PY3" "$SCRIPT_DIR/probe-row.py" "$rep" "$level" \
@@ -268,6 +276,8 @@ ioc_cmd_run() {
   local csv
   csv="$OUTDIR/iocost-$(date +%Y%m%d-%H%M%S).csv"
   echo "$IOC_HEADER" > "$csv"
+
+  resolve_load_drvs $(( $(ioc_cell_count) * REPS * BUILD_JOBS )) || return 1
 
   capture_state
   capture_iocost

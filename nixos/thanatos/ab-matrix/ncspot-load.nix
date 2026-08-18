@@ -1,4 +1,4 @@
-# Cache-busting build load for the desktop-latency matrix.
+# Cache-busting build load for the desktop-latency matrices.
 #
 # The matrix needs a compile that is REPRODUCIBLE in shape but never served
 # from cache: every cell must do the same work, and a store hit would make a
@@ -18,28 +18,42 @@
 # fixed-output derivation keyed on the lockfile, so vendored crates stay cached
 # and the measured work is compilation rather than network.
 #
-# Usage (impure, because the marker has to vary per cell):
+# TAKES A LIST, and that is the important part. Each `nix build --expr` that
+# calls builtins.getFlake on this repo pays a FULL evaluation of nix-config and
+# nixpkgs, because a dirty git tree has no eval-cache fingerprint and so is
+# never cached. Measured: four concurrent evaluations were still running after
+# 150 seconds without a single rustc process existing, so a 45s settle plus a
+# 210s window recorded four nix evaluations rather than four Rust builds, and
+# every cell reported builds_alive=0. Evaluating every marker for the whole run
+# in ONE invocation moves that cost out of the measured window entirely and
+# makes each cell start compiling immediately.
 #
-#   nix build --impure --no-link --expr \
-#     "import ./ncspot-load.nix { flake = \"/home/michael/nix-config\"; marker = \"$(date +%s)\"; }"
+# Usage:
 #
-# Verify two markers really produce two derivations before trusting a run:
+#   nix eval --impure --json --expr \
+#     'map (d: d.drvPath) (import ./ncspot-load.nix {
+#        flake = "/home/michael/nix-config"; markers = ["a" "b"]; })'
 #
-#   nix eval --impure --raw --expr 'builtins.unsafeDiscardStringContext
-#     (import ./ncspot-load.nix { flake = "..."; marker = "a"; }).drvPath'
+# Forcing drvPath instantiates each derivation into the store, so the paths it
+# prints can then be built directly with `nix build /nix/store/....drv^*` and no
+# further evaluation.
 {
   flake,
-  marker,
+  markers,
   system ? builtins.currentSystem,
 }: let
   f = builtins.getFlake (toString flake);
   base = f.inputs.ncspot.packages.${system}.ncspot;
 in
-  base.overrideAttrs (old: {
+  map (
+    marker:
     # Any new attribute changes the derivation hash. A plain env var is used
     # rather than a source patch because it cannot alter what is compiled --
     # only whether the result is already in the store. A patch that edited a
     # source file would change the work itself between markers, which would
     # make cells incomparable.
-    AB_MATRIX_MARKER = marker;
-  })
+      base.overrideAttrs (_old: {
+        AB_MATRIX_MARKER = marker;
+      })
+  )
+  markers

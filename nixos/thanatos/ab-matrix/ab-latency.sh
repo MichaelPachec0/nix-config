@@ -359,24 +359,52 @@ apply_sched() {
 
 BUILD_PIDS=()
 
-start_load() { # <marker-prefix>
-  local j
+# Derivation paths for the whole run, resolved ONCE before any cell is timed.
+LOAD_DRVS=()
+LOAD_NEXT=0
+
+# One evaluation for every marker the run will ever need.
+#
+# Each `nix build --expr` that calls builtins.getFlake on this repo pays a full
+# evaluation of nix-config and nixpkgs, because a DIRTY git tree has no
+# eval-cache fingerprint and is therefore never cached. Measured on this host:
+# four concurrent evaluations were still running at 150 seconds with not one
+# rustc process in existence, so a 45s settle plus a 210s window measured four
+# nix evaluations rather than four Rust builds and every cell recorded
+# builds_alive=0. Resolving all the derivations up front moves that cost
+# outside the measured window and lets each cell start compiling at once.
+resolve_load_drvs() { # <count>
+  local want="$1" markers i out
+  markers=""
+  for i in $(seq 1 "$want"); do
+    markers="$markers \"run$$-$i\""
+  done
+  echo "resolving $want load derivations (one evaluation, not $want)..."
+  out="$(NIX_REMOTE=daemon nix eval --impure --json --expr \
+    "map (d: d.drvPath) (import ${SCRIPT_DIR}/ncspot-load.nix { flake = \"${FLAKE}\"; markers = [ $markers ]; })" \
+    2>/dev/null)" || return 1
+  # No jq dependency: the value is a flat JSON array of store paths.
+  mapfile -t LOAD_DRVS < <(echo "$out" | tr ',' '\n' | grep -o '/nix/store/[^"]*\.drv')
+  [ "${#LOAD_DRVS[@]}" -eq "$want" ] || {
+    echo "FAIL: resolved ${#LOAD_DRVS[@]} derivations, wanted $want" >&2
+    return 1
+  }
+  echo "  ${#LOAD_DRVS[@]} derivations ready"
+}
+
+start_load() { # <unused-marker-prefix, kept for call compatibility>
+  local j drv
   BUILD_PIDS=()
   for j in $(seq 1 "$BUILD_JOBS"); do
-    # NIX_REMOTE=daemon is load-bearing, not decoration. This harness runs as
-    # root, `store` is `auto`, and `auto` resolves to a direct LocalStore
-    # whenever the caller can write to /nix/store -- which root can. Left
-    # alone, the builders are forked by THIS process and inherit this
-    # process's cgroup, scheduling policy and ioprio instead of
-    # nix-daemon.service's CPUSchedulingPolicy=idle, IOSchedulingClass=idle
-    # and MemoryHigh=8G. Those three are exactly the protections under test,
-    # and under sudo from a terminal the builders would land in user.slice --
-    # the same slice the probe runs in -- so the iolat and cpuw factors would
-    # be measuring the load throttling itself. Forcing the daemon puts the
-    # compilers back where the design says they are.
-    NIX_REMOTE=daemon nix build --impure --no-link --expr \
-      "import ${SCRIPT_DIR}/ncspot-load.nix { flake = \"${FLAKE}\"; marker = \"$1-$j\"; }" \
-      >/dev/null 2>&1 &
+    drv="${LOAD_DRVS[$LOAD_NEXT]:-}"
+    LOAD_NEXT=$((LOAD_NEXT + 1))
+    if [ -z "$drv" ]; then
+      echo "ERROR: ran out of pre-resolved load derivations" >&2
+      return 1
+    fi
+    # Building a .drv path directly: no expression, so no evaluation. The ^*
+    # selector asks for every output.
+    NIX_REMOTE=daemon nix build --no-link "${drv}^*" >/dev/null 2>&1 &
     BUILD_PIDS+=($!)
   done
 }
@@ -439,7 +467,12 @@ run_cell() { # nvme dirty sched iolat cpuw rep
   temp="$(hwmon_temp zenpower)"
   # If the builds finished early the tail of the window measured an idle box,
   # which would flatter this arm. Recorded so such rows can be discarded.
-  builds_alive="$(pgrep -c -x rustc 2>/dev/null || echo 0)"
+  builds_# `pgrep -c` prints 0 AND exits 1 when nothing matches, so `|| echo 0`
+  # appended a SECOND 0 and the value became "0\n0". That newline landed
+  # mid-row and split every CSV line in two. `|| true` keeps pgrep's own
+  # count and swallows only the exit status.
+  alive="$(pgrep -c -x rustc 2>/dev/null || true)"
+  alive="${alive:-0}"
 
   stop_load
 
@@ -569,6 +602,8 @@ cmd_run() {
   local csv
   csv="$OUTDIR/latency-$(date +%Y%m%d-%H%M%S).csv"
   echo "rep,nvme,dirty,sched,iolat,cpuw,psi_cpu_us,psi_io_us,psi_io_full_us,psi_mem_us,misses_120hz,misses_60hz,max_stall_ms,wake_p99_us,wake_p999_us,read_p99_us,wakeups,temp_c,builds_alive" > "$csv"
+
+  resolve_load_drvs $(( $(cell_count) * REPS * BUILD_JOBS )) || return 1
 
   capture_state
   # A signal has to restore AND stop. `trap restore_state INT TERM` did only
