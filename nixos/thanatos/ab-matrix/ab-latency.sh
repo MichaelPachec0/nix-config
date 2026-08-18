@@ -114,6 +114,26 @@ resolve_python() {
   return 1
 }
 
+# True when `nix build` will hand work to nix-daemon.service rather than
+# building it inside this process.
+#
+# --json is deliberate: the human-readable output of `nix store info` goes to
+# STDERR, not stdout, so a `2>/dev/null` filter discards the very text worth
+# matching and the check can then only ever fail. --json writes a stable object
+# to stdout.
+#
+# The absence of a pipe is deliberate too: `grep -q` exits at the first match
+# and SIGPIPEs its producer, and `set -o pipefail` reports that as a failed
+# pipeline -- so the naive form fails exactly when it matched.
+daemon_ok() {
+  local info
+  info="$(NIX_REMOTE=daemon nix store info --json 2>/dev/null)" || return 1
+  case "$info" in
+    *'"url":"daemon"'*) return 0 ;;
+  esac
+  return 1
+}
+
 NVME_LEVELS=(bfq kyber adios)
 DIRTY_LEVELS=(low high)
 SCHED_LEVELS=(flash eevdf)
@@ -448,7 +468,7 @@ preflight() {
   # under nix-daemon.service. Its SCHED_IDLE, idle ioprio and MemoryHigh are
   # three of the mechanisms this matrix exists to judge, and root does not get
   # them for free -- see start_load. Assert the routing rather than trust it.
-  if ! NIX_REMOTE=daemon nix store info 2>/dev/null | grep -q "^Store URL: daemon"; then
+  if ! daemon_ok; then
     echo "FAIL: cannot reach the nix daemon; the load would build in this" >&2
     echo "      process's cgroup and the iolat/cpuw factors would be invalid." >&2
     fail=1
@@ -553,7 +573,15 @@ cmd_run() {
 cmd_analyze() {
   local -a csvs=()
   if [ "$#" -gt 0 ]; then csvs=("$@"); else
-    local latest; latest="$(ls -t "$OUTDIR"/latency-*.csv 2>/dev/null | head -1)"
+    # Not `ls -t | head -1`: head exits after one line, SIGPIPEs ls, and
+    # pipefail turns that into a failure. The names are
+    # latency-YYYYmmdd-HHMMSS.csv, so the shell's lexical glob order is already
+    # chronological order.
+    local -a found=()
+    local f
+    for f in "$OUTDIR"/latency-*.csv; do [ -f "$f" ] && found+=("$f"); done
+    local latest=""
+    [ "${#found[@]}" -gt 0 ] && latest="${found[-1]}"
     [ -n "$latest" ] && csvs=("$latest")
   fi
   [ "${#csvs[@]}" -gt 0 ] && [ -f "${csvs[0]}" ] || { echo "no results file" >&2; return 1; }

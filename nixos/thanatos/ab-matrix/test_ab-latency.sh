@@ -61,6 +61,18 @@ check "psi some total" "$(psi_total "$tmp" io some)" "192418536"
 check "psi full total" "$(psi_total "$tmp" io full)" "153187155"
 check "psi missing file is empty" "$(psi_total "$tmp" nosuch some)" ""
 
+# The daemon assertion is the one preflight check whose failure mode is a
+# false NEGATIVE that aborts a four-hour run before it starts, and it broke on
+# two separate subtleties: `nix store info` writes its human output to stderr,
+# so filtering stderr away left nothing to match; and `grep -q` plus pipefail
+# reports a successful match as a failed pipeline. Pin both here, where they
+# cost two seconds instead of a wasted evening.
+check "nix store info --json writes to stdout" \
+  "$([ -n "$(NIX_REMOTE=daemon nix store info --json 2>/dev/null)" ] && echo yes || echo no)" \
+  "yes"
+check "daemon_ok true when the daemon answers" \
+  "$(daemon_ok && echo yes || echo no)" "yes"
+
 # hwmon must resolve by name; a missing sensor must report empty rather than 0,
 # because "absent" and "cold" are not the same reading.
 check "hwmon absent name is empty" "$(hwmon_temp definitely-not-a-sensor)" ""
