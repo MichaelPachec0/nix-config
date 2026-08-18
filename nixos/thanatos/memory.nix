@@ -320,23 +320,41 @@ in {
   # group misses its target, so a build is squeezed exactly when the desktop
   # suffers and not before. It was carried at "/dev/nvme0n1 10ms".
   #
-  # In the 48-cell matrix it was one of the five factors, on against off, and it
-  # did nothing at any resolution: noise on I/O stall, CPU stall, memory stall,
-  # longest stall and wakeup p99.9, and a dead-even 13-vs-12 split of the 25
-  # dropped frames. The plausible reason is that the desktop's I/O never
-  # approaches 10ms of queueing to begin with -- the probe measured its own read
-  # p99 at 21ms only under bfq, and at a small fraction of that under either
-  # survivor, so the trigger never fires in the workload that motivated it.
+  # It was a factor in both matrices and did nothing in either: noise on I/O
+  # stall, CPU stall, memory stall, longest stall and wakeup p99.9, a dead-even
+  # 13-vs-12 split of the 25 dropped frames in the build matrix, and still noise
+  # at n=36 in the I/O-bound one under a genuine 376 MB/s of sustained writes.
   #
-  # Retested since at n=36 in the I/O-bound matrix, under a genuine 376 MB/s of
-  # sustained writes rather than a build's incidental traffic, and still noise
-  # on every metric. That is a far stronger negative than the original run
-  # could give: the earlier verdict rested on a load that never pressured the
-  # queue, which is exactly the objection this one answers.
+  # THE REASON IS STRUCTURAL, not a matter of picking a better target, so do not
+  # reach for this again with a lower number. From check_scale_change() in
+  # block/blk-iolatency.c, on the path that would throttle a peer:
   #
-  # Left off because an unfiring throttle is a knob to reason about with no
-  # measured benefit. To retry it, lower the target rather than raise it, and
-  # re-measure against this file's harness rather than by feel.
+  #     /*
+  #      * Sometimes high priority groups are their own worst enemy, so
+  #      * instead of taking it out on some poor other group that did 5%
+  #      * or less of the IO's for the last summation just skip this
+  #      * scale down event.
+  #      */
+  #     samples_thresh = lat_info->nr_samples * 5;
+  #     samples_thresh = max(1ULL, div64_u64(samples_thresh, 100));
+  #     if (iolat->nr_samples <= samples_thresh)
+  #             return;
+  #
+  # The protected cgroup must have issued MORE THAN 5% of the I/O in the last
+  # summation or the throttle is skipped outright. A desktop being crushed by a
+  # build or a copy is by definition the minority producer: in the I/O matrix
+  # the probe did about 5 IOPS against fio's ~27000, which is 0.02% against a 5%
+  # floor -- three orders of magnitude short. io.latency is built for a
+  # protected group that is itself a substantial producer, a database container
+  # against a backup job, and cannot express "this tiny reader matters most".
+  #
+  # A second, independent reason it never fired: latency_sum_ok() compares the
+  # window MEAN against the target, and the probe's read p99 was 4.5-9.4ms under
+  # either surviving scheduler, so the mean never reached 10ms regardless.
+  #
+  # Left off because it is not a knob that was set wrong, it is a mechanism that
+  # does not apply here. The cross-tree lever that does work is CPUWeight on the
+  # slices above.
   # CPUWeight 1000 against system.slice's 20 -- see the block above for why the
   # 50:1 split and what it bought. Kept here rather than in that block so the
   # protectSlice memory settings and the CPU weight for the same unit stay in
