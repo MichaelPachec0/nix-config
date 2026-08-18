@@ -125,6 +125,12 @@ resolve_python() {
 # The absence of a pipe is deliberate too: `grep -q` exits at the first match
 # and SIGPIPEs its producer, and `set -o pipefail` reports that as a failed
 # pipeline -- so the naive form fails exactly when it matched.
+ensure_python() {
+  [ -n "$PY3" ] && [ -x "$PY3" ] && return 0
+  PY3="$(resolve_python)" || return 1
+  [ -n "$PY3" ] && [ -x "$PY3" ]
+}
+
 daemon_ok() {
   local info
   info="$(NIX_REMOTE=daemon nix store info --json 2>/dev/null)" || return 1
@@ -234,7 +240,24 @@ capture_state() {
   ORIG_CPUW_SYS="$(cat "$SYS_SLICE/cpu.weight" 2>/dev/null || echo 100)"
   echo "captured: sched=$ORIG_SCHED dirty=$ORIG_DIRTY/$ORIG_DIRTY_BG iolat='$ORIG_IOLAT'"
   echo "          scx=$ORIG_SCX cpu.weight user=$ORIG_CPUW_USER system=$ORIG_CPUW_SYS"
+  # A prior aborted run can leave the machine tuned, and this function would
+  # then adopt that as "original" and faithfully restore back to it at the end.
+  local drift=""
+  { [ "$ORIG_CPUW_USER" = "100" ] && [ "$ORIG_CPUW_SYS" = "100" ]; } || drift="cpu.weight "
+  [ -z "$ORIG_IOLAT" ] || drift="${drift}io.latency "
+  [ -z "$drift" ] || {
+    echo "WARN: baseline is not stock (${drift}already set); a previous run"
+    echo "      likely did not restore. The matrix itself is unaffected -- every"
+    echo "      cell sets all five factors -- but the final restore returns HERE."
+  }
   echo "observed: zram $(awk -v d="$(cat $ZRAM_SYS/disksize)" -v r="$(awk '/MemTotal/{print $2}' /proc/meminfo)" 'BEGIN{printf "%.0f", d/1024/r*100}')% of RAM (never modified)"
+}
+
+on_signal() {
+  echo "" >&2
+  echo "signal received -- restoring and stopping" >&2
+  restore_state
+  exit 130
 }
 
 restore_state() {
@@ -245,7 +268,14 @@ restore_state() {
   stop_load || true
   [ -n "$ORIG_SCHED" ] && echo "$ORIG_SCHED" > "$SCHED_PATH" 2>/dev/null
   sysctl -q -w "vm.dirty_bytes=$ORIG_DIRTY" "vm.dirty_background_bytes=$ORIG_DIRTY_BG" 2>/dev/null
-  [ -n "$ORIG_IOLAT" ] && echo "$ORIG_IOLAT" > "$IOLAT_PATH" 2>/dev/null
+  if [ -n "$ORIG_IOLAT" ]; then
+    echo "$ORIG_IOLAT" > "$IOLAT_PATH" 2>/dev/null
+  else
+    # Empty means io.latency was UNSET. "Unset" is restored by writing a zero
+    # target, which removes the entry; the old `[ -n ... ] &&` guard read it as
+    # "nothing to do" and silently left the last cell's throttle in place.
+    echo "$NVME_MAJMIN target=0" > "$IOLAT_PATH" 2>/dev/null
+  fi
   systemctl set-property --runtime user.slice "CPUWeight=$ORIG_CPUW_USER" 2>/dev/null
   systemctl set-property --runtime system.slice "CPUWeight=$ORIG_CPUW_SYS" 2>/dev/null
   if [ "$ORIG_SCX" = "active" ]; then systemctl start scx 2>/dev/null; else systemctl stop scx 2>/dev/null; fi
@@ -445,7 +475,7 @@ preflight() {
     command -v "$c" >/dev/null || { echo "FAIL: '$c' not on PATH" >&2; fail=1; }
   done
 
-  PY3="$(resolve_python)" || {
+  ensure_python || {
     echo "FAIL: no usable python3. The probe and both report writers need one." >&2
     echo "      Set PY3=/path/to/python3, or install one system-wide." >&2
     fail=1
@@ -534,7 +564,14 @@ cmd_run() {
   echo "rep,nvme,dirty,sched,iolat,cpuw,psi_cpu_us,psi_io_us,psi_io_full_us,psi_mem_us,misses_120hz,misses_60hz,max_stall_ms,wake_p99_us,wake_p999_us,read_p99_us,wakeups,temp_c,builds_alive" > "$csv"
 
   capture_state
-  trap restore_state EXIT INT TERM
+  # A signal has to restore AND stop. `trap restore_state INT TERM` did only
+  # the first half: restore_state returns, the cell loop carries straight on
+  # re-applying settings, and its own RESTORED latch then suppresses the real
+  # restore at EXIT. A Ctrl-C therefore left every tunable at the last cell's
+  # value, and the next run captured that as its baseline. HUP was not trapped
+  # at all, so closing the terminal skipped the restore outright.
+  trap on_signal INT TERM HUP QUIT
+  trap restore_state EXIT
 
   echo ""
   echo "estimate: $(fmt_hms "$est") for $REPS rep(s), $(cell_count) cells each"
@@ -571,6 +608,9 @@ cmd_run() {
 # other factors. Pooling instead inflates every secondary factor's apparent
 # noise floor by whatever the largest effect happens to be.
 cmd_analyze() {
+  # analyze does not run preflight, so it has to resolve the interpreter for
+  # itself or it execs the empty string.
+  ensure_python || { echo "no usable python3; set PY3=/path/to/python3" >&2; return 1; }
   local -a csvs=()
   if [ "$#" -gt 0 ]; then csvs=("$@"); else
     # Not `ls -t | head -1`: head exits after one line, SIGPIPEs ls, and
@@ -649,6 +689,28 @@ for metric, better, label in metrics:
                 winner = a if med > 0 else b
             note = f", {winner} better" if verdict == "RESOLVABLE" else ""
             print(f"          {a} vs {b}: delta={med:+.0f} sd={sd:.0f} n={len(diffs)} -> {verdict}{note}")
+
+# Frame-deadline misses are zero-inflated counts: most cells score 0, so the
+# median of the paired differences is structurally 0 and reports "noise" no
+# matter how lopsided the totals are. misses_120hz was not even in the list
+# above, which hid the largest GUI-relevant effect in the first run: cpuw off
+# accounted for 24 of 25 misses. Counts get totals and affected-cell splits.
+for metric, label in [
+    ("misses_120hz", "missed 120Hz frame deadlines"),
+    ("misses_60hz", "missed 60Hz frame deadlines"),
+]:
+    tot = sum(int(num(r, metric) or 0) for r in rows)
+    print(f"\n-- {metric}: {label} -- {tot} total over {len(rows)} cells")
+    if tot == 0:
+        print("   no cell missed a deadline under any configuration")
+        continue
+    for f in factors:
+        parts = []
+        for lv in sorted({r[f] for r in rows}):
+            vals = [int(num(r, metric) or 0) for r in rows if r[f] == lv]
+            hit = sum(1 for v in vals if v)
+            parts.append(f"{lv}={sum(vals)} in {hit}/{len(vals)} cells")
+        print(f"   {f:6s} " + "   ".join(parts))
 
 print("\n-- best cells by psi_io_us (desktop I/O stall)")
 keyed = {}
