@@ -49,7 +49,7 @@ ensure_python
 check "python3 resolved" "$([ -x "${PY3:-}" ] && echo yes || echo no)" "yes"
 
 # Row writer: real probe JSON in, full row out.
-row="$("$PY3" "$HERE/iocost-row.py" 3 on 1000 2000 1500 10 88.5 12 \
+row="$("$PY3" "$HERE/probe-row.py" 3 on 1000 2000 1500 10 88.5 12 \
   '{"wakeups":900,"misses_120hz":2,"misses_60hz":0,"max_stall_ms":4.5,"wake_p50_us":10,"wake_p99_us":900,"wake_p999_us":1200,"reads":30,"read_p99_us":2500}')"
 check "row column count matches header" \
   "$(echo "$row" | awk -F, '{print NF}')" \
@@ -58,16 +58,16 @@ check "read_p99 lands in the right column" "$(echo "$row" | cut -d, -f14)" "2500
 check "iocost level carried" "$(echo "$row" | cut -d, -f2)" "on"
 
 # A probe that emitted nothing must blank, never zero.
-row2="$("$PY3" "$HERE/iocost-row.py" 3 off 1 2 3 4 88.5 12 '')"
+row2="$("$PY3" "$HERE/probe-row.py" 3 off 1 2 3 4 88.5 12 '')"
 check "empty probe blanks rather than zeroes" "$(echo "$row2" | cut -d, -f14)" ""
 
 # Analyzer against a planted effect: 'on' is better by 8000us every repetition.
 {
   echo "$IOC_HEADER"
   for rep in $(seq 1 12); do
-    "$PY3" "$HERE/iocost-row.py" "$rep" on 1000 2000 1500 10 88.5 12 \
+    "$PY3" "$HERE/probe-row.py" "$rep" on 1000 2000 1500 10 88.5 12 \
       "{\"wakeups\":900,\"misses_120hz\":0,\"misses_60hz\":0,\"max_stall_ms\":2.1,\"wake_p50_us\":10,\"wake_p99_us\":800,\"wake_p999_us\":1080,\"reads\":30,\"read_p99_us\":$((5000 + rep * 20))}"
-    "$PY3" "$HERE/iocost-row.py" "$rep" off 1100 2100 1600 12 88.7 12 \
+    "$PY3" "$HERE/probe-row.py" "$rep" off 1100 2100 1600 12 88.7 12 \
       "{\"wakeups\":900,\"misses_120hz\":1,\"misses_60hz\":0,\"max_stall_ms\":2.4,\"wake_p50_us\":10,\"wake_p99_us\":820,\"wake_p999_us\":1090,\"reads\":30,\"read_p99_us\":$((13000 + rep * 20))}"
   done
 } > "$TMP/planted.csv"
@@ -91,7 +91,7 @@ check "analyzer verdict says adopt-if-cost-ok" \
   echo "$IOC_HEADER"
   for rep in $(seq 1 12); do
     for lv in on off; do
-      "$PY3" "$HERE/iocost-row.py" "$rep" "$lv" 1000 2000 1500 10 88.5 12 \
+      "$PY3" "$HERE/probe-row.py" "$rep" "$lv" 1000 2000 1500 10 88.5 12 \
         "{\"wakeups\":900,\"misses_120hz\":0,\"misses_60hz\":0,\"max_stall_ms\":2.1,\"wake_p50_us\":10,\"wake_p99_us\":800,\"wake_p999_us\":1080,\"reads\":30,\"read_p99_us\":$((12000 + (rep * 7 % 5) * 900))}"
     done
   done
@@ -103,10 +103,10 @@ check "analyzer reports no effect on a null dataset" \
 # builds_alive=0 rows must be dropped, not averaged in.
 {
   echo "$IOC_HEADER"
-  "$PY3" "$HERE/iocost-row.py" 1 on 1 2 3 4 88.5 0 '{"read_p99_us":1}'
+  "$PY3" "$HERE/probe-row.py" 1 on 1 2 3 4 88.5 0 '{"read_p99_us":1}'
   for rep in 1 2 3; do
     for lv in on off; do
-      "$PY3" "$HERE/iocost-row.py" "$rep" "$lv" 1 2 3 4 88.5 12 '{"read_p99_us":5000}'
+      "$PY3" "$HERE/probe-row.py" "$rep" "$lv" 1 2 3 4 88.5 12 '{"read_p99_us":5000}'
     done
   done
 } > "$TMP/dead.csv"

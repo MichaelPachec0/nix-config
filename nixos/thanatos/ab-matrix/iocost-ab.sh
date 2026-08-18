@@ -216,7 +216,7 @@ ioc_run_cell() { # <on|off> <rep> <csv>
   alive="$(pgrep -c -x rustc 2>/dev/null || echo 0)"
   stop_load
 
-  "$PY3" "$SCRIPT_DIR/iocost-row.py" "$rep" "$level" \
+  "$PY3" "$SCRIPT_DIR/probe-row.py" "$rep" "$level" \
     "$((cpu1 - cpu0))" "$((io1 - io0))" "$((iof1 - iof0))" "$((mem1 - mem0))" \
     "$temp" "$alive" "$probe" >> "$csv"
 }
