@@ -1,4 +1,5 @@
 {
+  config,
   lib,
   pkgs,
   ...
@@ -519,11 +520,20 @@ in {
   # Do NOT "fix" this by ordering scx after some other unit. waydroid-container
   # was the obvious suspect and is not the cause -- restarting it under a live
   # attach never reproduced the failure. Any task creation anywhere will do it.
-  # Kept although services.scx.enable is false above: it costs nothing while the
-  # unit is not started, and it is the entire fix for the attach race described
-  # in the block above. Deleting it would mean rediscovering that race from
-  # scratch if scx is ever reinstated.
-  systemd.services.scx = {
+  # Kept for the day scx comes back, but MUST be guarded on services.scx.enable.
+  #
+  # An unguarded `systemd.services.scx = { ... }` DEFINES the unit whether or not
+  # the scx module is enabled. With enable = false the module contributes no
+  # ExecStart, so these three overrides became the whole unit: a [Service]
+  # section holding RestartSec and nothing to run. systemd rejects that with
+  # "Unit scx.service has a bad unit file setting" and switch-to-configuration
+  # fails the whole activation. The comment this replaces claimed it "costs
+  # nothing while the unit is not started"; that was wrong, and it cost a failed
+  # rebuild.
+  #
+  # The overrides themselves are the entire fix for the attach race described
+  # above, so they stay rather than being deleted and rediscovered.
+  systemd.services.scx = lib.mkIf config.services.scx.enable {
     startLimitIntervalSec = lib.mkForce 300;
     startLimitBurst = lib.mkForce 12;
     serviceConfig.RestartSec = 5;
