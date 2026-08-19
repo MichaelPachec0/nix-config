@@ -56,13 +56,37 @@ check "uname cannot distinguish the kernels" "$(uname -r)" "7.1.8-cachyos-lto"
 check "but the booted kernel path can" \
   "$(readlink -f /run/booted-system/kernel | grep -c bore)" "1"
 
-# THE test. scx is attached right now, so a bore arm must be refused.
-check "verify_schedmode bore is REJECTED while scx is attached" \
-  "$(verify_schedmode bore 2>/dev/null && echo accepted || echo rejected)" "rejected"
-check "verify_schedmode eevdf is REJECTED while scx is attached" \
-  "$(verify_schedmode eevdf 2>/dev/null && echo accepted || echo rejected)" "rejected"
-check "verify_schedmode flash is accepted while scx is attached" \
-  "$(verify_schedmode flash 2>/dev/null && echo accepted || echo rejected)" "accepted"
+# THE test: verify_schedmode must agree with the kernel, whichever arm the
+# machine happens to be in.
+#
+# The first version of this hard-coded "scx is attached", which was true the day
+# it was written and stopped being true the moment services.scx.enable went to
+# false. That made two tests fail while the code was working perfectly -- an
+# assertion pinned to mutable live state tests the machine, not the logic.
+# Derive the expectation from the state instead, so the invariant is checked in
+# both directions and cannot rot: flash requires sched_ext attached, and the two
+# fair-class arms require it detached plus their own sched_bore value.
+scxnow="$(cat "$SCX_STATE" 2>/dev/null)"
+borenow="$(cat "$BORE_SYSCTL" 2>/dev/null)"
+echo "     (machine is currently: sched_ext=$scxnow sched_bore=$borenow)"
+
+if [ "$scxnow" = "enabled" ]; then
+  check "flash accepted while sched_ext is attached" \
+    "$(verify_schedmode flash 2>/dev/null && echo accepted || echo rejected)" "accepted"
+  check "bore REJECTED while sched_ext is attached" \
+    "$(verify_schedmode bore 2>/dev/null && echo accepted || echo rejected)" "rejected"
+  check "eevdf REJECTED while sched_ext is attached" \
+    "$(verify_schedmode eevdf 2>/dev/null && echo accepted || echo rejected)" "rejected"
+else
+  check "flash REJECTED while sched_ext is detached" \
+    "$(verify_schedmode flash 2>/dev/null && echo accepted || echo rejected)" "rejected"
+  check "bore accepted only when sched_bore=1" \
+    "$(verify_schedmode bore 2>/dev/null && echo accepted || echo rejected)" \
+    "$([ "$borenow" = "1" ] && echo accepted || echo rejected)"
+  check "eevdf accepted only when sched_bore=0" \
+    "$(verify_schedmode eevdf 2>/dev/null && echo accepted || echo rejected)" \
+    "$([ "$borenow" = "0" ] && echo accepted || echo rejected)"
+fi
 
 ensure_python
 check "python3 resolved" "$([ -x "${PY3:-}" ] && echo yes || echo no)" "yes"

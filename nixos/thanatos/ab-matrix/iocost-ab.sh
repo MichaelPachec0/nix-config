@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 # Does blk-iocost fix "an app touches the disk during a build"?
 #
-# THE SYMPTOM, measured. In ab-latency.sh, restricted to the configuration this
-# machine now actually runs (adios, scx_flash, CPUWeight 1000/20), the probe's
-# own 4K read p99 during four concurrent nix builds was:
+# THE SYMPTOM, measured. In ab-latency.sh, restricted to what this machine ran
+# at the time (adios, scx_flash, CPUWeight 1000/20), the probe's own 4K read
+# p99 during four concurrent nix builds was:
 #
 #     adios 18979us      kyber 20574us      idle, for scale, ~2696us
 #
 # So a desktop read that costs 2.7ms on a quiet machine costs 19ms during a
-# build -- a 7x tail. Frame pacing is already solved by the slice CPUWeights
+# build -- a 7x tail.
+#
+# That figure was taken under scx_flash, which has since been dropped for
+# EEVDF-BORE (see services.scx in memory.nix). The motivating number is
+# therefore from the previous scheduler, but the comparison this harness makes
+# is unaffected: both arms run under the same held configuration, and the
+# sched-ab run measured read p99 as noise across all three schedulers, so the
+# symptom is a property of the I/O path rather than of the CPU scheduler. Frame pacing is already solved by the slice CPUWeights
 # (24 of 25 dropped frames went away), and nothing dropped a frame in 72 cells
 # of pure I/O load. This read tail is the remaining, and only, I/O-domain
 # complaint with evidence behind it.
@@ -69,6 +76,8 @@ NVME_LEVELS=(adios)
 REPS="${IOCOST_REPS:-20}"
 IOCOST_LEVELS=(on off)
 IOC_QOS="/sys/fs/cgroup/io.cost.qos"
+BORE_SYSCTL_IOC="/proc/sys/kernel/sched_bore"
+SCX_STATE_IOC="/sys/kernel/sched_ext/state"
 USER_IOW="$USER_SLICE/io.weight"
 SYS_IOW="$SYS_SLICE/io.weight"
 
@@ -138,7 +147,43 @@ apply_holds() {
   apply_dirty low || return 1
   apply_iolat off || return 1
   apply_cpuw on || return 1
-  apply_sched flash || return 1
+  apply_bore_hold || return 1
+}
+
+# EEVDF-BORE, matching what memory.nix now ships.
+#
+# Deliberately NOT `apply_sched eevdf`, which is ab-latency.sh's helper and runs
+# `systemctl stop scx`. services.scx.enable is false now, so on a rebooted
+# machine there is no scx unit at all and that stop would fail the hold over a
+# unit that is supposed to be absent. What matters is the kernel state, not the
+# unit: assert sched_ext is not attached, and only try to stop it if something
+# has attached one behind our back.
+#
+# The sched_bore assertion is the same trap sched-ab.sh exists to avoid. BORE
+# governs nothing while sched_ext owns the tasks, so a hold that set the sysctl
+# without confirming scx is down would run every cell under whatever scheduler
+# happened to be attached while the log claimed bore.
+apply_bore_hold() {
+  local i
+  if [ "$(cat "$SCX_STATE_IOC" 2>/dev/null)" = "enabled" ]; then
+    systemctl stop scx 2>/dev/null || true
+    for i in $(seq 1 15); do
+      [ "$(cat "$SCX_STATE_IOC" 2>/dev/null)" != "enabled" ] && break
+      sleep 1
+    done
+  fi
+  [ "$(cat "$SCX_STATE_IOC" 2>/dev/null)" != "enabled" ] || {
+    echo "  hold FAILED: sched_ext is attached, so BORE is bypassed" >&2
+    return 1
+  }
+  echo 1 > "$BORE_SYSCTL_IOC" 2>/dev/null || {
+    echo "  hold FAILED: cannot write $BORE_SYSCTL_IOC (kernel without BORE?)" >&2
+    return 1
+  }
+  [ "$(cat "$BORE_SYSCTL_IOC" 2>/dev/null)" = "1" ] || {
+    echo "  hold FAILED: sched_bore did not take" >&2
+    return 1
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -194,6 +239,15 @@ ioc_preflight() {
   [ -r "$USER_IOW" ] || { echo "FAIL: $USER_IOW absent; iocost policy not present" >&2; fail=1; }
   grep -qw io /sys/fs/cgroup/cgroup.subtree_control || {
     echo "FAIL: 'io' not in root cgroup.subtree_control" >&2; fail=1; }
+  # The held configuration is EEVDF-BORE, so the sysctl has to exist. uname -r
+  # cannot tell you whether it will: the bore and non-bore CachyOS builds report
+  # the same release string.
+  [ -w "$BORE_SYSCTL_IOC" ] || {
+    echo "FAIL: $BORE_SYSCTL_IOC absent; this kernel has no BORE." >&2
+    echo "      Booted: $(readlink -f /run/booted-system/kernel 2>/dev/null \
+      | sed 's|/bzImage$||; s|.*/||; s|^[a-z0-9]\{32\}-||')" >&2
+    fail=1
+  }
   return "$fail"
 }
 
@@ -255,7 +309,7 @@ ioc_cmd_estimate() {
   local ceiling=$((BUDGET_HOURS * 3600)) r est
   echo "cells per rep:    $(ioc_cell_count)  (iocost on | off; everything else held)"
   echo "seconds per cell: $(cell_seconds)  (settle $SETTLE + measure $MEASURE + 30)"
-  echo "held constant:    nvme=adios dirty=low sched=flash cpuw=on iolat=off"
+  echo "held constant:    nvme=adios dirty=low sched=bore cpuw=on iolat=off"
   for r in 10 15 20 30; do
     est="$(ioc_estimate "$r")"
     printf '  %2d rep(s): %-8s %s   (n=%d paired)\n' "$r" "$(fmt_hms "$est")" \

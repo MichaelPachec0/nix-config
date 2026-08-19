@@ -174,4 +174,33 @@ alive="$(pgrep -c -x definitely-no-such-process 2>/dev/null || true)"
 alive="${alive:-0}"
 check "the pgrep idiom yields a single line" "$(printf '%s' "$alive" | wc -l)" "0"
 
+
+# The held configuration must be EEVDF-BORE, matching what memory.nix ships.
+# Not executed here -- apply_bore_hold writes a sysctl and needs root -- so the
+# hold is checked structurally instead.
+check "apply_bore_hold is defined" \
+  "$(declare -F apply_bore_hold >/dev/null && echo yes || echo no)" "yes"
+
+# apply_holds must NOT reach for apply_sched. That helper runs `systemctl stop
+# scx`, and services.scx.enable is false now, so on a rebooted machine there is
+# no scx unit and the stop would fail the hold over a unit that is meant to be
+# absent.
+check "apply_holds does not call apply_sched" \
+  "$(declare -f apply_holds | grep -c apply_sched)" "0"
+check "apply_holds applies the bore hold" \
+  "$(declare -f apply_holds | grep -c apply_bore_hold)" "1"
+
+# The hold asserts BOTH halves: sched_ext down AND sched_bore set. Setting the
+# sysctl without confirming scx is detached would run every cell under whatever
+# scheduler was attached while the log claimed bore.
+# Three references in the body: the initial test, the wait loop's break, and
+# the final assertion. `declare -f` strips comments, so only code counts.
+check "the hold checks sched_ext state" \
+  "$(declare -f apply_bore_hold | grep -c 'SCX_STATE_IOC')" "3"
+check "the hold verifies sched_bore took" \
+  "$(declare -f apply_bore_hold | grep -c 'BORE_SYSCTL_IOC')" "3"
+
+check "this kernel actually has BORE" \
+  "$([ -e "$BORE_SYSCTL_IOC" ] && echo yes || echo no)" "yes"
+
 exit "$fail"
