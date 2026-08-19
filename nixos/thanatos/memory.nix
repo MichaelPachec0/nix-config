@@ -462,11 +462,43 @@ in {
   # -m takes auto|turbo|performance|powersave|all|none; on this 8-core Zen 2
   # part `all` is near a no-op for latency but consistently halved the
   # throughput cost versus the auto default.
-  services.scx = {
-    enable = true;
-    scheduler = "scx_flash";
-    extraArgs = ["-m" "all"];
-  };
+  # OFF, on measurement, in favour of EEVDF-BORE. Everything above stays
+  # recorded because it was all true against plain EEVDF and would apply again
+  # the moment scx is reconsidered.
+  #
+  # WHAT CHANGED: the earlier comparison was flash against EEVDF on a kernel
+  # with no BORE in it. Re-run on linux-cachyos-bore-lto, three arms in one
+  # boot -- flash, EEVDF+BORE, EEVDF alone -- 38 cells, 12 complete
+  # repetitions, every arm re-verified after its measurement window. The three
+  # distributions do not overlap at all:
+  #
+  #                    flash              bore
+  #     wake p99      973-1000us       248- 583us    bore 2.6x better
+  #     wake p99.9  1058-1074us       1150-1324us    flash better
+  #     psi_cpu      2.41M-5.55M       0.80M-1.34M   bore 2.4x better
+  #
+  # scx_flash flattens the whole wakeup distribution: its p99 and p99.9 sit
+  # 80us apart with a 15us spread across 13 cells, so nearly every wakeup costs
+  # about a millisecond. BORE is 2.6x faster typically and gives part of it back
+  # at the extreme.
+  #
+  # The tie-break is the frame budget, not the other arm. At 120Hz that is
+  # 8333us, and flash's 1064us against bore's 1220us are both about 7x under it
+  # -- that gap cannot be felt. A 2.6x difference in what a wakeup usually
+  # costs applies to every wakeup there is, and the 2.4x lower desktop CPU
+  # stall says the same thing independently. Frame misses tied at 1-2 per arm
+  # and no 60Hz deadline was missed in any of the 38 cells; build throughput
+  # was identical at 12 compilers alive per window.
+  #
+  # HONEST LIMIT: flash really does win the extreme tail, and this is a
+  # judgement that the common case matters more, not a clean sweep. Re-run
+  # ab-matrix/sched-ab.sh if that judgement is ever in doubt; it toggles all
+  # three arms at runtime and needs no rebuild.
+  #
+  # Turning this back on also means undoing the sched_bore sysctl below: BORE
+  # governs nothing while scx owns the tasks, so leaving both on would be a
+  # configuration that measures as flash while reading as bore.
+  services.scx.enable = false;
 
   # Retry hard, because attaching a sched_ext scheduler is inherently racy and
   # the packaged unit gives up almost immediately.
@@ -487,9 +519,24 @@ in {
   # Do NOT "fix" this by ordering scx after some other unit. waydroid-container
   # was the obvious suspect and is not the cause -- restarting it under a live
   # attach never reproduced the failure. Any task creation anywhere will do it.
+  # Kept although services.scx.enable is false above: it costs nothing while the
+  # unit is not started, and it is the entire fix for the attach race described
+  # in the block above. Deleting it would mean rediscovering that race from
+  # scratch if scx is ever reinstated.
   systemd.services.scx = {
     startLimitIntervalSec = lib.mkForce 300;
     startLimitBurst = lib.mkForce 12;
     serviceConfig.RestartSec = 5;
   };
+
+  # BORE on the fair class. The bore kernel already defaults this to 1, so this
+  # is a statement of intent rather than a change: it makes the dependency on
+  # nixos/thanatos/kernel.nix explicit, and it fails loudly rather than silently
+  # if the kernel is ever swapped for one without BORE.
+  #
+  # Measured against plain EEVDF in the same boot, same load, 12 paired
+  # repetitions: wakeup p99 377us against 597us, wakeup p99.9 1220us against
+  # 1809us. Both resolvable by a wide margin, so BORE earns its place on the
+  # fair class independently of the scx decision above.
+  boot.kernel.sysctl."kernel.sched_bore" = 1;
 }
