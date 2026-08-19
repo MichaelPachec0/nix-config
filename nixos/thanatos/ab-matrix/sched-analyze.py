@@ -16,7 +16,15 @@ import statistics
 import sys
 
 CONTINUOUS = [
-    ("wake_p999_us", "lower", "wakeup p99.9 -- PRIMARY"),
+    # BOTH wakeup statistics, because they disagree and the disagreement is the
+    # result. scx_flash flattens the whole distribution: its p99 and p99.9 sit
+    # within 80us of each other, so nearly every wakeup costs about a
+    # millisecond. BORE is far faster typically and gives that back at the
+    # extreme. Reporting only p99.9 -- which is what the first version of this
+    # file did, because p99.9 was what separated flash from plain EEVDF -- picks
+    # flash while hiding a 2.6x difference in what a wakeup usually costs.
+    ("wake_p99_us", "lower", "wakeup p99 -- what a wakeup USUALLY costs"),
+    ("wake_p999_us", "lower", "wakeup p99.9 -- the extreme tail"),
     ("max_stall_ms", "lower", "longest single stall"),
     ("psi_cpu_us", "lower", "desktop us stalled on CPU"),
     ("read_p99_us", "lower", "desktop's own read p99"),
@@ -143,6 +151,17 @@ def main():
         for _, _, w in lst:
             tally[w] = tally.get(w, 0) + 1
     print(f"  resolvable continuous wins: " + "   ".join(f"{a}={tally.get(a, 0)}" for a in arms))
+
+    if "flash" in arms and "bore" in arms:
+        a99 = paired(rows, "flash", "bore", "wake_p99_us")
+        a999 = paired(rows, "flash", "bore", "wake_p999_us")
+        if a99 and a999 and (a99[0] > 0) != (a999[0] > 0):
+            print("\n  The two wakeup statistics DISAGREE, which is the finding rather")
+            print("  than a problem: one arm is better typically and the other at the")
+            print("  extreme. Judge them against the frame budget -- 8333us at 120Hz --")
+            print("  rather than against each other. A tail that is already an order of")
+            print("  magnitude under the budget cannot be felt, while a difference in")
+            print("  what a wakeup usually costs applies to every wakeup there is.")
 
     if "bore" in arms and "eevdf" in arms:
         got = paired(rows, "bore", "eevdf", "wake_p999_us")
