@@ -327,6 +327,17 @@ ioc_cmd_run() {
   preflight || return 1
   ioc_preflight || return 1
 
+  # Apply the held configuration once, here, before anything expensive. The
+  # holds are what every cell depends on, and resolve_load_drvs below costs
+  # about five minutes -- discovering a broken hold after paying that, and then
+  # forty times over, is exactly what happened when this harness still held
+  # sched=flash on a machine whose scx unit had been removed.
+  echo "smoke-testing the held configuration..."
+  apply_holds || {
+    echo "FAIL: cannot apply the held configuration; fix that before running." >&2
+    return 1
+  }
+
   local csv
   csv="$OUTDIR/iocost-$(date +%Y%m%d-%H%M%S).csv"
   echo "$IOC_HEADER" > "$csv"
@@ -344,7 +355,7 @@ ioc_cmd_run() {
   echo ""
 
   local start_ts done_n total rep level elapsed remain
-  start_ts="$(date +%s)"; total=$(( $(ioc_cell_count) * REPS )); done_n=0
+  start_ts="$(date +%s)"; total=$(( $(ioc_cell_count) * REPS )); done_n=0; consec_fail=0
 
   for rep in $(seq 1 "$REPS"); do
     # Alternate which level goes first, so slow thermal or fragmentation drift
@@ -357,7 +368,19 @@ ioc_cmd_run() {
       remain=$(( (total - done_n + 1) * $(cell_seconds) ))
       printf '[%2d/%2d] iocost=%-3s  elapsed %s, ~%s left\n' \
         "$done_n" "$total" "$level" "$(fmt_hms "$elapsed")" "$(fmt_hms "$remain")"
-      ioc_run_cell "$level" "$rep" "$csv" || echo "  cell FAILED, continuing" >&2
+      if ioc_run_cell "$level" "$rep" "$csv"; then
+        consec_fail=0
+      else
+        consec_fail=$((consec_fail + 1))
+        echo "  cell FAILED ($consec_fail in a row)" >&2
+        if [ "$consec_fail" -ge 3 ]; then
+          echo "" >&2
+          echo "ABORTING: 3 cells failed in a row, so this is a broken setup" >&2
+          echo "rather than bad luck. Nothing useful comes from grinding through" >&2
+          echo "the rest of the run to reach a report with no rows in it." >&2
+          return 1
+        fi
+      fi
     done
   done
 

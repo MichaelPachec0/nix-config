@@ -285,7 +285,17 @@ restore_state() {
   fi
   systemctl set-property --runtime user.slice "CPUWeight=$ORIG_CPUW_USER" 2>/dev/null
   systemctl set-property --runtime system.slice "CPUWeight=$ORIG_CPUW_SYS" 2>/dev/null
-  if [ "$ORIG_SCX" = "active" ]; then systemctl start scx 2>/dev/null; else systemctl stop scx 2>/dev/null; fi
+  # services.scx.enable is false now, so there may be no scx unit at all.
+  # `systemctl start scx` on a missing unit is a hard failure, not a no-op, so
+  # ask whether it exists before touching it rather than relying on 2>/dev/null
+  # to hide the noise.
+  if systemctl cat scx >/dev/null 2>&1; then
+    if [ "$ORIG_SCX" = "active" ]; then
+      systemctl start scx 2>/dev/null || true
+    else
+      systemctl stop scx 2>/dev/null || true
+    fi
+  fi
   echo "  sched:  $(sed -n 's/.*\[\(.*\)\].*/\1/p' "$SCHED_PATH")"
   echo "  dirty:  $(cat /proc/sys/vm/dirty_bytes) / $(cat /proc/sys/vm/dirty_background_bytes)"
   echo "  iolat:  $(cat "$IOLAT_PATH" 2>/dev/null || echo unset)"
