@@ -12,6 +12,8 @@ from __future__ import annotations
 import os
 from typing import Sequence
 
+from resolve import norm_basename
+
 DELETED = " (deleted)"
 
 
@@ -38,8 +40,7 @@ def exe_basename(procfs: str, pid: str) -> str | None:
     base = os.path.basename(exe)
     if base.endswith(DELETED):
         base = base[: -len(DELETED)]
-    # nixpkgs wrappers exec a sibling named .<app>-wrapped
-    return base.lstrip(".").removesuffix("-wrapped")
+    return norm_basename(base)
 
 
 def mapped_store_files(maps_path: str) -> set[str]:

@@ -27,6 +27,11 @@ STORE_RE = re.compile(
 )
 
 
+def norm_basename(name: str) -> str:
+    """Strip the nixpkgs wrapper decoration: .<app>-wrapped -> <app>."""
+    return name.lstrip(".").removesuffix("-wrapped")
+
+
 def store_strings(path: str) -> list[str]:
     """Every /nix/store path embedded in a file, in order, deduped.
 
@@ -54,15 +59,16 @@ def real_binary(
     """Resolve app on PATH through any nixpkgs wrapper to the real ELF.
 
     Picks the embedded store path that is an executable with the same
-    basename. Falls back to the PATH entry, correct for unwrapped binaries.
+    basename (normalized, stripping nixpkgs wrapper decorations).
+    Falls back to the PATH entry, correct for unwrapped binaries.
     """
     found = which(app)
     if found is None:
         return None
     entry = os.path.realpath(found)
-    base = os.path.basename(entry)
+    base = norm_basename(os.path.basename(entry))
     for cand in strings(entry):
-        if cand == entry or os.path.basename(cand) != base:
+        if cand == entry or norm_basename(os.path.basename(cand)) != base:
             continue
         if os.path.isfile(cand) and os.access(cand, os.X_OK):
             return os.path.realpath(cand)

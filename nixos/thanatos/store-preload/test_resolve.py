@@ -15,6 +15,20 @@ HASH = "fsakzlw63avfvkanzzvrzmylzs60qxwa"
 OTHER = "7mbvdxzcg00bqnyz13r6yg2n6lncpl52"
 
 
+class TestNormBasename(unittest.TestCase):
+    def test_strips_leading_dot(self) -> None:
+        self.assertEqual(resolve.norm_basename(".kitty-wrapped"), "kitty")
+
+    def test_removes_wrapped_suffix(self) -> None:
+        self.assertEqual(resolve.norm_basename("foo-wrapped"), "foo")
+
+    def test_no_change_for_plain_name(self) -> None:
+        self.assertEqual(resolve.norm_basename("rofi"), "rofi")
+
+    def test_combined_dot_and_wrapped(self) -> None:
+        self.assertEqual(resolve.norm_basename(".kitty-wrapped"), "kitty")
+
+
 class TestStoreStrings(unittest.TestCase):
     def test_extracts_paths_from_binary_blob(self) -> None:
         d = tempfile.mkdtemp()
@@ -73,6 +87,18 @@ class TestRealBinary(unittest.TestCase):
 
     def test_missing_app_returns_none(self) -> None:
         self.assertIsNone(resolve.real_binary("nope", which=lambda _a: None))
+
+    def test_resolves_wrapped_candidate(self) -> None:
+        d = tempfile.mkdtemp()
+        wrapped = os.path.join(d, ".kitty-wrapped")
+        with open(wrapped, "wb") as f:
+            f.write(b"\x7fELF wrapped")
+        os.chmod(wrapped, 0o755)
+        wrapper = self._wrapper_pointing_at(wrapped, "kitty")
+        got = resolve.real_binary(
+            "kitty", which=lambda _a: wrapper, strings=lambda _p: [wrapped]
+        )
+        self.assertEqual(got, os.path.realpath(wrapped))
 
 
 class TestLddClosure(unittest.TestCase):
