@@ -15,6 +15,7 @@ import main
 import manifest
 import record
 import resolve
+import warm
 
 ROOT_A = "/nix/store/fsakzlw63avfvkanzzvrzmylzs60qxwa-rofi-2.0"
 ROOT_B = "/nix/store/7mbvdxzcg00bqnyz13r6yg2n6lncpl52-rofi-2.1"
@@ -185,7 +186,11 @@ class TestRecordSkipsUnchangedWrites(unittest.TestCase):
 
 
 class TestWarmReporting(unittest.TestCase):
-    """I2: the headline must be able to fail."""
+    """I2: the headline must be able to fail.
+
+    mincore always reports 100% on /nix, so warm/status report bytes read
+    from real block devices (warm.device_read_bytes) instead of residency.
+    """
 
     def _file(self, size: int) -> str:
         d = tempfile.mkdtemp()
@@ -194,58 +199,57 @@ class TestWarmReporting(unittest.TestCase):
             f.write(os.urandom(4096) * (size // 4096))
         return p
 
-    def test_denominator_is_the_union_not_the_planned_subset(self) -> None:
+    def test_off_disk_bytes_and_cold_pct_are_reported(self) -> None:
         a, b = self._file(2 << 20), self._file(2 << 20)
         state = os.path.join(tempfile.mkdtemp(), "manifest.json")
         manifest.save(state, {"rofi": [a, b]}, {})
-        # The cap admits one file; the union is still both.
-        args = _args(state=state, max_bytes=2 << 20, apps=["rofi"])
+        args = _args(state=state, apps=["rofi"])
+        buf = io.StringIO()
+        with mock.patch.object(resolve, "seed", return_value=[]), mock.patch.object(
+            warm, "device_read_bytes", side_effect=[0, 3 << 20]
+        ):
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(main.cmd_warm(args), 0)
+        out = buf.getvalue()
+        self.assertIn("2 files, 4.0 MB in", out)
+        self.assertIn("3.0 MB off disk (75.0% was cold)", out)
+
+    def test_zero_bytes_read_does_not_divide_by_zero(self) -> None:
+        state = os.path.join(tempfile.mkdtemp(), "manifest.json")
+        manifest.save(state, {"rofi": []}, {})
+        args = _args(state=state, apps=["rofi"])
         buf = io.StringIO()
         with mock.patch.object(resolve, "seed", return_value=[]):
             with contextlib.redirect_stdout(buf):
                 self.assertEqual(main.cmd_warm(args), 0)
-        out = buf.getvalue()
-        self.assertIn("1 files, 2.0 MB in", out)
-        self.assertIn("of 4.0 MB", out)
+        self.assertIn("0.0% was cold", buf.getvalue())
 
-    def test_status_and_warm_share_the_denominator(self) -> None:
+    def test_negative_device_delta_is_clamped_to_zero(self) -> None:
+        """Another process's reads can race the counter down; never print negative MB."""
+        a = self._file(4096)
+        state = os.path.join(tempfile.mkdtemp(), "manifest.json")
+        manifest.save(state, {"rofi": [a]}, {})
+        args = _args(state=state, apps=["rofi"])
+        buf = io.StringIO()
+        with mock.patch.object(resolve, "seed", return_value=[]), mock.patch.object(
+            warm, "device_read_bytes", side_effect=[10 << 20, 5 << 20]
+        ):
+            with contextlib.redirect_stdout(buf):
+                main.cmd_warm(args)
+        self.assertIn("0.0 MB off disk", buf.getvalue())
+
+    def test_status_reports_file_count_and_size_without_a_percentage(self) -> None:
         a, b = self._file(8192), self._file(8192)
         state = os.path.join(tempfile.mkdtemp(), "manifest.json")
         manifest.save(state, {"rofi": [a, b]}, {})
-        with mock.patch.object(resolve, "seed", return_value=[]):
-            warm_buf, status_buf = io.StringIO(), io.StringIO()
-            with contextlib.redirect_stdout(warm_buf):
-                main.cmd_warm(_args(state=state))
-            with contextlib.redirect_stdout(status_buf):
-                main.cmd_status(_args(state=state))
-        # Both report the same total size for the same file set.
-        self.assertIn(main._mb(16384), warm_buf.getvalue())
-        self.assertIn(main._mb(16384), status_buf.getvalue())
-
-    def test_negative_delta_carries_one_sign(self) -> None:
-        """Pages can be evicted mid-pass; "+-0.3 MB" is not a number."""
-        state = os.path.join(tempfile.mkdtemp(), "manifest.json")
-        manifest.save(state, {"rofi": ["/nonexistent"]}, {})
         buf = io.StringIO()
-        with mock.patch.object(resolve, "seed", return_value=[]), mock.patch.object(
-            main, "_residency", side_effect=[(1 << 20, 4 << 20), (0, 4 << 20)]
-        ):
+        with mock.patch.object(resolve, "seed", return_value=[]):
             with contextlib.redirect_stdout(buf):
-                main.cmd_warm(_args(state=state))
+                main.cmd_status(_args(state=state))
         out = buf.getvalue()
-        self.assertIn("(-1.0 MB,", out)
-        self.assertNotIn("+-", out)
-
-    def test_delta_formats_both_signs(self) -> None:
-        self.assertEqual(main._delta(2 << 20), "+2.0 MB")
-        self.assertEqual(main._delta(-(2 << 20)), "-2.0 MB")
-        self.assertEqual(main._delta(0), "+0.0 MB")
-
-    def test_residency_totals_the_whole_list(self) -> None:
-        a, b = self._file(8192), self._file(8192)
-        res, total = main._residency([a, b, "/nonexistent"])
-        self.assertEqual(total, 16384)
-        self.assertLessEqual(res, total)
+        self.assertIn(f"2 files, {main._mb(16384)}", out)
+        self.assertIn("warm", out)
+        self.assertNotIn("%", out)
 
 
 if __name__ == "__main__":

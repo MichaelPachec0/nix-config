@@ -2,8 +2,8 @@
 
   seed    print what the resolver derives per app
   record  merge currently-mapped files into the manifest
-  warm    read seed + manifest into page cache, report residency
-  status  report residency without reading anything
+  warm    read seed + manifest into page cache, report bytes actually off disk
+  status  report manifest size; residency is not measurable without reading
 """
 
 from __future__ import annotations
@@ -52,25 +52,9 @@ def _ordered_files(apps: list[str], man: manifest.Manifest) -> list[str]:
     return out
 
 
-def _delta(n: int) -> str:
-    """Signed size. Pages can be evicted mid-pass, so the delta can go down."""
-    return f"{'+' if n >= 0 else '-'}{_mb(abs(n))}"
-
-
 def _from_root(files: list[str], root: str) -> bool:
     """True if any file lives under root."""
     return any(f.startswith(root + "/") for f in files)
-
-
-def _residency(files: list[str]) -> tuple[int, int]:
-    """(resident bytes, total bytes) over files."""
-    res = 0
-    total = 0
-    for path in files:
-        r, s = warmlib.resident(path)
-        res += r
-        total += s
-    return res, total
 
 
 def cmd_seed(args: argparse.Namespace) -> int:
@@ -125,21 +109,21 @@ def cmd_warm(args: argparse.Namespace) -> int:
     files = _ordered_files(args.apps, man)
     todo, planned, skipped = warmlib.plan_reads(files, args.max_bytes)
 
-    # Measured over the whole union, not the planned subset: quickshell is
-    # already running and is most of the bytes, so the subset reads ~100%
-    # even when every reader died. The delta is the number that can fail.
-    before, union = _residency(files)
+    # mincore is not usable here: it reports 100% resident for every /nix
+    # file unconditionally. device_read_bytes() is the oracle instead --
+    # bytes that actually left the disk, measured across the whole pass.
+    dev_before = warmlib.device_read_bytes()
     start = time.monotonic()
     read = warmlib.warm(todo, args.workers)
     elapsed = time.monotonic() - start
-    after, _ = _residency(files)
+    dev_after = warmlib.device_read_bytes()
 
-    pct = (100.0 * after / union) if union else 0.0
+    off_disk = max(0, dev_after - dev_before)
+    cold_pct = (100.0 * off_disk / read) if read else 0.0
     rate = (read / 2**20 / elapsed) if elapsed > 0 else 0.0
     print(
         f"store-preload: {len(todo)} files, {_mb(planned)} in {elapsed:.2f}s "
-        f"({rate:.0f} MB/s); resident {_mb(before)} -> {_mb(after)} "
-        f"({_delta(after - before)}, {pct:.1f}% of {_mb(union)})"
+        f"({rate:.0f} MB/s); {_mb(off_disk)} off disk ({cold_pct:.1f}% was cold)"
     )
     if skipped:
         print(f"store-preload: skipped {_mb(skipped)} to stay under the cap")
@@ -149,12 +133,11 @@ def cmd_warm(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     man = manifest.prune(manifest.load(args.state))
     files = _ordered_files(args.apps, man)
-    # Same union denominator as warm, so the two percentages compare.
-    res, total = _residency(files)
-    pct = (100.0 * res / total) if total else 0.0
+    total = sum(os.path.getsize(f) for f in files if os.path.exists(f))
+    print(f"store-preload: {len(files)} files, {_mb(total)}")
     print(
-        f"store-preload: {len(files)} files, {_mb(total)}; "
-        f"resident {_mb(res)} ({pct:.1f}%)"
+        "store-preload: residency cannot be measured without reading; "
+        "run `warm` for what was actually cold"
     )
     return 0
 

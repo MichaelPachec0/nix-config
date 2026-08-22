@@ -58,6 +58,56 @@ class TestResident(unittest.TestCase):
         self.assertEqual(warm.resident("/nonexistent"), (0, 0))
 
 
+class TestDeviceReadBytes(unittest.TestCase):
+    def test_returns_a_positive_int(self) -> None:
+        n = warm.device_read_bytes()
+        self.assertIsInstance(n, int)
+        if n == 0:
+            # A nix build sandbox can present a /sys/block with no `device`
+            # symlinks at all (no real hardware exposed), which is a
+            # legitimate 0, not a bug in the summing.
+            raise unittest.SkipTest("no real block devices visible in /sys/block")
+        self.assertGreater(n, 0)
+
+    def test_monotonic(self) -> None:
+        first = warm.device_read_bytes()
+        second = warm.device_read_bytes()
+        self.assertGreaterEqual(second, first)
+
+    def test_increases_by_roughly_the_file_size_after_eviction_and_read(self) -> None:
+        size = 8 << 20
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, "f.bin")
+        # Genuinely random, not _mkfile's repeated 4 KB block: this host's
+        # /tmp is btrfs with compress-force, and a repeated block compresses
+        # to a fraction of its logical size, so the device would read far
+        # less than size // 2 even on a full cold read.
+        with open(p, "wb") as f:
+            f.write(os.urandom(size))
+            f.flush()
+            os.fsync(f.fileno())
+        fd = os.open(p, os.O_RDONLY)
+        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+        os.close(fd)
+
+        before = warm.device_read_bytes()
+        fd = os.open(p, os.O_RDONLY)
+        while os.read(fd, 1 << 20):
+            pass
+        os.close(fd)
+        after = warm.device_read_bytes()
+
+        grew = after - before
+        # Same fs-does-not-honour-FADV_DONTNEED case as the residency
+        # control test: on tmpfs the read is a cache hit and never reaches
+        # a block device, so the counter cannot move.
+        if grew == 0:
+            raise unittest.SkipTest(
+                "backing fs does not honour FADV_DONTNEED (tmpfs?)"
+            )
+        self.assertGreaterEqual(grew, size // 2)
+
+
 class TestPlanReads(unittest.TestCase):
     def test_under_cap_takes_everything(self) -> None:
         a, b = _mkfile(4096), _mkfile(4096)

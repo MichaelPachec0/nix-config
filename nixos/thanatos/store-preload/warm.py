@@ -36,6 +36,12 @@ READ_CHUNK = 1 << 20
 def resident(path: str) -> tuple[int, int]:
     """Return (bytes of path in page cache, file size).
 
+    UNRELIABLE on /nix: mincore reports every page present, always, rc=0
+    errno=0 vector all 1s, even for files never read this boot and even
+    while a read still pulls the full compressed content off the device.
+    Correct on /tmp and /home in the same process. Use device_read_bytes()
+    as the oracle for whether a read actually touched the disk.
+
     Maps via libc: a PROT_READ mmap object is not a writable buffer, so
     ctypes cannot take its address.
     """
@@ -62,6 +68,36 @@ def resident(path: str) -> tuple[int, int]:
         if addr is not None and addr != _MAP_FAILED:
             _libc.munmap(ctypes.c_void_p(addr), size)
         os.close(fd)
+
+
+def device_read_bytes() -> int:
+    """Bytes read from real block devices since boot.
+
+    Sums field 3 of /sys/block/*/stat (sectors read) x512 for devices that
+    have a `device` symlink, i.e. real hardware. Excludes dm-*, loop* and
+    zram0, whose traffic the whole-disk counters already include -- a read
+    through dm-crypt shows up identically on dm-2 and nvme0n1, so summing
+    both would double count.
+
+    This is the honest oracle for "did that read actually touch the disk".
+    mincore cannot answer it on /nix.
+    """
+    total = 0
+    try:
+        names = os.listdir("/sys/block")
+    except OSError:
+        return 0
+    for name in names:
+        base = os.path.join("/sys/block", name)
+        if not os.path.exists(os.path.join(base, "device")):
+            continue
+        try:
+            with open(os.path.join(base, "stat"), encoding="utf-8") as f:
+                fields = f.read().split()
+            total += int(fields[2]) * 512
+        except (OSError, IndexError, ValueError):
+            continue
+    return total
 
 
 def plan_reads(files: list[str], max_bytes: int) -> tuple[list[str], int, int]:
