@@ -52,6 +52,16 @@ def _ordered_files(apps: list[str], man: manifest.Manifest) -> list[str]:
     return out
 
 
+def _delta(n: int) -> str:
+    """Signed size. Pages can be evicted mid-pass, so the delta can go down."""
+    return f"{'+' if n >= 0 else '-'}{_mb(abs(n))}"
+
+
+def _from_root(files: list[str], root: str) -> bool:
+    """True if any file lives under root."""
+    return any(f.startswith(root + "/") for f in files)
+
+
 def _residency(files: list[str]) -> tuple[int, int]:
     """(resident bytes, total bytes) over files."""
     res = 0
@@ -75,7 +85,8 @@ def cmd_record(args: argparse.Namespace) -> int:
     path = args.state
     was_man = manifest.load(path)
     was_roots = manifest.load_roots(path)
-    man = manifest.restrict(manifest.prune(was_man), args.apps)
+    # restrict before prune: no point stat'ing the paths of a dropped app.
+    man = manifest.prune(manifest.restrict(was_man, args.apps))
     roots = {a: r for a, r in was_roots.items() if a in args.apps}
 
     found = record.scan(args.apps)
@@ -84,10 +95,16 @@ def cmd_record(args: argparse.Namespace) -> int:
         # An app's store root is its generation stamp. Retained generations
         # keep the old closure on disk, so prune cannot see a rebuild.
         stamp = resolve.store_root(resolve.real_binary(app))
-        if stamp is not None and roots.get(app) != stamp:
+        was = roots.get(app)
+        # Reset only if the scan corroborates the stamp. After a rebuild PATH
+        # points at the new generation while the running process still maps the
+        # old one; stamping those old paths as new would hide them forever.
+        # Leaving the stale root fires the check again once the app restarts.
+        if stamp is not None and was != stamp and _from_root(files, stamp):
             man = manifest.replace(man, app, files)
             roots[app] = stamp
-            reset.append(app)
+            if was is not None:
+                reset.append(app)
         else:
             man = manifest.merge(man, app, files)
 
@@ -122,7 +139,7 @@ def cmd_warm(args: argparse.Namespace) -> int:
     print(
         f"store-preload: {len(todo)} files, {_mb(planned)} in {elapsed:.2f}s "
         f"({rate:.0f} MB/s); resident {_mb(before)} -> {_mb(after)} "
-        f"(+{_mb(after - before)}, {pct:.1f}% of {_mb(union)})"
+        f"({_delta(after - before)}, {pct:.1f}% of {_mb(union)})"
     )
     if skipped:
         print(f"store-preload: skipped {_mb(skipped)} to stay under the cap")

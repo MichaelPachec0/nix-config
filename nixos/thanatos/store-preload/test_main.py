@@ -56,20 +56,49 @@ class TestRecordInvalidation(unittest.TestCase):
             return _run_record(_args(state=self.state))
 
     def test_same_root_merges(self) -> None:
-        self._record(["/a"], ROOT_A)
-        self._record(["/b"], ROOT_A)
-        self.assertEqual(manifest.load(self.state), {"rofi": ["/a", "/b"]})
+        self._record([ROOT_A + "/a"], ROOT_A)
+        self._record([ROOT_A + "/b"], ROOT_A)
+        self.assertEqual(
+            manifest.load(self.state), {"rofi": [ROOT_A + "/a", ROOT_A + "/b"]}
+        )
 
-    def test_changed_root_replaces(self) -> None:
-        self._record(["/a"], ROOT_A)
-        out = self._record(["/b"], ROOT_B)
-        self.assertEqual(manifest.load(self.state), {"rofi": ["/b"]})
+    def test_changed_root_replaces_when_the_scan_corroborates(self) -> None:
+        self._record([ROOT_A + "/a"], ROOT_A)
+        out = self._record([ROOT_B + "/b"], ROOT_B)
+        self.assertEqual(manifest.load(self.state), {"rofi": [ROOT_B + "/b"]})
+        self.assertEqual(manifest.load_roots(self.state), {"rofi": ROOT_B})
+        self.assertIn("reset rofi", out)
+
+    def test_changed_root_without_corroboration_merges(self) -> None:
+        """Rebuild while the app runs: PATH says new, /proc still says old.
+
+        Replacing here would stamp the old generation's paths as the new one,
+        and the stamp would never fire again.
+        """
+        self._record([ROOT_A + "/a"], ROOT_A)
+        out = self._record([ROOT_A + "/b"], ROOT_B)
+        self.assertEqual(
+            manifest.load(self.state), {"rofi": [ROOT_A + "/a", ROOT_A + "/b"]}
+        )
+        # The stale root is kept on purpose so the check fires again later.
+        self.assertEqual(manifest.load_roots(self.state), {"rofi": ROOT_A})
+        self.assertNotIn("reset", out)
+
+    def test_reset_fires_on_the_tick_after_the_app_restarts(self) -> None:
+        self._record([ROOT_A + "/a"], ROOT_A)
+        self._record([ROOT_A + "/b"], ROOT_B)
+        out = self._record([ROOT_B + "/c"], ROOT_B)
+        self.assertEqual(manifest.load(self.state), {"rofi": [ROOT_B + "/c"]})
         self.assertEqual(manifest.load_roots(self.state), {"rofi": ROOT_B})
         self.assertIn("reset rofi", out)
 
     def test_root_is_stored_on_first_record(self) -> None:
-        self._record(["/a"], ROOT_A)
+        self._record([ROOT_A + "/a"], ROOT_A)
         self.assertEqual(manifest.load_roots(self.state), {"rofi": ROOT_A})
+
+    def test_first_record_is_not_reported_as_a_reset(self) -> None:
+        out = self._record([ROOT_A + "/a"], ROOT_A)
+        self.assertNotIn("reset", out)
 
     def test_unresolvable_binary_still_merges(self) -> None:
         with mock.patch.object(
@@ -192,6 +221,25 @@ class TestWarmReporting(unittest.TestCase):
         # Both report the same total size for the same file set.
         self.assertIn(main._mb(16384), warm_buf.getvalue())
         self.assertIn(main._mb(16384), status_buf.getvalue())
+
+    def test_negative_delta_carries_one_sign(self) -> None:
+        """Pages can be evicted mid-pass; "+-0.3 MB" is not a number."""
+        state = os.path.join(tempfile.mkdtemp(), "manifest.json")
+        manifest.save(state, {"rofi": ["/nonexistent"]}, {})
+        buf = io.StringIO()
+        with mock.patch.object(resolve, "seed", return_value=[]), mock.patch.object(
+            main, "_residency", side_effect=[(1 << 20, 4 << 20), (0, 4 << 20)]
+        ):
+            with contextlib.redirect_stdout(buf):
+                main.cmd_warm(_args(state=state))
+        out = buf.getvalue()
+        self.assertIn("(-1.0 MB,", out)
+        self.assertNotIn("+-", out)
+
+    def test_delta_formats_both_signs(self) -> None:
+        self.assertEqual(main._delta(2 << 20), "+2.0 MB")
+        self.assertEqual(main._delta(-(2 << 20)), "-2.0 MB")
+        self.assertEqual(main._delta(0), "+0.0 MB")
 
     def test_residency_totals_the_whole_list(self) -> None:
         a, b = self._file(8192), self._file(8192)
