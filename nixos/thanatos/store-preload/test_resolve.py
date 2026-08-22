@@ -29,6 +29,32 @@ class TestNormBasename(unittest.TestCase):
         self.assertEqual(resolve.norm_basename(".kitty-wrapped"), "kitty")
 
 
+class TestStoreRoot(unittest.TestCase):
+    def test_takes_the_package_dir(self) -> None:
+        self.assertEqual(
+            resolve.store_root(f"/nix/store/{HASH}-foo-1.0/bin/foo"),
+            f"/nix/store/{HASH}-foo-1.0",
+        )
+
+    def test_root_itself_is_unchanged(self) -> None:
+        root = f"/nix/store/{HASH}-foo-1.0"
+        self.assertEqual(resolve.store_root(root), root)
+
+    def test_different_hash_is_a_different_stamp(self) -> None:
+        a = resolve.store_root(f"/nix/store/{HASH}-foo-1.0/bin/foo")
+        b = resolve.store_root(f"/nix/store/{OTHER}-foo-1.0/bin/foo")
+        self.assertNotEqual(a, b)
+
+    def test_non_store_path_is_none(self) -> None:
+        self.assertIsNone(resolve.store_root("/usr/bin/foo"))
+
+    def test_malformed_hash_is_none(self) -> None:
+        self.assertIsNone(resolve.store_root("/nix/store/short-foo/bin/foo"))
+
+    def test_none_input_is_none(self) -> None:
+        self.assertIsNone(resolve.store_root(None))
+
+
 class TestStoreStrings(unittest.TestCase):
     def test_extracts_paths_from_binary_blob(self) -> None:
         d = tempfile.mkdtemp()

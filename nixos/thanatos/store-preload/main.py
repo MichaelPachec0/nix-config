@@ -52,6 +52,17 @@ def _ordered_files(apps: list[str], man: manifest.Manifest) -> list[str]:
     return out
 
 
+def _residency(files: list[str]) -> tuple[int, int]:
+    """(resident bytes, total bytes) over files."""
+    res = 0
+    total = 0
+    for path in files:
+        r, s = warmlib.resident(path)
+        res += r
+        total += s
+    return res, total
+
+
 def cmd_seed(args: argparse.Namespace) -> int:
     for app in args.apps:
         files = resolve.seed(app)
@@ -62,33 +73,56 @@ def cmd_seed(args: argparse.Namespace) -> int:
 
 def cmd_record(args: argparse.Namespace) -> int:
     path = args.state
-    man = manifest.prune(manifest.load(path))
+    was_man = manifest.load(path)
+    was_roots = manifest.load_roots(path)
+    man = manifest.restrict(manifest.prune(was_man), args.apps)
+    roots = {a: r for a, r in was_roots.items() if a in args.apps}
+
     found = record.scan(args.apps)
-    for app, files in found.items():
-        man = manifest.merge(man, app, files)
-    manifest.save(path, man)
+    reset: list[str] = []
+    for app, files in sorted(found.items()):
+        # An app's store root is its generation stamp. Retained generations
+        # keep the old closure on disk, so prune cannot see a rebuild.
+        stamp = resolve.store_root(resolve.real_binary(app))
+        if stamp is not None and roots.get(app) != stamp:
+            man = manifest.replace(man, app, files)
+            roots[app] = stamp
+            reset.append(app)
+        else:
+            man = manifest.merge(man, app, files)
+
     total = sum(len(v) for v in man.values())
     seen = ", ".join(f"{a}:{len(f)}" for a, f in sorted(found.items())) or "none running"
-    print(f"store-preload: recorded {seen}; manifest now {total} files")
+    if man == was_man and roots == was_roots:
+        # No write, no fsync. This runs every 30s on a laptop.
+        print(f"store-preload: {seen}; unchanged, manifest {total} files")
+        return 0
+    manifest.save(path, man, roots)
+    note = f"; reset {', '.join(reset)} (new generation)" if reset else ""
+    print(f"store-preload: recorded {seen}; manifest now {total} files{note}")
     return 0
 
 
 def cmd_warm(args: argparse.Namespace) -> int:
     man = manifest.prune(manifest.load(args.state))
     files = _ordered_files(args.apps, man)
-    todo, total, skipped = warmlib.plan_reads(files, args.max_bytes)
+    todo, planned, skipped = warmlib.plan_reads(files, args.max_bytes)
 
-    before = sum(warmlib.resident(f)[0] for f in todo)
+    # Measured over the whole union, not the planned subset: quickshell is
+    # already running and is most of the bytes, so the subset reads ~100%
+    # even when every reader died. The delta is the number that can fail.
+    before, union = _residency(files)
     start = time.monotonic()
     read = warmlib.warm(todo, args.workers)
     elapsed = time.monotonic() - start
-    after = sum(warmlib.resident(f)[0] for f in todo)
+    after, _ = _residency(files)
 
-    pct = (100.0 * after / total) if total else 0.0
+    pct = (100.0 * after / union) if union else 0.0
     rate = (read / 2**20 / elapsed) if elapsed > 0 else 0.0
     print(
-        f"store-preload: {len(todo)} files, {_mb(total)} in {elapsed:.2f}s "
-        f"({rate:.0f} MB/s); resident {_mb(before)} -> {_mb(after)} ({pct:.1f}%)"
+        f"store-preload: {len(todo)} files, {_mb(planned)} in {elapsed:.2f}s "
+        f"({rate:.0f} MB/s); resident {_mb(before)} -> {_mb(after)} "
+        f"(+{_mb(after - before)}, {pct:.1f}% of {_mb(union)})"
     )
     if skipped:
         print(f"store-preload: skipped {_mb(skipped)} to stay under the cap")
@@ -98,12 +132,8 @@ def cmd_warm(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     man = manifest.prune(manifest.load(args.state))
     files = _ordered_files(args.apps, man)
-    total = 0
-    res = 0
-    for f in files:
-        r, s = warmlib.resident(f)
-        res += r
-        total += s
+    # Same union denominator as warm, so the two percentages compare.
+    res, total = _residency(files)
     pct = (100.0 * res / total) if total else 0.0
     print(
         f"store-preload: {len(files)} files, {_mb(total)}; "

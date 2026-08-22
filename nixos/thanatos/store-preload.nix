@@ -1,17 +1,8 @@
-# Warm the page cache for the apps whose first launch after boot is the one you
-# actually wait on.
+# Warm the page cache for the apps whose first launch after boot you wait on.
+# A cold 4 KiB fault against /nix costs ~601 us p50 here.
 #
-# A cold 4 KiB fault against /nix costs ~601 us p50 here, and pulls 40.2 KiB off
-# the device, because a compressed extent is 128 KiB and indivisible. Page cache
-# erases that on second launch and keeps it erased: after 3d11h uptime the whole
-# mapped store working set measured 100.0% resident, since swappiness=150 sends
-# anon to zram before dropping mapped file pages.
-#
-# So the only job here is the window between boot and first launch. Not fighting
-# ongoing eviction. Deliberately does not mlock.
-#
-# Runs after the session is up, not during boot. Boot is the contended part, and
-# warming there would fight greetd, Hyprland and quickshell for the same cores.
+# Runs after the session is up, not during boot: warming at boot would fight
+# greetd, Hyprland and quickshell for the same cores. Does not mlock.
 {
   pkgs,
   lib,
@@ -35,6 +26,7 @@
       cp ${./store-preload/test_resolve.py} test_resolve.py
       cp ${./store-preload/test_record.py} test_record.py
       cp ${./store-preload/test_warm.py} test_warm.py
+      cp ${./store-preload/test_main.py} test_main.py
       mypy --strict ./*.py
       python3 -m unittest discover -p 'test_*.py' -v
       install -d "$out"
@@ -54,7 +46,8 @@ in {
     enable = lib.mkEnableOption "page-cache warming for hot store paths";
 
     apps = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
+      # nonEmpty: an empty list emits "--apps --workers", which argparse rejects.
+      type = lib.types.nonEmptyListOf lib.types.str;
       default = ["rofi" "kitty" "quickshell" "firefox-devedition"];
       description = ''
         Apps to seed, record and warm, in warm order. First entry warms first.
@@ -102,8 +95,11 @@ in {
       };
     };
 
+    # Session-gated: nothing to record, and no reason to wake, outside one.
     systemd.user.services.store-preload-record = {
       description = "Record store files the tracked apps map";
+      after = ["graphical-session.target"];
+      partOf = ["graphical-session.target"];
       serviceConfig = {
         Type = "oneshot";
         ExecStart = "${storePreload}/bin/store-preload --apps ${appArgs} record";
@@ -114,7 +110,9 @@ in {
     # Frequent: scan costs under 10 ms and rofi only lives ~2s at a time.
     systemd.user.timers.store-preload-record = {
       description = "Periodically record store files the tracked apps map";
-      wantedBy = ["timers.target"];
+      wantedBy = ["graphical-session.target"];
+      partOf = ["graphical-session.target"];
+      after = ["graphical-session.target"];
       timerConfig = {
         OnActiveSec = "2min";
         OnUnitActiveSec = "30s";

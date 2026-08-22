@@ -26,10 +26,28 @@ STORE_RE = re.compile(
     STORE_PREFIX.encode() + rb"[0-9a-df-np-sv-z]{32}-[^\x00'\"\s]+"
 )
 
+# The store root of a path, i.e. /nix/store/<hash>-<name>.
+STORE_ROOT_RE = re.compile(
+    re.escape(STORE_PREFIX) + r"[0-9a-df-np-sv-z]{32}-[^/]+"
+)
+
 
 def norm_basename(name: str) -> str:
     """Strip the nixpkgs wrapper decoration: .<app>-wrapped -> <app>."""
     return name.lstrip(".").removesuffix("-wrapped")
+
+
+def store_root(path: str | None) -> str | None:
+    """Store root of a path: /nix/store/<hash>-foo-1.0/bin/foo -> the dir.
+
+    Used as an app's generation stamp. None if the path is not in the store.
+    """
+    if path is None:
+        return None
+    m = STORE_ROOT_RE.match(path)
+    if m is None:
+        return None
+    return m.group(0)
 
 
 def store_strings(path: str) -> list[str]:
@@ -79,7 +97,9 @@ def ldd_closure(elf: str, run: Runner = subprocess.run) -> list[str]:
     """Store paths of the shared libs elf links against."""
     try:
         proc = run(
-            ["ldd", elf], capture_output=True, text=True, timeout=30, check=False
+            # 10s, not 30: four apps must fit inside the user manager's
+            # 90s DefaultTimeoutStartSec or a hung ldd kills the unit.
+            ["ldd", elf], capture_output=True, text=True, timeout=10, check=False
         )
     except (OSError, subprocess.SubprocessError):
         return []
