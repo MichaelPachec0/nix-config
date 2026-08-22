@@ -19,8 +19,12 @@ from typing import Callable
 
 Runner = Callable[..., "subprocess.CompletedProcess[str]"]
 
+STORE_PREFIX = "/nix/store/"
+
 # Nix store hash: 32 chars base32, no e/o/u/t.
-STORE_RE = re.compile(rb"/nix/store/[0-9a-df-np-sv-z]{32}-[^\x00'\"\s]+")
+STORE_RE = re.compile(
+    STORE_PREFIX.encode() + rb"[0-9a-df-np-sv-z]{32}-[^\x00'\"\s]+"
+)
 
 
 def store_strings(path: str) -> list[str]:
@@ -76,38 +80,16 @@ def ldd_closure(elf: str, run: Runner = subprocess.run) -> list[str]:
     out: set[str] = set()
     for line in proc.stdout.splitlines():
         for tok in line.split():
-            if tok.startswith("/") and os.path.isfile(tok):
+            if tok.startswith(STORE_PREFIX) and os.path.isfile(tok):
                 out.add(os.path.realpath(tok))
     return sorted(out)
 
 
-def data_files(entry: str) -> list[str]:
-    """Files under store dirs named by a wrapper.
-
-    Icon themes, gsettings schemas, plugin dirs. ldd never reports these.
-    """
-    out: set[str] = set()
-    for cand in store_strings(entry):
-        if not os.path.isdir(cand):
-            continue
-        for root, _dirs, names in os.walk(cand):
-            for n in names:
-                p = os.path.join(root, n)
-                if os.path.isfile(p):
-                    out.add(p)
-    return sorted(out)
-
-
 def seed(app: str) -> list[str]:
-    """Everything derivable for app without running it."""
-    entry_opt = shutil.which(app)
-    if entry_opt is None:
-        return []
-    entry = os.path.realpath(entry_opt)
+    """Store files derivable for app without running it."""
     elf = real_binary(app)
     if elf is None:
         return []
     files: set[str] = {elf}
     files.update(ldd_closure(elf))
-    files.update(data_files(entry))
     return sorted(files)

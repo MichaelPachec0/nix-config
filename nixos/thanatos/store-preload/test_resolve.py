@@ -7,6 +7,7 @@ import stat
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 import resolve
 
@@ -84,7 +85,19 @@ class TestLddClosure(unittest.TestCase):
         def fake_run(*_a: object, **_k: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(args=[], returncode=0, stdout=out, stderr="")
 
-        self.assertEqual(resolve.ldd_closure("/bin/x", run=fake_run), [os.path.realpath(lib)])
+        with mock.patch.object(resolve, "STORE_PREFIX", "/"):
+            self.assertEqual(resolve.ldd_closure("/bin/x", run=fake_run), [os.path.realpath(lib)])
+
+    def test_rejects_non_store_paths(self) -> None:
+        d = tempfile.mkdtemp()
+        lib = os.path.join(d, "libc.so.6")
+        open(lib, "w", encoding="utf-8").close()
+        out = f"\tlibc.so.6 => {lib} (0x00007f00)\n"
+
+        def fake_run(*_a: object, **_k: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout=out, stderr="")
+
+        self.assertEqual(resolve.ldd_closure("/bin/x", run=fake_run), [])
 
     def test_ldd_failure_is_empty(self) -> None:
         def boom(*_a: object, **_k: object) -> subprocess.CompletedProcess[str]:
