@@ -18,7 +18,7 @@ import record
 import resolve
 import warm as warmlib
 
-DEFAULT_APPS = ["rofi", "kitty", "quickshell", "firefox"]
+DEFAULT_APPS = ["rofi", "kitty", "quickshell", "firefox-devedition"]
 DEFAULT_WORKERS = 4
 DEFAULT_MAX_BYTES = 2 << 30
 
@@ -114,7 +114,11 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="store-preload")
-    parser.add_argument("--apps", nargs="+", default=DEFAULT_APPS)
+    # Comma-separated, not nargs="+": a greedy list swallows the subcommand.
+    parser.add_argument(
+        "--apps", type=lambda v: [a for a in v.split(",") if a],
+        default=DEFAULT_APPS,
+    )
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
     parser.add_argument("--state", default=_state_path())
