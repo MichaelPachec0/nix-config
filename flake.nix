@@ -235,6 +235,7 @@
         ./nixos/thanatos/e5800.nix
         ./nixos/thanatos/ec-pd.nix
         ./nixos/thanatos/memory.nix
+        ./nixos/thanatos/store-preload.nix
         ./features/nixos/common/nix-access-tokens.nix
         {
           services.e5800 = {
@@ -250,6 +251,7 @@
           # the poller re-arms it every boot. Do not re-enable without a
           # storm-safe EC read path.
           services.ecPd.enable = false;
+          services.storePreload.enable = true;
           local.nixAccessTokens.enable = true;
         }
       ];
