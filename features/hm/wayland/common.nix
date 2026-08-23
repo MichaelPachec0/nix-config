@@ -11,7 +11,14 @@
   appRun,
   ...
 }: let
-  firefox = "${lib.getExe config.programs.firefox.package}";
+  # Prefer the ff-firststart harness shim's store path when the harness is
+  # enabled, so app-run's keybind launch (systemd-run --user, which resolves
+  # against the systemd user manager's PATH -- no ~/.local/bin there) hits the
+  # shim instead of falling through to the real binary. Falls back to the
+  # plain firefox exe when the harness is off (launchPaths is {} then).
+  firefox =
+    config.services.ffFirstStart.launchPaths.firefox
+    or "${lib.getExe config.programs.firefox.package}";
 
   # Base variables
 
