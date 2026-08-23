@@ -92,6 +92,34 @@ check "argv reaches firefox on the normal path" \
 RUN_COUNT=$(find "$WRITABLE/runs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
 check "normal path still writes a run directory" 1 "$RUN_COUNT"
 
+# count_main must not count the shim's own process as a pre-existing
+# firefox. run_wrap above can't exercise this: `bash -c "$(cat "$WRAP")" name`
+# never gives the shim process comm "firefox-devedit" in the first place
+# (comm there is "bash", set by the literal execve of the bash binary), so it
+# can't reproduce the bug. On the real deployment path the shim IS a
+# shebang'd file named firefox-devedition, executed directly -- Linux sets
+# comm from the basename of the path passed to execve (truncated to 15
+# chars), not from argv[0] or the interpreter, so a directly-executed script
+# named firefox-devedition really does get comm "firefox-devedit". Reproduce
+# that here: write the fragment out as an actual executable file with that
+# name and exec it directly, instead of going through bash -c.
+DIRECT="$TMP/firefox-devedition"
+{
+  printf '#!%s\n' "$(command -v bash)"
+  cat "$WRAP"
+} > "$DIRECT"
+chmod +x "$DIRECT"
+
+DIRECT_FS="$TMP/direct-state"
+rm -f "$MARKER"
+FIREFOX_BIN="$FIREFOX_STUB" FF_FS_DIR="$DIRECT_FS" "$DIRECT" --version >/dev/null 2>&1 || true
+check "direct-exec shim still launches firefox" \
+  present "$([ -f "$MARKER" ] && echo present || echo absent)"
+
+META_FILE=$(find "$DIRECT_FS/runs" -name '001.meta' 2>/dev/null | head -1)
+PRIOR=$(awk -F= '/^prior_instances=/{print $2}' "$META_FILE" 2>/dev/null)
+check "prior_instances is 0 with no real firefox running" 0 "${PRIOR:-absent}"
+
 # --- launches dir creatable, but $LOG itself cannot be opened -----------
 # This is guard 2: mkdir -p "$RUN/launches" (guard 1) succeeds here, so only
 # the final redirected exec can fail. Predict the exact path ff-wrap.sh will

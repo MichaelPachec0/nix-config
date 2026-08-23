@@ -48,18 +48,41 @@ profile_dir() {
   [ -n "$p" ] && printf '%s/%s' "$root" "$p"
 }
 
-# Main firefox instances, not content children. comm truncates at 15 chars so
-# `pgrep -x firefox-devedition` never matches. pgrep -c is avoided entirely: it
-# prints 0 AND exits 1 on no match, so `$(pgrep -c ... || echo 0)` emits "0\n0"
-# and splits this file into unparseable halves.
+# Main firefox instances, not content children. comm is NOT a valid
+# discriminator here: exec -a preserves argv[0] as this shim's own basename
+# all the way through the launcher chain, so the shim's own process AND a
+# real firefox both truncate (comm caps at 15 chars) to the identical
+# "firefox-devedit" -- the old comm check counted this shell plus its own
+# exit-watcher subshell below on EVERY launch, firefox running or not.
+# /proc/<pid>/exe is not ambiguous: the kernel resolves it to the actual
+# binary that was execve'd, not argv[0]. Firefox's launcher re-execs itself
+# with "-bin" appended (a stable convention of the launcher, not particular
+# to this build), so REAL_BIN is derived from FIREFOX_BIN's own basename
+# rather than hardcoding a product name.
+#
 # MEASURED: `$(cat "$f")` here forks ~400 times and costs 981ms. The read
-# builtin does the same work in 10ms. A shim that adds a second to every launch
-# would dominate the 5s startup it exists to measure.
+# builtin does the same work in 10ms. exe can't be read the same way -- an
+# open() on a /proc/*/exe magic symlink returns the target BINARY's bytes,
+# not its path text, and bash has no builtin for readlink(2). `[[ a -ef b ]]`
+# sidesteps that: it stats both sides (no fork, no read) and compares
+# device+inode, so the per-PID cost stays a syscall pair, not a subprocess.
 count_main() {
-  local n=0 f c
-  for f in /proc/[0-9]*/comm; do
-    read -r c < "$f" 2>/dev/null || continue
-    [ "$c" = "firefox-devedit" ] && n=$((n+1))
+  local n=0 f real_bin
+  local store_root="${FIREFOX_BIN%/bin/*}"
+  # Parameter expansion, not `basename`: this runs once per launch, not once
+  # per PID, so a single fork here would not blow the budget -- but there is
+  # no reason to pay for one when the shell can strip the leading path itself.
+  local real_name="${FIREFOX_BIN##*/}-bin"
+  # Globbing, not `readlink -f`: globbing is a bash builtin (readdir+lstat,
+  # no fork), and the launcher's self-re-exec to "-bin" is not a symlink hop
+  # readlink -f could follow anyway -- it happens inside the compiled
+  # launcher at runtime, invisible to the filesystem.
+  for real_bin in "$store_root"/lib/*/"$real_name"; do
+    [ -e "$real_bin" ] || continue
+    for f in /proc/[0-9]*/exe; do
+      [[ $f -ef "$real_bin" ]] && n=$((n+1))
+    done
+    break
   done
   printf '%s' "$n"
 }
