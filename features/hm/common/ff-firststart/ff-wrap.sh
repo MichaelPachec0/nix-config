@@ -15,7 +15,18 @@
 set +o errexit
 
 RUN="$FF_FS_DIR/runs/$(cat /proc/sys/kernel/random/boot_id)"
-mkdir -p "$RUN/launches"
+
+# Instrumentation is best effort: every path through this script must end in
+# an exec of $FIREFOX_BIN. set +o errexit above does not save us here -- an
+# unredirected `exec ... >>"$LOG"` whose directory does not exist prints the
+# redirection error and falls off the end WITHOUT running firefox, because
+# exec of an ordinary command is not a fatal special-builtin error. If the
+# run directory cannot be created (disk full, quota, a read-only home during
+# a suspend/resume race), skip straight to an unredirected launch instead of
+# losing it.
+if ! mkdir -p "$RUN/launches" 2>/dev/null; then
+  exec "$FIREFOX_BIN" "$@"
+fi
 
 TS=$EPOCHREALTIME
 # Count .meta only: the directory holds two files per launch.
@@ -90,4 +101,10 @@ PROFILE=$(profile_dir)
   } >> "$META"
 ) >/dev/null 2>&1 &
 
+# Same best-effort invariant on the final redirect: if the log file itself
+# cannot be opened (e.g. the run dir vanished between the mkdir above and
+# here), still exec firefox rather than dying silently under set +o errexit.
+if ! : >>"$LOG" 2>/dev/null; then
+  exec "$FIREFOX_BIN" "$@"
+fi
 exec "$FIREFOX_BIN" "$@" >>"$LOG" 2>&1

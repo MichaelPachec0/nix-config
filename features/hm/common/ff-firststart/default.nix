@@ -48,7 +48,7 @@
   # keybind path point straight at the shim's store path below.
   shim = pkgs.writeShellApplication {
     name = "firefox-devedition";
-    runtimeInputs = [pkgs.coreutils pkgs.gawk pkgs.findutils pkgs.systemd];
+    runtimeInputs = [pkgs.coreutils pkgs.gawk pkgs.findutils pkgs.gnused pkgs.systemd];
     text = ''
       FIREFOX_BIN=${lib.escapeShellArg firefoxBin}
       FF_FS_DIR=${lib.escapeShellArg cfg.stateDir}
