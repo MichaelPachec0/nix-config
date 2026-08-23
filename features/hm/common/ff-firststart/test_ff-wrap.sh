@@ -92,4 +92,28 @@ check "argv reaches firefox on the normal path" \
 RUN_COUNT=$(find "$WRITABLE/runs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
 check "normal path still writes a run directory" 1 "$RUN_COUNT"
 
+# --- launches dir creatable, but $LOG itself cannot be opened -----------
+# This is guard 2: mkdir -p "$RUN/launches" (guard 1) succeeds here, so only
+# the final redirected exec can fail. Predict the exact path ff-wrap.sh will
+# compute for $LOG (same boot_id, SEQ=001 since no .meta files exist yet)
+# and pre-occupy it with a directory, so `>>"$LOG"` fails with EISDIR while
+# the mkdir -p above it does not. This is the case a prior round's probe-based
+# guard 2 (`if ! : >>"$LOG"; then ...`) was never exercised against: that
+# probe and the real exec each open $LOG separately, so a mutation deleting
+# the probe's fallback still passed every check here. The single `exec ... ||
+# exec ...` line removes that gap; this case is what proves the fallback,
+# not just the probe, actually fires.
+LOGBLOCK="$TMP/logblock-state"
+BOOT_ID=$(cat /proc/sys/kernel/random/boot_id)
+RUNDIR="$LOGBLOCK/runs/$BOOT_ID"
+mkdir -p "$RUNDIR/launches"
+mkdir -p "$RUNDIR/launches/001.log"
+
+rm -f "$MARKER"
+run_wrap "$LOGBLOCK" --version >/dev/null 2>&1 || true
+check "unopenable LOG still launches firefox" \
+  present "$([ -f "$MARKER" ] && echo present || echo absent)"
+check "argv still reaches firefox when LOG unopenable" \
+  "LAUNCHED --version" "$(cat "$MARKER" 2>/dev/null || echo absent)"
+
 exit "$fail"

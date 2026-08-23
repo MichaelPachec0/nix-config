@@ -101,10 +101,7 @@ PROFILE=$(profile_dir)
   } >> "$META"
 ) >/dev/null 2>&1 &
 
-# Same best-effort invariant on the final redirect: if the log file itself
-# cannot be opened (e.g. the run dir vanished between the mkdir above and
-# here), still exec firefox rather than dying silently under set +o errexit.
-if ! : >>"$LOG" 2>/dev/null; then
-  exec "$FIREFOX_BIN" "$@"
-fi
-exec "$FIREFOX_BIN" "$@" >>"$LOG" 2>&1
+# Attempt the real exec directly. A failed redirection makes exec fail as an
+# ordinary command rather than aborting, so `||` catches it -- and unlike a
+# separate probe there is no window between the check and the open.
+exec "$FIREFOX_BIN" "$@" >>"$LOG" 2>&1 || exec "$FIREFOX_BIN" "$@"
