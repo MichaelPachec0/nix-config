@@ -37,8 +37,18 @@
   # immediately has no lifetime for a scope to manage in the first place.
   app = cmd: "${appRun}/bin/app-run ${cmd}";
 
-  terminal = "kitty";
-  menu = "rofi -show combi -combi-modes 'window,drun'";
+  # Store paths, not bare names. A bare name is resolved by PATH at keypress
+  # time, which is how store-preload came to seed a debug shim instead of
+  # firefox. These are also what warmApps warms, so bind and warm cannot drift.
+  #
+  # kitty is pkgs.kitty, NOT config.programs.kitty.package: the HM kitty
+  # module (features/hm/kitty/default.nix) sets package = pkgs.emptyDirectory
+  # deliberately, since it only manages kitty.conf -- the real kitty binary is
+  # installed as a NixOS systemPackage (features/nixos/desktop/wayland). Do
+  # not "fix" this back to config.programs.kitty.package; that resolves to an
+  # empty directory with no bin/.
+  terminal = lib.getExe pkgs.kitty;
+  menu = "${lib.getExe config.programs.rofi.finalPackage} -show combi -combi-modes 'window,drun'";
 
   # Screenshot helper 
 
@@ -391,4 +401,13 @@ in {
   _module.args.generatedSwayBinds = swayKeybindings;
   _module.args.generatedHyprBinds = hyprBinds;
   _module.args.generatedLuaBinds = luaBinds;
+
+  # The apps whose first launch after boot is waited on. Same objects the binds
+  # launch, so the warm set cannot drift from the bind set.
+  _module.args.warmApps = {
+    kitty = pkgs.kitty;
+    rofi = config.programs.rofi.finalPackage;
+    quickshell = pkgs.quickshell;
+    firefox = config.programs.firefox.package;
+  };
 }
