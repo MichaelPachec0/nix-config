@@ -453,9 +453,16 @@
         ];
     });
   };
+  awwwPatched = final: prev: {
+    awww = prev.awww.overrideAttrs (o: {
+      buildInputs = (o.buildInputs or []) ++ [final.dav1d];
+      cargoBuildFeatures = (o.cargoBuildFeatures or []) ++ ["avif"];
+    });
+  };
 
   baseDesktop = [
     quickshellPatched
+    awwwPatched
     inputs.nix-vscode-extensions.overlays.default
     inputs.nix-your-shell.overlays.default
     inputs.rust-overlay.overlays.default
