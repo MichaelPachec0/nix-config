@@ -24,13 +24,11 @@
       nativeBuildInputs = [pkgs.python3 pkgs.mypy];
     } ''
       cp ${./manifest.py} manifest.py
-      cp ${./resolve.py} resolve.py
       cp ${./unwrap.py} unwrap.py
       cp ${./record.py} record.py
       cp ${./warm.py} warm.py
       cp ${./main.py} main.py
       cp ${./test_manifest.py} test_manifest.py
-      cp ${./test_resolve.py} test_resolve.py
       cp ${./test_unwrap.py} test_unwrap.py
       cp ${./test_record.py} test_record.py
       cp ${./test_warm.py} test_warm.py
@@ -38,7 +36,7 @@
       mypy --strict ./*.py
       python3 -m unittest discover -p 'test_*.py' -v
       install -d "$out"
-      cp manifest.py resolve.py unwrap.py record.py warm.py main.py "$out/"
+      cp manifest.py unwrap.py record.py warm.py main.py "$out/"
     '';
 
   # seed resolver needs ldd, which lives in glibc.bin
@@ -142,7 +140,7 @@ in {
       Install.WantedBy = ["graphical-session.target"];
       Service = {
         Type = "oneshot";
-        ExecStart = "${storePreload}/bin/store-preload --apps ${appArgs} --workers ${toString cfg.workers} --max-bytes ${toString cfg.maxBytes} warm";
+        ExecStart = "${storePreload}/bin/store-preload --apps ${appArgs} --workers ${toString cfg.workers} --max-bytes ${toString cfg.maxBytes} --seed-dir ${seedDir} warm";
         # Best-effort, not idle: idle can starve indefinitely, and the point
         # is to finish before the user hits the rofi keybind.
         IOSchedulingClass = "best-effort";
@@ -160,7 +158,7 @@ in {
       };
       Service = {
         Type = "oneshot";
-        ExecStart = "${storePreload}/bin/store-preload --apps ${appArgs} record";
+        ExecStart = "${storePreload}/bin/store-preload --apps ${appArgs} --seed-dir ${seedDir} record";
         Nice = 10;
       };
     };

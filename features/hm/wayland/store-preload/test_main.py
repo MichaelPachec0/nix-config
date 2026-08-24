@@ -14,11 +14,26 @@ from unittest import mock
 import main
 import manifest
 import record
-import resolve
 import warm
 
 ROOT_A = "/nix/store/fsakzlw63avfvkanzzvrzmylzs60qxwa-rofi-2.0"
 ROOT_B = "/nix/store/7mbvdxzcg00bqnyz13r6yg2n6lncpl52-rofi-2.1"
+
+# Shared, deliberately empty: load_seed treats a missing app file as [], not
+# an error, so this is the default "nothing seeded" seed_dir for tests that
+# do not care about the build-time seed.
+EMPTY_SEED_DIR = tempfile.mkdtemp()
+
+
+def _seed_dir_with(app: str, first_line: str) -> str:
+    """A seed dir containing one file for app, whose first line is first_line.
+
+    The first line is what seed_stamp reads as the generation stamp.
+    """
+    d = tempfile.mkdtemp()
+    with open(os.path.join(d, app), "w", encoding="utf-8") as f:
+        f.write(first_line + "\n")
+    return d
 
 
 def _args(**kw: object) -> argparse.Namespace:
@@ -26,6 +41,7 @@ def _args(**kw: object) -> argparse.Namespace:
         "apps": ["rofi"],
         "workers": 2,
         "max_bytes": 1 << 30,
+        "seed_dir": EMPTY_SEED_DIR,
     }
     base.update(kw)
     return argparse.Namespace(**base)
@@ -47,14 +63,13 @@ class TestRecordInvalidation(unittest.TestCase):
         self.state = os.path.join(tempfile.mkdtemp(), "manifest.json")
 
     def _record(self, files: Sequence[str], binary: str) -> str:
+        seed_dir = _seed_dir_with("rofi", binary + "/bin/rofi")
         with mock.patch.object(
             record, "scan", return_value={"rofi": list(files)}
         ), mock.patch.object(
-            resolve, "real_binary", return_value=binary + "/bin/rofi"
-        ), mock.patch.object(
             manifest, "prune", side_effect=lambda m, **_kw: m
         ):
-            return _run_record(_args(state=self.state))
+            return _run_record(_args(state=self.state, seed_dir=seed_dir))
 
     def test_same_root_merges(self) -> None:
         self._record([ROOT_A + "/a"], ROOT_A)
@@ -102,10 +117,10 @@ class TestRecordInvalidation(unittest.TestCase):
         self.assertNotIn("reset", out)
 
     def test_unresolvable_binary_still_merges(self) -> None:
+        # EMPTY_SEED_DIR has no "rofi" file, so seed_stamp is None: the same
+        # case as an app whose real binary could not be resolved.
         with mock.patch.object(
             record, "scan", return_value={"rofi": ["/a"]}
-        ), mock.patch.object(
-            resolve, "real_binary", return_value=None
         ), mock.patch.object(
             manifest, "prune", side_effect=lambda m, **_kw: m
         ):
@@ -145,34 +160,32 @@ class TestRecordSkipsUnchangedWrites(unittest.TestCase):
 
     def test_second_identical_record_does_not_save(self) -> None:
         state = os.path.join(tempfile.mkdtemp(), "manifest.json")
+        seed_dir = _seed_dir_with("rofi", ROOT_A + "/bin/rofi")
         with mock.patch.object(
             record, "scan", return_value={"rofi": ["/a"]}
         ), mock.patch.object(
-            resolve, "real_binary", return_value=ROOT_A + "/bin/rofi"
-        ), mock.patch.object(
             manifest, "prune", side_effect=lambda m, **_kw: m
         ):
-            _run_record(_args(state=state))
+            _run_record(_args(state=state, seed_dir=seed_dir))
             with mock.patch.object(manifest, "save") as saver:
-                out = _run_record(_args(state=state))
+                out = _run_record(_args(state=state, seed_dir=seed_dir))
         saver.assert_not_called()
         self.assertIn("unchanged", out)
 
     def test_a_new_path_still_saves(self) -> None:
         state = os.path.join(tempfile.mkdtemp(), "manifest.json")
+        seed_dir = _seed_dir_with("rofi", ROOT_A + "/bin/rofi")
         with mock.patch.object(
-            resolve, "real_binary", return_value=ROOT_A + "/bin/rofi"
-        ), mock.patch.object(
             manifest, "prune", side_effect=lambda m, **_kw: m
         ):
             with mock.patch.object(
                 record, "scan", return_value={"rofi": ["/a"]}
             ):
-                _run_record(_args(state=state))
+                _run_record(_args(state=state, seed_dir=seed_dir))
             with mock.patch.object(
                 record, "scan", return_value={"rofi": ["/b"]}
             ):
-                out = _run_record(_args(state=state))
+                out = _run_record(_args(state=state, seed_dir=seed_dir))
         self.assertEqual(manifest.load(state), {"rofi": ["/a", "/b"]})
         self.assertNotIn("unchanged", out)
 
@@ -205,7 +218,7 @@ class TestWarmReporting(unittest.TestCase):
         manifest.save(state, {"rofi": [a, b]}, {})
         args = _args(state=state, apps=["rofi"])
         buf = io.StringIO()
-        with mock.patch.object(resolve, "seed", return_value=[]), mock.patch.object(
+        with mock.patch.object(
             warm, "device_read_bytes", side_effect=[0, 3 << 20]
         ):
             with contextlib.redirect_stdout(buf):
@@ -219,9 +232,8 @@ class TestWarmReporting(unittest.TestCase):
         manifest.save(state, {"rofi": []}, {})
         args = _args(state=state, apps=["rofi"])
         buf = io.StringIO()
-        with mock.patch.object(resolve, "seed", return_value=[]):
-            with contextlib.redirect_stdout(buf):
-                self.assertEqual(main.cmd_warm(args), 0)
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(main.cmd_warm(args), 0)
         self.assertIn("0.0% was cold", buf.getvalue())
 
     def test_negative_device_delta_is_clamped_to_zero(self) -> None:
@@ -231,7 +243,7 @@ class TestWarmReporting(unittest.TestCase):
         manifest.save(state, {"rofi": [a]}, {})
         args = _args(state=state, apps=["rofi"])
         buf = io.StringIO()
-        with mock.patch.object(resolve, "seed", return_value=[]), mock.patch.object(
+        with mock.patch.object(
             warm, "device_read_bytes", side_effect=[10 << 20, 5 << 20]
         ):
             with contextlib.redirect_stdout(buf):
@@ -243,13 +255,43 @@ class TestWarmReporting(unittest.TestCase):
         state = os.path.join(tempfile.mkdtemp(), "manifest.json")
         manifest.save(state, {"rofi": [a, b]}, {})
         buf = io.StringIO()
-        with mock.patch.object(resolve, "seed", return_value=[]):
-            with contextlib.redirect_stdout(buf):
-                main.cmd_status(_args(state=state))
+        with contextlib.redirect_stdout(buf):
+            main.cmd_status(_args(state=state))
         out = buf.getvalue()
         self.assertIn(f"2 files, {main._mb(16384)}", out)
         self.assertIn("warm", out)
         self.assertNotIn("%", out)
+
+
+class TestLoadSeed(unittest.TestCase):
+    def test_reads_the_build_time_seed(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "rofi"), "w") as f:
+                f.write("/nix/store/aaa-rofi/bin/rofi\n/nix/store/bbb-glib/lib/x.so\n")
+            self.assertEqual(
+                main.load_seed(d, "rofi"),
+                ["/nix/store/aaa-rofi/bin/rofi", "/nix/store/bbb-glib/lib/x.so"],
+            )
+
+    def test_missing_seed_is_empty_not_an_error(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(main.load_seed(d, "nope"), [])
+
+    def test_stamp_is_the_store_root_of_the_first_line(self) -> None:
+        """The first line is the real binary, so it carries the generation."""
+        # A store hash is exactly 32 chars of the nix base32 alphabet -- the
+        # brief's shorthand "aaa" does not satisfy STORE_ROOT_RE, so this uses
+        # a full 32-char hash, matching the convention in test_unwrap.py.
+        hsh = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "rofi"), "w") as f:
+                f.write(
+                    f"/nix/store/{hsh}-rofi-2.0.0/bin/rofi\n"
+                    f"/nix/store/{hsh}-x/l.so\n"
+                )
+            self.assertEqual(
+                main.seed_stamp(d, "rofi"), f"/nix/store/{hsh}-rofi-2.0.0"
+            )
 
 
 if __name__ == "__main__":

@@ -10,17 +10,53 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import time
 
 import manifest
 import record
-import resolve
 import warm as warmlib
 
 DEFAULT_APPS = ["rofi", "kitty", "quickshell", "firefox-devedition"]
 DEFAULT_WORKERS = 4
 DEFAULT_MAX_BYTES = 2 << 30
+
+STORE_ROOT_RE = re.compile(r"/nix/store/[0-9a-df-np-sv-z]{32}-[^/]+")
+
+# warmApps keys (Task 3) are kitty/rofi/quickshell/firefox, and the seed
+# files under seedDir are named after those keys. But --apps and the
+# manifest use the RUNTIME app name, where firefox is packaged as
+# firefox-devedition. Route explicitly rather than renaming either side.
+SEED_KEY = {"firefox-devedition": "firefox"}
+
+
+def _seed_key(app: str) -> str:
+    """The seed file's name for a runtime app name."""
+    return SEED_KEY.get(app, app)
+
+
+def load_seed(seed_dir: str, app: str) -> list[str]:
+    """The build-time seed for app. Missing is empty, not an error."""
+    try:
+        with open(os.path.join(seed_dir, app), encoding="utf-8") as f:
+            return [ln.strip() for ln in f if ln.strip()]
+    except OSError:
+        return []
+
+
+def seed_stamp(seed_dir: str, app: str) -> str | None:
+    """Generation stamp: the store root of the seed's first line.
+
+    That line is the real binary. Replaces store_root(real_binary(app)), which
+    needed a PATH lookup and returned None under the unit's PATH, which is why
+    the stamp was inert and every manifest entry carried root="".
+    """
+    files = load_seed(seed_dir, app)
+    if not files:
+        return None
+    m = STORE_ROOT_RE.match(files[0])
+    return m.group(0) if m else None
 
 
 def _state_path() -> str:
@@ -37,7 +73,9 @@ def _mb(n: int) -> str:
     return f"{n / 2**20:.1f} MB"
 
 
-def _ordered_files(apps: list[str], man: manifest.Manifest) -> list[str]:
+def _ordered_files(
+    apps: list[str], man: manifest.Manifest, seed_dir: str
+) -> list[str]:
     """Union of seed and manifest, in app order, deduped.
 
     First app is warmed first. Put what you wait on at the top.
@@ -45,7 +83,7 @@ def _ordered_files(apps: list[str], man: manifest.Manifest) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for app in apps:
-        for path in list(resolve.seed(app)) + list(man.get(app, [])):
+        for path in load_seed(seed_dir, _seed_key(app)) + list(man.get(app, [])):
             if path not in seen:
                 seen.add(path)
                 out.append(path)
@@ -59,7 +97,7 @@ def _from_root(files: list[str], root: str) -> bool:
 
 def cmd_seed(args: argparse.Namespace) -> int:
     for app in args.apps:
-        files = resolve.seed(app)
+        files = load_seed(args.seed_dir, _seed_key(app))
         size = sum(os.path.getsize(f) for f in files if os.path.exists(f))
         print(f"{app:12} {len(files):5d} files  {_mb(size)}")
     return 0
@@ -78,7 +116,7 @@ def cmd_record(args: argparse.Namespace) -> int:
     for app, files in sorted(found.items()):
         # An app's store root is its generation stamp. Retained generations
         # keep the old closure on disk, so prune cannot see a rebuild.
-        stamp = resolve.store_root(resolve.real_binary(app))
+        stamp = seed_stamp(args.seed_dir, _seed_key(app))
         was = roots.get(app)
         # Reset only if the scan corroborates the stamp. After a rebuild PATH
         # points at the new generation while the running process still maps the
@@ -106,7 +144,7 @@ def cmd_record(args: argparse.Namespace) -> int:
 
 def cmd_warm(args: argparse.Namespace) -> int:
     man = manifest.prune(manifest.load(args.state))
-    files = _ordered_files(args.apps, man)
+    files = _ordered_files(args.apps, man, args.seed_dir)
     todo, planned, skipped = warmlib.plan_reads(files, args.max_bytes)
 
     # mincore is not usable here: it reports 100% resident for every /nix
@@ -132,7 +170,7 @@ def cmd_warm(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     man = manifest.prune(manifest.load(args.state))
-    files = _ordered_files(args.apps, man)
+    files = _ordered_files(args.apps, man, args.seed_dir)
     total = sum(os.path.getsize(f) for f in files if os.path.exists(f))
     print(f"store-preload: {len(files)} files, {_mb(total)}")
     print(
@@ -152,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
     parser.add_argument("--state", default=_state_path())
+    parser.add_argument("--seed-dir", required=True)
     sub = parser.add_subparsers(dest="cmd", required=True)
     for name, fn in (
         ("seed", cmd_seed),

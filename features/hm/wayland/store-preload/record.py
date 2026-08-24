@@ -12,9 +12,12 @@ from __future__ import annotations
 import os
 from typing import Sequence
 
-from resolve import norm_basename
-
 DELETED = " (deleted)"
+
+
+def norm_basename(name: str) -> str:
+    """Strip the nixpkgs wrapper decoration: .<app>-wrapped -> <app>."""
+    return name.lstrip(".").removesuffix("-wrapped")
 
 
 def app_for(base: str, apps: Sequence[str]) -> str | None:
