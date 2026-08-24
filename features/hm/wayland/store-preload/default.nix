@@ -74,7 +74,7 @@
       n=$(wc -l < "$out")
       if [ "$n" -lt ${toString floors.${name}} ]; then
         echo "seed ${name}: $n files, floor is ${toString floors.${name}}" >&2
-        echo "wrapper resolution probably picked the wrong binary: $real" >&2
+        echo "wrapper resolution probably picked the wrong binary, or ldd failed/truncated: $real" >&2
         exit 1
       fi
     '';
