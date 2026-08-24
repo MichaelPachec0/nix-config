@@ -228,6 +228,14 @@
           # Unlike the backport above this applies to main too, so it survives a
           # bump and is upstreamable as-is.
           ../overlays/hyprland-capture-source-stale-output.patch
+          # Fourth site, same resume race, and the one that survived the patch
+          # above: get_lock_surface on an output whose monitor is gone returns
+          # WITHOUT constructing anything, stranding the client-allocated new_id.
+          # The kill lands later on that proxy's destroy, as
+          # wl_display.error(0, "invalid object <id>") -- which is why fixing
+          # create_source moved the crash instead of removing it. Still unfixed
+          # on main as of 2026-08-20, so upstreamable rather than a backport.
+          ../overlays/hyprland-session-lock-surface-stale-output.patch
         ];
     });
     # xdg-desktop-portal-hyprland past its v1.4.0 tag, for 71ae1a3a
