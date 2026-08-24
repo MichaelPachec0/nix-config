@@ -27,31 +27,44 @@ CFG="task-bar"
 # the whole block: show-environment emits $'...' shell quoting for values that
 # need it, and blindly exporting those would set the literal text.
 live_env() {
-    # Trailing `|| true` is load-bearing: writeShellApplication runs this under
-    # `set -euo pipefail`, so a systemctl that cannot reach the user manager
-    # would abort lock-escape right here -- silently, and before the explicit
-    # refusal below could say why.
-    systemctl --user show-environment 2>/dev/null | sed -n "s/^$1=//p" | head -1 || true
+  # Trailing `|| true` is load-bearing: writeShellApplication runs this under
+  # `set -euo pipefail`, so a systemctl that cannot reach the user manager
+  # would abort lock-escape right here -- silently, and before the explicit
+  # refusal below could say why.
+  _raw="$(systemctl --user show-environment 2>/dev/null | sed -n "s/^$1=//p" | head -1 || true)"
+  # show-environment ANSI-C-quotes any value with a space, and
+  # UWSM_FINALIZE_VARNAMES always is one. Let the shell undo its own quoting:
+  # the guard restricts eval to a complete $'...' literal, and \' escaping
+  # means the string cannot terminate early.
+  case "$_raw" in
+  \$\'*\') eval "_raw=$_raw" ;;
+  esac
+  printf '%s\n' "$_raw"
 }
 
-for _var in WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_RUNTIME_DIR; do
-    _val="$(live_env "$_var")"
-    if [ -n "$_val" ]; then
-        case "$_var" in
-            WAYLAND_DISPLAY) export WAYLAND_DISPLAY="$_val" ;;
-            HYPRLAND_INSTANCE_SIGNATURE) export HYPRLAND_INSTANCE_SIGNATURE="$_val" ;;
-            XDG_RUNTIME_DIR) export XDG_RUNTIME_DIR="$_val" ;;
-        esac
-    fi
+# UWSM_FINALIZE_VARNAMES: app-run only takes its uwsm branch when this is set
+# (see ../../../app-run.nix). uwsm publishes it to the MANAGER env at finalize,
+# so a unit started before that never has it, app-run degrades to plain exec,
+# and the relaunched bar inherits THIS script's cgroup (qs-lock-watchdog).
+for _var in WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_RUNTIME_DIR UWSM_FINALIZE_VARNAMES; do
+  _val="$(live_env "$_var")"
+  if [ -n "$_val" ]; then
+    case "$_var" in
+    WAYLAND_DISPLAY) export WAYLAND_DISPLAY="$_val" ;;
+    HYPRLAND_INSTANCE_SIGNATURE) export HYPRLAND_INSTANCE_SIGNATURE="$_val" ;;
+    XDG_RUNTIME_DIR) export XDG_RUNTIME_DIR="$_val" ;;
+    UWSM_FINALIZE_VARNAMES) export UWSM_FINALIZE_VARNAMES="$_val" ;;
+    esac
+  fi
 done
-unset _var _val
+unset _var _val _raw
 
 # Without a display there is nothing to unlock and a relaunch would only
 # reproduce the abort above. Fail loudly rather than leaving a silent crash
 # loop in the journal.
 if [ -z "${WAYLAND_DISPLAY:-}" ]; then
-    echo "lock-escape: no WAYLAND_DISPLAY in this process or in the systemd user environment; refusing to relaunch" >&2
-    exit 1
+  echo "lock-escape: no WAYLAND_DISPLAY in this process or in the systemd user environment; refusing to relaunch" >&2
+  exit 1
 fi
 
 # ACQUIRE, THEN RELEASE -- releasing alone is not enough, and that is what
