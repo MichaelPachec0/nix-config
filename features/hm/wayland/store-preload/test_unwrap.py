@@ -18,6 +18,13 @@ class TestSibling(unittest.TestCase):
 
 
 class TestStrings(unittest.TestCase):
+    def setUp(self) -> None:
+        # Every test in this class points unwrap.STORE_PREFIX at a tempdir
+        # that is gone by teardown; without restoring it, a later test in the
+        # same discover process inherits a STORE_PREFIX pointing at a deleted
+        # directory.
+        self.addCleanup(setattr, unwrap, "STORE_PREFIX", unwrap.STORE_PREFIX)
+
     def test_falls_back_to_embedded_store_path(self) -> None:
         """rofi has no .rofi-wrapped; its real binary is another derivation."""
         with tempfile.TemporaryDirectory() as d:
