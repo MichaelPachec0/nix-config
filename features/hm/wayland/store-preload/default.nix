@@ -83,6 +83,48 @@
       (n: p: "cp ${seedFor n p} $out/${n}")
       cfg.packages)
   );
+
+  # Exactly what the systemd user unit sees: writeShellApplication's
+  # runtimeInputs, nothing else. Measured on the running system as
+  # coreutils:findutils:gnugrep:gnused:systemd, with no tracked app and no ldd.
+  unitPath = lib.makeBinPath [
+    pkgs.coreutils
+    pkgs.findutils
+    pkgs.gnugrep
+    pkgs.gnused
+    pkgs.systemd
+  ];
+
+  # The bug was invisible to every test because pytest inherits the developer's
+  # PATH. This runs the built binary under the unit's exact PATH and asserts
+  # each app individually clears its floor -- per app, not in aggregate,
+  # because rofi contributed 0 while a 995 MB total looked healthy.
+  # test_iocost-ab.sh applies the same technique to systemd's default PATH.
+  envCheck = pkgs.runCommand "store-preload-env-check" {} ''
+    out_txt=$(env -i PATH=${unitPath} HOME=/homeless-shelter \
+      ${storePreload}/bin/store-preload \
+      --seed-dir ${seedDir} --apps ${appArgs} \
+      --state /dev/null --dry-run warm)
+    echo "$out_txt"
+    ${lib.concatStringsSep "\n" (lib.mapAttrsToList (n: _: ''
+      got=$(echo "$out_txt" | awk -v a=${n} '$1 == a {print $2}')
+      if [ -z "$got" ] || [ "$got" -le 0 ]; then
+        echo "store-preload plans 0 bytes for ${n} under the unit PATH" >&2
+        exit 1
+      fi
+    '') cfg.packages)}
+    touch $out
+  '';
+
+  # Nothing else depends on envCheck, and a derivation nothing depends on is
+  # never built (the trap that already bit Task 5's guard). `: ${envCheck}`
+  # is a no-op shell command whose only job is the string interpolation:
+  # substituting envCheck's store path here makes it a real build input, so
+  # a broken guard fails `home-manager build` instead of sitting dormant.
+  storePreloadChecked = pkgs.runCommand "store-preload-checked" {} ''
+    : ${envCheck}
+    ln -s ${storePreload} $out
+  '';
 in {
   options.services.storePreload = {
     enable = lib.mkEnableOption "page-cache warming for hot store paths";
@@ -128,7 +170,7 @@ in {
   config = lib.mkIf cfg.enable {
     services.storePreload.packages = lib.mkDefault warmApps;
 
-    home.packages = [storePreload pkgs.fatrace];
+    home.packages = [storePreloadChecked pkgs.fatrace];
 
     # User units: graphical-session.target is user-scoped. Puts the manifest
     # under XDG_STATE_HOME in /home, which survives the root rollback.

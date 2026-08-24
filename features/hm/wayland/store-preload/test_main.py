@@ -42,6 +42,7 @@ def _args(**kw: object) -> argparse.Namespace:
         "workers": 2,
         "max_bytes": 1 << 30,
         "seed_dir": EMPTY_SEED_DIR,
+        "dry_run": False,
     }
     base.update(kw)
     return argparse.Namespace(**base)
@@ -228,13 +229,30 @@ class TestWarmReporting(unittest.TestCase):
         self.assertIn("3.0 MB off disk (75.0% was cold)", out)
 
     def test_zero_bytes_read_does_not_divide_by_zero(self) -> None:
+        """Planned > 0 but the actual read comes back 0 (e.g. every planned
+        file vanished between plan_reads and warm -- a TOCTOU race, not the
+        "nothing was ever planned" case that cmd_warm now refuses outright).
+        """
+        a = self._file(4096)
+        state = os.path.join(tempfile.mkdtemp(), "manifest.json")
+        manifest.save(state, {"rofi": [a]}, {})
+        args = _args(state=state, apps=["rofi"])
+        buf = io.StringIO()
+        with mock.patch.object(warm, "warm", return_value=0):
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(main.cmd_warm(args), 0)
+        self.assertIn("0.0% was cold", buf.getvalue())
+
+    def test_empty_plan_is_refused_not_reported_as_success(self) -> None:
+        """The bug this module shipped with: 0 files, 0.0 MB, exit 0."""
         state = os.path.join(tempfile.mkdtemp(), "manifest.json")
         manifest.save(state, {"rofi": []}, {})
         args = _args(state=state, apps=["rofi"])
         buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            self.assertEqual(main.cmd_warm(args), 0)
-        self.assertIn("0.0% was cold", buf.getvalue())
+        with contextlib.redirect_stderr(buf):
+            rc = main.cmd_warm(args)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("refusing", buf.getvalue())
 
     def test_negative_device_delta_is_clamped_to_zero(self) -> None:
         """Another process's reads can race the counter down; never print negative MB."""
@@ -292,6 +310,37 @@ class TestLoadSeed(unittest.TestCase):
             self.assertEqual(
                 main.seed_stamp(d, "rofi"), f"/nix/store/{hsh}-rofi-2.0.0"
             )
+
+
+class TestDryRun(unittest.TestCase):
+    def test_dry_run_reports_bytes_per_app_and_reads_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "f")
+            with open(p, "w") as f:
+                f.write("x" * 100)
+            seeds = os.path.join(d, "seeds")
+            os.makedirs(seeds)
+            with open(os.path.join(seeds, "rofi"), "w") as f:
+                f.write(p + "\n")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = main.main(["--seed-dir", seeds, "--apps", "rofi",
+                                "--state", os.path.join(d, "m.json"),
+                                "--dry-run", "warm"])
+            self.assertEqual(rc, 0)
+            self.assertIn("rofi 100", out.getvalue())
+
+    def test_warm_refuses_an_empty_plan(self) -> None:
+        """0 files must be a loud failure, not a success.
+
+        It printed "0 files, 0.0 MB" and returned 0 for months.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            seeds = os.path.join(d, "seeds")
+            os.makedirs(seeds)
+            rc = main.main(["--seed-dir", seeds, "--apps", "rofi",
+                            "--state", os.path.join(d, "m.json"), "warm"])
+            self.assertNotEqual(rc, 0)
 
 
 if __name__ == "__main__":

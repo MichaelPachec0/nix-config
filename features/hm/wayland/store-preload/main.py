@@ -144,8 +144,25 @@ def cmd_record(args: argparse.Namespace) -> int:
 
 def cmd_warm(args: argparse.Namespace) -> int:
     man = manifest.prune(manifest.load(args.state))
+
+    if args.dry_run:
+        # Seed-key namespace (matches cfg.packages / seedDir file names, e.g.
+        # "firefox" not "firefox-devedition"): the build-time guard iterates
+        # cfg.packages, so the label here has to be what that loop expects.
+        for app in args.apps:
+            files = _ordered_files([app], man, args.seed_dir)
+            total = sum(os.path.getsize(f) for f in files if os.path.exists(f))
+            print(f"{_seed_key(app)} {total}")
+        return 0
+
     files = _ordered_files(args.apps, man, args.seed_dir)
     todo, planned, skipped = warmlib.plan_reads(files, args.max_bytes)
+
+    if not planned:
+        # A warm that plans nothing is the bug this module shipped with. It
+        # must fail loudly, not report success on an empty set.
+        print("store-preload: planned 0 bytes, refusing", file=sys.stderr)
+        return 1
 
     # mincore is not usable here: it reports 100% resident for every /nix
     # file unconditionally. device_read_bytes() is the oracle instead --
@@ -191,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
     parser.add_argument("--state", default=_state_path())
     parser.add_argument("--seed-dir", required=True)
+    parser.add_argument("--dry-run", action="store_true")
     sub = parser.add_subparsers(dest="cmd", required=True)
     for name, fn in (
         ("seed", cmd_seed),
