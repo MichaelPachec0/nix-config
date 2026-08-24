@@ -28,11 +28,13 @@
       cp ${./record.py} record.py
       cp ${./warm.py} warm.py
       cp ${./main.py} main.py
+      cp ${./gen-seed.sh} gen-seed.sh
       cp ${./test_manifest.py} test_manifest.py
       cp ${./test_unwrap.py} test_unwrap.py
       cp ${./test_record.py} test_record.py
       cp ${./test_warm.py} test_warm.py
       cp ${./test_main.py} test_main.py
+      cp ${./test_gen_seed.py} test_gen_seed.py
       mypy --strict ./*.py
       python3 -m unittest discover -p 'test_*.py' -v
       install -d "$out"
@@ -68,7 +70,7 @@
       nativeBuildInputs = [pkgs.python3 pkgs.glibc.bin];
     } ''
       real=$(python3 -c "import sys; sys.path.insert(0, '${storePreloadSrc}'); import unwrap; print(unwrap.resolve(sys.argv[1]))" "${bin}")
-      { echo "$real"; ldd "$real" | grep -o '/nix/store/[^ )]*'; } | sort -u > "$out"
+      bash ${./gen-seed.sh} "$real" "$out"
       n=$(wc -l < "$out")
       if [ "$n" -lt ${toString floors.${name}} ]; then
         echo "seed ${name}: $n files, floor is ${toString floors.${name}}" >&2
@@ -86,7 +88,11 @@
 
   # Exactly what the systemd user unit sees: writeShellApplication's
   # runtimeInputs, nothing else. Measured on the running system as
-  # coreutils:findutils:gnugrep:gnused:systemd, with no tracked app and no ldd.
+  # coreutils:findutils:gnugrep:gnused:systemd, with no tracked app. The unit
+  # DOES see python3 and ldd too -- writeShellApplication also puts
+  # storePreload's own runtimeInputs (python3, glibc.bin for ldd, coreutils)
+  # on PATH -- so this check is stricter than the unit's real environment,
+  # which is safe (a false failure here, never a false pass), not a hole.
   unitPath = lib.makeBinPath [
     pkgs.coreutils
     pkgs.findutils
@@ -182,7 +188,13 @@ in {
       Install.WantedBy = ["graphical-session.target"];
       Service = {
         Type = "oneshot";
-        ExecStart = "${storePreload}/bin/store-preload --apps ${appArgs} --workers ${toString cfg.workers} --max-bytes ${toString cfg.maxBytes} --seed-dir ${seedDir} warm";
+        # storePreloadChecked, not storePreload directly: its output symlinks
+        # to storePreload, but building it also forces envCheck. Going
+        # through storePreload here would make the guard dormant the moment
+        # anyone drops storePreloadChecked from home.packages, with zero
+        # signal -- exactly the class of silent failure this whole module
+        # exists to close.
+        ExecStart = "${storePreloadChecked}/bin/store-preload --apps ${appArgs} --workers ${toString cfg.workers} --max-bytes ${toString cfg.maxBytes} --seed-dir ${seedDir} warm";
         # Best-effort, not idle: idle can starve indefinitely, and the point
         # is to finish before the user hits the rofi keybind.
         IOSchedulingClass = "best-effort";
@@ -200,7 +212,7 @@ in {
       };
       Service = {
         Type = "oneshot";
-        ExecStart = "${storePreload}/bin/store-preload --apps ${appArgs} --seed-dir ${seedDir} record";
+        ExecStart = "${storePreloadChecked}/bin/store-preload --apps ${appArgs} --seed-dir ${seedDir} record";
         Nice = 10;
       };
     };
