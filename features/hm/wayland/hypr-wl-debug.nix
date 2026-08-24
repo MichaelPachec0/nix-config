@@ -8,7 +8,9 @@
 # place the offending request/error pair survives is WAYLAND_DEBUG output, and
 # only if another process is already holding it when quickshell goes. Hence
 # qs-wl-ring (./qs_wl_ring.py): a reader that keeps the tail in memory and
-# flushes on EOF, which is what _exit(1) produces on the pipe.
+# flushes on EOF, which is what _exit(1) produces on the pipe. It writes one
+# file per bar lifetime, because the bar is relaunched within seconds of dying
+# and a single fixed path would have the recovery overwrite the crash.
 #
 # Gated rather than always on, because the trace is tens of thousands of lines
 # a minute and the failure needs a real suspend/resume to reproduce, so it must
@@ -29,6 +31,9 @@
     '';
   };
 
+  # A base path, not the file the trace ends up in: qs-wl-ring derives one
+  # `wl-tail-<stamp>-<pid>.log` per run beside it and keeps this path as a
+  # symlink to the current one.
   defaultLog = "${config.xdg.stateHome}/quickshell/wl-tail.log";
 
   # Its own script rather than an `sh -c` string, so the pipeline lives INSIDE
@@ -108,7 +113,10 @@ in {
       readOnly = true;
       description = ''
         Where the traced session parks the tail of quickshell's WAYLAND_DEBUG
-        output. Overridable at runtime with QS_WL_LOG for a one-off run.
+        output. Symlink to the CURRENT run; each bar lifetime also leaves its own
+        `wl-tail-<UTC start>-<pid>.log` beside it, so a post-crash relaunch
+        cannot overwrite the crash it is recovering from. QS_WL_KEEP (default 10)
+        caps retention. Overridable at runtime with QS_WL_LOG for a one-off run.
       '';
     };
   };
