@@ -77,11 +77,11 @@ fi
 # candidate list instead of acting -- observed with four stale entries.
 shell_pid="$(pgrep -f "quickshell -c $CFG" | head -1 || true)"
 
-if [ -n "$shell_pid" ] \
-    && qs ipc --pid "$shell_pid" call lock lock >/dev/null 2>&1 \
-    && sleep 0.3 \
-    && qs ipc --pid "$shell_pid" call lock unlock >/dev/null 2>&1; then
-    exit 0
+if [ -n "$shell_pid" ] &&
+  qs ipc --pid "$shell_pid" call lock lock >/dev/null 2>&1 &&
+  sleep 0.3 &&
+  qs ipc --pid "$shell_pid" call lock unlock >/dev/null 2>&1; then
+  exit 0
 fi
 
 # Shell unresponsive/dead: ensure it is gone, then relaunch in escape mode.
