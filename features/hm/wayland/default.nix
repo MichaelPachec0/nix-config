@@ -16,6 +16,7 @@
     ./waybar
     ./rofi.nix
     ./common.nix
+    ./store-preload
     ./hypr-wl-debug.nix
     ./hyprland.nix
     ./hypr-window-keeper.nix

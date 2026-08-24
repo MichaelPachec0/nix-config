@@ -20,6 +20,18 @@
     # hardware.url = "github:nixos/nixos-hardware";
     hardware.url = "github:MichaelPachec0/nixos-hardware";
 
+    # CachyOS-patched kernels. The `release` branch is the one upstream's Hydra
+    # has actually built and pushed to its Attic cache; `master` is
+    # absolute-latest and may have no cache at all.
+    #
+    # Deliberately does NOT follow our nixpkgs, unlike every other input here.
+    # Upstream is explicit that overriding its nixpkgs desynchronises the
+    # CachyOS patch set from the kernel tree it patches. The failure mode is a
+    # patch that will not apply, which reports itself as a rejected hunk rather
+    # than as anything naming the cause -- so the cost of "just one more
+    # follows" is an hour of confused debugging, not a duplicate nixpkgs.
+    nix-cachyos-kernel.url = "github:xddxdd/nix-cachyos-kernel/release";
+
     # NOTE: Hyprland and hy3 now come from nixpkgs (pkgs.hyprland +
     # pkgs.hyprlandPlugins.hy3). nixpkgs' hyprlandPlugins scope builds hy3
     # against the same nixpkgs hyprland, so the plugin ABI matches without
@@ -200,9 +212,18 @@
     # Single source of truth for per-user HM module lists, shared with the
     # integrated NixOS path (features/nixos/home).
     homeModules = import ./helpers/home.nix {inherit inputs;};
+    # Exposes pkgs.cachyosKernels.*. `pinned` uses the exact nixpkgs revision
+    # the cached kernels were built against, which is what makes the binary
+    # cache actually hit; `default` would use our nixpkgs and let
+    # nixpkgs.config apply, at the cost of a near-certain cache miss and a
+    # local kernel build. Only one of the two may be used.
+    cachyosOverlay = {
+      nixpkgs.overlays = [inputs.nix-cachyos-kernel.overlays.pinned];
+    };
     thanatosSharedModules =
       overlays.unstable.nixosDesktop
       ++ [
+        cachyosOverlay
         inputs.hardware.nixosModules.lenovo-thinkpad-p14s-amd-gen1
         inputs.lanzaboote.nixosModules.lanzaboote
         inputs.sops-nix.nixosModules.sops
@@ -210,7 +231,9 @@
         inputs.flake-playground.nixosModules.default
         ./nixos/nyx/boot.nix
         ./nixos/nyx/configuration.nix
+        ./features/nixos/cachyos-settings
         ./nixos/thanatos/amd.nix
+        ./nixos/thanatos/kernel.nix
         ./nixos/thanatos/hardware-configuration.nix
         inputs.disko.nixosModules.disko
         ./nixos/thanatos/e5800.nix
@@ -254,6 +277,8 @@
           modules =
             overlays.unstable.nixosDesktop
             ++ [
+              cachyosOverlay
+              ./features/nixos/cachyos-settings
               # changed to precision 5530/9570
               # inputs.hardware.nixosModules.dell-xps-15-9560-intel
               # inputs.hardware.nixosModules.dell-precision-5530

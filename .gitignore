@@ -10,3 +10,16 @@ logs/
 __pycache__
 
 docs/
+
+# Matrix benchmark scratch + results (nixos/thanatos/ab-matrix). Kept out of
+# git because the scratch is multi-GB fio fill; promote a results CSV with
+# `git add -f` if it is worth keeping.
+.ab-matrix/
+
+# Desktop-latency matrix scratch + results (nixos/thanatos/ab-matrix).
+.ab-latency/
+
+# I/O-bound matrix scratch + results (nixos/thanatos/ab-matrix). The scratch
+# holds a 40G fio working set, deliberately larger than RAM so the page cache
+# cannot answer the reads.
+.io-matrix/

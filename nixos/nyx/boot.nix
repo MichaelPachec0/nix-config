@@ -30,7 +30,12 @@ in {
       };
     };
     # NOTE: zen is a fast moving target, use kernel that updates less often.
-    kernel.mod.kernelPkg = pkgs.linuxPackages_xanmod_stable;
+    #
+    # mkDefault so a host can diverge during a staged kernel rollout without
+    # mkForce. Both hosts are meant to converge back onto one value here -- this
+    # file is where the kernel is chosen for every host that imports it -- so a
+    # live override in a host file is a temporary state, not the design.
+    kernel.mod.kernelPkg = lib.mkDefault pkgs.linuxPackages_xanmod_stable;
     # kernel.mod.kernelPkg = pkgs.linuxPackages_zen;
     kernel.mod.ntfs3.enable = false;
   };

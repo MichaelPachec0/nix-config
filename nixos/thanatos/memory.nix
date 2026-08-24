@@ -1,4 +1,5 @@
 {
+  config,
   lib,
   pkgs,
   ...
@@ -161,7 +162,9 @@ in {
   # Deliberately NO CPUWeight here: cgroup weights are relative among *siblings*,
   # so lowering nix-daemon's weight only ranks it against other system.slice
   # services. The desktop lives in user.slice, a different subtree, so it would
-  # not have been affected at all. SCHED_IDLE below is the cross-tree knob.
+  # not have been affected at all. The cross-tree knobs are SCHED_IDLE below and
+  # the user.slice/system.slice weights further down -- those two slices ARE
+  # siblings, under the root cgroup.
   systemd.services.nix-daemon.serviceConfig = {
     MemoryAccounting = true;
     MemoryHigh = "8G";
@@ -182,36 +185,91 @@ in {
   # case during a rebuild.
   nix.daemonCPUSchedPolicy = "idle";
   # Class 3 (idle) ignores the numeric priority, so daemonIOSchedPriority is
-  # left alone. See the mq-deadline rule below -- this is inert without it.
+  # left alone.
+  #
+  # CURRENTLY INERT, kept for the day the elevator changes back. An I/O
+  # scheduler has to look at the ioprio class for this to do anything, and the
+  # one selected below does not. Checked against the kernel source rather than
+  # assumed -- occurrences of ioprio in block/:
+  #
+  #   adios.c 0    kyber-iosched.c 0    mq-deadline.c 18
+  #
+  # bfq honoured it too, which was its one real advantage, and bfq lost by 13x
+  # on desktop I/O stall. So the class is priced at zero today. The
+  # work-conserving I/O equivalent of the slice CPUWeights below would be
+  # blk-iocost (io.weight), which sits above the elevator and so is unaffected
+  # by this; it is not enabled here, and given that io.latency and ioprio have
+  # both turned out to buy nothing on this machine it should be measured with
+  # ab-matrix's io-matrix.sh before being adopted rather than switched on
+  # because the mechanism sounds right.
   nix.daemonIOSchedClass = "idle";
 
-  # BFQ is a module (CONFIG_IOSCHED_BFQ=m), so it must be loaded before udev can
-  # select it below.
-  boot.kernelModules = ["bfq"];
-
-  # bfq, measured against none / mq-deadline / kyber under a nix-build-shaped
-  # load. It wins every latency metric by 2-6x and its worst round still beats
-  # the others' medians; mq-deadline produced 534ms fsync stalls, the exact
-  # shape that hung Firefox's Quota Manager until its watchdog killed it. The
-  # cost is bulk throughput -- a cold Firefox launch during a build is 1.7x
-  # slower than under mq-deadline -- and that trade is accepted deliberately,
-  # because this machine's complaint is stutter during builds, not launch time
-  # during builds. Set this back to `none` to undo it.
+  # adios. CONFIG_MQ_IOSCHED_ADIOS=y, so unlike bfq (CONFIG_IOSCHED_BFQ=m) it
+  # needs no boot.kernelModules entry. It is a CachyOS-kernel scheduler and does
+  # not exist on stock nixpkgs kernels, so this line and nixos/thanatos/kernel.nix
+  # move together.
   #
-  # BFQ TUNING WAS MEASURED AND REJECTED, do not reach for it: slice_idle=0
-  # (the standard "SSDs do not need idling" advice), slice_idle_us=0 and
-  # low_latency=0 each cost 1.3-2.9x on reads, and strict_guarantees=1 explodes
-  # the tails. Every one of them bought fsync p99 at the expense of reads, which
-  # is the wrong direction for desktop feel. Also not worth revisiting: a
-  # read_ahead_kb bump, flat across 128-2048 because max_hw_sectors_kb is 128
-  # here and large read()s bypass readahead entirely.
+  # THIS REPLACES BFQ, and bfq was itself a recorded decision, so the reason
+  # matters. That choice came from an A/B whose load and probe both ran inside
+  # one privileged cgroup: the desktop's own I/O was never in the picture, so it
+  # measured fio's read latency against a synthetic burner rather than a desktop
+  # against a build. Re-measured with the probe running as the user in
+  # user.slice and the load as real nix builds under nix-daemon, 48 cells, bfq
+  # loses by an order of magnitude:
   #
-  # bfq also keeps the reason mq-deadline was chosen before it -- it honours the
-  # rt/be/idle ioprio classes, so nix.daemonIOSchedClass above is not decorative
-  # the way it was under `none` -- and adds cgroup io.weight, which mq-deadline
-  # does not implement and iocost is not active to provide.
+  #   desktop us stalled on I/O per 210s window, median of 16 cells each
+  #     kyber   232264      adios   263490      bfq  3065494
+  #   the probe's own read p99
+  #     kyber    21403us    adios    20369us    bfq   244345us
+  #
+  # bfq is thus excluded on evidence. Choosing between the two survivors took a
+  # second, I/O-bound matrix (see io-matrix.sh): 24 cells x 3 reps of fio in
+  # system.slice against the same probe in user.slice, across three load shapes.
+  # Sequential-read and random-mixed came out a genuine tie. Durable-commit --
+  # small writes with an fsync every 16, the shape that historically produced
+  # 534ms stalls here and hung Firefox's Quota Manager -- did not:
+  #
+  #                             adios       kyber
+  #     desktop read p99      4549us     17453us    3.8x, resolvable
+  #     desktop wakeup p99.9   269us       616us    2.3x, resolvable
+  #     load commit p99      21758us     70779us    3.3x
+  #     load commit p99.9    42467us    190054us    4.5x
+  #     write throughput    207 MB/s    143 MB/s    +45%
+  #
+  # Only the first two clear a |median| > sd bar on their own. The weight is in
+  # the agreement: all 9 informative metrics favour adios and none favour kyber,
+  # which is p ~= 0.004 by sign test. There is also no trade to price, since
+  # adios leads on throughput as well as on latency.
+  #
+  # WHY NOT KYBER, given the first matrix showed adios with a worse tail (16
+  # cells spanning 136ms-3.10s against kyber's 131-608ms). Both adios outliers
+  # were sched=eevdf AND cpuw=off, and this file now ships scx_flash with
+  # 1000/20 slice weights. Restricted to the configuration actually in use, the
+  # two are indistinguishable on every metric (n=4, all noise). The tail
+  # argument was real for the machine as configured then, and stopped applying
+  # the moment those two arms were dropped.
+  #
+  # KNOWN WEAKNESS in the above, recorded so it is not rediscovered as news: the
+  # two tied profiles were partly served from page cache (53% and 40%, caught by
+  # the harness's own device counters), so their ties are the weakest evidence
+  # in the set. fsync reached the device unimpeded and is the one that resolved.
+  # io-matrix.sh has since been fixed to use an 80G working set and drop caches
+  # per cell; a re-run would firm up the ties, not the fsync result.
+  #
+  # What is NOT lost by leaving bfq: it honoured the rt/be/idle ioprio classes,
+  # which is what made nix.daemonIOSchedClass above non-decorative. Neither
+  # adios nor kyber implements ioprio classes, so that setting is now inert for
+  # the queue and earns its keep only through the daemon's own SCHED_IDLE and
+  # the slice weights below. Accepted cost: every cell of both matrices ran with
+  # the same daemon settings, so it is already priced into the numbers.
+  #
+  # BFQ TUNING WAS MEASURED AND REJECTED and is now moot, but keep it recorded
+  # so nobody re-runs it: slice_idle=0, slice_idle_us=0 and low_latency=0 each
+  # cost 1.3-2.9x on reads, and strict_guarantees=1 explodes the tails. Also
+  # not worth revisiting: a read_ahead_kb bump, flat across 128-2048 because
+  # max_hw_sectors_kb is 128 here and large read()s bypass readahead entirely.
   services.udev.extraRules = ''
-    ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="bfq"
+    ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="adios"
   '';
 
   # Build width. Both of these defaulted to `auto`, which on this 8C/16T part
@@ -271,34 +329,96 @@ in {
   # kernel then distributes proportionally between whichever children are
   # actually claiming. Splitting would just under-protect whichever side happens
   # to be busy.
-  # I/O latency protection for the desktop, the half ionice alone cannot give.
+  # NO IODeviceLatencyTargetSec here, and that is a measured removal rather than
+  # an oversight.
   #
-  # io.latency is set on the group to PROTECT, not the one to punish: the kernel
-  # watches this group's completion latency and, when it exceeds the target,
-  # throttles peer cgroups that have no target of their own. system.slice (where
-  # nix-daemon builds) is such a peer, so a build gets squeezed exactly when the
-  # desktop starts suffering and not before -- unlike a hard IOReadBandwidthMax,
-  # which would slow builds even on an idle machine.
+  # The mechanism is sound on paper: io.latency set on the group to PROTECT
+  # makes the kernel throttle peer cgroups with no target of their own once this
+  # group misses its target, so a build is squeezed exactly when the desktop
+  # suffers and not before. It was carried at "/dev/nvme0n1 10ms".
   #
-  # Target 10ms: this drive answers a cold 4K read in ~600us and a durable commit
-  # in ~3ms, so 10ms is ~16x headroom over healthy operation and still trips well
-  # before a human notices. Raise toward 25-50ms if builds crawl while the
-  # desktop is idle; lower only if video playback during a build still breaks up.
-  #   cat /sys/fs/cgroup/user.slice/io.latency     -> "259:0 target=10000"
-  #   cat /sys/fs/cgroup/system.slice/io.pressure  -> "some" rises when throttled
+  # It was a factor in both matrices and did nothing in either: noise on I/O
+  # stall, CPU stall, memory stall, longest stall and wakeup p99.9, a dead-even
+  # 13-vs-12 split of the 25 dropped frames in the build matrix, and still noise
+  # at n=36 in the I/O-bound one under a genuine 376 MB/s of sustained writes.
   #
-  # Device is the physical nvme, not the dm-crypt mapper: bio cgroup association
-  # is preserved down through dm, and 259:0 is where the real queue contention
-  # happens (io.stat in these cgroups accounts both 254:x and 259:0).
+  # THE REASON IS STRUCTURAL, not a matter of picking a better target, so do not
+  # reach for this again with a lower number. From check_scale_change() in
+  # block/blk-iolatency.c, on the path that would throttle a peer:
+  #
+  #     /*
+  #      * Sometimes high priority groups are their own worst enemy, so
+  #      * instead of taking it out on some poor other group that did 5%
+  #      * or less of the IO's for the last summation just skip this
+  #      * scale down event.
+  #      */
+  #     samples_thresh = lat_info->nr_samples * 5;
+  #     samples_thresh = max(1ULL, div64_u64(samples_thresh, 100));
+  #     if (iolat->nr_samples <= samples_thresh)
+  #             return;
+  #
+  # The protected cgroup must have issued MORE THAN 5% of the I/O in the last
+  # summation or the throttle is skipped outright. A desktop being crushed by a
+  # build or a copy is by definition the minority producer: in the I/O matrix
+  # the probe did about 5 IOPS against fio's ~27000, which is 0.02% against a 5%
+  # floor -- three orders of magnitude short. io.latency is built for a
+  # protected group that is itself a substantial producer, a database container
+  # against a backup job, and cannot express "this tiny reader matters most".
+  #
+  # A second, independent reason it never fired: latency_sum_ok() compares the
+  # window MEAN against the target, and the probe's read p99 was 4.5-9.4ms under
+  # either surviving scheduler, so the mean never reached 10ms regardless.
+  #
+  # Left off because it is not a knob that was set wrong, it is a mechanism that
+  # does not apply here. The cross-tree lever that does work is CPUWeight on the
+  # slices above.
+  # CPUWeight 1000 against system.slice's 20 -- see the block above for why the
+  # 50:1 split and what it bought. Kept here rather than in that block so the
+  # protectSlice memory settings and the CPU weight for the same unit stay in
+  # one place.
   systemd.slices.user =
     protectSlice
     // {
       sliceConfig =
         protectSlice.sliceConfig
         // {
-          IODeviceLatencyTargetSec = "/dev/nvme0n1 10ms";
+          CPUAccounting = true;
+          CPUWeight = 1000;
         };
     };
+  # ---- CPU weight across the two subtrees ---------------------------------
+  # user.slice and system.slice are siblings under the root cgroup, so weighting
+  # them is the cross-tree CPU control that the nix-daemon comment above says
+  # does not exist at service level. Both sat at the default 100 until now, i.e.
+  # this lever had never been pulled.
+  #
+  # It turned out to be the largest GUI-relevant effect in the 48-cell matrix,
+  # and one that only showed up once frame misses were counted rather than
+  # averaged. Of 25 missed 120Hz frame deadlines across the whole run, 24 landed
+  # on the weight=100/100 arm and 1 on this one; 12 of the 13 cells that dropped
+  # any frame were the default arm (p ~= 0.003, sign test over 13 cells). The
+  # paired-median test reported it as "noise" on every stall metric because most
+  # cells drop zero frames, so the median difference is structurally zero. The
+  # corroborating signals: longest single stall 2ms here against 4ms at the
+  # default, and psi_cpu missing resolvability by 0.4%.
+  #
+  # 1000/20 is a 50:1 split, chosen deliberately over something timid: a weight
+  # ratio only bites while both sides are runnable, and a 2:1 split would have
+  # landed inside the noise and proven nothing either way. On an idle desktop it
+  # costs nothing at all, because weights do not cap anything -- system.slice
+  # gets the whole machine when user.slice is not asking.
+  #
+  # Nothing in system.slice is latency-critical enough to mind: those units are
+  # event-driven and near-idle in CPU terms, and the one CPU-heavy resident,
+  # nix-daemon, is already SCHED_IDLE by choice.
+  systemd.slices.system = {
+    overrideStrategy = "asDropin";
+    sliceConfig = {
+      CPUAccounting = true;
+      CPUWeight = 20;
+    };
+  };
+
   systemd.slices."user-" = protectSlice;
   systemd.services."user@" = {
     overrideStrategy = "asDropin";
@@ -343,11 +463,43 @@ in {
   # -m takes auto|turbo|performance|powersave|all|none; on this 8-core Zen 2
   # part `all` is near a no-op for latency but consistently halved the
   # throughput cost versus the auto default.
-  services.scx = {
-    enable = true;
-    scheduler = "scx_flash";
-    extraArgs = ["-m" "all"];
-  };
+  # OFF, on measurement, in favour of EEVDF-BORE. Everything above stays
+  # recorded because it was all true against plain EEVDF and would apply again
+  # the moment scx is reconsidered.
+  #
+  # WHAT CHANGED: the earlier comparison was flash against EEVDF on a kernel
+  # with no BORE in it. Re-run on linux-cachyos-bore-lto, three arms in one
+  # boot -- flash, EEVDF+BORE, EEVDF alone -- 38 cells, 12 complete
+  # repetitions, every arm re-verified after its measurement window. The three
+  # distributions do not overlap at all:
+  #
+  #                    flash              bore
+  #     wake p99      973-1000us       248- 583us    bore 2.6x better
+  #     wake p99.9  1058-1074us       1150-1324us    flash better
+  #     psi_cpu      2.41M-5.55M       0.80M-1.34M   bore 2.4x better
+  #
+  # scx_flash flattens the whole wakeup distribution: its p99 and p99.9 sit
+  # 80us apart with a 15us spread across 13 cells, so nearly every wakeup costs
+  # about a millisecond. BORE is 2.6x faster typically and gives part of it back
+  # at the extreme.
+  #
+  # The tie-break is the frame budget, not the other arm. At 120Hz that is
+  # 8333us, and flash's 1064us against bore's 1220us are both about 7x under it
+  # -- that gap cannot be felt. A 2.6x difference in what a wakeup usually
+  # costs applies to every wakeup there is, and the 2.4x lower desktop CPU
+  # stall says the same thing independently. Frame misses tied at 1-2 per arm
+  # and no 60Hz deadline was missed in any of the 38 cells; build throughput
+  # was identical at 12 compilers alive per window.
+  #
+  # HONEST LIMIT: flash really does win the extreme tail, and this is a
+  # judgement that the common case matters more, not a clean sweep. Re-run
+  # ab-matrix/sched-ab.sh if that judgement is ever in doubt; it toggles all
+  # three arms at runtime and needs no rebuild.
+  #
+  # Turning this back on also means undoing the sched_bore sysctl below: BORE
+  # governs nothing while scx owns the tasks, so leaving both on would be a
+  # configuration that measures as flash while reading as bore.
+  services.scx.enable = false;
 
   # Retry hard, because attaching a sched_ext scheduler is inherently racy and
   # the packaged unit gives up almost immediately.
@@ -368,9 +520,33 @@ in {
   # Do NOT "fix" this by ordering scx after some other unit. waydroid-container
   # was the obvious suspect and is not the cause -- restarting it under a live
   # attach never reproduced the failure. Any task creation anywhere will do it.
-  systemd.services.scx = {
+  # Kept for the day scx comes back, but MUST be guarded on services.scx.enable.
+  #
+  # An unguarded `systemd.services.scx = { ... }` DEFINES the unit whether or not
+  # the scx module is enabled. With enable = false the module contributes no
+  # ExecStart, so these three overrides became the whole unit: a [Service]
+  # section holding RestartSec and nothing to run. systemd rejects that with
+  # "Unit scx.service has a bad unit file setting" and switch-to-configuration
+  # fails the whole activation. The comment this replaces claimed it "costs
+  # nothing while the unit is not started"; that was wrong, and it cost a failed
+  # rebuild.
+  #
+  # The overrides themselves are the entire fix for the attach race described
+  # above, so they stay rather than being deleted and rediscovered.
+  systemd.services.scx = lib.mkIf config.services.scx.enable {
     startLimitIntervalSec = lib.mkForce 300;
     startLimitBurst = lib.mkForce 12;
     serviceConfig.RestartSec = 5;
   };
+
+  # BORE on the fair class. The bore kernel already defaults this to 1, so this
+  # is a statement of intent rather than a change: it makes the dependency on
+  # nixos/thanatos/kernel.nix explicit, and it fails loudly rather than silently
+  # if the kernel is ever swapped for one without BORE.
+  #
+  # Measured against plain EEVDF in the same boot, same load, 12 paired
+  # repetitions: wakeup p99 377us against 597us, wakeup p99.9 1220us against
+  # 1809us. Both resolvable by a wide margin, so BORE earns its place on the
+  # fair class independently of the scx decision above.
+  boot.kernel.sysctl."kernel.sched_bore" = 1;
 }
