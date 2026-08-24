@@ -12,6 +12,7 @@
   pkgs,
   lib,
   config,
+  warmApps,
   ...
 }: let
   cfg = config.services.storePreload;
@@ -48,6 +49,42 @@
   };
 
   appArgs = lib.concatStringsSep "," cfg.apps;
+
+  # Floors, set below measured with headroom for nixpkgs churn. The floor, not
+  # the heuristic, is what makes unwrapping safe: rofi through its wrapper
+  # yields 3 files against 60 unwrapped, so this fails the build instead of
+  # warming two libraries. Same shape as the SECKEY_MIN_TESTS floor.
+  floors = {
+    rofi = 40; # measured 60
+    kitty = 6; # measured 8
+    quickshell = 70; # measured 99
+    firefox = 3; # measured 4; a launcher shim, real set comes from record
+  };
+
+  # bin comes from the package, not the manifest key: warmApps.firefox is
+  # config.programs.firefox.package, whose binary is firefox-devedition.
+  seedFor = name: pkg: let
+    bin = lib.getExe pkg;
+  in
+    pkgs.runCommand "store-preload-seed-${name}" {
+      nativeBuildInputs = [pkgs.python3 pkgs.glibc.bin];
+    } ''
+      real=$(python3 -c "import sys; sys.path.insert(0, '${storePreloadSrc}'); import unwrap; print(unwrap.resolve(sys.argv[1]))" "${bin}")
+      { echo "$real"; ldd "$real" | grep -o '/nix/store/[^ )]*'; } | sort -u > "$out"
+      n=$(wc -l < "$out")
+      if [ "$n" -lt ${toString floors.${name}} ]; then
+        echo "seed ${name}: $n files, floor is ${toString floors.${name}}" >&2
+        echo "wrapper resolution probably picked the wrong binary: $real" >&2
+        exit 1
+      fi
+    '';
+
+  seedDir = pkgs.runCommand "store-preload-seeds" {} (
+    "install -d $out\n"
+    + lib.concatStringsSep "\n" (lib.mapAttrsToList
+      (n: p: "cp ${seedFor n p} $out/${n}")
+      cfg.packages)
+  );
 in {
   options.services.storePreload = {
     enable = lib.mkEnableOption "page-cache warming for hot store paths";
@@ -80,9 +117,19 @@ in {
         whole and logged. Measured working set for the default apps is ~1.4 GB.
       '';
     };
+
+    packages = lib.mkOption {
+      type = lib.types.attrsOf lib.types.package;
+      description = ''
+        Apps to warm, as packages. Set from warmApps so the warm set and the
+        bind set are the same object. Names are the manifest keys.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
+    services.storePreload.packages = lib.mkDefault warmApps;
+
     home.packages = [storePreload pkgs.fatrace];
 
     # User units: graphical-session.target is user-scoped. Puts the manifest
