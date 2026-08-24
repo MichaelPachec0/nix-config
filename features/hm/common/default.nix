@@ -10,6 +10,7 @@
     ./dbus-fd-watch.nix
     ./unix-inflight-watch.nix
     ./dbus-activation-reload.nix
+    ./ff-firststart
   ];
   options = {
     graphical.enable =
