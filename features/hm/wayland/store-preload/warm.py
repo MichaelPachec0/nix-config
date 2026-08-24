@@ -123,46 +123,72 @@ def plan_reads(files: list[str], max_bytes: int) -> tuple[list[str], int, int]:
     return keep, total, skipped
 
 
-def _read_all(paths: list[str]) -> None:
+def _read_all(paths: list[str]) -> int:
+    """Read every path fully. Returns bytes actually read.
+
+    open/readv errors are skipped, not counted -- a file that fails to open
+    contributes 0, not its planned size.
+    """
     buf = bytearray(READ_CHUNK)
+    total = 0
     for path in paths:
         try:
             fd = os.open(path, os.O_RDONLY)
         except OSError:
             continue
         try:
-            while os.readv(fd, [buf]):
-                pass
+            while True:
+                n = os.readv(fd, [buf])
+                if not n:
+                    break
+                total += n
         except OSError:
             pass
         finally:
             os.close(fd)
+    return total
 
 
 def warm(files: list[str], workers: int) -> int:
-    """Read every file across N forked readers. Returns bytes read.
+    """Read every file across N forked readers. Returns bytes actually read.
 
-    Forks, not threads, so the GIL is not in the way.
+    Forks, not threads, so the GIL is not in the way. Each child reports its
+    real byte count back over a pipe rather than the parent re-deriving a
+    planned total from os.path.getsize(): that used to make `warm()` return
+    what was PLANNED, not what was READ, so a file that failed to open (or a
+    whole shard whose reads all failed) was silently absorbed into a total
+    that always looked healthy.
     """
     if not files:
         return 0
-    total = 0
-    for path in files:
-        try:
-            total += os.path.getsize(path)
-        except OSError:
-            pass
     n = max(1, min(workers, len(files)))
     shards = [files[i::n] for i in range(n)]
     pids: list[int] = []
+    read_ends: list[int] = []
     for shard in shards:
+        r, w = os.pipe()
         pid = os.fork()
         if pid == 0:
+            os.close(r)
             try:
-                _read_all(shard)
+                got = _read_all(shard)
+                os.write(w, got.to_bytes(8, "big"))
             finally:
                 os._exit(0)
+        os.close(w)
         pids.append(pid)
-    for pid in pids:
+        read_ends.append(r)
+
+    total = 0
+    for pid, r in zip(pids, read_ends):
+        data = b""
+        while len(data) < 8:
+            chunk = os.read(r, 8 - len(data))
+            if not chunk:
+                break
+            data += chunk
+        os.close(r)
         os.waitpid(pid, 0)
+        if len(data) == 8:
+            total += int.from_bytes(data, "big")
     return total

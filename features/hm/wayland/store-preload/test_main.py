@@ -268,6 +268,36 @@ class TestWarmReporting(unittest.TestCase):
                 main.cmd_warm(args)
         self.assertIn("0.0 MB off disk", buf.getvalue())
 
+    def test_warns_when_read_falls_materially_short_of_planned(self) -> None:
+        """I1: warm() used to just re-sum planned sizes before the fork, so
+        `read` could never fall short of `planned` even when every open()
+        failed. Now that warm() reports what the forked readers actually
+        got, cmd_warm must say so when the gap is large.
+        """
+        a = self._file(4 << 20)
+        state = os.path.join(tempfile.mkdtemp(), "manifest.json")
+        manifest.save(state, {"rofi": [a]}, {})
+        args = _args(state=state, apps=["rofi"])
+        out = io.StringIO()
+        err = io.StringIO()
+        with mock.patch.object(warm, "warm", return_value=0):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = main.cmd_warm(args)
+        self.assertEqual(rc, 0)
+        self.assertIn("WARNING", err.getvalue())
+        self.assertIn("planned", err.getvalue())
+
+    def test_no_warning_when_read_is_close_to_planned(self) -> None:
+        a = self._file(4 << 20)
+        state = os.path.join(tempfile.mkdtemp(), "manifest.json")
+        manifest.save(state, {"rofi": [a]}, {})
+        args = _args(state=state, apps=["rofi"])
+        out = io.StringIO()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            main.cmd_warm(args)
+        self.assertNotIn("WARNING", err.getvalue())
+
     def test_status_reports_file_count_and_size_without_a_percentage(self) -> None:
         a, b = self._file(8192), self._file(8192)
         state = os.path.join(tempfile.mkdtemp(), "manifest.json")

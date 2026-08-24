@@ -173,6 +173,17 @@ def cmd_warm(args: argparse.Namespace) -> int:
     elapsed = time.monotonic() - start
     dev_after = warmlib.device_read_bytes()
 
+    # planned > 0 here (the empty-plan case returned above). A shortfall this
+    # large means most planned files failed to open -- warm() now reports
+    # bytes actually read, not bytes planned, so this branch is reachable
+    # where it used to be dead: read == planned unconditionally before.
+    if read < planned // 2:
+        print(
+            f"store-preload: WARNING read {_mb(read)} of {_mb(planned)} planned "
+            "-- most planned files failed to open",
+            file=sys.stderr,
+        )
+
     off_disk = max(0, dev_after - dev_before)
     cold_pct = (100.0 * off_disk / read) if read else 0.0
     rate = (read / 2**20 / elapsed) if elapsed > 0 else 0.0

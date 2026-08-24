@@ -147,6 +147,22 @@ class TestWarm(unittest.TestCase):
     def test_warm_of_nothing_is_zero(self) -> None:
         self.assertEqual(warm.warm([], workers=4), 0)
 
+    def test_a_file_that_fails_to_open_does_not_count_toward_the_total(self) -> None:
+        """I1: warm() used to sum os.path.getsize() over the input list
+        before forking, so it returned bytes PLANNED, not bytes READ. A file
+        that vanishes (or is unreadable) between planning and reading used to
+        still count as read in full. Now each child reports its own actual
+        byte count back over a pipe.
+        """
+        ok = _mkfile(4 << 20)
+        vanished = os.path.join(tempfile.mkdtemp(), "gone")
+        got = warm.warm([ok, vanished], workers=2)
+        self.assertEqual(got, 4 << 20)
+
+    def test_every_file_failing_to_open_reads_zero(self) -> None:
+        got = warm.warm(["/nonexistent/a", "/nonexistent/b"], workers=2)
+        self.assertEqual(got, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
