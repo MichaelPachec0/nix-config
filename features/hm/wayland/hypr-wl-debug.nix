@@ -75,11 +75,18 @@
   # The bar's autostart, with exactly one conditional in it. Both branches keep
   # `-s b -a quickshell`, so the shell lands in background-graphical.slice with
   # its memory.low protection either way (nixos/thanatos/memory.nix).
+  #
+  # TEMPORARY: trace on by DEFAULT in every session, hence HYPR_WL_TRACE:-1 and
+  # not the session's HYPR_WL_DEBUG. The fault needs a real suspend/resume that
+  # may be days away, so the trace has to already be running in whatever session
+  # is up when it fires. Revert to `"''${HYPR_WL_DEBUG:-0}"` once the interface
+  # is named. Costs a line per request + ~20 MB of in-memory tail;
+  # HYPR_WL_TRACE=0 opts a session out without a rebuild.
   barLaunch = pkgs.writeShellApplication {
     name = "qs-bar-launch";
     runtimeInputs = [appRun];
     text = ''
-      if [ "''${HYPR_WL_DEBUG:-0}" = "1" ]; then
+      if [ "''${HYPR_WL_TRACE:-1}" = "1" ]; then
         exec app-run -s b -a quickshell ${tracedBar}/bin/qs-bar-traced
       fi
 
