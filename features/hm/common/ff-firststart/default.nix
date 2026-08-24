@@ -55,6 +55,28 @@
     ''
     + builtins.readFile ./ff-wrap.sh;
   };
+
+  # Regression guard on ff-wrap.sh's "nothing here may stop firefox from
+  # starting" invariant -- the only guard on the "user loses their browser"
+  # bug that took three fix rounds to nail down. store-preload's python
+  # suite is enforced at build via mypy+unittest inside its own derivation;
+  # this is the shell equivalent. writeShellApplication's own checkPhase
+  # argument would REPLACE shellDryRun+shellcheck rather than add to them, so
+  # this runs as a separate runCommand instead, wired the same way
+  # store-preload's envCheck forces itself into storePreloadChecked.
+  shimCheck = pkgs.runCommand "ff-firststart-shim-check" {} ''
+    bash ${./test_ff-wrap.sh} ${./ff-wrap.sh}
+    touch $out
+  '';
+
+  # A derivation nothing depends on is never built. `: ${shimCheck}` forces
+  # it into shimChecked's build graph via string interpolation, so editing
+  # ff-wrap.sh and breaking the regression test fails the switch instead of
+  # sitting dormant with zero signal.
+  shimChecked = pkgs.runCommand "ff-firststart-shim-checked" {} ''
+    : ${shimCheck}
+    ln -s ${shim} $out
+  '';
 in {
   options.services.ffFirstStart = {
     enable =
@@ -79,7 +101,7 @@ in {
       # mkIf) so this stays the option's only definition -- readOnly rejects
       # a second one, even from the same module.
       default = lib.optionalAttrs cfg.enable {
-        firefox = "${shim}/bin/firefox-devedition";
+        firefox = "${shimChecked}/bin/firefox-devedition";
       };
       readOnly = true;
       description = ''
@@ -106,7 +128,7 @@ in {
     # uwsm still derives the same bin_id and app2unit does not silently
     # degrade to a plain exec.
     home.file.".local/bin/firefox-devedition" = {
-      source = "${shim}/bin/firefox-devedition";
+      source = "${shimChecked}/bin/firefox-devedition";
       executable = true;
     };
 

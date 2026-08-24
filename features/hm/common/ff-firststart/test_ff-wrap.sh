@@ -39,10 +39,15 @@ trap cleanup EXIT
 
 # Stub in place of the real firefox binary: records that it ran and with
 # what args, then exits, so a test failure can't hang on a real browser.
+# Shebang is an absolute, resolved bash path, not `#!/usr/bin/env bash`: a
+# nix build sandbox has no /usr/bin/env, so that shebang makes every `exec`
+# of this stub fail with "bad interpreter" and every check below report the
+# stub as never launched -- which looks exactly like the real regression
+# this test exists to catch, but is only a fixture bug.
 FIREFOX_STUB="$TMP/firefox-stub"
 MARKER="$TMP/launched"
 cat >"$FIREFOX_STUB" <<STUB
-#!/usr/bin/env bash
+#!$(command -v bash)
 printf 'LAUNCHED %s\n' "\$*" > "$MARKER"
 STUB
 chmod +x "$FIREFOX_STUB"
