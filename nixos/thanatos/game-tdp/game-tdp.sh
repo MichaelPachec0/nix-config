@@ -13,14 +13,19 @@ MARKER_DIR="${GAME_TDP_MARKER_DIR:-/run/gamemode}"
 AC_ONLINE="${GAME_TDP_AC:-/sys/class/power_supply/AC/online}"
 FAN_MODE="${GAME_TDP_FAN:-/run/thinkfan/mode}"
 OVERRIDE_FILE="${GAME_TDP_OVERRIDE:-/run/gamemode/override}"
-BOOST_W="${GAME_TDP_BOOST_W:-35000}"
-DEFAULT_W="${GAME_TDP_DEFAULT_W:-28000}"
+BOOST_W="${GAME_TDP_BOOST_W:-25000}"
+DEFAULT_W="${GAME_TDP_DEFAULT_W:-23000}"
+
+# Defaults that are well tested
+# BOOST_W="${GAME_TDP_BOOST_W:-25000}"
+# DEFAULT_W="${GAME_TDP_DEFAULT_W:-23000}"
+
 # Battery: game-tdp does NOT drive ryzenadj on battery; it only knocks the limit
 # down ONCE on the AC->battery transition (so a prior boost never persists), then
 # leaves power management to tlp/BIOS. Keep BATTERY_W low + battery-appropriate.
 BATTERY_W="${GAME_TDP_BATTERY_W:-15000}"
-BOOST_TCTL="${GAME_TDP_BOOST_TCTL:-90}"
-DEFAULT_TCTL="${GAME_TDP_DEFAULT_TCTL:-90}"
+BOOST_TCTL="${GAME_TDP_BOOST_TCTL:-95}"
+DEFAULT_TCTL="${GAME_TDP_DEFAULT_TCTL:-95}"
 BATTERY_TCTL="${GAME_TDP_BATTERY_TCTL:-85}"
 
 log() { printf 'game-tdp: %s\n' "$*"; }
@@ -75,8 +80,11 @@ gamemode_clients() {
   owner="$(as_user busctl --user call org.freedesktop.DBus /org/freedesktop/DBus \
     org.freedesktop.DBus NameHasOwner s com.feralinteractive.GameMode 2>/dev/null || true)"
   case "$owner" in
-    *true*) : ;;
-    *) echo 0; return 0 ;;
+  *true*) : ;;
+  *)
+    echo 0
+    return 0
+    ;;
   esac
   as_user busctl --user get-property com.feralinteractive.GameMode \
     /com/feralinteractive/GameMode com.feralinteractive.GameMode ClientCount \
@@ -86,28 +94,28 @@ gamemode_clients() {
 # manual_override: user override written by `game-boost` -> on|off|auto (default).
 manual_override() {
   case "$(cat "$OVERRIDE_FILE" 2>/dev/null)" in
-    on) echo on ;;
-    off) echo off ;;
-    *) echo auto ;;
+  on) echo on ;;
+  off) echo off ;;
+  *) echo auto ;;
   esac
 }
 
 set_fan() { # perf|auto -- mirrors amd.nix fan-mode: write /run/thinkfan/mode
   [ -w "$FAN_MODE" ] || return 0
   case "$1" in
-    perf) printf 'perf\n' >"$FAN_MODE" ;;
-    auto) : >"$FAN_MODE" ;;
+  perf) printf 'perf\n' >"$FAN_MODE" ;;
+  auto) : >"$FAN_MODE" ;;
   esac
 }
 
-ryzen() { # <watts_mW> <tctl_C>
-  ryzenadj --stapm-limit "$1" --fast-limit "$1" --slow-limit "$1" \
-    --apu-slow-limit "$1" --slow-time 5 --tctl-temp "$2" >/dev/null 2>&1 || true
+ryzen() { # <watts_mW> <tctl_C> <boost_mW>
+  ryzenadj --stapm-limit "$1" --fast-limit "$3" --slow-limit "$1" \
+    --apu-slow-limit "$1" --slow-time 5 --tctl-temp "$2" --apu-skin-temp 65 >/dev/null 2>&1 || true
 }
 
-apply_boost() { ryzen "$BOOST_W" "$BOOST_TCTL"; }
-apply_default() { ryzen "$DEFAULT_W" "$DEFAULT_TCTL"; }
-apply_battery() { ryzen "$BATTERY_W" "$BATTERY_TCTL"; }
+apply_boost() { ryzen "$BOOST_W" "$BOOST_TCTL" "$BOOST_W"; }
+apply_default() { ryzen "$DEFAULT_W" "$DEFAULT_TCTL" "$BOOST_W"; }
+apply_battery() { ryzen "$BATTERY_W" "$BATTERY_TCTL" "$BATTERY_W"; }
 
 LAST=""
 reconcile() {
@@ -115,9 +123,9 @@ reconcile() {
   # A manual `game-boost on|off` override wins over gamemode; `auto` (the default)
   # uses the live gamemode client count. Battery still wins in decide() either way.
   case "$(manual_override)" in
-    on) clients=1 ;;
-    off) clients=0 ;;
-    *) clients="$(gamemode_clients)" ;;
+  on) clients=1 ;;
+  off) clients=0 ;;
+  *) clients="$(gamemode_clients)" ;;
   esac
   want="$(decide "$(ac_online)" "$clients")"
   # On AC, actively hold the target every poll (boost can drift; default reverts a
@@ -126,8 +134,8 @@ reconcile() {
   # transition into battery (below) knocks any boost down so it never persists
   # off-charger.
   case "$want" in
-    boost) apply_boost ;;
-    default) apply_default ;;
+  boost) apply_boost ;;
+  default) apply_default ;;
     # battery: intentionally no per-poll ryzenadj (see the transition below)
   esac
   # The fan is shared with the user's `fan-mode` helper, so it is written only on
@@ -135,12 +143,12 @@ reconcile() {
   # The battery transition also performs the one-time ryzenadj back-off.
   if [ "$want" != "$LAST" ]; then
     case "$want" in
-      boost) set_fan perf ;;
-      battery)
-        apply_battery
-        set_fan auto
-        ;;
-      *) set_fan auto ;;
+    boost) set_fan perf ;;
+    battery)
+      apply_battery
+      set_fan auto
+      ;;
+    *) set_fan auto ;;
     esac
     log "$want"
     LAST="$want"
@@ -159,16 +167,16 @@ run() {
 
 if [ "${GAME_TDP_TEST:-0}" != "1" ]; then
   case "${1:-run}" in
-    run) run ;;
-    revert)
-      # undo any boost with the AC-appropriate non-boost profile
-      if [ "$(ac_online)" = "1" ]; then apply_default; else apply_battery; fi
-      set_fan auto
-      log "revert"
-      ;;
-    *)
-      echo "usage: game-tdp [run|revert]" >&2
-      exit 2
-      ;;
+  run) run ;;
+  revert)
+    # undo any boost with the AC-appropriate non-boost profile
+    if [ "$(ac_online)" = "1" ]; then apply_default; else apply_battery; fi
+    set_fan auto
+    log "revert"
+    ;;
+  *)
+    echo "usage: game-tdp [run|revert]" >&2
+    exit 2
+    ;;
   esac
 fi

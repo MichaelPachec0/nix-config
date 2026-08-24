@@ -8,7 +8,9 @@
 # place the offending request/error pair survives is WAYLAND_DEBUG output, and
 # only if another process is already holding it when quickshell goes. Hence
 # qs-wl-ring (./qs_wl_ring.py): a reader that keeps the tail in memory and
-# flushes on EOF, which is what _exit(1) produces on the pipe.
+# flushes on EOF, which is what _exit(1) produces on the pipe. It writes one
+# file per bar lifetime, because the bar is relaunched within seconds of dying
+# and a single fixed path would have the recovery overwrite the crash.
 #
 # Gated rather than always on, because the trace is tens of thousands of lines
 # a minute and the failure needs a real suspend/resume to reproduce, so it must
@@ -29,6 +31,9 @@
     '';
   };
 
+  # A base path, not the file the trace ends up in: qs-wl-ring derives one
+  # `wl-tail-<stamp>-<pid>.log` per run beside it and keeps this path as a
+  # symlink to the current one.
   defaultLog = "${config.xdg.stateHome}/quickshell/wl-tail.log";
 
   # Its own script rather than an `sh -c` string, so the pipeline lives INSIDE
@@ -70,11 +75,18 @@
   # The bar's autostart, with exactly one conditional in it. Both branches keep
   # `-s b -a quickshell`, so the shell lands in background-graphical.slice with
   # its memory.low protection either way (nixos/thanatos/memory.nix).
+  #
+  # TEMPORARY: trace on by DEFAULT in every session, hence HYPR_WL_TRACE:-1 and
+  # not the session's HYPR_WL_DEBUG. The fault needs a real suspend/resume that
+  # may be days away, so the trace has to already be running in whatever session
+  # is up when it fires. Revert to `"''${HYPR_WL_DEBUG:-0}"` once the interface
+  # is named. Costs a line per request + ~20 MB of in-memory tail;
+  # HYPR_WL_TRACE=0 opts a session out without a rebuild.
   barLaunch = pkgs.writeShellApplication {
     name = "qs-bar-launch";
     runtimeInputs = [appRun];
     text = ''
-      if [ "''${HYPR_WL_DEBUG:-0}" = "1" ]; then
+      if [ "''${HYPR_WL_TRACE:-1}" = "1" ]; then
         exec app-run -s b -a quickshell ${tracedBar}/bin/qs-bar-traced
       fi
 
@@ -108,7 +120,10 @@ in {
       readOnly = true;
       description = ''
         Where the traced session parks the tail of quickshell's WAYLAND_DEBUG
-        output. Overridable at runtime with QS_WL_LOG for a one-off run.
+        output. Symlink to the CURRENT run; each bar lifetime also leaves its own
+        `wl-tail-<UTC start>-<pid>.log` beside it, so a post-crash relaunch
+        cannot overwrite the crash it is recovering from. QS_WL_KEEP (default 10)
+        caps retention. Overridable at runtime with QS_WL_LOG for a one-off run.
       '';
     };
   };

@@ -170,6 +170,7 @@ in {
               --prefix PATH : "${xdg-open-ovr}/bin" \
             '';
           }))
+        vesktop
         # master.armcord.overrideAttrs (_: {
         #   postFixup = ''
         #     # TODO: find a better way of doing this

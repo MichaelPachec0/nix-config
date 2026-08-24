@@ -1,8 +1,13 @@
 # HM wiring for the Quickshell lock: the Nix-owned config seam (fail-open flag +
 # fallback image), the dev escape-hatch helper, and the watchdog. The QML/PAM
 # live elsewhere (task-bar/lock, features/nixos/auth/pam).
-{ config, lib, pkgs, appRun, ... }:
-let
+{
+  config,
+  lib,
+  pkgs,
+  qsBarLaunch,
+  ...
+}: let
   # Single source of truth for the dev escape hatch (see the option below). Gates
   # the QML startup-escape (via config.json), the watchdog unit, and the Hyprland
   # recovery keybind (hyprland.nix reads config.quickshellLock.failOpenOnCrash).
@@ -10,12 +15,12 @@ let
 
   lockEscape = pkgs.writeShellApplication {
     name = "lock-escape";
-    # appRun so the relaunch resolves app-run hermetically rather than off
-    # whatever PATH the compositor happens to hand the keybind.
+    # qsBarLaunch, not appRun: the relaunch reuses the autostart entry point, so
+    # placement and tracing are decided in one place (hypr-wl-debug.nix).
     # systemd for `systemctl --user show-environment`: the script re-reads the
     # session's live display environment because a unit that started before
     # uwsm finalize has none of its own (see the note in lock-escape.sh).
-    runtimeInputs = [ pkgs.quickshell pkgs.procps pkgs.coreutils pkgs.systemd appRun ];
+    runtimeInputs = [pkgs.quickshell pkgs.procps pkgs.coreutils pkgs.systemd qsBarLaunch];
     text = builtins.readFile ./quickshell/task-bar/lock/lock-escape.sh;
   };
 in {
@@ -78,7 +83,7 @@ in {
   # is missing or empty, so "workspace" is never a hard dependency on
   # screencopy being available.
   options.quickshellLock.backdrop.mode = lib.mkOption {
-    type = lib.types.enum [ "workspace" "wallpaper" ];
+    type = lib.types.enum ["workspace" "wallpaper"];
     default = "workspace";
     description = ''
       Lock backdrop source: "workspace" (frozen ScreencopyView of the desktop,
@@ -94,7 +99,7 @@ in {
       description = "Show the notification backlog on the lock.";
     };
     defaultMode = lib.mkOption {
-      type = lib.types.enum [ "hidden" "sensitive" "full" ];
+      type = lib.types.enum ["hidden" "sensitive" "full"];
       default = "sensitive";
       description = "Default visibility for the 'default' tier (non-trusted, non-private).";
     };
@@ -111,17 +116,17 @@ in {
     };
     trustedApps = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ "blueman" "blueman-applet" "NetworkManager" "org.freedesktop.*" ];
+      default = ["blueman" "blueman-applet" "NetworkManager" "org.freedesktop.*"];
       description = "App names / desktop-entries (glob, '*' only) whose notifications are full + interactive on the lock.";
     };
     privateApps = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ ];
+      default = [];
       description = "App names / desktop-entries (glob) forced to hidden (count-only) on the lock, even when Critical.";
     };
     trustedCategories = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ "device" "network" "x-systemd*" "hardware" ];
+      default = ["device" "network" "x-systemd*" "hardware"];
       description = "freedesktop notification categories (glob) treated as trusted.";
     };
   };
@@ -238,7 +243,7 @@ in {
   };
 
   config = {
-    home.packages = [ lockEscape ];
+    home.packages = [lockEscape];
 
     # Config seam the QML LockConfig FileView reads. Outside ~/.config/quickshell
     # (the repo symlink) so it never dirties the repo -- mirrors quickshell-idle.
@@ -288,7 +293,7 @@ in {
         '';
         Restart = "on-failure";
       };
-      Install.WantedBy = [ "graphical-session.target" ];
+      Install.WantedBy = ["graphical-session.target"];
     };
   };
 }

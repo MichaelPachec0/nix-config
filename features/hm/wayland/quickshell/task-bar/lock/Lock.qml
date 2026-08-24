@@ -644,7 +644,12 @@ Scope {
     Timer {
         id: releaseTimer
         interval: 200
-        onTriggered: root.locked = false; // unlock_and_destroy -> desktop returns
+        // _release(), not a bare `locked = false`: that drops the compositor
+        // lock but never fires `loginctl unlock-session`, so lock.target stays
+        // active and disarms the NEXT lock -- qs-lock-trigger is
+        // WantedBy=lock.target (../../../swayidle.nix) and systemd will not
+        // re-run it for a target already up.
+        onTriggered: root._release() // unlock_and_destroy + unlock.target
     }
 
     // Marker file for the watchdog (qs-lock-watchdog): present while locked, so

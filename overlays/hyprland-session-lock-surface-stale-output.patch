@@ -1,0 +1,102 @@
+protocols/session-lock: hand out an inert lock surface, never strand the id
+
+A Wayland new_id is client-allocated and unconfirmed, so a handler that returns
+without constructing anything leaves the client holding a proxy for an id the
+compositor does not know. The client is killed on its next request to that
+proxy, normally destroy:
+
+  -> ext_session_lock_v1#520.get_lock_surface(new id #550, #540, wl_output#544)
+     [onGetLockSurface: monitor is gone for output resource -> returns]
+     wl_registry#2.global_remove(75)          <- 65us AFTER the request
+  -> ext_session_lock_surface_v1#550.destroy()
+     wl_display#1.error(wl_display#1, 0, "invalid object 550")
+
+wl_registry.global_remove says requests to a removed global "will be ignored",
+i.e. ignore the EFFECT, not skip constructing the object the request allocates.
+Three sites strand an id: the m_inert branch of setGetLockSurface, and both
+early returns in onGetLockSurface. Construct with a null monitor instead;
+CSessionLockSurface already tolerates one everywhere except the commit
+listener, guarded here.
+
+--- a/src/protocols/SessionLock.cpp
++++ b/src/protocols/SessionLock.cpp
+@@ -25,6 +25,12 @@
+     m_resource->setAckConfigure([this](CExtSessionLockSurfaceV1* r, uint32_t serial) { m_ackdConfigure = true; });
+ 
+     m_listeners.surfaceCommit = m_surface->m_events.commit.listen([this] {
++        // Inert surface (null monitor, see onGetLockSurface): never got a
++        // configure, so never ackd one, so every commit would take the
++        // COMMIT_BEFORE_FIRST_ACK path below and kill the client.
++        if (!m_monitor)
++            return;
++
+         if (!m_surface->m_current.texture) {
+             LOGM(Log::ERR, "SessionLock attached a null buffer");
+             m_resource->error(EXT_SESSION_LOCK_SURFACE_V1_ERROR_NULL_BUFFER, "Null buffer attached");
+@@ -111,11 +117,8 @@
+     m_resource->setOnDestroy([this](CExtSessionLockV1* r) { PROTO::sessionLock->destroyResource(this); });
+ 
+     m_resource->setGetLockSurface([this](CExtSessionLockV1* r, uint32_t id, wl_resource* surf, wl_resource* output) {
+-        if (m_inert) {
+-            LOGM(Log::ERR, "Lock is trying to send getLockSurface after it's inert");
+-            return;
+-        }
+-
++        // No early return on m_inert: `id` is already spent by the client.
++        // onGetLockSurface reads m_inert itself and hands back an inert surface.
+         PROTO::sessionLock->onGetLockSurface(r, id, surf, output);
+     });
+ 
+@@ -203,17 +206,17 @@
+ void CSessionLockProtocol::onGetLockSurface(CExtSessionLockV1* lock, uint32_t id, wl_resource* surface, wl_resource* output) {
+     LOGM(Log::DEBUG, "New sessionLockSurface with id {}", id);
+ 
+-    auto PSURFACE  = CWLSurfaceResource::fromResource(surface);
+-    auto OUTPUTRES = CWLOutputResource::fromResource(output);
+-    if (!OUTPUTRES) {
+-        LOGM(Log::ERR, "onGetLockSurface: invalid output resource");
+-        return;
+-    }
+-    auto PMONITOR = OUTPUTRES->m_monitor.lock();
+-    if (!PMONITOR) {
+-        LOGM(Log::ERR, "onGetLockSurface: monitor is gone for output resource");
+-        return;
+-    }
++    auto       PSURFACE  = CWLSurfaceResource::fromResource(surface);
++    auto       OUTPUTRES = CWLOutputResource::fromResource(output);
++
++    // Gone monitor means INERT, not "skip construction": the client already
++    // allocated `id` and must get an object back either way.
++    PHLMONITOR PMONITOR = OUTPUTRES ? OUTPUTRES->m_monitor.lock() : nullptr;
++
++    if (!OUTPUTRES)
++        LOGM(Log::ERR, "onGetLockSurface: invalid output resource, handing out an inert lock surface");
++    else if (!PMONITOR)
++        LOGM(Log::ERR, "onGetLockSurface: monitor is gone for output resource, handing out an inert lock surface");
+ 
+     SP<CSessionLock> sessionLock;
+     for (auto const& l : m_locks) {
+@@ -223,6 +226,10 @@
+         }
+     }
+ 
++    // Same for an already-inert lock, or one the lookup above missed.
++    if (!sessionLock || sessionLock->m_inert)
++        PMONITOR = nullptr;
++
+     const auto RESOURCE =
+         m_lockSurfaces.emplace_back(makeShared<CSessionLockSurface>(makeShared<CExtSessionLockSurfaceV1>(lock->client(), lock->version(), id), PSURFACE, PMONITOR, sessionLock));
+ 
+@@ -232,6 +239,12 @@
+         return;
+     }
+ 
++    // Keep inert surfaces out of the render path: CSessionLockManager's
++    // newSurface listener derefs surface->monitor() unconditionally. The emit
++    // was also a latent null deref when the m_locks lookup missed.
++    if (!PMONITOR || !sessionLock)
++        return;
++
+     sessionLock->m_events.newLockSurface.emit(RESOURCE);
+ }
+ 
