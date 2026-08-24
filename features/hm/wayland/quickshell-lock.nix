@@ -1,8 +1,13 @@
 # HM wiring for the Quickshell lock: the Nix-owned config seam (fail-open flag +
 # fallback image), the dev escape-hatch helper, and the watchdog. The QML/PAM
 # live elsewhere (task-bar/lock, features/nixos/auth/pam).
-{ config, lib, pkgs, appRun, ... }:
-let
+{
+  config,
+  lib,
+  pkgs,
+  qsBarLaunch,
+  ...
+}: let
   # Single source of truth for the dev escape hatch (see the option below). Gates
   # the QML startup-escape (via config.json), the watchdog unit, and the Hyprland
   # recovery keybind (hyprland.nix reads config.quickshellLock.failOpenOnCrash).
@@ -10,12 +15,12 @@ let
 
   lockEscape = pkgs.writeShellApplication {
     name = "lock-escape";
-    # appRun so the relaunch resolves app-run hermetically rather than off
-    # whatever PATH the compositor happens to hand the keybind.
+    # qsBarLaunch, not appRun: the relaunch reuses the autostart entry point, so
+    # placement and tracing are decided in one place (hypr-wl-debug.nix).
     # systemd for `systemctl --user show-environment`: the script re-reads the
     # session's live display environment because a unit that started before
     # uwsm finalize has none of its own (see the note in lock-escape.sh).
-    runtimeInputs = [ pkgs.quickshell pkgs.procps pkgs.coreutils pkgs.systemd appRun ];
+    runtimeInputs = [pkgs.quickshell pkgs.procps pkgs.coreutils pkgs.systemd qsBarLaunch];
     text = builtins.readFile ./quickshell/task-bar/lock/lock-escape.sh;
   };
 in {

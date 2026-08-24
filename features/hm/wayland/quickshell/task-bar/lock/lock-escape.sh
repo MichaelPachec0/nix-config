@@ -103,23 +103,13 @@ fi
 # `quickshell -c task-bar` command line is comm-truncation-proof.
 pkill -f 'quickshell -c task-bar' 2>/dev/null || true
 sleep 0.3
-# Same placement as the autostart hook (hyprland.nix): -s b ASKS for
-# background-graphical.slice so the recovered bar keeps the memory.low
-# protection the normally-started one gets (nixos/thanatos/memory.nix).
+# Relaunch via qs-bar-launch, the same entry point the autostart hook uses
+# (hyprland.nix calls it, hypr-wl-debug.nix builds it). It owns both the
+# `-s b -a quickshell` placement and whether the bar runs under WAYLAND_DEBUG.
+# Re-deriving the app-run line here dropped tracing from the recovery path,
+# i.e. from the one launch whose crash we needed traced.
 #
-# Do not assume it lands there. app-run only takes its uwsm branch when
-# UWSM_FINALIZE_VARNAMES is set, and that comes from uwsm's per-compositor
-# quirks plugin, which uwsm selects by basename(Exec[0]) -- so a session
-# launched through a wrapper gets no plugin, no variable, and app-run silently
-# degrades to plain `exec "$@"`. When that happened the recovered bar simply
-# inherited THIS script's cgroup, i.e. qs-lock-watchdog.service, and a
-# home-manager switch restarting that unit killed the bar with it
-# (KillMode=control-group). Fixed at the source in
-# ../../../../../nixos/desktop/wayland/hyprland-wldebug.nix by naming the
-# wrapper start-hyprland, but the degradation is silent, so treat placement
-# here as best-effort rather than guaranteed.
-# app2unit uses `systemd-run --scope`, which execs in place, so QS_LOCK_ESCAPE
-# is inherited by the scope -- the whole point of this relaunch. The scope name
-# carries a random suffix, so it cannot collide with a stale one.
-QS_LOCK_ESCAPE=1 app-run -s b -a quickshell qs -c "$CFG" >/dev/null 2>&1 &
+# Placement stays best-effort: needs UWSM_FINALIZE_VARNAMES, exported above.
+# app2unit execs in place, so QS_LOCK_ESCAPE reaches the scope.
+QS_LOCK_ESCAPE=1 qs-bar-launch >/dev/null 2>&1 &
 exit 0
