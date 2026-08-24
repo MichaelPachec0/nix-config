@@ -114,40 +114,54 @@ in {
     };
   };
 
-  config = lib.mkIf cfg.enable {
-    home.packages = [harness];
+  config = lib.mkMerge [
+    {
+      # Forces shimCheck to build on every switch, harness enabled or not:
+      # it is the only guard on ff-wrap.sh's "user loses their browser"
+      # invariant, and a switch made while disabled must still catch a
+      # broken edit. home.activation touches no package/profile, so this
+      # installs nothing visible -- same `: ${drv}` forcing idiom as
+      # store-preload's envCheck, just via activation text instead of a
+      # runCommand symlink.
+      home.activation.ffFirstStartShimCheck = lib.hm.dag.entryAnywhere ''
+        : ${shimChecked}
+      '';
+    }
+    (lib.mkIf cfg.enable {
+      home.packages = [harness];
 
-    # Not home.packages: a package named firefox-devedition would collide with
-    # firefox itself in the same profile. ~/.local/bin precedes ~/.nix-profile/bin
-    # on PATH, so this shadows it, and home-manager removes the link when the
-    # option goes back to false. Terminal launches (which do use PATH) are
-    # still captured this way; launchPaths above is what fixes the keybind
-    # path, which goes through app-run against the systemd user manager's PATH.
-    #
-    # The desktop entry's `Exec=firefox-devedition %U` is left untouched, so
-    # uwsm still derives the same bin_id and app2unit does not silently
-    # degrade to a plain exec.
-    home.file.".local/bin/firefox-devedition" = {
-      source = "${shimChecked}/bin/firefox-devedition";
-      executable = true;
-    };
+      # Not home.packages: a package named firefox-devedition would collide with
+      # firefox itself in the same profile. ~/.local/bin precedes ~/.nix-profile/bin
+      # on PATH, so this shadows it, and home-manager removes the link when the
+      # option goes back to false. Terminal launches (which do use PATH) are
+      # still captured this way; launchPaths above is what fixes the keybind
+      # path, which goes through app-run against the systemd user manager's PATH.
+      #
+      # The desktop entry's `Exec=firefox-devedition %U` is left untouched, so
+      # uwsm still derives the same bin_id and app2unit does not silently
+      # degrade to a plain exec.
+      home.file.".local/bin/firefox-devedition" = {
+        source = "${shimChecked}/bin/firefox-devedition";
+        executable = true;
+      };
 
-    systemd.user.services.ff-firststart = {
-      Unit = {
-        Description = "Firefox first-launch forensics (debug harness)";
-        After = ["graphical-session.target"];
-        PartOf = ["graphical-session.target"];
+      systemd.user.services.ff-firststart = {
+        Unit = {
+          Description = "Firefox first-launch forensics (debug harness)";
+          After = ["graphical-session.target"];
+          PartOf = ["graphical-session.target"];
+        };
+        Install.WantedBy = ["graphical-session.target"];
+        Service = {
+          Type = "simple";
+          # Snapshot before firefox can start, and again once it has exited.
+          ExecStartPre = "${harness}/bin/ff-firststart snapshot pre";
+          ExecStart = "${harness}/bin/ff-firststart watch";
+          ExecStopPost = "${harness}/bin/ff-firststart snapshot post";
+          Nice = 10;
+          SyslogIdentifier = "ff-firststart";
+        };
       };
-      Install.WantedBy = ["graphical-session.target"];
-      Service = {
-        Type = "simple";
-        # Snapshot before firefox can start, and again once it has exited.
-        ExecStartPre = "${harness}/bin/ff-firststart snapshot pre";
-        ExecStart = "${harness}/bin/ff-firststart watch";
-        ExecStopPost = "${harness}/bin/ff-firststart snapshot post";
-        Nice = 10;
-        SyslogIdentifier = "ff-firststart";
-      };
-    };
-  };
+    })
+  ];
 }
