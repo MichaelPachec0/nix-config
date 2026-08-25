@@ -165,10 +165,12 @@ in {
 
     maxBytes = lib.mkOption {
       type = lib.types.ints.positive;
-      default = 2 * 1024 * 1024 * 1024;
+      default = 3 * 1024 * 1024 * 1024;
       description = ''
         Cap on bytes per warm pass. A file that would exceed it is skipped
-        whole and logged. Measured working set for the default apps is ~1.4 GB.
+        whole and logged, from the tail of `apps`, so the first entry survives.
+        Measured union for the default apps is ~1.8 GB: two Mozilla browsers
+        carry a ~177 MB libxul.so each, which dedup cannot share.
       '';
     };
 
