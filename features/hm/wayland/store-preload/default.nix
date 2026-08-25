@@ -50,6 +50,10 @@
 
   appArgs = lib.concatStringsSep "," cfg.apps;
 
+  # The runtime binary name for each package -- the same value seedFor uses
+  # for `bin`. Only consumed by the assertion below.
+  derivedApps = lib.mapAttrsToList (_: p: baseNameOf (lib.getExe p)) cfg.packages;
+
   # Floors, set below measured with headroom for nixpkgs churn. The floor, not
   # the heuristic, is what makes unwrapping safe: rofi through its wrapper
   # yields 3 files against 60 unwrapped, so this fails the build instead of
@@ -176,6 +180,22 @@ in {
 
   config = lib.mkIf cfg.enable {
     services.storePreload.packages = lib.mkDefault warmApps;
+
+    # Sorted, so order stays free and only membership is constrained. Catches
+    # both directions: a package with no apps entry warms nothing, and an apps
+    # entry with no package silently degrades to manifest-only warming.
+    assertions = [
+      {
+        assertion =
+          lib.sort (a: b: a < b) cfg.apps == lib.sort (a: b: a < b) derivedApps;
+        message = ''
+          services.storePreload.apps and .packages disagree.
+            apps:    ${lib.concatStringsSep " " (lib.sort (a: b: a < b) cfg.apps)}
+            derived: ${lib.concatStringsSep " " (lib.sort (a: b: a < b) derivedApps)}
+          Every package needs an apps entry naming its binary, and vice versa.
+        '';
+      }
+    ];
 
     home.packages = [storePreloadChecked pkgs.fatrace];
 
