@@ -50,7 +50,7 @@
   terminal = lib.getExe pkgs.kitty;
   menu = "${lib.getExe config.programs.rofi.finalPackage} -show combi -combi-modes 'window,drun'";
 
-  # Screenshot helper 
+  # Screenshot helper
 
   Print = let
     f = "scrn-$(date +%Y-%m-%dT%H:%M:%S%:z).png";
@@ -58,10 +58,9 @@
     exec grim -t png -g "$(slurp)" ~/Pictures/${f}
   '';
 
-  # default keybindinds 
+  # default keybindinds
 
   swayKeybindings = {
-
     # Basics
     "${mod}+t" = "exec ${app terminal}";
     "${mod}+q" = "kill";
@@ -161,23 +160,26 @@
 
   # Direction mapping for Hypr
   dirMap = {
-    "left"  = "l";
+    "left" = "l";
     "right" = "r";
-    "up"    = "u";
-    "down"  = "d";
+    "up" = "u";
+    "down" = "d";
   };
 
   # Normalize sway modifier names to Hyprland's (Mod4 -> SUPER, etc.).
   # toHypr keeps its own inline copy; toLua (below) uses this one.
   normalizeMod = m:
-    if m == "Mod4" then "SUPER"
-    else if lib.toLower m == "shift" then "SHIFT"
-    else if lib.toLower m == "alt" then "ALT"
-    else if lib.toLower m == "control" then "CTRL"
+    if m == "Mod4"
+    then "SUPER"
+    else if lib.toLower m == "shift"
+    then "SHIFT"
+    else if lib.toLower m == "alt"
+    then "ALT"
+    else if lib.toLower m == "control"
+    then "CTRL"
     else m;
 
-toHypr = combo: cmd:
-  let
+  toHypr = combo: cmd: let
     # Split combo into parts (Mod4+Shift+1 -> [ "Mod4" "Shift" "1" ])
     parts = lib.splitString "+" combo;
 
@@ -189,95 +191,82 @@ toHypr = combo: cmd:
 
     # Normalize modifiers for Hyprland
     normalizeMod = m:
-      if m == "Mod4" then "SUPER"
-      else if lib.toLower m == "shift" then "SHIFT"
-      else if lib.toLower m == "alt" then "ALT"
-      else if lib.toLower m == "control" then "CTRL"
+      if m == "Mod4"
+      then "SUPER"
+      else if lib.toLower m == "shift"
+      then "SHIFT"
+      else if lib.toLower m == "alt"
+      then "ALT"
+      else if lib.toLower m == "control"
+      then "CTRL"
       else m;
 
     mods =
       lib.concatStringsSep " "
-        (map normalizeMod modsRaw);
+      (map normalizeMod modsRaw);
 
     # actions
 
     action =
-      if lib.hasPrefix "exec " cmd then
-        "exec, ${lib.removePrefix "exec " cmd}"
-
-      else if cmd == "kill" then
-        "killactive"
-
-      else if cmd == "reload" then
-        "exec, hyprctl reload"
-
-      else if cmd == "focus parent" then
+      if lib.hasPrefix "exec " cmd
+      then "exec, ${lib.removePrefix "exec " cmd}"
+      else if cmd == "kill"
+      then "killactive"
+      else if cmd == "reload"
+      then "exec, hyprctl reload"
+      else if cmd == "focus parent"
+      then
         # hy3: raise focus to the parent group (e.g. the whole tab stack).
         "hy3:changefocus, raise"
-
-      else if cmd == "focus child" then
+      else if cmd == "focus child"
+      then
         # hy3: lower focus back into the focused group's child node.
         "hy3:changefocus, lower"
-
-      else if lib.hasPrefix "focus " cmd then
-        let dir = lib.removePrefix "focus " cmd;
+      else if lib.hasPrefix "focus " cmd
+      then let
+        dir = lib.removePrefix "focus " cmd;
         # hy3:movefocus is tree-aware -- it steps in/out of tab groups and
         # splits correctly, unlike the native movefocus.
-        in "hy3:movefocus, ${dirMap.${dir} or dir}"
-
-      else if lib.hasPrefix "workspace number " cmd then
-        "workspace, ${lib.removePrefix "workspace number " cmd}"
-
-      else if lib.hasPrefix "move container to workspace number " cmd then
+      in "hy3:movefocus, ${dirMap.${dir} or dir}"
+      else if lib.hasPrefix "workspace number " cmd
+      then "workspace, ${lib.removePrefix "workspace number " cmd}"
+      else if lib.hasPrefix "move container to workspace number " cmd
+      then
         # hy3:movetoworkspace moves the focused node (a window or a whole
         # group/tab stack) without following -- matches sway's move container.
         "hy3:movetoworkspace, ${lib.removePrefix "move container to workspace number " cmd}"
-
       # move container direction
-      else if lib.hasPrefix "move " cmd then
-        let dir = lib.removePrefix "move " cmd;
-        in "hy3:movewindow, ${dirMap.${dir} or dir}"
-
-      else if cmd == "floating toggle" then
-        "togglefloating"
-
-      else if cmd == "fullscreen toggle" then
-        "fullscreen"
-
-      else if cmd == "scratchpad show" then
-        "togglespecialworkspace, magic"
-
-      else if cmd == "move scratchpad" then
-        "movetoworkspace, special:magic"
-
-      else if cmd == "splith" then
-        "hy3:makegroup, h"
-
-      else if cmd == "splitv" then
-        "hy3:makegroup, v"
-
-      else if cmd == "layout toggle split" then
-        "hy3:changegroup, opposite"
-
+      else if lib.hasPrefix "move " cmd
+      then let
+        dir = lib.removePrefix "move " cmd;
+      in "hy3:movewindow, ${dirMap.${dir} or dir}"
+      else if cmd == "floating toggle"
+      then "togglefloating"
+      else if cmd == "fullscreen toggle"
+      then "fullscreen"
+      else if cmd == "scratchpad show"
+      then "togglespecialworkspace, magic"
+      else if cmd == "move scratchpad"
+      then "movetoworkspace, special:magic"
+      else if cmd == "splith"
+      then "hy3:makegroup, h"
+      else if cmd == "splitv"
+      then "hy3:makegroup, v"
+      else if cmd == "layout toggle split"
+      then "hy3:changegroup, opposite"
       # hy3 has no stacking layout; both "stacking" and "tabbed" map to tabs.
-      else if cmd == "layout stacking" then
-        "hy3:makegroup, tab"
-
-      else if cmd == "layout tabbed" then
-        "hy3:makegroup, tab"
-
-      else if cmd == "mode 'resize'" then
-        "submap, resize"
-
-      else if lib.hasPrefix "global " cmd then
+      else if cmd == "layout stacking"
+      then "hy3:makegroup, tab"
+      else if cmd == "layout tabbed"
+      then "hy3:makegroup, tab"
+      else if cmd == "mode 'resize'"
+      then "submap, resize"
+      else if lib.hasPrefix "global " cmd
+      then
         # Quickshell GlobalShortcut dispatch (e.g. the hub toggle).
         "global, ${lib.removePrefix "global " cmd}"
-
-      else
-        "exec, ${cmd}";
-
-  in
-    "${mods}, ${key}, ${action}";
+      else "exec, ${cmd}";
+  in "${mods}, ${key}, ${action}";
 
   hyprBinds =
     lib.mapAttrsToList toHypr swayKeybindings;
@@ -309,90 +298,73 @@ toHypr = combo: cmd:
     lib.concatStringsSep " + " (mods ++ [key]);
 
   toLuaAction = cmd:
-    if lib.hasPrefix "exec " cmd then
-      mkInline "hl.dsp.exec_cmd(${luaStr (lib.removePrefix "exec " cmd)})"
-
-    else if lib.hasPrefix "global " cmd then
+    if lib.hasPrefix "exec " cmd
+    then mkInline "hl.dsp.exec_cmd(${luaStr (lib.removePrefix "exec " cmd)})"
+    else if lib.hasPrefix "global " cmd
+    then
       # Quickshell GlobalShortcut dispatch (mirrors hubBind's
       # hl.dsp.global("quickshell:hubToggle") in hyprland.nix).
       mkInline "hl.dsp.global(${luaStr (lib.removePrefix "global " cmd)})"
-
-    else if cmd == "kill" then
+    else if cmd == "kill"
+    then
       # hy3 kill_active closes the whole focused node (every window in the
       # focused group/tab), not just one window like native window.close.
       # Wrapped + invoked like the other hy3 verbs.
       mkInline ''function() hl.plugin.hy3.kill_active()() end''
-
-    else if cmd == "reload" then
-      mkInline ''hl.dsp.exec_cmd("hyprctl reload")''
-
-    else if cmd == "focus parent" then
-      mkInline ''function() hl.plugin.hy3.change_focus("raise")() end''
-
-    else if cmd == "focus child" then
-      mkInline ''function() hl.plugin.hy3.change_focus("lower")() end''
-
-    else if lib.hasPrefix "focus " cmd then
-      let
-        dir = lib.removePrefix "focus " cmd;
-        d = dirMap.${dir} or dir;
-      in
-        mkInline ''function() hl.plugin.hy3.move_focus(${luaStr d})() end''
-
-    else if lib.hasPrefix "workspace number " cmd then
-      mkInline "hl.dsp.focus({ workspace = ${lib.removePrefix "workspace number " cmd} })"
-
-    else if lib.hasPrefix "move container to workspace number " cmd then
-      let ws = lib.removePrefix "move container to workspace number " cmd;
-      in mkInline ''function() hl.plugin.hy3.move_to_workspace(${luaStr ws})() end''
-
+    else if cmd == "reload"
+    then mkInline ''hl.dsp.exec_cmd("hyprctl reload")''
+    else if cmd == "focus parent"
+    then mkInline ''function() hl.plugin.hy3.change_focus("raise")() end''
+    else if cmd == "focus child"
+    then mkInline ''function() hl.plugin.hy3.change_focus("lower")() end''
+    else if lib.hasPrefix "focus " cmd
+    then let
+      dir = lib.removePrefix "focus " cmd;
+      d = dirMap.${dir} or dir;
+    in
+      mkInline ''function() hl.plugin.hy3.move_focus(${luaStr d})() end''
+    else if lib.hasPrefix "workspace number " cmd
+    then mkInline "hl.dsp.focus({ workspace = ${lib.removePrefix "workspace number " cmd} })"
+    else if lib.hasPrefix "move container to workspace number " cmd
+    then let
+      ws = lib.removePrefix "move container to workspace number " cmd;
+    in
+      mkInline ''function() hl.plugin.hy3.move_to_workspace(${luaStr ws})() end''
     # "move scratchpad" must precede the generic "move " prefix below, else it
     # is mis-parsed as a directional move (move_window("scratchpad")).
     # follow = false -> silent move (movetoworkspacesilent): stash the focused
     # window without surfacing the special pane, which would keep it on screen.
-    else if cmd == "move scratchpad" then
-      mkInline ''hl.dsp.window.move({ workspace = "special:magic", follow = false })''
-
-    else if lib.hasPrefix "move " cmd then
-      let
-        dir = lib.removePrefix "move " cmd;
-        d = dirMap.${dir} or dir;
-      in
-        mkInline ''function() hl.plugin.hy3.move_window(${luaStr d})() end''
-
-    else if cmd == "floating toggle" then
-      mkInline ''hl.dsp.window.float({ action = "toggle" })''
-
-    else if cmd == "fullscreen toggle" then
-      mkInline "hl.dsp.window.fullscreen()"
-
-    else if cmd == "scratchpad show" then
-      mkInline ''hl.dsp.workspace.toggle_special("magic")''
-
-    else if cmd == "splith" then
-      mkInline ''function() hl.plugin.hy3.make_group("h")() end''
-
-    else if cmd == "splitv" then
-      mkInline ''function() hl.plugin.hy3.make_group("v")() end''
-
-    else if cmd == "layout toggle split" then
-      mkInline ''function() hl.plugin.hy3.change_group("opposite")() end''
-
+    else if cmd == "move scratchpad"
+    then mkInline ''hl.dsp.window.move({ workspace = "special:magic", follow = false })''
+    else if lib.hasPrefix "move " cmd
+    then let
+      dir = lib.removePrefix "move " cmd;
+      d = dirMap.${dir} or dir;
+    in
+      mkInline ''function() hl.plugin.hy3.move_window(${luaStr d})() end''
+    else if cmd == "floating toggle"
+    then mkInline ''hl.dsp.window.float({ action = "toggle" })''
+    else if cmd == "fullscreen toggle"
+    then mkInline "hl.dsp.window.fullscreen()"
+    else if cmd == "scratchpad show"
+    then mkInline ''hl.dsp.workspace.toggle_special("magic")''
+    else if cmd == "splith"
+    then mkInline ''function() hl.plugin.hy3.make_group("h")() end''
+    else if cmd == "splitv"
+    then mkInline ''function() hl.plugin.hy3.make_group("v")() end''
+    else if cmd == "layout toggle split"
+    then mkInline ''function() hl.plugin.hy3.change_group("opposite")() end''
     # hy3 has no stacking layout; both "stacking" and "tabbed" map to tabs.
-    else if cmd == "layout stacking" then
-      mkInline ''function() hl.plugin.hy3.make_group("tab")() end''
-
-    else if cmd == "layout tabbed" then
-      mkInline ''function() hl.plugin.hy3.make_group("tab")() end''
-
-    else if cmd == "mode 'resize'" then
-      mkInline ''hl.dsp.submap("resize")''
-
-    else
-      mkInline "hl.dsp.exec_cmd(${luaStr cmd})";
+    else if cmd == "layout stacking"
+    then mkInline ''function() hl.plugin.hy3.make_group("tab")() end''
+    else if cmd == "layout tabbed"
+    then mkInline ''function() hl.plugin.hy3.make_group("tab")() end''
+    else if cmd == "mode 'resize'"
+    then mkInline ''hl.dsp.submap("resize")''
+    else mkInline "hl.dsp.exec_cmd(${luaStr cmd})";
 
   toLua = combo: cmd: {
-    _args = [ (toLuaCombo combo) (toLuaAction cmd) ];
+    _args = [(toLuaCombo combo) (toLuaAction cmd)];
   };
 
   luaBinds =

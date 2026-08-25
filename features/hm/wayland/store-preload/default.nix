@@ -113,12 +113,13 @@
       --state /dev/null --dry-run warm)
     echo "$out_txt"
     ${lib.concatStringsSep "\n" (lib.mapAttrsToList (n: _: ''
-      got=$(echo "$out_txt" | awk -v a=${n} '$1 == a {print $2}')
-      if [ -z "$got" ] || [ "$got" -le 0 ]; then
-        echo "store-preload plans 0 bytes for ${n} under the unit PATH" >&2
-        exit 1
-      fi
-    '') cfg.packages)}
+        got=$(echo "$out_txt" | awk -v a=${n} '$1 == a {print $2}')
+        if [ -z "$got" ] || [ "$got" -le 0 ]; then
+          echo "store-preload plans 0 bytes for ${n} under the unit PATH" >&2
+          exit 1
+        fi
+      '')
+      cfg.packages)}
     touch $out
   '';
 
