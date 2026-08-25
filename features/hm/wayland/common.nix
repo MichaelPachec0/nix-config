@@ -381,5 +381,6 @@ in {
     rofi = config.programs.rofi.finalPackage;
     quickshell = pkgs.quickshell;
     firefox = config.programs.firefox.package;
+    glide = config.programs.glide-browser.package;
   };
 }

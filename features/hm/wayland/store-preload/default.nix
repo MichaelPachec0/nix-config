@@ -63,6 +63,7 @@
     kitty = 6; # measured 8
     quickshell = 70; # measured 99
     firefox = 3; # measured 4; a launcher shim, real set comes from record
+    glide = 6; # measured 8; a firefox fork, same launcher-shim shape
   };
 
   # bin comes from the package, not the manifest key: warmApps.firefox is
@@ -143,7 +144,9 @@ in {
     apps = lib.mkOption {
       # nonEmpty: an empty list emits "--apps --workers", which argparse rejects.
       type = lib.types.nonEmptyListOf lib.types.str;
-      default = ["rofi" "kitty" "quickshell" "firefox-devedition"];
+      # rofi leads because it is keybind-launched. Membership is pinned by the
+      # assertion below, so adding to warmApps without adding here fails at eval.
+      default = ["rofi" "kitty" "quickshell" "firefox-devedition" "glide"];
       description = ''
         Apps to seed, record and warm, in warm order. First entry warms first.
         rofi leads because it is bound to a key.
