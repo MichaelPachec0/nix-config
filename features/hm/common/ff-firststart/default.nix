@@ -18,6 +18,10 @@
   ...
 }: let
   cfg = config.services.ffFirstStart;
+  # This check happens because firefox not enabled on server configs, means
+  # the shim script never builds since it cannot find the package
+  # since the actual firefox lever is embedded under graphical.enable
+  firefoxPresent = config.graphical.enable;
 
   # The package home-manager actually puts on PATH. Load-bearing: firefox pins
   # its install location in compatibility.ini (LastPlatformDir), so execing a
@@ -49,11 +53,12 @@
   shim = pkgs.writeShellApplication {
     name = "firefox-devedition";
     runtimeInputs = [pkgs.coreutils pkgs.gawk pkgs.findutils pkgs.gnused pkgs.systemd];
-    text = ''
-      FIREFOX_BIN=${lib.escapeShellArg firefoxBin}
-      FF_FS_DIR=${lib.escapeShellArg cfg.stateDir}
-    ''
-    + builtins.readFile ./ff-wrap.sh;
+    text =
+      ''
+        FIREFOX_BIN=${lib.escapeShellArg firefoxBin}
+        FF_FS_DIR=${lib.escapeShellArg cfg.stateDir}
+      ''
+      + builtins.readFile ./ff-wrap.sh;
   };
 
   # Regression guard on ff-wrap.sh's "nothing here may stop firefox from
@@ -116,17 +121,43 @@ in {
 
   config = lib.mkMerge [
     {
-      # Forces shimCheck to build on every switch, harness enabled or not:
-      # it is the only guard on ff-wrap.sh's "user loses their browser"
-      # invariant, and a switch made while disabled must still catch a
-      # broken edit. home.activation touches no package/profile, so this
-      # installs nothing visible -- same `: ${drv}` forcing idiom as
-      # store-preload's envCheck, just via activation text instead of a
-      # runCommand symlink.
-      home.activation.ffFirstStartShimCheck = lib.hm.dag.entryAnywhere ''
-        : ${shimChecked}
-      '';
+      # firefoxPresent is a stand-in for "firefox is in this profile", valid
+      # only while the sole programs.firefox.enable definition stays under
+      # graphical.enable. When that stops holding, firefoxBin aborts
+      # EVALUATION on the getExe' isDerivation assert, and every config that
+      # imports this module dies on a trace pointing into nixpkgs rather than
+      # at the cause. Name the reason here instead.
+      #
+      # Deliberately one-directional: firefox enabled with graphical.enable
+      # false only skips the shim check. That costs coverage, not a browser.
+      assertions = [
+        {
+          assertion = firefoxPresent -> config.programs.firefox.finalPackage != null;
+          message = ''
+            services.ffFirstStart: graphical.enable is set but
+            programs.firefox.finalPackage is null, so the shim has no firefox
+            binary to wrap. graphical.enable no longer implies firefox is
+            present; gate firefoxPresent on
+            config.programs.firefox.finalPackage != null instead.
+          '';
+        }
+      ];
     }
+    (
+      lib.mkIf firefoxPresent
+      {
+        # Forces shimCheck to build on every switch, harness enabled or not:
+        # it is the only guard on ff-wrap.sh's "user loses their browser"
+        # invariant, and a switch made while disabled must still catch a
+        # broken edit. home.activation touches no package/profile, so this
+        # installs nothing visible -- same `: ${drv}` forcing idiom as
+        # store-preload's envCheck, just via activation text instead of a
+        # runCommand symlink.
+        home.activation.ffFirstStartShimCheck = lib.hm.dag.entryAnywhere ''
+          : ${shimChecked}
+        '';
+      }
+    )
     (lib.mkIf cfg.enable {
       home.packages = [harness];
 
