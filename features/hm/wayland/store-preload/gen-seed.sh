@@ -12,11 +12,17 @@ set -euo pipefail
 real="${1:?usage: gen-seed.sh /path/to/real/binary /path/to/output}"
 out="${2:?usage: gen-seed.sh /path/to/real/binary /path/to/output}"
 
-# grep -vxF can legitimately match nothing (a real binary with no other
-# /nix/store dependency string in `ldd`'s output) and exits 1 in that case;
-# under `set -o pipefail` that would abort the script over a non-error, so
-# it is captured with `|| true` rather than left in the pipeline directly.
-deps=$(ldd "$real" | grep -o '/nix/store/[^ )]*' | sort -u | grep -vxF "$real" || true)
+# Capture ldd separately, as a plain assignment: `set -e` then fails the
+# build if ldd itself fails (absent, wrong ELF class, exit 127/1), nothing
+# swallows it. Old bug: one `|| true` covered ldd AND the grep/sort below, so
+# a truncated ldd (some deps, then non-zero) shipped a truncated seed.
+ldd_out=$(ldd "$real")
+
+# grep -o (zero deps) or the final grep -vxF (no OTHER deps) can legitimately
+# exit 1 with no error. ldd already succeeded above, so `|| [ $? -eq 1 ]`
+# masks only "no deps found", never an ldd failure or any other exit code.
+deps=$(printf '%s\n' "$ldd_out" | grep -o '/nix/store/[^ )]*' | sort -u | grep -vxF "$real") \
+  || [ $? -eq 1 ]
 
 {
   echo "$real"

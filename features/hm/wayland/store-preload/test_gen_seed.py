@@ -45,21 +45,24 @@ def _bash() -> str:
     return found
 
 
-def _stub_ldd(bindir: str, deps: list[str]) -> None:
-    """A fake `ldd` on PATH that prints deps regardless of its argument."""
+def _stub_ldd(bindir: str, deps: list[str], exit_code: int = 0) -> None:
+    """A fake `ldd` on PATH that prints deps regardless of its argument,
+    then exits with exit_code (a non-zero code simulates ldd failing after
+    printing some output, e.g. a truncated/corrupt dynamic section)."""
     path = os.path.join(bindir, "ldd")
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"#!{_bash()}\n")
         for d in deps:
             f.write(f'echo "\t=> {d} (0x0)"\n')
+        f.write(f"exit {exit_code}\n")
     st = os.stat(path)
     os.chmod(path, st.st_mode | stat.S_IEXEC)
 
 
-def _run(script: str, real: str, deps: list[str]) -> _Result:
+def _run(script: str, real: str, deps: list[str], ldd_exit: int = 0) -> _Result:
     """Run `script real out` with a stub ldd on PATH reporting deps."""
     with tempfile.TemporaryDirectory() as d:
-        _stub_ldd(d, deps)
+        _stub_ldd(d, deps, ldd_exit)
         out = os.path.join(d, "seed")
         env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"])
         proc = subprocess.run(
@@ -73,8 +76,8 @@ def _run(script: str, real: str, deps: list[str]) -> _Result:
         return _Result(proc.returncode, proc.stderr, lines)
 
 
-def _run_gen_seed(real: str, deps: list[str]) -> _Result:
-    return _run(GEN_SEED, real, deps)
+def _run_gen_seed(real: str, deps: list[str], ldd_exit: int = 0) -> _Result:
+    return _run(GEN_SEED, real, deps, ldd_exit)
 
 
 class TestGenSeedRealBinaryIsAlwaysFirst(unittest.TestCase):
@@ -105,20 +108,32 @@ class TestGenSeedRealBinaryIsAlwaysFirst(unittest.TestCase):
         """
         with open(GEN_SEED, encoding="utf-8") as f:
             src = f.read()
-        old = (
-            'deps=$(ldd "$real" | grep -o \'/nix/store/[^ )]*\' | '
-            'sort -u | grep -vxF "$real" || true)\n\n'
+        ldd_line = 'ldd_out=$(ldd "$real")'
+        deps_block = (
+            'deps=$(printf \'%s\\n\' "$ldd_out" | grep -o \'/nix/store/[^ )]*\' | '
+            'sort -u | grep -vxF "$real") \\\n'
+            '  || [ $? -eq 1 ]'
+        )
+        assign_block = (
             '{\n'
             '  echo "$real"\n'
             '  [ -z "$deps" ] || printf \'%s\\n\' "$deps"\n'
             '} > "$out"'
         )
-        new = (
-            '{ echo "$real"; ldd "$real" | grep -o \'/nix/store/[^ )]*\'; } '
-            '| sort -u > "$out"'
+        msg = "gen-seed.sh text changed; update this test's match strings"
+        self.assertIn(ldd_line, src, msg)
+        self.assertIn(deps_block, src, msg)
+        self.assertIn(assign_block, src, msg)
+
+        broken_src = (
+            src.replace(ldd_line, "")
+            .replace(deps_block, "")
+            .replace(
+                assign_block,
+                '{ echo "$real"; ldd "$real" | grep -o \'/nix/store/[^ )]*\'; } '
+                '| sort -u > "$out"',
+            )
         )
-        self.assertIn(old, src, "gen-seed.sh text changed; update this test's match string")
-        broken_src = src.replace(old, new)
 
         with tempfile.TemporaryDirectory() as d:
             broken = os.path.join(d, "gen-seed-broken.sh")
@@ -128,6 +143,19 @@ class TestGenSeedRealBinaryIsAlwaysFirst(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("is not the real binary", result.stderr)
+
+
+class TestGenSeedFailsWhenLddFails(unittest.TestCase):
+    def test_ldd_printing_some_deps_then_failing_fails_the_build(self) -> None:
+        """N1: a single `|| true` used to cover the WHOLE pipeline, not just
+        the documented "grep -vxF matched nothing" case, so an ldd that
+        prints a couple of deps then exits non-zero shipped a truncated
+        seed instead of failing. Reverting the fix (put the deps= line back
+        to one `|| true`-wrapped pipeline including ldd) must make this
+        test fail.
+        """
+        result = _run_gen_seed(_REAL, [_DEP], ldd_exit=1)
+        self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":

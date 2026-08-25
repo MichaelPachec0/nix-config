@@ -187,9 +187,14 @@ def cmd_warm(args: argparse.Namespace) -> int:
     off_disk = max(0, dev_after - dev_before)
     cold_pct = (100.0 * off_disk / read) if read else 0.0
     rate = (read / 2**20 / elapsed) if elapsed > 0 else 0.0
+    # Headline prints bytes actually READ, not planned: rate and cold_pct
+    # below were already derived from read, so a partial open failure (e.g.
+    # a 40% shortfall, below the WARNING threshold above) used to print a
+    # healthy-looking planned figure while understating nothing else.
     print(
-        f"store-preload: {len(todo)} files, {_mb(planned)} in {elapsed:.2f}s "
-        f"({rate:.0f} MB/s); {_mb(off_disk)} off disk ({cold_pct:.1f}% was cold)"
+        f"store-preload: {len(todo)} files, {_mb(read)} of {_mb(planned)} planned "
+        f"in {elapsed:.2f}s ({rate:.0f} MB/s); {_mb(off_disk)} off disk "
+        f"({cold_pct:.1f}% was cold)"
     )
     if skipped:
         print(f"store-preload: skipped {_mb(skipped)} to stay under the cap")

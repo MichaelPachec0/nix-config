@@ -225,7 +225,7 @@ class TestWarmReporting(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 self.assertEqual(main.cmd_warm(args), 0)
         out = buf.getvalue()
-        self.assertIn("2 files, 4.0 MB in", out)
+        self.assertIn("2 files, 4.0 MB of 4.0 MB planned in", out)
         self.assertIn("3.0 MB off disk (75.0% was cold)", out)
 
     def test_zero_bytes_read_does_not_divide_by_zero(self) -> None:
@@ -297,6 +297,28 @@ class TestWarmReporting(unittest.TestCase):
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             main.cmd_warm(args)
         self.assertNotIn("WARNING", err.getvalue())
+
+    def test_headline_reports_bytes_actually_read_on_a_partial_shortfall(self) -> None:
+        """N2: the headline used to print _mb(planned) unconditionally while
+        rate/cold_pct were derived from read. A shortfall too small to trip
+        the WARNING (read >= planned // 2) used to print a healthy-looking
+        planned figure with no signal at all; the headline must show what
+        was actually read.
+        """
+        a = self._file(4 << 20)
+        state = os.path.join(tempfile.mkdtemp(), "manifest.json")
+        manifest.save(state, {"rofi": [a]}, {})
+        args = _args(state=state, apps=["rofi"])
+        buf = io.StringIO()
+        # 60% of the 4 MB planned: above the planned // 2 WARNING floor, so
+        # this must be visible only via the headline's own read figure.
+        with mock.patch.object(warm, "warm", return_value=(4 << 20) * 3 // 5):
+            with contextlib.redirect_stdout(buf):
+                rc = main.cmd_warm(args)
+        self.assertEqual(rc, 0)
+        out = buf.getvalue()
+        self.assertIn("2.4 MB of 4.0 MB planned", out)
+        self.assertNotIn("4.0 MB in", out)
 
     def test_status_reports_file_count_and_size_without_a_percentage(self) -> None:
         a, b = self._file(8192), self._file(8192)

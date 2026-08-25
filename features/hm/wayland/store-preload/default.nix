@@ -50,6 +50,10 @@
 
   appArgs = lib.concatStringsSep "," cfg.apps;
 
+  # The runtime binary name for each package -- the same value seedFor uses
+  # for `bin`. Only consumed by the assertion below.
+  derivedApps = lib.mapAttrsToList (_: p: baseNameOf (lib.getExe p)) cfg.packages;
+
   # Floors, set below measured with headroom for nixpkgs churn. The floor, not
   # the heuristic, is what makes unwrapping safe: rofi through its wrapper
   # yields 3 files against 60 unwrapped, so this fails the build instead of
@@ -59,6 +63,7 @@
     kitty = 6; # measured 8
     quickshell = 70; # measured 99
     firefox = 3; # measured 4; a launcher shim, real set comes from record
+    glide = 6; # measured 8; a firefox fork, same launcher-shim shape
   };
 
   # bin comes from the package, not the manifest key: warmApps.firefox is
@@ -74,7 +79,7 @@
       n=$(wc -l < "$out")
       if [ "$n" -lt ${toString floors.${name}} ]; then
         echo "seed ${name}: $n files, floor is ${toString floors.${name}}" >&2
-        echo "wrapper resolution probably picked the wrong binary: $real" >&2
+        echo "wrapper resolution probably picked the wrong binary, or ldd failed/truncated: $real" >&2
         exit 1
       fi
     '';
@@ -113,12 +118,13 @@
       --state /dev/null --dry-run warm)
     echo "$out_txt"
     ${lib.concatStringsSep "\n" (lib.mapAttrsToList (n: _: ''
-      got=$(echo "$out_txt" | awk -v a=${n} '$1 == a {print $2}')
-      if [ -z "$got" ] || [ "$got" -le 0 ]; then
-        echo "store-preload plans 0 bytes for ${n} under the unit PATH" >&2
-        exit 1
-      fi
-    '') cfg.packages)}
+        got=$(echo "$out_txt" | awk -v a=${n} '$1 == a {print $2}')
+        if [ -z "$got" ] || [ "$got" -le 0 ]; then
+          echo "store-preload plans 0 bytes for ${n} under the unit PATH" >&2
+          exit 1
+        fi
+      '')
+      cfg.packages)}
     touch $out
   '';
 
@@ -138,7 +144,9 @@ in {
     apps = lib.mkOption {
       # nonEmpty: an empty list emits "--apps --workers", which argparse rejects.
       type = lib.types.nonEmptyListOf lib.types.str;
-      default = ["rofi" "kitty" "quickshell" "firefox-devedition"];
+      # rofi leads because it is keybind-launched. Membership is pinned by the
+      # assertion below, so adding to warmApps without adding here fails at eval.
+      default = ["rofi" "kitty" "quickshell" "firefox-devedition" "glide"];
       description = ''
         Apps to seed, record and warm, in warm order. First entry warms first.
         rofi leads because it is bound to a key.
@@ -157,10 +165,12 @@ in {
 
     maxBytes = lib.mkOption {
       type = lib.types.ints.positive;
-      default = 2 * 1024 * 1024 * 1024;
+      default = 3 * 1024 * 1024 * 1024;
       description = ''
         Cap on bytes per warm pass. A file that would exceed it is skipped
-        whole and logged. Measured working set for the default apps is ~1.4 GB.
+        whole and logged, from the tail of `apps`, so the first entry survives.
+        Measured union for the default apps is ~1.8 GB: two Mozilla browsers
+        carry a ~177 MB libxul.so each, which dedup cannot share.
       '';
     };
 
@@ -175,6 +185,22 @@ in {
 
   config = lib.mkIf cfg.enable {
     services.storePreload.packages = lib.mkDefault warmApps;
+
+    # Sorted, so order stays free and only membership is constrained. Catches
+    # both directions: a package with no apps entry warms nothing, and an apps
+    # entry with no package silently degrades to manifest-only warming.
+    assertions = [
+      {
+        assertion =
+          lib.sort (a: b: a < b) cfg.apps == lib.sort (a: b: a < b) derivedApps;
+        message = ''
+          services.storePreload.apps and .packages disagree.
+            apps:    ${lib.concatStringsSep " " (lib.sort (a: b: a < b) cfg.apps)}
+            derived: ${lib.concatStringsSep " " (lib.sort (a: b: a < b) derivedApps)}
+          Every package needs an apps entry naming its binary, and vice versa.
+        '';
+      }
+    ];
 
     home.packages = [storePreloadChecked pkgs.fatrace];
 
