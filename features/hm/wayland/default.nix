@@ -18,6 +18,7 @@
     ./common.nix
     ./store-preload
     ./hypr-wl-debug.nix
+    ./hyprglass.nix
     ./hyprland.nix
     ./hypr-window-keeper.nix
     ./hypr-monitor-arrange.nix
