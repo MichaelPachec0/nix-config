@@ -225,6 +225,90 @@ in {
           vibrancy_darkness = 1,
           adaptive_boost = 0.5,
         })
+        -- LightGlass: white-tinted bright glass. NOTE two out-of-range
+        -- values kept verbatim from the source config: glass_opacity 1.2
+        -- (above the usual 0..1) and edge_thickness 1.18 (an order of
+        -- magnitude above the typical 0.03-0.1 band) -- expect a very wide,
+        -- possibly clamped bezel.
+        hg.preset("LightGlass", {
+          blur_strength = 4,
+          blur_iterations = 2,
+          lens_distortion = 0.3,
+          refraction_strength = 1.0,
+          chromatic_aberration = 0.2,
+          fresnel_strength = 0.4,
+          specular_strength = 0.8,
+          glass_opacity = 1.2,
+          edge_thickness = 1.18,
+          tint_color = 0xFFFFFF22,
+          adaptive_dim = 0.2,
+        })
+        -- terminal_glass: subtle refractive pane tuned for terminals. The
+        -- source derived its tint from a pywal scheme background at 0.35
+        -- alpha at runtime; here that is the theme bgMain at 0x59 (~0.35).
+        hg.preset("terminal_glass", {
+          blur_strength = 1.5,
+          blur_iterations = 2,
+          refraction_strength = 2.2,
+          chromatic_aberration = 0.18,
+          fresnel_strength = 0.35,
+          specular_strength = 0.45,
+          glass_opacity = 1.0,
+          edge_thickness = 0.03,
+          tint_color = 0x${theme.palette.bgMain}59,
+          lens_distortion = 0.08,
+          brightness = 0.95,
+          contrast = 1.12,
+          saturation = 0.95,
+          vibrancy = 0.35,
+          vibrancy_darkness = 0.25,
+          adaptive_dim = 0.22,
+          adaptive_boost = 0.08,
+        })
+        -- custom_liquid: ported from an "Evident LiquidGlass" config for the
+        -- separate liquidglass plugin; only the keys that exist as hyprglass
+        -- preset fields carried over (its enabled/exclude/window_opacity/
+        -- layer_* globals have no preset equivalent). Cool blue tint with
+        -- alpha 00, i.e. tint disabled but recorded.
+        hg.preset("custom_liquid", {
+          blur_strength = 0.32,
+          blur_iterations = 2,
+          refraction_strength = 1.15,
+          chromatic_aberration = 0.90,
+          lens_distortion = 1.15,
+          fresnel_strength = 0.46,
+          specular_strength = 0.38,
+          edge_thickness = 0.040,
+          tint_color = 0xb8d8ff00,
+          glass_opacity = 0.78,
+          brightness = 0.88,
+          contrast = 1.16,
+          saturation = 1.14,
+          vibrancy = 0.32,
+          adaptive_dim = 0.32,
+          adaptive_boost = 0.10,
+        })
+        -- yujon_glass: pure refraction lens -- zero blur, zero tint, zero
+        -- fringing, full fresnel/specular. Converted from a config that set
+        -- these as plugin globals rather than a preset.
+        hg.preset("yujon_glass", {
+          blur_strength = 0,
+          blur_iterations = 1,
+          refraction_strength = 2.5,
+          chromatic_aberration = 0,
+          lens_distortion = 1,
+          edge_thickness = 0.018,
+          fresnel_strength = 1,
+          specular_strength = 1,
+          tint_color = 0x00000000,
+          glass_opacity = 1,
+          brightness = 1,
+          contrast = 1.0,
+          saturation = 1.0,
+          vibrancy = 0.0,
+          adaptive_dim = 0.0,
+          adaptive_boost = 0.0,
+        })
         -- apple: bright rim-lit look -- light blur, full fresnel/specular,
         -- opaque glass pane, no adaptive dim.
         hg.preset("apple", {
