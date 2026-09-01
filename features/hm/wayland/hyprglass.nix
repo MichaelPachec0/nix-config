@@ -199,17 +199,9 @@ in {
             adaptive_dim = 0.5,
           },
         })
-        -- clear: merges onto the BUILT-IN preset of the same name (upstream
-        -- ships clear/glass/subtle/high_contrast; a user preset sharing a
-        -- built-in's name overrides just the keys it sets).
-        hg.preset("clear", {
-          glass_opacity = 0.8,
-          blur_strength = 1.5,
-          dark = { brightness = 0.7 },
-          light = { brightness = 1.2 },
-        })
         -- contrasted: the built-in high_contrast with a stronger dim and a
-        -- deep blue dark tint.
+        -- deep blue dark tint. (The other built-ins -- clear, glass, subtle,
+        -- high_contrast -- are always selectable without registration.)
         hg.preset("contrasted", {
           inherits = "high_contrast",
           contrast = 1.2,
