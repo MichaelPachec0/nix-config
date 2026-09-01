@@ -208,6 +208,43 @@ in {
           adaptive_dim = 1.5,
           dark = { tint_color = 0x02142aa9 },
         })
+        -- glassy: heavy stylised glass -- strong lensing, fringing and
+        -- vibrancy pushed high, theme tint.
+        hg.preset("glassy", {
+          blur_strength = 2.0,
+          blur_iterations = 3,
+          chromatic_aberration = 0.8,
+          fresnel_strength = 0.8,
+          edge_thickness = 0.08,
+          tint_color = ${tint},
+          lens_distortion = 0.9,
+          brightness = 1.0,
+          contrast = 1.7,
+          saturation = 1,
+          vibrancy = 0.8,
+          vibrancy_darkness = 1,
+          adaptive_boost = 0.5,
+        })
+        -- apple: bright rim-lit look -- light blur, full fresnel/specular,
+        -- opaque glass pane, no adaptive dim.
+        hg.preset("apple", {
+          blur_strength = 0.8,
+          blur_iterations = 2,
+          refraction_strength = 0.8,
+          chromatic_aberration = 0.6,
+          fresnel_strength = 1.0,
+          specular_strength = 1.0,
+          glass_opacity = 1.0,
+          edge_thickness = 0.1,
+          lens_distortion = 0.5,
+          brightness = 1.1,
+          contrast = 1.0,
+          saturation = 1.0,
+          vibrancy = 0.2,
+          vibrancy_darkness = 0.0,
+          adaptive_dim = 0.0,
+          adaptive_boost = 0.2,
+        })
       end
     '';
 
