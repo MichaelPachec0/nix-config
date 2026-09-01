@@ -145,58 +145,74 @@ in {
   };
 
   config = {
+    # The plugin config, at the TOP LEVEL of the generated hyprland.lua (the
+    # hyprland module appends extraConfig verbatim; types.lines merges with
+    # hyprland.nix's monitors block). This is the mechanism upstream's Lua
+    # support is built around, and the only one that works:
+    #
+    #   parse 1 (session start): plugin not loaded, hl.plugin.hyprglass is
+    #     nil, block skipped.
+    #   start hook: hyprctl plugin load. PLUGIN_INIT then calls reloadConfig
+    #     synchronously, so:
+    #   parse 2: hl.plugin.hyprglass exists, block runs DURING the parse;
+    #     hg.preset entries pend and the parse-end config.reloaded commits
+    #     them. No timer and no race -- however long the async load takes,
+    #     the re-parse it triggers is what applies the config.
+    #
+    # hg.config sets ONLY behavioural keys (theme routing, xray, layers). No
+    # aesthetic value may be set as a global: stock_pure is an EMPTY preset
+    # precisely so it resolves to pure upstream defaults, which makes it a
+    # usable comparison arm against stock_tint and current_set. Lua booleans
+    # coerce to Hyprlang ints through hl.config (verified live).
+    wayland.windowManager.hyprland.extraConfig = lib.mkIf config.hyprglass.enable ''
+      -- hyprglass: runs on the config re-parse the plugin load triggers; the
+      -- first parse (plugin absent) skips it. Presets only commit when
+      -- registered during a parse, which is why this is not in the start hook.
+      if hl.plugin.hyprglass then
+        local hg = hl.plugin.hyprglass
+        hg.config({
+          default_theme = "${theme.meta.mode}",
+          default_preset = "current_set",
+          xray = ${luaBool config.hyprglass.xray},
+          layers = { enabled = ${luaBool config.hyprglass.layers.enable} },
+        })
+        -- Three permanent presets so A/B runs side by side on tagged windows
+        -- (hl.dsp.window.tag) instead of sequentially from memory.
+        hg.preset("stock_pure", {})
+        hg.preset("stock_tint", { tint_color = ${tint} })
+        -- current_set: tuned for 0.9-opacity windows. The interior is 90%
+        -- occluded by the app's own pixels, so the visible effect lives in
+        -- the bezel: wider edge band, less centre-dome distortion, less
+        -- spectral fringing on glyph margins, tint as the channel that still
+        -- lands. dark.adaptive_dim is readability work: dims bright backdrop
+        -- patches so a white page underneath cannot wash out the frost.
+        hg.preset("current_set", {
+          tint_color = ${tint},
+          edge_thickness = 0.09,
+          lens_distortion = 0.2,
+          chromatic_aberration = 0.35,
+          refraction_strength = 0.7,
+          specular_strength = 0.7,
+          blur_strength = 2.5,
+          dark = {
+            brightness = 0.75,
+            adaptive_dim = 0.5,
+          },
+        })
+      end
+    '';
+
     _module.args.generatedHyprglass = {
-      # Mirrors hy3SetupHook: async `hyprctl plugin load`, then a oneshot
-      # timer applying the config once the plugin's keys exist. The guard is a
-      # nil check on hl.plugin.hyprglass -- the plugin registers its own
-      # callable table rather than writing into the global config tree.
-      #
-      # hg.config sets ONLY behavioural keys (theme routing, xray, layers).
-      # No aesthetic value may be set as a global: stock_pure is an EMPTY
-      # preset precisely so it resolves to pure upstream defaults, which makes
-      # it a usable comparison arm against stock_tint and current_set.
-      # Lua booleans coerce to Hyprlang ints through hl.config (verified
-      # live), so the boolean spellings below are fine.
+      # ONLY the plugin load. No timer, and deliberately no config here: a
+      # timer-applied hg.config/hg.preset is structurally broken, not just
+      # racy. Runtime hl.config never fires config.reloaded, and
+      # config.preReload wipes the plugin's pending-preset buffer, so presets
+      # registered outside a config parse can never commit. The config lives
+      # in the extraConfig block below instead, which the load-triggered
+      # re-parse executes.
       setupHook = mkLuaInline ''
         function()
           hl.exec_cmd("hyprctl plugin load ${hyprglassSo}")
-          hl.timer(function()
-            if hl.plugin.hyprglass then
-              local hg = hl.plugin.hyprglass
-              hg.config({
-                default_theme = "${theme.meta.mode}",
-                default_preset = "current_set",
-                xray = ${luaBool config.hyprglass.xray},
-                layers = { enabled = ${luaBool config.hyprglass.layers.enable} },
-              })
-              -- Three permanent presets so A/B runs side by side on tagged
-              -- windows (hl.dsp.window.tag) instead of sequentially from
-              -- memory. stock_pure = upstream defaults, stock_tint = tint
-              -- only, current_set = the shipped look.
-              hg.preset("stock_pure", {})
-              hg.preset("stock_tint", { tint_color = ${tint} })
-              -- current_set: tuned for 0.9-opacity windows. The interior is
-              -- 90% occluded by the app's own pixels, so the visible effect
-              -- lives in the bezel: wider edge band, less centre-dome
-              -- distortion, less spectral fringing on glyph margins, tint as
-              -- the channel that still lands. dark.adaptive_dim is
-              -- readability work: dims bright backdrop patches so a white
-              -- page underneath cannot wash out the frost.
-              hg.preset("current_set", {
-                tint_color = ${tint},
-                edge_thickness = 0.09,
-                lens_distortion = 0.2,
-                chromatic_aberration = 0.35,
-                refraction_strength = 0.7,
-                specular_strength = 0.7,
-                blur_strength = 2.5,
-                dark = {
-                  brightness = 0.75,
-                  adaptive_dim = 0.5,
-                },
-              })
-            end
-          end, { type = "oneshot", timeout = 1000 })
         end
       '';
 
