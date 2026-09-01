@@ -367,6 +367,47 @@
             ../overlays/0005-feat-hy3-ungroup-dispatcher.patch
           ];
       });
+      # hyprglass -- liquid-glass window decoration. NOT in nixpkgs: PR #547498
+      # ("hyprlandPlugins.hyprglass: init at 0.7.0") is still open, so the
+      # derivation is vendored here from that PR. When it merges, this
+      # collapses to `hyprlandPlugins.hyprglass.override {inherit (final)
+      # hyprland;}` with the patch kept.
+      #
+      # mkHyprlandPlugin builds against `hyprland`'s own stdenv, so passing
+      # final.hyprland points both the headers and the toolchain at the patched
+      # 0.56.2 above rather than nixpkgs' stock build. Without that the
+      # plugin's ABI check rejects it at load. Same coupling hy3 above has: a
+      # Hyprland patch bump rebuilds both plugins.
+      #
+      # The xray patch adds plugin:hyprglass:xray (default off): glass samples
+      # a windowless per-monitor capture instead of the live framebuffer, so a
+      # window's backdrop is the wallpaper rather than the window stack beneath
+      # it and window motion stops invalidating other windows' glass. Canonical
+      # branch: feat/xray on github.com/MichaelPachec0/hyprglass.
+      hyprglass = final.hyprlandPlugins.mkHyprlandPlugin (finalAttrs: {
+        pluginName = "hyprglass";
+        version = "0.7.0";
+        hyprland = final.hyprland;
+        src = final.fetchFromGitHub {
+          owner = "hyprnux";
+          repo = "hyprglass";
+          tag = "v${finalAttrs.version}";
+          hash = "sha256-x/584kY+XXlU/OWKtZAFo89VtowjLXs1DiP9PC0o0Os=";
+        };
+        patches = [../overlays/hyprglass-xray.patch];
+        installPhase = ''
+          runHook preInstall
+          mkdir -p $out/lib
+          mv hyprglass.so "$out/lib/libhyprglass.so"
+          runHook postInstall
+        '';
+        meta = {
+          description = "Liquid-glass window decoration effect for Hyprland";
+          homepage = "https://github.com/hyprnux/hyprglass";
+          license = final.lib.licenses.bsd3;
+          platforms = final.lib.platforms.linux;
+        };
+      });
       firefox-devedition-bin = inputs.firefox.packages.${prev.stdenv.hostPlatform.system}.firefox-devedition-bin.override {
         extraPolicies = {
           DisableTelemetry = true;

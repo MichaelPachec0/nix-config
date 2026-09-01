@@ -1,0 +1,440 @@
+From 97b9fe4393b35ac590a18e5a61ac21e872cb9d95 Mon Sep 17 00:00:00 2001
+From: Michael Pacheco <git@michaelpacheco.org>
+Date: Tue, 1 Sep 2026 06:21:42 -0700
+Subject: [PATCH] feat(xray): sample a windowless scene capture instead of the
+ live framebuffer
+
+Glass currently samples m_renderData.currentFB, which contains every window
+already drawn, so a glassed window's backdrop is the composited stack beneath
+it and anything repainting in that stack invalidates the glass above. Cost
+therefore scales with stack depth.
+
+Add plugin:hyprglass:xray (int, default 0). When set, a
+CGlassBackgroundElement queued at RENDER_PRE_WINDOWS captures the scene before
+any window draws -- wallpaper, background and bottom layers only -- and glass
+samples that capture. Every window on a monitor then shares one backdrop and
+stack depth stops mattering. The element is queued from the render.stage
+handler while the deferred pass is being built; the GL blit runs in draw(),
+after those layers have actually rendered.
+
+The capture is monitor-level and invalidated only by monitor, layer, workspace
+and config events plus background/bottom layer surface commits, never by
+window motion, mirroring how Hyprland keeps its own preblur framebuffer cheap.
+The per-surface commit watchers exist because wallpaper daemons repaint the
+background layer with plain commits that raise no EventBus event; this is the
+same signal Hyprland's own LayerSurface commit path uses to set m_blurFBDirty.
+A render.pre listener damages the monitor when the capture is dirty, mirroring
+preRender, so a partial-damage frame cannot blit stale regions into it.
+
+Unlike Hyprland's preblur the capture is not pre-blurred, so blur_strength and
+blur_iterations keep their meaning. A monitor with no capture yet falls back
+to the live framebuffer. Lua: hg.config({ xray = true }) works, booleans
+coerce to Hyprlang ints.
+---
+ Makefile                       |   2 +-
+ src/GlassBackgroundElement.cpp |  55 +++++++++++++++
+ src/GlassBackgroundElement.hpp |  33 +++++++++
+ src/GlassDecoration.cpp        |  16 ++++-
+ src/Globals.hpp                |  29 ++++++++
+ src/PluginConfig.cpp           |   4 ++
+ src/PluginConfig.hpp           |   7 ++
+ src/main.cpp                   | 122 +++++++++++++++++++++++++++++++++
+ 8 files changed, 266 insertions(+), 2 deletions(-)
+ create mode 100644 src/GlassBackgroundElement.cpp
+ create mode 100644 src/GlassBackgroundElement.hpp
+
+diff --git a/Makefile b/Makefile
+index ef3b5f0..daaaf75 100644
+--- a/Makefile
++++ b/Makefile
+@@ -11,7 +11,7 @@ ifeq ($(basename $(CXX)),g++)
+ endif
+ 
+ TARGET = hyprglass.so
+-SOURCES = src/main.cpp src/GlassDecoration.cpp src/GlassPassElement.cpp src/GlassRenderer.cpp src/GlassLayerSurface.cpp src/GlassLayerPassElement.cpp src/GlassLayerCompositeElement.cpp src/PluginConfig.cpp src/ShaderManager.cpp
++SOURCES = src/main.cpp src/GlassDecoration.cpp src/GlassPassElement.cpp src/GlassBackgroundElement.cpp src/GlassRenderer.cpp src/GlassLayerSurface.cpp src/GlassLayerPassElement.cpp src/GlassLayerCompositeElement.cpp src/PluginConfig.cpp src/ShaderManager.cpp
+ OBJ = $(SOURCES:.cpp=.o)
+ 
+ all: $(TARGET)
+diff --git a/src/GlassBackgroundElement.cpp b/src/GlassBackgroundElement.cpp
+new file mode 100644
+index 0000000..f527763
+--- /dev/null
++++ b/src/GlassBackgroundElement.cpp
+@@ -0,0 +1,55 @@
++#include "GlassBackgroundElement.hpp"
++#include "Globals.hpp"
++
++#include <GLES3/gl32.h>
++#include <hyprland/src/render/OpenGL.hpp>
++#include <hyprland/src/render/Renderer.hpp>
++
++// Same helper GlassRenderer.cpp keeps file-local; duplicated rather than
++// exported to keep the upstream diff surface minimal.
++static GLuint fbId(const SP<Render::IFramebuffer>& framebuffer) {
++    return dynamic_cast<Render::GL::CGLFramebuffer*>(framebuffer.get())->getFBID();
++}
++
++std::vector<UP<IPassElement>> CGlassBackgroundElement::draw() {
++    if (!g_pGlobalState)
++        return {};
++
++    const auto monitor = g_pHyprRenderer->m_renderData.pMonitor.lock();
++    if (!monitor)
++        return {};
++
++    const auto source = g_pHyprRenderer->m_renderData.currentFB;
++    if (!source)
++        return {};
++
++    const int width  = static_cast<int>(source->m_size.x);
++    const int height = static_cast<int>(source->m_size.y);
++    if (width <= 0 || height <= 0)
++        return {};
++
++    auto& backgroundFB = g_pGlobalState->backgroundFB[monitor->m_id];
++    if (!backgroundFB)
++        backgroundFB = g_pHyprRenderer->createFB("hyprglass-background");
++
++    if (backgroundFB->m_size.x != width || backgroundFB->m_size.y != height)
++        backgroundFB->alloc(width, height, source->m_drmFormat);
++
++    // The render pass scissors each element to its damage region and that
++    // state leaks into element draws (see sampleBackground, which has the
++    // same defence). A leaked scissor would silently truncate this
++    // full-screen blit to the damage box.
++    g_pHyprOpenGL->setCapStatus(GL_SCISSOR_TEST, false);
++
++    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbId(source));
++    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbId(backgroundFB));
++    glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
++
++    // Re-bind the live framebuffer for whatever element draws next; the blit
++    // above left the draw binding pointed at the capture.
++    glBindFramebuffer(GL_FRAMEBUFFER, fbId(source));
++
++    g_pGlobalState->backgroundFBDirty[monitor->m_id] = false;
++
++    return {};
++}
+diff --git a/src/GlassBackgroundElement.hpp b/src/GlassBackgroundElement.hpp
+new file mode 100644
+index 0000000..9c0a79e
+--- /dev/null
++++ b/src/GlassBackgroundElement.hpp
+@@ -0,0 +1,33 @@
++#pragma once
++
++#include <hyprland/src/render/pass/PassElement.hpp>
++#include <hyprutils/math/Box.hpp>
++#include <hyprland/src/helpers/memory/Memory.hpp>
++
++// xray: captures the framebuffer as it stands at RENDER_PRE_WINDOWS --
++// wallpaper, background and bottom layers rendered, no windows yet -- into the
++// per-monitor backgroundFB that glass then samples instead of the live
++// framebuffer.
++//
++// The element is QUEUED from the render.stage event handler (the pass is being
++// built at that moment, so the element lands after the bottom layers and
++// before any window), but the GL blit happens here in draw(), when those
++// layers have actually been rendered. A blit in the handler itself would copy
++// an empty framebuffer: Hyprland's render pass is deferred.
++class CGlassBackgroundElement : public IPassElement {
++  public:
++    CGlassBackgroundElement()           = default;
++    ~CGlassBackgroundElement() override = default;
++
++    std::vector<UP<IPassElement>> draw() override;
++    [[nodiscard]] bool                needsLiveBlur() override { return false; }
++    [[nodiscard]] bool                needsPrecomputeBlur() override { return false; }
++    // Full-screen capture: no bounding box, and never let the pass simplify it
++    // away on small-damage frames -- it only runs when the cache is dirty, and
++    // a skipped run would leave the stale capture in place for good.
++    [[nodiscard]] std::optional<CBox> boundingBox() override { return std::nullopt; }
++    [[nodiscard]] bool                disableSimplification() override { return true; }
++
++    [[nodiscard]] const char* passName() override { return "CGlassBackgroundElement"; }
++    [[nodiscard]] ePassElementType type() override { return EK_CUSTOM; }
++};
+diff --git a/src/GlassDecoration.cpp b/src/GlassDecoration.cpp
+index 90bd1cb..9ea682c 100644
+--- a/src/GlassDecoration.cpp
++++ b/src/GlassDecoration.cpp
+@@ -188,6 +188,20 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
+     if (!source)
+         return;
+ 
++    // Under xray, SAMPLE the windowless capture instead of the live
++    // framebuffer, so the backdrop is the wallpaper and bottom layers rather
++    // than the composited window stack. Only the sample source changes:
++    // blurBackground still re-binds `source` after its ping-pong and
++    // applyGlassEffect still draws the finished glass INTO `source` -- routing
++    // either of those at the capture would draw the effect off-screen.
++    // A monitor with no capture yet falls through to today's behaviour.
++    auto sampleSource = source;
++    if (g_pGlobalState->config.xray && **g_pGlobalState->config.xray) {
++        if (auto it = g_pGlobalState->backgroundFB.find(monitor->m_id);
++            it != g_pGlobalState->backgroundFB.end() && it->second)
++            sampleSource = it->second;
++    }
++
+     auto optBox = WindowGeometry::computeWindowBox(window, monitor);
+     if (!optBox)
+         return;
+@@ -208,7 +222,7 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
+     float blurStrength   = resolvePresetFloat(ctx, &SPresetValues::blurStrength, &SOverridableConfig::blurStrength);
+     int downscale        = blurStrength >= GlassRenderer::BLUR_DOWNSCALE_THRESHOLD ? GlassRenderer::BLUR_DOWNSCALE_MAX : 1;
+ 
+-    GlassRenderer::sampleBackground(m_sampleFramebuffer, source, transformBox, m_samplePaddingRatio, downscale);
++    GlassRenderer::sampleBackground(m_sampleFramebuffer, sampleSource, transformBox, m_samplePaddingRatio, downscale);
+ 
+     float blurRadius     = blurStrength * 12.0f / downscale;
+     int blurIterations   = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
+diff --git a/src/Globals.hpp b/src/Globals.hpp
+index 0e78548..ecb4141 100644
+--- a/src/Globals.hpp
++++ b/src/Globals.hpp
+@@ -50,6 +50,35 @@ struct SGlobalState {
+     // stale entry can never alias a reallocated monitor object.
+     std::unordered_map<MONITORID, uint64_t> sceneGeneration;
+ 
++    // xray: windowless scene capture, one FB per monitor. Holds wallpaper +
++    // background + bottom layers and NO windows, so every glassed window on
++    // that monitor samples the same backdrop regardless of what is stacked
++    // beneath it. Keyed by MONITORID for the same reason sceneGeneration is.
++    std::unordered_map<MONITORID, SP<Render::IFramebuffer>> backgroundFB;
++    // Set when backgroundFB[id] no longer matches the scene. Mirrors
++    // Hyprland's own m_blurFBDirty: monitor-level and NOT per-frame -- window
++    // motion never sets it, which is precisely why xray is cheap.
++    std::unordered_map<MONITORID, bool> backgroundFBDirty;
++
++    // xray: per-layer-surface commit listeners. A wallpaper daemon repaints
++    // the background layer with plain surface commits -- no EventBus event
++    // fires -- so without these the capture goes stale until the next
++    // workspace switch. Same signal source Hyprland itself uses to set
++    // m_blurFBDirty (LayerSurface.cpp handles its own surface's commit).
++    // Keyed like layerSurfaces above; the listener dies when its SP is erased.
++    std::unordered_map<Desktop::View::CLayerSurface*, CHyprSignalListener> layerCommitListeners;
++
++    void dirtyBackground(const PHLMONITOR& mon) {
++        if (mon)
++            backgroundFBDirty[mon->m_id] = true;
++    }
++    void dirtyAllBackgrounds() {
++        for (auto& [id, fb] : backgroundFB)
++            backgroundFBDirty[id] = true;
++        // Monitors that have never captured take the no-FB path anyway; only
++        // known FBs need the flag.
++    }
++
+     uint64_t getSceneGeneration(const PHLMONITOR& mon) const {
+         if (!mon)
+             return 0;
+diff --git a/src/PluginConfig.cpp b/src/PluginConfig.cpp
+index 2db4b86..fbac5c3 100644
+--- a/src/PluginConfig.cpp
++++ b/src/PluginConfig.cpp
+@@ -35,6 +35,9 @@ static int handleLuaConfig(lua_State* L);
+ void registerConfig(HANDLE handle) {
+     addConfigValue<Config::Values::Int>(handle, ConfigKeys::ENABLED, Config::INTEGER{1});
+     addConfigValue<Config::Values::Int>(handle, ConfigKeys::MANAGE_WINDOW_BLUR, Config::INTEGER{1});
++    // Off by default: xray changes what the effect shows (the windowless
++    // backdrop), not only what it costs, so it is opt-in.
++    addConfigValue<Config::Values::Int>(handle, ConfigKeys::XRAY, Config::INTEGER{0});
+     addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_THEME, Config::STRING{"dark"});
+     addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_PRESET, Config::STRING{"default"});
+ 
+@@ -155,6 +158,7 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
+ void initConfigPointers(HANDLE handle, SPluginConfig& config) {
+     config.enabled          = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::ENABLED);
+     config.manageWindowBlur = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::MANAGE_WINDOW_BLUR);
++    config.xray             = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::XRAY);
+     config.defaultTheme  = getStringPtr(handle, ConfigKeys::DEFAULT_THEME);
+     config.defaultPreset = getStringPtr(handle, ConfigKeys::DEFAULT_PRESET);
+ 
+diff --git a/src/PluginConfig.hpp b/src/PluginConfig.hpp
+index 8dba9a8..bc8d4dd 100644
+--- a/src/PluginConfig.hpp
++++ b/src/PluginConfig.hpp
+@@ -41,6 +41,7 @@ inline constexpr auto ENABLED            = "plugin:hyprglass:enabled";
+ inline constexpr auto DEFAULT_THEME      = "plugin:hyprglass:default_theme";
+ inline constexpr auto DEFAULT_PRESET     = "plugin:hyprglass:default_preset";
+ inline constexpr auto MANAGE_WINDOW_BLUR = "plugin:hyprglass:manage_window_blur";
++inline constexpr auto XRAY               = "plugin:hyprglass:xray";
+ 
+ // Preset keyword, registered as unscoped because Hyprlang does not dispatch
+ // scoped keyword handlers inside the plugin special category.
+@@ -192,6 +193,12 @@ struct SPluginConfig {
+     // against the live framebuffer (which contains the glass) instead of its
+     // pre-frame cached blur.
+     Hyprlang::INT* const* manageWindowBlur = nullptr;
++    // When set, glass samples a windowless capture of the scene (wallpaper,
++    // background and bottom layers) instead of the live framebuffer, so a
++    // window's backdrop is independent of the window stack beneath it and
++    // window motion never invalidates other windows' glass. Mirrors
++    // decoration:blur:xray.
++    Hyprlang::INT* const* xray             = nullptr;
+     StringConfigPtr      defaultTheme;
+     StringConfigPtr      defaultPreset;
+ 
+diff --git a/src/main.cpp b/src/main.cpp
+index 4e93536..d85e97a 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -1,3 +1,4 @@
++#include "GlassBackgroundElement.hpp"
+ #include "GlassDecoration.hpp"
+ #include "GlassLayerCompositeElement.hpp"
+ #include "GlassLayerPassElement.hpp"
+@@ -15,6 +16,11 @@
+ #include <hyprland/src/config/ConfigManager.hpp>
+ #include <hyprland/src/debug/log/Logger.hpp>
+ #include <hyprland/src/event/EventBus.hpp>
++// xray commit watchers: CLayerShellResource and CWLSurfaceResource are only
++// forward-declared where LayerSurface.hpp uses them.
++#include <hyprland/src/protocols/LayerShell.hpp>
++#include <hyprland/src/protocols/core/Compositor.hpp>
++#include <hyprland/src/state/MonitorState.hpp>
+ 
+ #include <cstdlib>
+ #include <sstream>
+@@ -254,6 +260,113 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
+             if (ws) if (auto mon = ws->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon);
+         });
+ 
++    // xray: a wallpaper daemon (awww/swww) repaints the background layer with
++    // plain surface commits and no EventBus event, so watch every layer
++    // surface's commit signal directly. The tier check lives in the CALLBACK,
++    // not at attach time, so a surface migrating between tiers (STATE_LAYER
++    // commit) needs no re-attach. Top/overlay commits (the bar's clock ticks)
++    // cost one integer compare each.
++    static auto watchLayerCommits = [](PHLLS ls) {
++        if (!g_pGlobalState || !ls)
++            return;
++        const auto shellResource = ls->m_layerSurface.lock();
++        if (!shellResource)
++            return;
++        const auto surface = shellResource->m_surface.lock();
++        if (!surface)
++            return;
++        g_pGlobalState->layerCommitListeners[ls.get()] = surface->m_events.commit.listen([lsRef = PHLLSREF(ls)]() {
++            if (!g_pGlobalState)
++                return;
++            const auto l = lsRef.lock();
++            if (!l)
++                return;
++            // zwlr tiers: 0 = background, 1 = bottom. Only those are in the
++            // windowless capture; higher tiers draw after windows.
++            if (l->m_layer > 1)
++                return;
++            if (auto mon = l->m_monitor.lock())
++                g_pGlobalState->dirtyBackground(mon);
++        });
++    };
++    // Layers that existed before the plugin loaded (the running wallpaper
++    // daemon is exactly this case).
++    for (auto& monitor : State::monitorState()->monitors())
++        for (auto& tier : monitor->m_layerSurfaceLayers)
++            for (auto& lsRef : tier)
++                watchLayerCommits(lsRef.lock());
++
++    // xray: invalidate the windowless background capture on events that change
++    // what sits BEHIND windows. Deliberately absent: window open/close/move/
++    // resize/focus -- not reacting to those is the whole point of xray.
++    static auto xrayEnabled = [&]() {
++        return g_pGlobalState && g_pGlobalState->config.xray && **g_pGlobalState->config.xray;
++    };
++    static auto onMonitorAdded = Event::bus()->m_events.monitor.added.listen(
++        [&](PHLMONITOR mon) { if (g_pGlobalState) g_pGlobalState->dirtyBackground(mon); });
++    static auto onMonitorRemoved = Event::bus()->m_events.monitor.removed.listen([&](PHLMONITOR mon) {
++        // Drop the FB outright: a re-enabled monitor gets a fresh id-keyed
++        // entry, and holding the old one would pin GPU memory for good.
++        if (g_pGlobalState && mon) {
++            g_pGlobalState->backgroundFB.erase(mon->m_id);
++            g_pGlobalState->backgroundFBDirty.erase(mon->m_id);
++        }
++    });
++    static auto onMonitorLayout = Event::bus()->m_events.monitor.layoutChanged.listen(
++        [&]() { if (g_pGlobalState) g_pGlobalState->dirtyAllBackgrounds(); });
++    // Layer events carry the surface, not its monitor; these are rare enough
++    // that dirtying every monitor is cheaper than chasing the association.
++    static auto onLayerOpenedX = Event::bus()->m_events.layer.opened.listen([&](PHLLS ls) {
++        if (!g_pGlobalState)
++            return;
++        g_pGlobalState->dirtyAllBackgrounds();
++        watchLayerCommits(ls);
++    });
++    static auto onLayerClosedX = Event::bus()->m_events.layer.closed.listen([&](PHLLS ls) {
++        if (!g_pGlobalState)
++            return;
++        g_pGlobalState->dirtyAllBackgrounds();
++        if (ls)
++            g_pGlobalState->layerCommitListeners.erase(ls.get());
++    });
++    static auto onLayerRulesX = Event::bus()->m_events.layer.updateRules.listen(
++        [&](PHLLS) { if (g_pGlobalState) g_pGlobalState->dirtyAllBackgrounds(); });
++    static auto onWorkspaceActiveX = Event::bus()->m_events.workspace.active.listen([&](PHLWORKSPACE ws) {
++        if (g_pGlobalState && ws)
++            if (auto mon = ws->m_monitor.lock())
++                g_pGlobalState->dirtyBackground(mon);
++    });
++    static auto onWorkspaceMoveX = Event::bus()->m_events.workspace.moveToMonitor.listen(
++        [&](PHLWORKSPACE, PHLMONITOR) { if (g_pGlobalState) g_pGlobalState->dirtyAllBackgrounds(); });
++
++    // Mirrors Hyprland's own preRender: a dirty capture needs the whole
++    // monitor damaged so the frame that refreshes it renders the full scene.
++    // Without this a partial-damage frame would blit stale regions into the
++    // capture and freeze them there.
++    static auto onRenderPre = Event::bus()->m_events.render.pre.listen([&](PHLMONITOR mon) {
++        if (!xrayEnabled() || !mon)
++            return;
++        const bool noFB = !g_pGlobalState->backgroundFB.contains(mon->m_id);
++        if (noFB || g_pGlobalState->backgroundFBDirty[mon->m_id])
++            g_pHyprRenderer->damageMonitor(mon);
++    });
++
++    // The pass is being BUILT while this fires; queueing here places the
++    // element after the bottom layers and before any window. The actual blit
++    // runs later, in the element's draw() -- see GlassBackgroundElement.
++    static auto onRenderStage = Event::bus()->m_events.render.stage.listen([&](eRenderStage stage) {
++        if (stage != RENDER_PRE_WINDOWS || !xrayEnabled())
++            return;
++        const auto mon = g_pHyprRenderer->m_renderData.pMonitor.lock();
++        if (!mon)
++            return;
++        const auto fbIt = g_pGlobalState->backgroundFB.find(mon->m_id);
++        const bool haveFB = fbIt != g_pGlobalState->backgroundFB.end() && fbIt->second;
++        if (haveFB && !g_pGlobalState->backgroundFBDirty[mon->m_id])
++            return; // cache valid: the capture costs nothing this frame
++        g_pHyprRenderer->m_renderPass.add(makeUnique<CGlassBackgroundElement>());
++    });
++
+     // Clear pending presets/layers before config re-parse, commit after
+     static auto onPreConfigReload = Event::bus()->m_events.config.preReload.listen([&]() {
+         clearPendingPresets();
+@@ -266,6 +379,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
+         parseLayerNamespaceFilters();
+         commitPendingLayers(); // merge Lua layer() calls on top of string config
+         validateConfig();
++        // Wallpaper or layer rules may have changed under the capture.
++        g_pGlobalState->dirtyAllBackgrounds();
+     });
+ 
+ 
+@@ -323,6 +438,13 @@ APICALL EXPORT void PLUGIN_EXIT() {
+     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassPassElement");
+     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerPassElement");
+     g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerCompositeElement");
++    g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassBackgroundElement");
++
++    // Release the xray captures while the GL context is still alive, and
++    // detach the commit watchers before their target surfaces outlive us.
++    g_pGlobalState->backgroundFB.clear();
++    g_pGlobalState->backgroundFBDirty.clear();
++    g_pGlobalState->layerCommitListeners.clear();
+ 
+     for (auto& decoration : g_pGlobalState->decorations) {
+         if (auto* deco = decoration.get())
+-- 
+2.55.0
+
