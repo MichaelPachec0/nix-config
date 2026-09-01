@@ -1200,70 +1200,23 @@ in {
             # -- Opacity (sway "for_window opacity set"). The global 0.9 mirrors
             # sway's translucency; drop it if you prefer opaque windows on
             # Hyprland (the decoration block above keeps active/inactive at 1.0).
-            # Per-app 1.0 exceptions must follow the global rule to override it.
+            # Per-app 1.0 exceptions must follow the global rule to override
+            # it: the generated colorCritical rules below splice in AFTER this
+            # entry, never at the head of the list.
             {
               name = "opacity-all";
               match = {class = ".*";};
               opacity = "0.9 0.9";
             }
-            {
-              name = "opacity-gimp";
-              match = {class = "[Gg]imp";};
-              opacity = "1.0 1.0";
-            }
-            {
-              name = "opacity-krita";
-              match = {class = "[Kk]rita";};
-              opacity = "1.0 1.0";
-            }
-            {
-              name = "opacity-inkscape";
-              match = {class = "org.inkscape.Inkscape";};
-              opacity = "1.0 1.0";
-            }
-            {
-              name = "opacity-virt-manager";
-              match = {class = "virt-manager";};
-              opacity = "1.0 1.0";
-            }
-            {
-              name = "opacity-obs";
-              match = {class = "com.obsproject.Studio";};
-              opacity = "1.0 1.0";
-            }
-            {
-              name = "opacity-windscribe";
-              match = {title = "^Windscribe$";};
-              opacity = "1.0 1.0";
-            }
-
-            # -- Blur exceptions (sway "for_window blur disable") --
-            {
-              name = "noblur-gimp";
-              match = {class = "[Gg]imp";};
-              no_blur = true;
-            }
-            {
-              name = "noblur-krita";
-              match = {class = "[Kk]rita";};
-              no_blur = true;
-            }
-            {
-              name = "noblur-inkscape";
-              match = {class = "org.inkscape.Inkscape";};
-              no_blur = true;
-            }
-            {
-              name = "noblur-virt-manager";
-              match = {class = "virt-manager";};
-              no_blur = true;
-            }
-            {
-              name = "noblur-obs";
-              match = {class = "com.obsproject.Studio";};
-              no_blur = true;
-            }
-          ];
+          ]
+          # colorCritical (hyprglass.nix): apps whose colour fidelity must not
+          # be touched. One six-entry list expands to opacity 1.0, no_blur and
+          # a hyprglass_disabled tag per app, replacing the hand-written
+          # opacity-*/noblur-* rules that used to live here so the three
+          # families cannot drift apart. Emitted on every host (the tag is
+          # inert without the plugin) so nyx and thanatos keep identical rule
+          # lists.
+          ++ generatedHyprglass.colorCriticalRules;
 
           # hl.layer_rule({...}) -- frost the bar. blur enables wallpaper blur
           # behind the bar layer; ignore_alpha 0.5 restricts it to pixels with
