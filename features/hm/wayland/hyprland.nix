@@ -12,6 +12,7 @@
   lib,
   pkgs,
   theme,
+  generatedHyprglass,
   generatedLuaBinds,
   generatedSwayBinds,
   appRun,
@@ -569,6 +570,13 @@
   };
 in {
   config = {
+    # xray on: glass samples a windowless capture instead of the live
+    # framebuffer, so stacked windows stop invalidating each other's glass.
+    # The option defaults to false in hyprglass.nix (matching the plugin's
+    # own default, since xray changes what the effect shows); this config is
+    # where the look is defined, so it opts in here.
+    hyprglass.xray = true;
+
     # `keybind-cheatsheet` on PATH so it's runnable from a terminal too (the
     # Super+/ bind invokes it by store path regardless).
     home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript scratchpadCycleScript];
@@ -1008,11 +1016,19 @@ in {
             };
 
           # hl.on("hyprland.start", function() ... end). hy3 setup runs first
-          # (load + config), then the autostart apps.
-          on = [
-            {_args = ["hyprland.start" hy3SetupHook];}
-            {_args = ["hyprland.start" autostartHook];}
-          ];
+          # (load + config), then the autostart apps, then hyprglass (a
+          # decoration plugin with no dependency on either, so last is the
+          # safe slot). The lib.optional gate is what keeps a disabled host
+          # clean: the hook string is never forced, so the store-path
+          # interpolation never happens and the plugin never enters the
+          # closure -- the same laziness that scopes pkgs.latest.hy3.
+          on =
+            [
+              {_args = ["hyprland.start" hy3SetupHook];}
+              {_args = ["hyprland.start" autostartHook];}
+            ]
+            ++ lib.optional config.hyprglass.enable
+            {_args = ["hyprland.start" generatedHyprglass.setupHook];};
 
           # hl.window_rule({...}) -- parity with sway's floating.criteria, the
           # Firefox-share nofocus, and the opacity/blur for_window rules (#3).
