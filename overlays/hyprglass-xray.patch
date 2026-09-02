@@ -138,7 +138,7 @@ index 0000000..9c0a79e
 +    [[nodiscard]] ePassElementType type() override { return EK_CUSTOM; }
 +};
 diff --git a/src/GlassDecoration.cpp b/src/GlassDecoration.cpp
-index 90bd1cb..9074429 100644
+index 90bd1cb..8e51f75 100644
 --- a/src/GlassDecoration.cpp
 +++ b/src/GlassDecoration.cpp
 @@ -188,6 +188,20 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
@@ -214,6 +214,25 @@ index 90bd1cb..9074429 100644
  
      float monitorScale  = monitor->m_scale;
      float cornerRadius  = window->rounding() * monitorScale;
+@@ -257,9 +303,15 @@ void CGlassDecoration::damageEntire() {
+     // Without this, the scissored render pass leaves stale previous-frame
+     // content in the padding area, causing noise artifacts.
+     // surfaceBox is in logical coords; convert pixel padding to logical.
+-    const auto monitor = window->m_monitor.lock();
+-    const float scale = monitor ? monitor->m_scale : 1.0f;
+-    surfaceBox.expand(GlassRenderer::SAMPLE_PADDING_PX / scale);
++    //
++    // Under xray the padded margin is read from the background capture, so
++    // the live framebuffer's freshness there is irrelevant and the expansion
++    // only inflates every move/resize damage by a 60px ring; skip it.
++    if (!(g_pGlobalState && g_pGlobalState->xrayActive())) {
++        const auto monitor = window->m_monitor.lock();
++        const float scale = monitor ? monitor->m_scale : 1.0f;
++        surfaceBox.expand(GlassRenderer::SAMPLE_PADDING_PX / scale);
++    }
+ 
+     g_pHyprRenderer->damageBox(surfaceBox);
+ }
 diff --git a/src/GlassDecoration.hpp b/src/GlassDecoration.hpp
 index 08658e9..02ea394 100644
 --- a/src/GlassDecoration.hpp
@@ -241,7 +260,7 @@ index 08658e9..02ea394 100644
      Vector2D m_lastPosition;
      Vector2D m_lastSize;
 diff --git a/src/GlassPassElement.cpp b/src/GlassPassElement.cpp
-index 81fb64f..a0b5535 100644
+index 81fb64f..9ecd30b 100644
 --- a/src/GlassPassElement.cpp
 +++ b/src/GlassPassElement.cpp
 @@ -6,6 +6,18 @@
@@ -257,13 +276,31 @@ index 81fb64f..a0b5535 100644
 +// discard and damage clipping for EVERY element in the pass (Pass.cpp treats
 +// the flag as pass-global).
 +static bool xrayActive() {
-+    return g_pGlobalState && g_pGlobalState->config.xray && **g_pGlobalState->config.xray;
++    return g_pGlobalState && g_pGlobalState->xrayActive();
 +}
 +
  std::vector<UP<IPassElement>> CGlassPassElement::draw() {
      if (m_data.decoration.valid())
          m_data.decoration->renderPass(g_pHyprRenderer->m_renderData.pMonitor.lock(), m_data.alpha);
-@@ -41,6 +53,12 @@ bool CGlassPassElement::needsLiveBlur() {
+@@ -29,8 +41,15 @@ std::optional<CBox> CGlassPassElement::boundingBox() {
+     // Expand by our sampling padding so the render pass damages the full
+     // area we read from. Without this, wallpaper outside the window box
+     // but inside our padding isn't re-rendered, leaving stale content.
+-    const float padding = GlassRenderer::SAMPLE_PADDING_PX / monitor->m_scale;
+-    box->expand(padding);
++    //
++    // Under xray the padded sample comes from the background capture, not the
++    // live framebuffer, and the glass itself draws only inside the window box
++    // (applyGlassEffect scissors to it), so the expansion is pure damage
++    // inflation there and is skipped.
++    if (!xrayActive()) {
++        const float padding = GlassRenderer::SAMPLE_PADDING_PX / monitor->m_scale;
++        box->expand(padding);
++    }
+     return box;
+ }
+ 
+@@ -41,6 +60,12 @@ bool CGlassPassElement::needsLiveBlur() {
      // in the padded sampling region, causing blinking artifacts.
      // Layers don't need this — they have their own blur cache with
      // scene generation tracking.
@@ -276,7 +313,7 @@ index 81fb64f..a0b5535 100644
      return m_data.decoration.valid() && m_data.decoration->getOwner();
  }
  
-@@ -49,5 +67,10 @@ bool CGlassPassElement::needsPrecomputeBlur() {
+@@ -49,5 +74,10 @@ bool CGlassPassElement::needsPrecomputeBlur() {
  }
  
  bool CGlassPassElement::disableSimplification() {
@@ -288,10 +325,10 @@ index 81fb64f..a0b5535 100644
      return m_data.decoration.valid() && m_data.decoration->getOwner();
  }
 diff --git a/src/Globals.hpp b/src/Globals.hpp
-index 0e78548..3770906 100644
+index 0e78548..cf1a183 100644
 --- a/src/Globals.hpp
 +++ b/src/Globals.hpp
-@@ -50,6 +50,50 @@ struct SGlobalState {
+@@ -50,6 +50,58 @@ struct SGlobalState {
      // stale entry can never alias a reallocated monitor object.
      std::unordered_map<MONITORID, uint64_t> sceneGeneration;
  
@@ -318,6 +355,14 @@ index 0e78548..3770906 100644
 +            return 0;
 +        auto it = backgroundGeneration.find(mon->m_id);
 +        return it != backgroundGeneration.end() ? it->second : 0;
++    }
++
++    // True when glass samples the windowless capture instead of the live
++    // framebuffer. Several behaviours key off this: the pass-element flags
++    // (needsLiveBlur/disableSimplification), the sample cache, and the
++    // damage padding, all of which exist to serve live sampling.
++    bool xrayActive() const {
++        return config.xray && **config.xray;
 +    }
 +
 +    // xray: per-layer-surface commit listeners. A wallpaper daemon repaints
