@@ -1,22 +1,45 @@
 diff --git a/Makefile b/Makefile
-index ef3b5f0..daaaf75 100644
+index ef3b5f0..0b38066 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -11,7 +11,7 @@ ifeq ($(basename $(CXX)),g++)
+@@ -11,14 +11,21 @@ ifeq ($(basename $(CXX)),g++)
  endif
  
  TARGET = hyprglass.so
 -SOURCES = src/main.cpp src/GlassDecoration.cpp src/GlassPassElement.cpp src/GlassRenderer.cpp src/GlassLayerSurface.cpp src/GlassLayerPassElement.cpp src/GlassLayerCompositeElement.cpp src/PluginConfig.cpp src/ShaderManager.cpp
 +SOURCES = src/main.cpp src/GlassDecoration.cpp src/GlassPassElement.cpp src/GlassBackgroundElement.cpp src/GlassRenderer.cpp src/GlassLayerSurface.cpp src/GlassLayerPassElement.cpp src/GlassLayerCompositeElement.cpp src/PluginConfig.cpp src/ShaderManager.cpp
  OBJ = $(SOURCES:.cpp=.o)
++# -MMD -MP (added to the compile rule) emits a .d per object listing the
++# headers it pulled in; -include feeds those back so editing a .hpp rebuilds
++# every object that includes it. Without this, a struct-layout change in a
++# header left stale objects that disagreed at load time and corrupted the heap.
++DEPS = $(OBJ:.o=.d)
  
  all: $(TARGET)
+ 
++-include $(DEPS)
++
+ %.o : %.cpp
+ 	@echo "[$(CXX)] $<"
+-	@$(CXX) -c $(CXXFLAGS) $(INCLUDES) $< -o $@
++	@$(CXX) -MMD -MP -c $(CXXFLAGS) $(INCLUDES) $< -o $@
+ 
+ $(TARGET): $(OBJ)
+ 	@echo "Linking $(TARGET)..."
+@@ -26,6 +33,6 @@ $(TARGET): $(OBJ)
+ 	@echo "Done!"
+ 
+ clean:
+-	rm -f $(OBJ) $(TARGET)
++	rm -f $(OBJ) $(DEPS) $(TARGET)
+ 
+ .PHONY: all clean
 diff --git a/src/GlassBackgroundElement.cpp b/src/GlassBackgroundElement.cpp
 new file mode 100644
-index 0000000..f527763
+index 0000000..5c8aff3
 --- /dev/null
 +++ b/src/GlassBackgroundElement.cpp
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,58 @@
 +#include "GlassBackgroundElement.hpp"
 +#include "Globals.hpp"
 +
@@ -69,6 +92,9 @@ index 0000000..f527763
 +    glBindFramebuffer(GL_FRAMEBUFFER, fbId(source));
 +
 +    g_pGlobalState->backgroundFBDirty[monitor->m_id] = false;
++    // Content changed: invalidate every window decoration's cached sample on
++    // this monitor (they compare against this counter).
++    g_pGlobalState->backgroundGeneration[monitor->m_id]++;
 +
 +    return {};
 +}
@@ -112,7 +138,7 @@ index 0000000..9c0a79e
 +    [[nodiscard]] ePassElementType type() override { return EK_CUSTOM; }
 +};
 diff --git a/src/GlassDecoration.cpp b/src/GlassDecoration.cpp
-index 90bd1cb..9ea682c 100644
+index 90bd1cb..9074429 100644
 --- a/src/GlassDecoration.cpp
 +++ b/src/GlassDecoration.cpp
 @@ -188,6 +188,20 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
@@ -136,15 +162,84 @@ index 90bd1cb..9ea682c 100644
      auto optBox = WindowGeometry::computeWindowBox(window, monitor);
      if (!optBox)
          return;
-@@ -208,7 +222,7 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
+@@ -206,13 +220,45 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
+     const SResolveContext ctx  = {preset, isDark, g_pGlobalState->config, g_pGlobalState->customPresets};
+ 
      float blurStrength   = resolvePresetFloat(ctx, &SPresetValues::blurStrength, &SOverridableConfig::blurStrength);
-     int downscale        = blurStrength >= GlassRenderer::BLUR_DOWNSCALE_THRESHOLD ? GlassRenderer::BLUR_DOWNSCALE_MAX : 1;
- 
+-    int downscale        = blurStrength >= GlassRenderer::BLUR_DOWNSCALE_THRESHOLD ? GlassRenderer::BLUR_DOWNSCALE_MAX : 1;
+-
 -    GlassRenderer::sampleBackground(m_sampleFramebuffer, source, transformBox, m_samplePaddingRatio, downscale);
-+    GlassRenderer::sampleBackground(m_sampleFramebuffer, sampleSource, transformBox, m_samplePaddingRatio, downscale);
- 
+-
++    int   downscale      = blurStrength >= GlassRenderer::BLUR_DOWNSCALE_THRESHOLD ? GlassRenderer::BLUR_DOWNSCALE_MAX : 1;
      float blurRadius     = blurStrength * 12.0f / downscale;
-     int blurIterations   = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
+-    int blurIterations   = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
+-    GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, source);
++    int   blurIterations = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
++
++    // Under xray the sampled+blurred backdrop only depends on the capture
++    // content (backgroundGeneration), the window's on-screen box, and the
++    // blur/downscale parameters. When none changed since last draw,
++    // m_sampleFramebuffer still holds the correct result, so skip the blit and
++    // blur and re-composite only. A video window that keeps damaging itself
++    // without moving is exactly this case. Not applied on the live path (no
++    // capture), where every frame's backdrop genuinely differs.
++    const bool     usingCapture   = (sampleSource != source);
++    const uint64_t bgGeneration   = g_pGlobalState->getBackgroundGeneration(monitor);
++    const bool     boxUnchanged   = m_cachedTransformBox.x == transformBox.x &&
++                                    m_cachedTransformBox.y == transformBox.y &&
++                                    m_cachedTransformBox.width == transformBox.width &&
++                                    m_cachedTransformBox.height == transformBox.height;
++    const bool     cacheHit       = usingCapture && m_sampleCacheValid && m_sampleFramebuffer &&
++                                    m_cachedBgGeneration == bgGeneration &&
++                                    m_cachedDownscale == downscale &&
++                                    m_cachedBlurRadius == blurRadius &&
++                                    m_cachedBlurIterations == blurIterations &&
++                                    boxUnchanged;
++
++    if (!cacheHit) {
++        GlassRenderer::sampleBackground(m_sampleFramebuffer, sampleSource, transformBox, m_samplePaddingRatio, downscale);
++        GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, source);
++
++        if (usingCapture) {
++            m_cachedBgGeneration   = bgGeneration;
++            m_cachedTransformBox   = transformBox;
++            m_cachedDownscale      = downscale;
++            m_cachedBlurRadius     = blurRadius;
++            m_cachedBlurIterations = blurIterations;
++            m_sampleCacheValid     = true;
++        } else {
++            m_sampleCacheValid = false; // live path never caches
++        }
++    }
+ 
+     float monitorScale  = monitor->m_scale;
+     float cornerRadius  = window->rounding() * monitorScale;
+diff --git a/src/GlassDecoration.hpp b/src/GlassDecoration.hpp
+index 08658e9..02ea394 100644
+--- a/src/GlassDecoration.hpp
++++ b/src/GlassDecoration.hpp
+@@ -32,6 +32,21 @@ class CGlassDecoration : public IHyprWindowDecoration {
+     SP<Render::IFramebuffer> m_sampleFramebuffer;
+     Vector2D     m_samplePaddingRatio;
+ 
++    // xray-only sample cache. m_sampleFramebuffer already persists across
++    // frames; when the capture (backgroundGeneration), the window's on-screen
++    // box, and the blur/downscale parameters are all unchanged since the last
++    // draw, its blurred contents are still correct, so the blit and blur
++    // passes are skipped and only applyGlassEffect runs. m_samplePaddingRatio
++    // is likewise reused. Fade alpha is deliberately NOT part of the key: it
++    // only feeds applyGlassEffect (which always runs), so fades stay smooth
++    // without re-sampling.
++    bool     m_sampleCacheValid    = false;
++    uint64_t m_cachedBgGeneration  = 0;
++    CBox     m_cachedTransformBox;
++    int      m_cachedDownscale     = 0;
++    float    m_cachedBlurRadius    = -1.0f;
++    int      m_cachedBlurIterations = 0;
++
+     // Track last rendered position/size to detect actual changes and seed damage
+     Vector2D m_lastPosition;
+     Vector2D m_lastSize;
 diff --git a/src/GlassPassElement.cpp b/src/GlassPassElement.cpp
 index 81fb64f..a0b5535 100644
 --- a/src/GlassPassElement.cpp
@@ -193,10 +288,10 @@ index 81fb64f..a0b5535 100644
      return m_data.decoration.valid() && m_data.decoration->getOwner();
  }
 diff --git a/src/Globals.hpp b/src/Globals.hpp
-index 0e78548..ecb4141 100644
+index 0e78548..3770906 100644
 --- a/src/Globals.hpp
 +++ b/src/Globals.hpp
-@@ -50,6 +50,35 @@ struct SGlobalState {
+@@ -50,6 +50,50 @@ struct SGlobalState {
      // stale entry can never alias a reallocated monitor object.
      std::unordered_map<MONITORID, uint64_t> sceneGeneration;
  
@@ -209,6 +304,21 @@ index 0e78548..ecb4141 100644
 +    // Hyprland's own m_blurFBDirty: monitor-level and NOT per-frame -- window
 +    // motion never sets it, which is precisely why xray is cheap.
 +    std::unordered_map<MONITORID, bool> backgroundFBDirty;
++
++    // Bumped each time the capture is actually re-blitted (see
++    // CGlassBackgroundElement::draw). A window decoration caches its blurred
++    // sample against this plus its own geometry/preset; while both are
++    // unchanged the per-window blit+blur is skipped and only the final glass
++    // composite runs. This is the window-side analogue of sceneGeneration,
++    // which does the same for layer surfaces.
++    std::unordered_map<MONITORID, uint64_t> backgroundGeneration;
++
++    uint64_t getBackgroundGeneration(const PHLMONITOR& mon) const {
++        if (!mon)
++            return 0;
++        auto it = backgroundGeneration.find(mon->m_id);
++        return it != backgroundGeneration.end() ? it->second : 0;
++    }
 +
 +    // xray: per-layer-surface commit listeners. A wallpaper daemon repaints
 +    // the background layer with plain surface commits -- no EventBus event
