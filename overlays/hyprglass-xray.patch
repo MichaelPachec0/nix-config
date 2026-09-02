@@ -1,8 +1,20 @@
 diff --git a/Makefile b/Makefile
-index ef3b5f0..0b38066 100644
+index ef3b5f0..f978e5d 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -11,14 +11,21 @@ ifeq ($(basename $(CXX)),g++)
+@@ -2,7 +2,10 @@
+ 
+ CXX ?= g++
+ CXXFLAGS = -fPIC -g -O2 -std=c++23
+-LDFLAGS = -shared
++# --build-id: without it, crash reporters and coredumpctl cannot match the
++# plugin's frames to symbols and fall back to raw stack scans that misattribute
++# faults to whatever bytes happen to look like return addresses.
++LDFLAGS = -shared -Wl,--build-id=sha1
+ INCLUDES = $(shell pkg-config --cflags hyprland pixman-1 libdrm)
+ LIBS = $(shell pkg-config --libs hyprland)
+ 
+@@ -11,14 +14,21 @@ ifeq ($(basename $(CXX)),g++)
  endif
  
  TARGET = hyprglass.so
@@ -26,7 +38,7 @@ index ef3b5f0..0b38066 100644
  
  $(TARGET): $(OBJ)
  	@echo "Linking $(TARGET)..."
-@@ -26,6 +33,6 @@ $(TARGET): $(OBJ)
+@@ -26,6 +36,6 @@ $(TARGET): $(OBJ)
  	@echo "Done!"
  
  clean:
