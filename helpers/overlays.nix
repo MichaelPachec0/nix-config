@@ -382,8 +382,11 @@
       # The xray patch adds plugin:hyprglass:xray (default off): glass samples
       # a windowless per-monitor capture instead of the live framebuffer, so a
       # window's backdrop is the wallpaper rather than the window stack beneath
-      # it and window motion stops invalidating other windows' glass. Canonical
-      # branch: feat/xray on github.com/MichaelPachec0/hyprglass.
+      # it and window motion stops invalidating other windows' glass. It also
+      # re-enables Hyprland's pass simplification and drops live-blur damage
+      # expansion whenever xray is active, since neither is needed once glass
+      # no longer samples the live framebuffer. Canonical branch: feat/xray on
+      # github.com/MichaelPachec0/hyprglass.
       hyprglass = final.hyprlandPlugins.mkHyprlandPlugin (finalAttrs: {
         pluginName = "hyprglass";
         version = "0.7.0";

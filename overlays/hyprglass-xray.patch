@@ -1,48 +1,3 @@
-From 97b9fe4393b35ac590a18e5a61ac21e872cb9d95 Mon Sep 17 00:00:00 2001
-From: Michael Pacheco <git@michaelpacheco.org>
-Date: Tue, 1 Sep 2026 06:21:42 -0700
-Subject: [PATCH] feat(xray): sample a windowless scene capture instead of the
- live framebuffer
-
-Glass currently samples m_renderData.currentFB, which contains every window
-already drawn, so a glassed window's backdrop is the composited stack beneath
-it and anything repainting in that stack invalidates the glass above. Cost
-therefore scales with stack depth.
-
-Add plugin:hyprglass:xray (int, default 0). When set, a
-CGlassBackgroundElement queued at RENDER_PRE_WINDOWS captures the scene before
-any window draws -- wallpaper, background and bottom layers only -- and glass
-samples that capture. Every window on a monitor then shares one backdrop and
-stack depth stops mattering. The element is queued from the render.stage
-handler while the deferred pass is being built; the GL blit runs in draw(),
-after those layers have actually rendered.
-
-The capture is monitor-level and invalidated only by monitor, layer, workspace
-and config events plus background/bottom layer surface commits, never by
-window motion, mirroring how Hyprland keeps its own preblur framebuffer cheap.
-The per-surface commit watchers exist because wallpaper daemons repaint the
-background layer with plain commits that raise no EventBus event; this is the
-same signal Hyprland's own LayerSurface commit path uses to set m_blurFBDirty.
-A render.pre listener damages the monitor when the capture is dirty, mirroring
-preRender, so a partial-damage frame cannot blit stale regions into it.
-
-Unlike Hyprland's preblur the capture is not pre-blurred, so blur_strength and
-blur_iterations keep their meaning. A monitor with no capture yet falls back
-to the live framebuffer. Lua: hg.config({ xray = true }) works, booleans
-coerce to Hyprlang ints.
----
- Makefile                       |   2 +-
- src/GlassBackgroundElement.cpp |  55 +++++++++++++++
- src/GlassBackgroundElement.hpp |  33 +++++++++
- src/GlassDecoration.cpp        |  16 ++++-
- src/Globals.hpp                |  29 ++++++++
- src/PluginConfig.cpp           |   4 ++
- src/PluginConfig.hpp           |   7 ++
- src/main.cpp                   | 122 +++++++++++++++++++++++++++++++++
- 8 files changed, 266 insertions(+), 2 deletions(-)
- create mode 100644 src/GlassBackgroundElement.cpp
- create mode 100644 src/GlassBackgroundElement.hpp
-
 diff --git a/Makefile b/Makefile
 index ef3b5f0..daaaf75 100644
 --- a/Makefile
@@ -190,6 +145,53 @@ index 90bd1cb..9ea682c 100644
  
      float blurRadius     = blurStrength * 12.0f / downscale;
      int blurIterations   = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
+diff --git a/src/GlassPassElement.cpp b/src/GlassPassElement.cpp
+index 81fb64f..a0b5535 100644
+--- a/src/GlassPassElement.cpp
++++ b/src/GlassPassElement.cpp
+@@ -6,6 +6,18 @@
+ CGlassPassElement::CGlassPassElement(const SGlassPassData& data)
+     : m_data(data) {}
+ 
++// needsLiveBlur and disableSimplification below exist to serve LIVE sampling:
++// glass reading the framebuffer beneath itself needs occluded content behind
++// it rendered and partial damage expanded. Under xray the sample source is
++// the windowless per-monitor capture, so neither is needed -- and the cost of
++// leaving them on is compositor-wide, not glass-local: a single element
++// returning disableSimplification() disables occlusion culling, dead-element
++// discard and damage clipping for EVERY element in the pass (Pass.cpp treats
++// the flag as pass-global).
++static bool xrayActive() {
++    return g_pGlobalState && g_pGlobalState->config.xray && **g_pGlobalState->config.xray;
++}
++
+ std::vector<UP<IPassElement>> CGlassPassElement::draw() {
+     if (m_data.decoration.valid())
+         m_data.decoration->renderPass(g_pHyprRenderer->m_renderData.pMonitor.lock(), m_data.alpha);
+@@ -41,6 +53,12 @@ bool CGlassPassElement::needsLiveBlur() {
+     // in the padded sampling region, causing blinking artifacts.
+     // Layers don't need this — they have their own blur cache with
+     // scene generation tracking.
++    //
++    // Under xray the sample comes from the background capture, never from
++    // the live framebuffer, so the stale-padding hazard cannot occur and
++    // the blur-radius damage expansion this triggers is pure waste.
++    if (xrayActive())
++        return false;
+     return m_data.decoration.valid() && m_data.decoration->getOwner();
+ }
+ 
+@@ -49,5 +67,10 @@ bool CGlassPassElement::needsPrecomputeBlur() {
+ }
+ 
+ bool CGlassPassElement::disableSimplification() {
++    // Under xray, glass no longer depends on what the pass renders beneath
++    // it, so Hyprland's simplification (occlusion culling, dead-element
++    // discard, per-element damage clipping) is safe to leave enabled.
++    if (xrayActive())
++        return false;
+     return m_data.decoration.valid() && m_data.decoration->getOwner();
+ }
 diff --git a/src/Globals.hpp b/src/Globals.hpp
 index 0e78548..ecb4141 100644
 --- a/src/Globals.hpp
@@ -435,6 +437,3 @@ index 4e93536..d85e97a 100644
  
      for (auto& decoration : g_pGlobalState->decorations) {
          if (auto* deco = decoration.get())
--- 
-2.55.0
-
