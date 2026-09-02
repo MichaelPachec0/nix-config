@@ -1,4 +1,4 @@
-# hyprglass (liquid-glass window decoration) -- options, plugin setup hook and
+# hyprglass (liquid-glass window decoration): options, plugin setup hook and
 # generated window rules.
 #
 # This module never writes `wayland.windowManager.hyprland.settings` itself:
@@ -6,7 +6,7 @@
 # `settings.window_rule`) would collide rather than concatenate, and
 # hyprland.nix must stay the single writer of `settings`. Everything here is
 # exported through `_module.args.generatedHyprglass` for hyprland.nix to
-# splice in -- the same seam app-run.nix (appRun) and hypr-wl-debug.nix
+# splice in: the same seam app-run.nix (appRun) and hypr-wl-debug.nix
 # (qsBarLaunch) already use.
 #
 # The arg is named generatedHyprglass, NOT hyprglass: a module arg sharing the
@@ -24,7 +24,7 @@
   # (upstream v0.7.0 plus the xray patch) and built against the patched
   # compositor. This string is only forced when hyprland.nix actually splices
   # the hook (gated on hyprglass.enable), so a disabled host never pulls the
-  # package into its closure -- overlays are lazy and the path interpolation is
+  # package into its closure: overlays are lazy and the path interpolation is
   # what triggers the build, the same mechanism that keeps pkgs.latest.hy3 out
   # of non-Hyprland closures.
   hyprglassSo = "${pkgs.latest.hyprglass}/lib/libhyprglass.so";
@@ -32,7 +32,7 @@
   # Frost tint: theme bgMain (gruvbox bg0_hard) at 0x60 alpha. The alpha is
   # deliberately far above upstream's 0x22: windows sit at 0.9 opacity here, so
   # the tint multiplying into the blurred backdrop is the main channel through
-  # which the frost still reads. Shared by stock_tint and current_set -- the
+  # which the frost still reads. Shared by stock_tint and current_set: the
   # two presets differ in geometry/tone parameters, not tint.
   tint = "0x${theme.palette.bgMain}60";
 
@@ -43,7 +43,7 @@
 
   # Apps whose colour fidelity must not be touched. One list generates all
   # three rule families (opacity 1.0, no_blur, hyprglass_disabled tag) so they
-  # cannot drift apart. Windscribe matches on title rather than class -- the
+  # cannot drift apart. Windscribe matches on title rather than class: the
   # client's class is unstable across its Qt wrapper versions.
   colorCritical = [
     {
@@ -73,7 +73,7 @@
   ];
 
   # Windows that are expensive or pointless to glass: opaque full-motion
-  # content. noglass only -- their opacity and blur are left alone. Class
+  # content. noglass only: their opacity and blur are left alone. Class
   # matching is unanchored regex, so "steam" also covers every
   # steam_app_<appid> window. Games launched from lutris/heroic carry the game
   # binary's own class and cannot be enumerated; they fall through to the
@@ -103,7 +103,7 @@
 in {
   options.hyprglass = {
     # Not mkEnableOption: that hardcodes `default = false`, and the default
-    # here reads config -- glass is on exactly where the hardware can afford
+    # here reads config: glass is on exactly where the hardware can afford
     # it (thanatos is the only gpu.strong host).
     enable = lib.mkOption {
       type = lib.types.bool;
@@ -127,7 +127,7 @@ in {
     # Layer-surface glass (the quickshell bar) is phase 2: it rides
     # renderLayer, a private compositor internal upstream warns can break on
     # updates. Flipping this also needs an hg.layer() registration and the
-    # blur-quickshell-bar layer rule dropped -- see the spec before enabling.
+    # blur-quickshell-bar layer rule dropped: see the spec before enabling.
     layers.enable = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -156,7 +156,7 @@ in {
     #     synchronously, so:
     #   parse 2: hl.plugin.hyprglass exists, block runs DURING the parse;
     #     hg.preset entries pend and the parse-end config.reloaded commits
-    #     them. No timer and no race -- however long the async load takes,
+    #     them. No timer and no race: however long the async load takes,
     #     the re-parse it triggers is what applies the config.
     #
     # hg.config sets ONLY behavioural keys (theme routing, xray, layers). No
@@ -200,15 +200,15 @@ in {
           },
         })
         -- contrasted: the built-in high_contrast with a stronger dim and a
-        -- deep blue dark tint. (The other built-ins -- clear, glass, subtle,
-        -- high_contrast -- are always selectable without registration.)
+        -- deep blue dark tint. (The other built-ins: clear, glass, subtle,
+        -- high_contrast: are always selectable without registration.)
         hg.preset("contrasted", {
           inherits = "high_contrast",
           contrast = 1.2,
           adaptive_dim = 1.5,
           dark = { tint_color = 0x02142aa9 },
         })
-        -- glassy: heavy stylised glass -- strong lensing, fringing and
+        -- glassy: heavy stylised glass: strong lensing, fringing and
         -- vibrancy pushed high, theme tint.
         hg.preset("glassy", {
           blur_strength = 2.0,
@@ -228,7 +228,7 @@ in {
         -- LightGlass: white-tinted bright glass. NOTE two out-of-range
         -- values kept verbatim from the source config: glass_opacity 1.2
         -- (above the usual 0..1) and edge_thickness 1.18 (an order of
-        -- magnitude above the typical 0.03-0.1 band) -- expect a very wide,
+        -- magnitude above the typical 0.03-0.1 band): expect a very wide,
         -- possibly clamped bezel.
         hg.preset("LightGlass", {
           blur_strength = 4,
@@ -288,7 +288,7 @@ in {
           adaptive_dim = 0.32,
           adaptive_boost = 0.10,
         })
-        -- yujon_glass: pure refraction lens -- zero blur, zero tint, zero
+        -- yujon_glass: pure refraction lens: zero blur, zero tint, zero
         -- fringing, full fresnel/specular. Converted from a config that set
         -- these as plugin globals rather than a preset.
         hg.preset("yujon_glass", {
@@ -306,10 +306,10 @@ in {
           contrast = 1.0,
           saturation = 1.0,
           vibrancy = 0.0,
-          adaptive_dim = 0.0,
+          adaptive_dim = 0.4,
           adaptive_boost = 0.0,
         })
-        -- apple: bright rim-lit look -- light blur, full fresnel/specular,
+        -- apple: bright rim-lit look: light blur, full fresnel/specular,
         -- opaque glass pane, no adaptive dim.
         hg.preset("apple", {
           blur_strength = 0.8,

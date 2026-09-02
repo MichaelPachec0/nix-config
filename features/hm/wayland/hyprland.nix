@@ -1021,7 +1021,7 @@ in {
           # safe slot). The lib.optional gate is what keeps a disabled host
           # clean: the hook string is never forced, so the store-path
           # interpolation never happens and the plugin never enters the
-          # closure -- the same laziness that scopes pkgs.latest.hy3.
+          # closure. The same laziness scopes pkgs.latest.hy3.
           on =
             [
               {_args = ["hyprland.start" hy3SetupHook];}
@@ -1218,7 +1218,7 @@ in {
           # lists.
           ++ generatedHyprglass.colorCriticalRules
           # glassOptOut (hyprglass.nix): windows expensive or pointless to
-          # glass (opaque full-motion content) -- noglass tag only, opacity
+          # glass (opaque full-motion content): noglass tag only, opacity
           # and blur untouched. Includes the fullscreen rule (gated on
           # hyprglass.disableOnFullscreen): a fullscreen window is the
           # largest possible sampling area with all of its glass occluded,

@@ -367,7 +367,7 @@
             ../overlays/0005-feat-hy3-ungroup-dispatcher.patch
           ];
       });
-      # hyprglass -- liquid-glass window decoration. NOT in nixpkgs: PR #547498
+      # hyprglass: liquid-glass window decoration. NOT in nixpkgs: PR #547498
       # ("hyprlandPlugins.hyprglass: init at 0.7.0") is still open, so the
       # derivation is vendored here from that PR. When it merges, this
       # collapses to `hyprlandPlugins.hyprglass.override {inherit (final)
