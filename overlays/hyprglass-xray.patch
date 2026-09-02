@@ -138,7 +138,7 @@ index 0000000..9c0a79e
 +    [[nodiscard]] ePassElementType type() override { return EK_CUSTOM; }
 +};
 diff --git a/src/GlassDecoration.cpp b/src/GlassDecoration.cpp
-index 90bd1cb..8e51f75 100644
+index 90bd1cb..7e5682b 100644
 --- a/src/GlassDecoration.cpp
 +++ b/src/GlassDecoration.cpp
 @@ -188,6 +188,20 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
@@ -198,7 +198,7 @@ index 90bd1cb..8e51f75 100644
 +
 +    if (!cacheHit) {
 +        GlassRenderer::sampleBackground(m_sampleFramebuffer, sampleSource, transformBox, m_samplePaddingRatio, downscale);
-+        GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, source);
++        GlassRenderer::blurBackground(m_blurTempFramebuffer, m_sampleFramebuffer, blurRadius, blurIterations, source);
 +
 +        if (usingCapture) {
 +            m_cachedBgGeneration   = bgGeneration;
@@ -234,11 +234,16 @@ index 90bd1cb..8e51f75 100644
      g_pHyprRenderer->damageBox(surfaceBox);
  }
 diff --git a/src/GlassDecoration.hpp b/src/GlassDecoration.hpp
-index 08658e9..02ea394 100644
+index 08658e9..3c9ee50 100644
 --- a/src/GlassDecoration.hpp
 +++ b/src/GlassDecoration.hpp
-@@ -32,6 +32,21 @@ class CGlassDecoration : public IHyprWindowDecoration {
+@@ -30,8 +30,26 @@ class CGlassDecoration : public IHyprWindowDecoration {
+   private:
+     PHLWINDOWREF m_window;
      SP<Render::IFramebuffer> m_sampleFramebuffer;
++    // Own blur ping-pong buffer (see blurBackground): a shared temp meant one
++    // reallocation per glassed window per frame when sample sizes differed.
++    SP<Render::IFramebuffer> m_blurTempFramebuffer;
      Vector2D     m_samplePaddingRatio;
  
 +    // xray-only sample cache. m_sampleFramebuffer already persists across
@@ -259,6 +264,33 @@ index 08658e9..02ea394 100644
      // Track last rendered position/size to detect actual changes and seed damage
      Vector2D m_lastPosition;
      Vector2D m_lastSize;
+diff --git a/src/GlassLayerSurface.cpp b/src/GlassLayerSurface.cpp
+index 18ca4bd..cf31649 100644
+--- a/src/GlassLayerSurface.cpp
++++ b/src/GlassLayerSurface.cpp
+@@ -163,7 +163,7 @@ void CGlassLayerSurface::sampleAndRedirect(PHLMONITOR monitor, float alpha) {
+ 
+         float blurRadius     = blurStrength * 12.0f / downscale;
+         int blurIterations   = std::clamp(static_cast<int>(resolvePresetInt(ctx, &SPresetValues::blurIterations, &SOverridableConfig::blurIterations)), 1, 5);
+-        GlassRenderer::blurBackground(m_sampleFramebuffer, blurRadius, blurIterations, source);
++        GlassRenderer::blurBackground(m_blurTempFramebuffer, m_sampleFramebuffer, blurRadius, blurIterations, source);
+ 
+         m_hasCachedSample      = true;
+         m_lastSceneGeneration  = currentGeneration;
+diff --git a/src/GlassLayerSurface.hpp b/src/GlassLayerSurface.hpp
+index 26fc97c..b5b9089 100644
+--- a/src/GlassLayerSurface.hpp
++++ b/src/GlassLayerSurface.hpp
+@@ -24,6 +24,9 @@ class CGlassLayerSurface {
+   private:
+     PHLLSREF     m_layerSurface;
+     SP<Render::IFramebuffer> m_sampleFramebuffer;
++    // Own blur ping-pong buffer (see blurBackground): a shared temp meant one
++    // reallocation per glassed surface per frame when sample sizes differed.
++    SP<Render::IFramebuffer> m_blurTempFramebuffer;
+     SP<Render::IFramebuffer> m_surfaceTempFramebuffer;
+     Vector2D     m_samplePaddingRatio;
+     bool         m_hasCachedSample = false;
 diff --git a/src/GlassPassElement.cpp b/src/GlassPassElement.cpp
 index 81fb64f..9ecd30b 100644
 --- a/src/GlassPassElement.cpp
@@ -324,11 +356,63 @@ index 81fb64f..9ecd30b 100644
 +        return false;
      return m_data.decoration.valid() && m_data.decoration->getOwner();
  }
+diff --git a/src/GlassRenderer.cpp b/src/GlassRenderer.cpp
+index ea45ebe..9a942ac 100644
+--- a/src/GlassRenderer.cpp
++++ b/src/GlassRenderer.cpp
+@@ -92,7 +92,8 @@ void sampleBackground(SP<Render::IFramebuffer>& sampleFramebuffer, SP<Render::IF
+                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
+ }
+ 
+-void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, int iterations,
++void blurBackground(SP<Render::IFramebuffer>& tempFramebuffer,
++                    SP<Render::IFramebuffer> sampleFramebuffer, float radius, int iterations,
+                     SP<Render::IFramebuffer> callerFramebuffer) {
+     auto& shaderManager = g_pGlobalState->shaderManager;
+     if (!sampleFramebuffer || !callerFramebuffer || radius <= 0.0f || iterations <= 0 || !shaderManager.isInitialized())
+@@ -101,7 +102,7 @@ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, in
+     int width  = static_cast<int>(sampleFramebuffer->m_size.x);
+     int height = static_cast<int>(sampleFramebuffer->m_size.y);
+ 
+-    auto& blurTempFramebuffer = g_pGlobalState->blurTempFramebuffer;
++    auto& blurTempFramebuffer = tempFramebuffer;
+     if (!blurTempFramebuffer)
+         blurTempFramebuffer = g_pHyprRenderer->createFB("hyprglass-blur-temp");
+ 
+diff --git a/src/GlassRenderer.hpp b/src/GlassRenderer.hpp
+index 92d4daa..1bbe6d7 100644
+--- a/src/GlassRenderer.hpp
++++ b/src/GlassRenderer.hpp
+@@ -36,7 +36,13 @@ void sampleBackground(SP<Render::IFramebuffer>& sampleFramebuffer, SP<Render::IF
+ // callerFramebuffer is re-bound after the blur ping-pong; the viewport is
+ // restored from its size so it always matches the re-bound framebuffer
+ // (monitor fields would be wrong on 90°/270° transformed monitors).
+-void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, int iterations,
++//
++// tempFramebuffer is the caller-owned ping-pong buffer, allocated/resized
++// here to match the sample. Caller-owned rather than shared: a shared temp
++// realloc'd to each caller's size meant one glTexImage2D reallocation per
++// glassed window per frame whenever two windows' sample sizes differed.
++void blurBackground(SP<Render::IFramebuffer>& tempFramebuffer,
++                    SP<Render::IFramebuffer> sampleFramebuffer, float radius, int iterations,
+                     SP<Render::IFramebuffer> callerFramebuffer);
+ 
+ // When mask is non-null (layers only), the shader composites the surface content
 diff --git a/src/Globals.hpp b/src/Globals.hpp
-index 0e78548..cf1a183 100644
+index 0e78548..f9ae286 100644
 --- a/src/Globals.hpp
 +++ b/src/Globals.hpp
-@@ -50,6 +50,58 @@ struct SGlobalState {
+@@ -25,9 +25,6 @@ struct SGlobalState {
+     // User-defined presets (populated from config keyword, swapped in on configReloaded)
+     std::unordered_map<std::string, SCustomPreset> customPresets;
+ 
+-    // Shared blur temp framebuffer (reused across all decorations since they render sequentially)
+-    SP<Render::IFramebuffer> blurTempFramebuffer;
+-
+     // Layer surface glass state (one per tracked layer, keyed by raw pointer).
+     // shared_ptr so CGlassLayerPassElement can hold a copy that survives map erasure mid-frame.
+     std::unordered_map<Desktop::View::CLayerSurface*, std::shared_ptr<CGlassLayerSurface>> layerSurfaces;
+@@ -50,6 +47,58 @@ struct SGlobalState {
      // stale entry can never alias a reallocated monitor object.
      std::unordered_map<MONITORID, uint64_t> sceneGeneration;
  
