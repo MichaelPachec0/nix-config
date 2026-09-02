@@ -12,6 +12,7 @@
   lib,
   pkgs,
   theme,
+  generatedHyprglass,
   generatedLuaBinds,
   generatedSwayBinds,
   appRun,
@@ -569,6 +570,13 @@
   };
 in {
   config = {
+    # xray on: glass samples a windowless capture instead of the live
+    # framebuffer, so stacked windows stop invalidating each other's glass.
+    # The option defaults to false in hyprglass.nix (matching the plugin's
+    # own default, since xray changes what the effect shows); this config is
+    # where the look is defined, so it opts in here.
+    hyprglass.xray = true;
+
     # `keybind-cheatsheet` on PATH so it's runnable from a terminal too (the
     # Super+/ bind invokes it by store path regardless).
     home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript scratchpadCycleScript];
@@ -1008,11 +1016,19 @@ in {
             };
 
           # hl.on("hyprland.start", function() ... end). hy3 setup runs first
-          # (load + config), then the autostart apps.
-          on = [
-            {_args = ["hyprland.start" hy3SetupHook];}
-            {_args = ["hyprland.start" autostartHook];}
-          ];
+          # (load + config), then the autostart apps, then hyprglass (a
+          # decoration plugin with no dependency on either, so last is the
+          # safe slot). The lib.optional gate is what keeps a disabled host
+          # clean: the hook string is never forced, so the store-path
+          # interpolation never happens and the plugin never enters the
+          # closure. The same laziness scopes pkgs.latest.hy3.
+          on =
+            [
+              {_args = ["hyprland.start" hy3SetupHook];}
+              {_args = ["hyprland.start" autostartHook];}
+            ]
+            ++ lib.optional config.hyprglass.enable
+            {_args = ["hyprland.start" generatedHyprglass.setupHook];};
 
           # hl.window_rule({...}) -- parity with sway's floating.criteria, the
           # Firefox-share nofocus, and the opacity/blur for_window rules (#3).
@@ -1184,70 +1200,31 @@ in {
             # -- Opacity (sway "for_window opacity set"). The global 0.9 mirrors
             # sway's translucency; drop it if you prefer opaque windows on
             # Hyprland (the decoration block above keeps active/inactive at 1.0).
-            # Per-app 1.0 exceptions must follow the global rule to override it.
+            # Per-app 1.0 exceptions must follow the global rule to override
+            # it: the generated colorCritical rules below splice in AFTER this
+            # entry, never at the head of the list.
             {
               name = "opacity-all";
               match = {class = ".*";};
               opacity = "0.9 0.9";
             }
-            {
-              name = "opacity-gimp";
-              match = {class = "[Gg]imp";};
-              opacity = "1.0 1.0";
-            }
-            {
-              name = "opacity-krita";
-              match = {class = "[Kk]rita";};
-              opacity = "1.0 1.0";
-            }
-            {
-              name = "opacity-inkscape";
-              match = {class = "org.inkscape.Inkscape";};
-              opacity = "1.0 1.0";
-            }
-            {
-              name = "opacity-virt-manager";
-              match = {class = "virt-manager";};
-              opacity = "1.0 1.0";
-            }
-            {
-              name = "opacity-obs";
-              match = {class = "com.obsproject.Studio";};
-              opacity = "1.0 1.0";
-            }
-            {
-              name = "opacity-windscribe";
-              match = {title = "^Windscribe$";};
-              opacity = "1.0 1.0";
-            }
-
-            # -- Blur exceptions (sway "for_window blur disable") --
-            {
-              name = "noblur-gimp";
-              match = {class = "[Gg]imp";};
-              no_blur = true;
-            }
-            {
-              name = "noblur-krita";
-              match = {class = "[Kk]rita";};
-              no_blur = true;
-            }
-            {
-              name = "noblur-inkscape";
-              match = {class = "org.inkscape.Inkscape";};
-              no_blur = true;
-            }
-            {
-              name = "noblur-virt-manager";
-              match = {class = "virt-manager";};
-              no_blur = true;
-            }
-            {
-              name = "noblur-obs";
-              match = {class = "com.obsproject.Studio";};
-              no_blur = true;
-            }
-          ];
+          ]
+          # colorCritical (hyprglass.nix): apps whose colour fidelity must not
+          # be touched. One six-entry list expands to opacity 1.0, no_blur and
+          # a hyprglass_disabled tag per app, replacing the hand-written
+          # opacity-*/noblur-* rules that used to live here so the three
+          # families cannot drift apart. Emitted on every host (the tag is
+          # inert without the plugin) so nyx and thanatos keep identical rule
+          # lists.
+          ++ generatedHyprglass.colorCriticalRules
+          # glassOptOut (hyprglass.nix): windows expensive or pointless to
+          # glass (opaque full-motion content): noglass tag only, opacity
+          # and blur untouched. Includes the fullscreen rule (gated on
+          # hyprglass.disableOnFullscreen): a fullscreen window is the
+          # largest possible sampling area with all of its glass occluded,
+          # the worst cost-to-benefit ratio the plugin can hit, and it is
+          # also what catches games whose class cannot be enumerated.
+          ++ generatedHyprglass.glassOptOutRules;
 
           # hl.layer_rule({...}) -- frost the bar. blur enables wallpaper blur
           # behind the bar layer; ignore_alpha 0.5 restricts it to pixels with
