@@ -231,7 +231,12 @@ in {
       home.file.".mozilla/firefox/${config.hyprglass.videoBridge.firefoxProfileDir}/chrome/hyprglass-glass.css".text = ''
         /* hyprglass glass chrome -- managed by home-manager (hyprglass.nix).
            Edit there, not here. */
+        /* body is load-bearing: since the chrome document became HTML the
+           opaque window background is painted by <body>, not #main-window.
+           Bisected on 156.0b1 with throwaway profiles: without body every
+           other rule here leaves the toolbar opaque. */
         #main-window,
+        body,
         #browser,
         #tabbrowser-tabpanels {
           background: transparent !important;
