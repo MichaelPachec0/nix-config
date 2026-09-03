@@ -170,9 +170,32 @@ in {
     # host distributes it). The plugin is not involved.
     videoBridge = {
       playbackAction = lib.mkOption {
-        type = lib.types.enum ["strip" "undim"];
-        default = "strip";
-        description = "While video plays: strip = hyprglass_disabled + no_blur + no_dim; undim = no_dim only.";
+        type = lib.types.enum ["strip" "undim" "rect"];
+        default = "rect";
+        description = ''
+          While video plays: strip = hyprglass_disabled + no_blur + no_dim on
+          the whole window; undim = no_dim only; rect = undim ONLY the
+          on-screen video rect(s), which the extension reports as
+          hyprglass_rect: tags and the plugin's dim overlay honours.
+        '';
+      };
+      rectFallback = lib.mkOption {
+        type = lib.types.enum ["none" "undim" "strip"];
+        default = "none";
+        description = ''
+          rect mode only: what to do when the window reports playback but no
+          visible rect (video scrolled out, hidden tab, canvas players, PiP).
+          none keeps Hyprland's normal dim.
+        '';
+      };
+      rectRateHz = lib.mkOption {
+        type = lib.types.ints.between 1 60;
+        default = 10;
+        description = ''
+          rect mode only: cap on rect updates per window per second while the
+          rect moves (scroll/resize). Each update costs one hyprctl fork and
+          one window-rule re-evaluation in the compositor.
+        '';
       };
       playSignal = lib.mkOption {
         type = lib.types.enum ["activeTab" "audible" "any"];
@@ -227,7 +250,7 @@ in {
       # One config file for the whole bridge; the host reads it and hands the
       # extension its half (playSignal, pauseGraceMs) over the port.
       xdg.configFile."ff-hyprglass-bridge.json".text = builtins.toJSON {
-        inherit (config.hyprglass.videoBridge) playbackAction playSignal pauseGraceMs;
+        inherit (config.hyprglass.videoBridge) playbackAction playSignal pauseGraceMs rectFallback rectRateHz;
       };
 
       # Links lib/mozilla/native-messaging-hosts/*.json into firefox's search
