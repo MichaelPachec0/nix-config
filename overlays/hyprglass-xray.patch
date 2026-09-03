@@ -1,5 +1,5 @@
 diff --git a/Makefile b/Makefile
-index ef3b5f0..ef08dc4 100644
+index ef3b5f0..960bfbe 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -2,7 +2,10 @@
@@ -19,7 +19,7 @@ index ef3b5f0..ef08dc4 100644
  
  TARGET = hyprglass.so
 -SOURCES = src/main.cpp src/GlassDecoration.cpp src/GlassPassElement.cpp src/GlassRenderer.cpp src/GlassLayerSurface.cpp src/GlassLayerPassElement.cpp src/GlassLayerCompositeElement.cpp src/PluginConfig.cpp src/ShaderManager.cpp
-+SOURCES = src/main.cpp src/GlassDecoration.cpp src/GlassDimDecoration.cpp src/GlassPassElement.cpp src/GlassBackgroundElement.cpp src/GlassRenderer.cpp src/GlassLayerSurface.cpp src/GlassLayerPassElement.cpp src/GlassLayerCompositeElement.cpp src/PluginConfig.cpp src/ShaderManager.cpp
++SOURCES = src/main.cpp src/GlassDecoration.cpp src/GlassRectDecoration.cpp src/GlassPassElement.cpp src/GlassBackgroundElement.cpp src/GlassRenderer.cpp src/GlassLayerSurface.cpp src/GlassLayerPassElement.cpp src/GlassLayerCompositeElement.cpp src/PluginConfig.cpp src/ShaderManager.cpp
  OBJ = $(SOURCES:.cpp=.o)
 +# -MMD -MP (added to the compile rule) emits a .d per object listing the
 +# headers it pulled in; -include feeds those back so editing a .hpp rebuilds
@@ -357,283 +357,6 @@ index 08658e9..37fcdeb 100644
      [[nodiscard]] bool        resolveThemeIsDark() const;
      [[nodiscard]] std::string resolvePresetName() const;
  
-diff --git a/src/GlassDimDecoration.cpp b/src/GlassDimDecoration.cpp
-new file mode 100644
-index 0000000..e8a2a5d
---- /dev/null
-+++ b/src/GlassDimDecoration.cpp
-@@ -0,0 +1,211 @@
-+#include "GlassDimDecoration.hpp"
-+#include "PluginConfig.hpp"
-+#include "WindowGeometry.hpp"
-+
-+#include <hyprland/src/animation/AnimationManager.hpp>
-+#include <hyprland/src/config/ConfigValue.hpp>
-+#include <hyprland/src/config/shared/animation/AnimationTree.hpp>
-+#include <hyprland/src/desktop/rule/windowRule/WindowRuleApplicator.hpp>
-+#include <hyprland/src/desktop/state/FocusState.hpp>
-+#include <hyprland/src/protocols/XDGShell.hpp>
-+#include <hyprland/src/render/Renderer.hpp>
-+#include <hyprland/src/render/pass/RectPassElement.hpp>
-+#include <hyprutils/math/Region.hpp>
-+
-+#include <algorithm>
-+#include <charconv>
-+#include <string_view>
-+
-+CGlassDimDecoration::CGlassDimDecoration(PHLWINDOW window)
-+    : IHyprWindowDecoration(window), m_window(window) {
-+    // Same curve Hyprland drives m_dimPercent with (Window.cpp: "fadeDim"),
-+    // so a focus change under this overlay looks like a focus change without
-+    // it. AVARDAMAGE_ENTIRE + the window context makes each tick damage the
-+    // window box for us.
-+    Animation::mgr()->createAnimation(0.f, m_dim, Config::animationTree()->getAnimationPropertyConfig("fadeDim"), window,
-+                                      AVARDAMAGE_ENTIRE);
-+}
-+
-+PHLWINDOW CGlassDimDecoration::getOwner() {
-+    return m_window.lock();
-+}
-+
-+// Parses "hyprglass_rect:x,y,w,h" (window-logical px, integers). A trailing
-+// '*' marks a dynamic tag and is ignored. Returns false on any malformed
-+// field; a bad tag is skipped rather than producing a garbage hole.
-+static bool parseRectTag(std::string_view tag, CBox& out) {
-+    if (!tag.starts_with(TAG_RECT_PREFIX))
-+        return false;
-+    tag.remove_prefix(TAG_RECT_PREFIX.size());
-+    if (tag.ends_with('*'))
-+        tag.remove_suffix(1);
-+
-+    int    fields[4] = {0, 0, 0, 0};
-+    size_t n         = 0;
-+    while (n < 4) {
-+        const auto comma = tag.find(',');
-+        const auto piece = tag.substr(0, comma);
-+        if (piece.empty())
-+            return false;
-+        const auto res = std::from_chars(piece.data(), piece.data() + piece.size(), fields[n]);
-+        if (res.ec != std::errc{} || res.ptr != piece.data() + piece.size())
-+            return false;
-+        ++n;
-+        if (comma == std::string_view::npos)
-+            break;
-+        tag.remove_prefix(comma + 1);
-+    }
-+    if (n != 4 || fields[2] <= 0 || fields[3] <= 0)
-+        return false;
-+
-+    out = CBox{(double)fields[0], (double)fields[1], (double)fields[2], (double)fields[3]};
-+    return true;
-+}
-+
-+bool CGlassDimDecoration::refreshRects(const PHLWINDOW& window) {
-+    if (!window || !window->m_ruleApplicator)
-+        return false;
-+
-+    // Tags are a std::set, so iteration order is stable and the signature
-+    // is canonical for a given set.
-+    std::string sig;
-+    for (const auto& tag : window->m_ruleApplicator->m_tagKeeper.getTags()) {
-+        if (!std::string_view{tag}.starts_with(TAG_RECT_PREFIX))
-+            continue;
-+        sig += tag;
-+        sig += '|';
-+    }
-+
-+    if (sig == m_tagSig)
-+        return !m_rects.empty();
-+
-+    m_tagSig = sig;
-+    m_rects.clear();
-+    for (const auto& tag : window->m_ruleApplicator->m_tagKeeper.getTags()) {
-+        CBox box;
-+        if (parseRectTag(tag, box))
-+            m_rects.push_back(box);
-+    }
-+    damageEntire();
-+    return !m_rects.empty();
-+}
-+
-+SDecorationPositioningInfo CGlassDimDecoration::getPositioningInfo() {
-+    SDecorationPositioningInfo info;
-+    info.priority       = 10000;
-+    info.policy         = DECORATION_POSITION_ABSOLUTE;
-+    info.desiredExtents = {{0, 0}, {0, 0}};
-+    return info;
-+}
-+
-+void CGlassDimDecoration::onPositioningReply(const SDecorationPositioningReply& reply) {}
-+
-+void CGlassDimDecoration::draw(PHLMONITOR monitor, float const& alpha) {
-+    const auto window = m_window.lock();
-+    if (!window || !monitor)
-+        return;
-+
-+    const bool tagged = refreshRects(window);
-+
-+    static auto PDIMENABLED  = CConfigValue<Config::INTEGER>("decoration:dim_inactive");
-+    static auto PDIMSTRENGTH = CConfigValue<Config::FLOAT>("decoration:dim_strength");
-+    static auto PDIMMODAL    = CConfigValue<Config::INTEGER>("decoration:dim_modal");
-+
-+    // D: what Hyprland WOULD dim this window to without no_dim. Mirrors the
-+    // goalDim block in CWindow::updateWindowAnimatedDecorationValues.
-+    float goal = 0.f;
-+    if (tagged) {
-+        const bool focused = window == Desktop::focusState()->window();
-+        if (!focused && *PDIMENABLED)
-+            goal = *PDIMSTRENGTH;
-+        if (*PDIMMODAL) {
-+            const auto xdg = window->m_xdgSurface.lock();
-+            if (xdg && xdg->m_toplevel && xdg->m_toplevel->anyChildModal())
-+                goal += (1.f - goal) / 2.f;
-+        }
-+    }
-+    if (m_dim->goal() != goal)
-+        *m_dim = goal;
-+
-+    const float D = std::clamp(m_dim->value(), 0.f, 1.f);
-+    // Untagged and faded out: nothing to draw, nothing to keep alive.
-+    if (!tagged && D <= 0.001f) {
-+        m_active = false;
-+        return;
-+    }
-+    m_active = true;
-+
-+    // a: Hyprland's residual tint, nonzero only while its own fadeDim is still
-+    // running after the bridge flipped no_dim. b keeps (1-a)(1-b) == (1-D).
-+    const float a = window->m_dimPercent ? std::clamp(window->m_dimPercent->value(), 0.f, 0.999f) : 0.f;
-+    float       b = 1.f - (1.f - D) / (1.f - a);
-+    b             = std::clamp(b, 0.f, 1.f) * alpha;
-+    if (b <= 0.002f)
-+        return;
-+
-+    const auto boxOpt = WindowGeometry::computeWindowBox(window, monitor);
-+    if (!boxOpt)
-+        return;
-+    const CBox windowBox = *boxOpt;
-+    if (windowBox.width < 1 || windowBox.height < 1)
-+        return;
-+
-+    const float scale = monitor->m_scale;
-+    CRegion     dimRegion{windowBox};
-+    for (const auto& r : m_rects) {
-+        CBox hole{windowBox.x + r.x * scale, windowBox.y + r.y * scale, r.width * scale, r.height * scale};
-+        dimRegion.subtract(CRegion{hole.round()});
-+    }
-+
-+    const int   ROUND         = std::round(window->rounding() * scale);
-+    const float ROUNDINGPOWER = window->roundingPower();
-+    const auto  COLOR         = CHyprColor(0.0, 0.0, 0.0, b);
-+
-+    // One pass per remaining piece: the full window box (so rounding lands
-+    // on the real corners) clipped to the piece. Hyprland's element renderer
-+    // applies clipBox as scissor in scaled coordinates, which windowBox is.
-+    for (const auto& px : dimRegion.getRects()) {
-+        CRectPassElement::SRectData data;
-+        data.box           = windowBox;
-+        data.color         = COLOR;
-+        data.round         = ROUND;
-+        data.roundingPower = ROUNDINGPOWER;
-+        data.clipBox       = CBox{(double)px.x1, (double)px.y1, (double)(px.x2 - px.x1), (double)(px.y2 - px.y1)};
-+        g_pHyprRenderer->addPassElement(makeUnique<CRectPassElement>(data));
-+    }
-+}
-+
-+eDecorationType CGlassDimDecoration::getDecorationType() {
-+    return DECORATION_CUSTOM;
-+}
-+
-+void CGlassDimDecoration::updateWindow(PHLWINDOW window) {
-+    damageEntire();
-+}
-+
-+void CGlassDimDecoration::damageEntire() {
-+    const auto window = m_window.lock();
-+    if (!window)
-+        return;
-+
-+    const auto workspace  = window->m_workspace;
-+    auto       surfaceBox = window->getWindowMainSurfaceBox();
-+
-+    if (workspace && workspace->m_renderOffset->isBeingAnimated() && !window->m_pinned)
-+        surfaceBox.translate(workspace->m_renderOffset->value());
-+    surfaceBox.translate(window->m_floatingOffset);
-+
-+    g_pHyprRenderer->damageBox(surfaceBox);
-+}
-+
-+eDecorationLayer CGlassDimDecoration::getDecorationLayer() {
-+    return DECORATION_LAYER_OVER;
-+}
-+
-+uint64_t CGlassDimDecoration::getDecorationFlags() {
-+    return DECORATION_NON_SOLID;
-+}
-+
-+std::string CGlassDimDecoration::getDisplayName() {
-+    return "HyprGlassDim";
-+}
-diff --git a/src/GlassDimDecoration.hpp b/src/GlassDimDecoration.hpp
-new file mode 100644
-index 0000000..16c1fb3
---- /dev/null
-+++ b/src/GlassDimDecoration.hpp
-@@ -0,0 +1,54 @@
-+#pragma once
-+
-+#include <hyprland/src/desktop/view/Window.hpp>
-+#include <hyprland/src/helpers/AnimatedVariable.hpp>
-+#include <hyprland/src/render/decorations/IHyprWindowDecoration.hpp>
-+#include <hyprutils/math/Box.hpp>
-+
-+#include <string>
-+#include <vector>
-+
-+// Rect-scoped dim: Hyprland's dim_inactive is a multiplicative tint uniform in
-+// the window texture shader, whole surface, no region support. When a window
-+// carries one or more `hyprglass_rect:x,y,w,h` tags (window-logical px, set by
-+// the playback bridge) the bridge also sets `no_dim`, and this OVER-layer
-+// decoration draws the dim itself: black at the dim strength over the window
-+// box minus every rect, through Hyprland's own CRectPassElement with clipBox.
-+// Black-over at alpha d reproduces the `in*(1-d)` tint exactly, so the result
-+// is lossless and the only visible difference is the hole.
-+//
-+// Fade handover: Hyprland's own dim keeps animating (m_dimPercent, residual a)
-+// after the no_dim flip while this overlay's target D fades in on the same
-+// fadeDim curve. Drawing b = 1 - (1-D)/(1-a) keeps the product (1-a)(1-b) equal
-+// to (1-D) at every frame, so the crossfade never pops in either direction.
-+class CGlassDimDecoration : public IHyprWindowDecoration {
-+  public:
-+    explicit CGlassDimDecoration(PHLWINDOW window);
-+    ~CGlassDimDecoration() override = default;
-+
-+    [[nodiscard]] SDecorationPositioningInfo getPositioningInfo() override;
-+    void                                     onPositioningReply(const SDecorationPositioningReply& reply) override;
-+    void                                     draw(PHLMONITOR monitor, float const& alpha) override;
-+    [[nodiscard]] eDecorationType            getDecorationType() override;
-+    void                                     updateWindow(PHLWINDOW window) override;
-+    void                                     damageEntire() override;
-+    [[nodiscard]] eDecorationLayer           getDecorationLayer() override;
-+    [[nodiscard]] uint64_t                   getDecorationFlags() override;
-+    [[nodiscard]] std::string                getDisplayName() override;
-+
-+    [[nodiscard]] PHLWINDOW getOwner();
-+
-+  private:
-+    PHLWINDOWREF      m_window;
-+    PHLANIMVAR<float> m_dim; // D: the dim this overlay wants, focus-driven
-+
-+    // Rect tags parsed once per tag-set change; m_tagSig is the concatenation
-+    // of the rect tags seen last, so an unchanged set costs one string build.
-+    std::vector<CBox> m_rects;
-+    std::string       m_tagSig;
-+    bool              m_active = false;
-+
-+    // Returns true when the window carries at least one rect tag. Refreshes
-+    // m_rects only when the set changed.
-+    bool refreshRects(const PHLWINDOW& window);
-+};
 diff --git a/src/GlassLayerSurface.cpp b/src/GlassLayerSurface.cpp
 index 18ca4bd..cf31649 100644
 --- a/src/GlassLayerSurface.cpp
@@ -726,6 +449,345 @@ index 81fb64f..9ecd30b 100644
 +        return false;
      return m_data.decoration.valid() && m_data.decoration->getOwner();
  }
+diff --git a/src/GlassRectDecoration.cpp b/src/GlassRectDecoration.cpp
+new file mode 100644
+index 0000000..eaf0886
+--- /dev/null
++++ b/src/GlassRectDecoration.cpp
+@@ -0,0 +1,262 @@
++#include "GlassRectDecoration.hpp"
++#include "Globals.hpp"
++#include "PluginConfig.hpp"
++#include "WindowGeometry.hpp"
++
++#include <hyprland/src/animation/AnimationManager.hpp>
++#include <hyprland/src/config/ConfigValue.hpp>
++#include <hyprland/src/config/shared/animation/AnimationTree.hpp>
++#include <hyprland/src/desktop/rule/windowRule/WindowRuleApplicator.hpp>
++#include <hyprland/src/desktop/state/FocusState.hpp>
++#include <hyprland/src/protocols/XDGShell.hpp>
++#include <hyprland/src/protocols/core/Compositor.hpp>
++#include <hyprland/src/render/Renderer.hpp>
++#include <hyprland/src/render/Texture.hpp>
++#include <hyprland/src/render/pass/RectPassElement.hpp>
++#include <hyprland/src/render/pass/TexPassElement.hpp>
++#include <hyprutils/math/Region.hpp>
++
++#include <algorithm>
++#include <charconv>
++#include <string_view>
++
++CGlassRectDecoration::CGlassRectDecoration(PHLWINDOW window)
++    : IHyprWindowDecoration(window), m_window(window) {
++    // Same curve Hyprland drives m_dimPercent with (Window.cpp: "fadeDim"),
++    // so a focus change under this overlay looks like a focus change without
++    // it. AVARDAMAGE_ENTIRE + the window context makes each tick damage the
++    // window box for us.
++    Animation::mgr()->createAnimation(0.f, m_dim, Config::animationTree()->getAnimationPropertyConfig("fadeDim"), window,
++                                      AVARDAMAGE_ENTIRE);
++}
++
++PHLWINDOW CGlassRectDecoration::getOwner() {
++    return m_window.lock();
++}
++
++// Parses "hyprglass_rect:x,y,w,h" (window-logical px, integers). A trailing
++// '*' marks a dynamic tag and is ignored. Returns false on any malformed
++// field; a bad tag is skipped rather than producing a garbage hole.
++static bool parseRectTag(std::string_view tag, CBox& out) {
++    if (!tag.starts_with(TAG_RECT_PREFIX))
++        return false;
++    tag.remove_prefix(TAG_RECT_PREFIX.size());
++    if (tag.ends_with('*'))
++        tag.remove_suffix(1);
++
++    int    fields[4] = {0, 0, 0, 0};
++    size_t n         = 0;
++    while (n < 4) {
++        const auto comma = tag.find(',');
++        const auto piece = tag.substr(0, comma);
++        if (piece.empty())
++            return false;
++        const auto res = std::from_chars(piece.data(), piece.data() + piece.size(), fields[n]);
++        if (res.ec != std::errc{} || res.ptr != piece.data() + piece.size())
++            return false;
++        ++n;
++        if (comma == std::string_view::npos)
++            break;
++        tag.remove_prefix(comma + 1);
++    }
++    if (n != 4 || fields[2] <= 0 || fields[3] <= 0)
++        return false;
++
++    out = CBox{(double)fields[0], (double)fields[1], (double)fields[2], (double)fields[3]};
++    return true;
++}
++
++bool CGlassRectDecoration::refreshRects(const PHLWINDOW& window) {
++    if (!window || !window->m_ruleApplicator)
++        return false;
++
++    const auto& tags = window->m_ruleApplicator->m_tagKeeper;
++
++    // Tags are a std::set, so iteration order is stable and the signature
++    // is canonical for a given set.
++    std::string sig;
++    for (const auto& tag : tags.getTags()) {
++        if (!std::string_view{tag}.starts_with(TAG_RECT_PREFIX))
++            continue;
++        sig += tag;
++        sig += '|';
++    }
++    const bool off = tags.isTagged(std::string(TAG_RECT_OFF));
++
++    if (sig == m_tagSig && off == m_off)
++        return !off && !m_rects.empty();
++
++    m_tagSig = sig;
++    m_off    = off;
++    m_rects.clear();
++    for (const auto& tag : tags.getTags()) {
++        CBox box;
++        if (parseRectTag(tag, box))
++            m_rects.push_back(box);
++    }
++    damageEntire();
++    return !off && !m_rects.empty();
++}
++
++SDecorationPositioningInfo CGlassRectDecoration::getPositioningInfo() {
++    SDecorationPositioningInfo info;
++    info.priority       = 10000;
++    info.policy         = DECORATION_POSITION_ABSOLUTE;
++    info.desiredExtents = {{0, 0}, {0, 0}};
++    return info;
++}
++
++void CGlassRectDecoration::onPositioningReply(const SDecorationPositioningReply& reply) {}
++
++void CGlassRectDecoration::draw(PHLMONITOR monitor, float const& alpha) {
++    const auto window = m_window.lock();
++    if (!window || !monitor || !g_pGlobalState)
++        return;
++
++    const auto& config     = g_pGlobalState->config;
++    const bool  dimOn      = !config.rectDim || **config.rectDim;
++    const bool  redrawOn   = !config.rectRedraw || **config.rectRedraw;
++    const float redrawA    = config.rectRedrawAlpha ? std::clamp((float)**config.rectRedrawAlpha, 0.f, 1.f) : 1.f;
++    const int   paddingLog = config.rectPadding ? std::max<int>(0, **config.rectPadding) : 0;
++
++    const bool tagged = refreshRects(window);
++
++    static auto PDIMENABLED  = CConfigValue<Config::INTEGER>("decoration:dim_inactive");
++    static auto PDIMSTRENGTH = CConfigValue<Config::FLOAT>("decoration:dim_strength");
++    static auto PDIMMODAL    = CConfigValue<Config::INTEGER>("decoration:dim_modal");
++
++    // D: what Hyprland WOULD dim this window to without no_dim. Mirrors the
++    // goalDim block in CWindow::updateWindowAnimatedDecorationValues.
++    float goal = 0.f;
++    if (tagged && dimOn) {
++        const bool focused = window == Desktop::focusState()->window();
++        if (!focused && *PDIMENABLED)
++            goal = *PDIMSTRENGTH;
++        if (*PDIMMODAL) {
++            const auto xdg = window->m_xdgSurface.lock();
++            if (xdg && xdg->m_toplevel && xdg->m_toplevel->anyChildModal())
++                goal += (1.f - goal) / 2.f;
++        }
++    }
++    if (m_dim->goal() != goal)
++        *m_dim = goal;
++
++    const float D = std::clamp(m_dim->value(), 0.f, 1.f);
++    if (!tagged && D <= 0.001f)
++        return; // untagged and faded out: nothing to draw
++
++    const auto boxOpt = WindowGeometry::computeWindowBox(window, monitor);
++    if (!boxOpt)
++        return;
++    const CBox windowBox = *boxOpt;
++    if (windowBox.width < 1 || windowBox.height < 1)
++        return;
++
++    const float scale         = monitor->m_scale;
++    const int   ROUND         = std::round(window->rounding() * scale);
++    const float ROUNDINGPOWER = window->roundingPower();
++    const float pad           = paddingLog * scale;
++
++    // Rects in monitor px, padded, clamped to the window box.
++    std::vector<CBox> holes;
++    holes.reserve(m_rects.size());
++    for (const auto& r : m_rects) {
++        CBox hole{windowBox.x + r.x * scale - pad, windowBox.y + r.y * scale - pad, r.width * scale + 2 * pad, r.height * scale + 2 * pad};
++        hole.round();
++        const double x1 = std::max(hole.x, windowBox.x), y1 = std::max(hole.y, windowBox.y);
++        const double x2 = std::min(hole.x + hole.width, windowBox.x + windowBox.width);
++        const double y2 = std::min(hole.y + hole.height, windowBox.y + windowBox.height);
++        if (x2 - x1 >= 1 && y2 - y1 >= 1)
++            holes.push_back(CBox{x1, y1, x2 - x1, y2 - y1});
++    }
++
++    // 1. Redraw the surface inside each rect. The full window box is the
++    //    texture's destination (identity mapping onto the main surface box,
++    //    the same assumption mask mode makes), clipped to the rect. Popups and
++    //    subsurfaces are not part of this texture; video is (verified:
++    //    Firefox composites video into the main buffer).
++    if (tagged && redrawOn && redrawA > 0.001f && !holes.empty()) {
++        const auto wlSurface       = window->wlSurface();
++        const auto surfaceResource = wlSurface ? wlSurface->resource() : nullptr;
++        const auto surfaceTexture  = surfaceResource ? surfaceResource->m_current.texture : nullptr;
++        if (surfaceTexture && surfaceTexture->m_texID) {
++            for (const auto& hole : holes) {
++                CTexPassElement::SRenderData data;
++                data.tex           = surfaceTexture;
++                data.box           = windowBox;
++                data.a             = redrawA * alpha;
++                data.round         = ROUND;
++                data.roundingPower = ROUNDINGPOWER;
++                data.clipBox       = hole;
++                data.blur          = false;
++                g_pHyprRenderer->addPassElement(makeUnique<CTexPassElement>(data));
++            }
++        }
++    }
++
++    // 2. Dim with holes.
++    if (!dimOn)
++        return;
++
++    // a: Hyprland's residual tint, nonzero only while its own fadeDim is still
++    // running after the bridge flipped no_dim. b keeps (1-a)(1-b) == (1-D).
++    const float a = window->m_dimPercent ? std::clamp(window->m_dimPercent->value(), 0.f, 0.999f) : 0.f;
++    float       b = 1.f - (1.f - D) / (1.f - a);
++    b             = std::clamp(b, 0.f, 1.f) * alpha;
++    if (b <= 0.002f)
++        return;
++
++    CRegion dimRegion{windowBox};
++    for (const auto& hole : holes)
++        dimRegion.subtract(CRegion{hole});
++
++    const auto COLOR = CHyprColor(0.0, 0.0, 0.0, b);
++
++    // One pass per remaining piece: the full window box (so rounding lands
++    // on the real corners) clipped to the piece. Hyprland's element renderer
++    // applies clipBox as scissor in scaled coordinates, which windowBox is.
++    for (const auto& px : dimRegion.getRects()) {
++        CRectPassElement::SRectData data;
++        data.box           = windowBox;
++        data.color         = COLOR;
++        data.round         = ROUND;
++        data.roundingPower = ROUNDINGPOWER;
++        data.clipBox       = CBox{(double)px.x1, (double)px.y1, (double)(px.x2 - px.x1), (double)(px.y2 - px.y1)};
++        g_pHyprRenderer->addPassElement(makeUnique<CRectPassElement>(data));
++    }
++}
++
++eDecorationType CGlassRectDecoration::getDecorationType() {
++    return DECORATION_CUSTOM;
++}
++
++void CGlassRectDecoration::updateWindow(PHLWINDOW window) {
++    damageEntire();
++}
++
++void CGlassRectDecoration::damageEntire() {
++    const auto window = m_window.lock();
++    if (!window)
++        return;
++
++    const auto workspace  = window->m_workspace;
++    auto       surfaceBox = window->getWindowMainSurfaceBox();
++
++    if (workspace && workspace->m_renderOffset->isBeingAnimated() && !window->m_pinned)
++        surfaceBox.translate(workspace->m_renderOffset->value());
++    surfaceBox.translate(window->m_floatingOffset);
++
++    g_pHyprRenderer->damageBox(surfaceBox);
++}
++
++eDecorationLayer CGlassRectDecoration::getDecorationLayer() {
++    return DECORATION_LAYER_OVER;
++}
++
++uint64_t CGlassRectDecoration::getDecorationFlags() {
++    return DECORATION_NON_SOLID;
++}
++
++std::string CGlassRectDecoration::getDisplayName() {
++    return "HyprGlassRect";
++}
+diff --git a/src/GlassRectDecoration.hpp b/src/GlassRectDecoration.hpp
+new file mode 100644
+index 0000000..bc1c74f
+--- /dev/null
++++ b/src/GlassRectDecoration.hpp
+@@ -0,0 +1,65 @@
++#pragma once
++
++#include <hyprland/src/desktop/view/Window.hpp>
++#include <hyprland/src/helpers/AnimatedVariable.hpp>
++#include <hyprland/src/render/decorations/IHyprWindowDecoration.hpp>
++#include <hyprutils/math/Box.hpp>
++
++#include <string>
++#include <vector>
++
++// Rect-scoped video handling. A window carrying one or more
++// `hyprglass_rect:x,y,w,h` tags (window-logical px, set by the playback
++// bridge together with no_dim) gets, from this OVER-layer decoration:
++//
++// 1. rect_redraw: the window's own surface texture redrawn inside each rect
++//    at rect_redraw_alpha (default 1.0). Hyprland drew the window at its rule
++//    opacity over the glass; the redraw puts the source pixels back on top,
++//    so a compositor-translucent window shows its video pixel-exact while
++//    the page around it keeps the glass.
++// 2. rect_dim: the inactive dim, drawn by us with holes at the rects.
++//    Hyprland's dim_inactive is a multiplicative tint uniform in the window
++//    texture shader, whole surface, no region support, hence no_dim on the
++//    window and black-over at the dim strength through Hyprland's own
++//    CRectPassElement with clipBox per remaining piece. Black-over at alpha
++//    d reproduces the `in*(1-d)` tint exactly, so the result is lossless.
++//
++// Fade handover for the dim: Hyprland's own dim keeps animating
++// (m_dimPercent, residual a) after the no_dim flip while this overlay's
++// target D fades in on the same fadeDim curve. Drawing b = 1 - (1-D)/(1-a)
++// keeps the product (1-a)(1-b) equal to (1-D) at every frame, so the
++// crossfade never pops in either direction.
++//
++// rect_padding grows every rect (logical px) before both steps; the
++// `hyprglass_rect_off` tag disables both on one window.
++class CGlassRectDecoration : public IHyprWindowDecoration {
++  public:
++    explicit CGlassRectDecoration(PHLWINDOW window);
++    ~CGlassRectDecoration() override = default;
++
++    [[nodiscard]] SDecorationPositioningInfo getPositioningInfo() override;
++    void                                     onPositioningReply(const SDecorationPositioningReply& reply) override;
++    void                                     draw(PHLMONITOR monitor, float const& alpha) override;
++    [[nodiscard]] eDecorationType            getDecorationType() override;
++    void                                     updateWindow(PHLWINDOW window) override;
++    void                                     damageEntire() override;
++    [[nodiscard]] eDecorationLayer           getDecorationLayer() override;
++    [[nodiscard]] uint64_t                   getDecorationFlags() override;
++    [[nodiscard]] std::string                getDisplayName() override;
++
++    [[nodiscard]] PHLWINDOW getOwner();
++
++  private:
++    PHLWINDOWREF      m_window;
++    PHLANIMVAR<float> m_dim; // D: the dim this overlay wants, focus-driven
++
++    // Rect tags parsed once per tag-set change; m_tagSig is the concatenation
++    // of the rect tags seen last, so an unchanged set costs one string build.
++    std::vector<CBox> m_rects;
++    std::string       m_tagSig;
++    bool              m_off = false; // hyprglass_rect_off seen in the last tag set
++
++    // Returns true when the window carries at least one rect tag and is not
++    // switched off. Refreshes m_rects only when the set changed.
++    bool refreshRects(const PHLWINDOW& window);
++};
 diff --git a/src/GlassRenderer.cpp b/src/GlassRenderer.cpp
 index ea45ebe..794c76d 100644
 --- a/src/GlassRenderer.cpp
@@ -792,19 +854,19 @@ index 92d4daa..a80a44c 100644
  
  // When mask is non-null (layers only), the shader composites the surface content
 diff --git a/src/Globals.hpp b/src/Globals.hpp
-index 0e78548..0f940b6 100644
+index 0e78548..c8a084e 100644
 --- a/src/Globals.hpp
 +++ b/src/Globals.hpp
 @@ -16,18 +16,17 @@
  #include <vector>
  
  class CGlassDecoration;
-+class CGlassDimDecoration;
++class CGlassRectDecoration;
  
  struct SGlobalState {
 -    std::vector<WP<CGlassDecoration>> decorations;
 +    std::vector<WP<CGlassDecoration>>    decorations;
-+    std::vector<WP<CGlassDimDecoration>> dimDecorations;
++    std::vector<WP<CGlassRectDecoration>> rectDecorations;
      CShaderManager                    shaderManager;
      SPluginConfig                     config;
  
@@ -877,10 +939,10 @@ index 0e78548..0f940b6 100644
          if (!mon)
              return 0;
 diff --git a/src/PluginConfig.cpp b/src/PluginConfig.cpp
-index 2db4b86..6647a70 100644
+index 2db4b86..4f90a3b 100644
 --- a/src/PluginConfig.cpp
 +++ b/src/PluginConfig.cpp
-@@ -35,6 +35,10 @@ static int handleLuaConfig(lua_State* L);
+@@ -35,6 +35,14 @@ static int handleLuaConfig(lua_State* L);
  void registerConfig(HANDLE handle) {
      addConfigValue<Config::Values::Int>(handle, ConfigKeys::ENABLED, Config::INTEGER{1});
      addConfigValue<Config::Values::Int>(handle, ConfigKeys::MANAGE_WINDOW_BLUR, Config::INTEGER{1});
@@ -888,23 +950,31 @@ index 2db4b86..6647a70 100644
 +    // backdrop), not only what it costs, so it is opt-in.
 +    addConfigValue<Config::Values::Int>(handle, ConfigKeys::XRAY, Config::INTEGER{0});
 +    addConfigValue<Config::Values::Float>(handle, ConfigKeys::MASK_THRESHOLD, Config::FLOAT{0.5});
++    addConfigValue<Config::Values::Int>(handle, ConfigKeys::RECT_DIM, Config::INTEGER{1});
++    addConfigValue<Config::Values::Int>(handle, ConfigKeys::RECT_REDRAW, Config::INTEGER{1});
++    addConfigValue<Config::Values::Float>(handle, ConfigKeys::RECT_REDRAW_ALPHA, Config::FLOAT{1.0});
++    addConfigValue<Config::Values::Int>(handle, ConfigKeys::RECT_PADDING, Config::INTEGER{0});
      addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_THEME, Config::STRING{"dark"});
      addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_PRESET, Config::STRING{"default"});
  
-@@ -155,6 +159,8 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
+@@ -155,6 +163,12 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
  void initConfigPointers(HANDLE handle, SPluginConfig& config) {
      config.enabled          = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::ENABLED);
      config.manageWindowBlur = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::MANAGE_WINDOW_BLUR);
 +    config.xray             = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::XRAY);
 +    config.maskThreshold    = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::MASK_THRESHOLD);
++    config.rectDim          = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::RECT_DIM);
++    config.rectRedraw       = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::RECT_REDRAW);
++    config.rectRedrawAlpha  = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::RECT_REDRAW_ALPHA);
++    config.rectPadding      = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::RECT_PADDING);
      config.defaultTheme  = getStringPtr(handle, ConfigKeys::DEFAULT_THEME);
      config.defaultPreset = getStringPtr(handle, ConfigKeys::DEFAULT_PRESET);
  
 diff --git a/src/PluginConfig.hpp b/src/PluginConfig.hpp
-index 8dba9a8..d6a648c 100644
+index 8dba9a8..cfc72e0 100644
 --- a/src/PluginConfig.hpp
 +++ b/src/PluginConfig.hpp
-@@ -17,6 +17,14 @@ inline constexpr std::string_view TAG_PRESET_PREFIX = "hyprglass_preset_";
+@@ -17,6 +17,16 @@ inline constexpr std::string_view TAG_PRESET_PREFIX = "hyprglass_preset_";
  // `hyprglass_disabled` always wins if both are present.
  inline constexpr std::string_view TAG_ENABLED  = "hyprglass_enabled";
  inline constexpr std::string_view TAG_DISABLED = "hyprglass_disabled";
@@ -912,23 +982,29 @@ index 8dba9a8..d6a648c 100644
 +// surface is transparent (chrome), skipped where opaque (content, video).
 +inline constexpr std::string_view TAG_MASKED   = "hyprglass_masked";
 +
-+// Rect-scoped dim: "hyprglass_rect:x,y,w,h" (window-logical px). One tag per
-+// rect; the window is expected to carry no_dim while any are present. Drawn
-+// by CGlassDimDecoration, set by the playback bridge.
++// Rect-scoped video handling: "hyprglass_rect:x,y,w,h" (window-logical px).
++// One tag per rect; the window is expected to carry no_dim while any are
++// present. Consumed by CGlassRectDecoration, set by the playback bridge.
 +inline constexpr std::string_view TAG_RECT_PREFIX = "hyprglass_rect:";
++// Per-window kill switch for everything the rect decoration does.
++inline constexpr std::string_view TAG_RECT_OFF = "hyprglass_rect_off";
  
  // Hyprland stores dynamic tags (`tagwindow` dispatcher, dynamic window rules)
  // with a trailing '*'. CTagKeeper::isTagged() normalizes this for exact lookups,
-@@ -41,6 +49,8 @@ inline constexpr auto ENABLED            = "plugin:hyprglass:enabled";
+@@ -41,6 +51,12 @@ inline constexpr auto ENABLED            = "plugin:hyprglass:enabled";
  inline constexpr auto DEFAULT_THEME      = "plugin:hyprglass:default_theme";
  inline constexpr auto DEFAULT_PRESET     = "plugin:hyprglass:default_preset";
  inline constexpr auto MANAGE_WINDOW_BLUR = "plugin:hyprglass:manage_window_blur";
 +inline constexpr auto XRAY               = "plugin:hyprglass:xray";
 +inline constexpr auto MASK_THRESHOLD     = "plugin:hyprglass:mask_threshold";
++inline constexpr auto RECT_DIM           = "plugin:hyprglass:rect_dim";
++inline constexpr auto RECT_REDRAW        = "plugin:hyprglass:rect_redraw";
++inline constexpr auto RECT_REDRAW_ALPHA  = "plugin:hyprglass:rect_redraw_alpha";
++inline constexpr auto RECT_PADDING       = "plugin:hyprglass:rect_padding";
  
  // Preset keyword, registered as unscoped because Hyprlang does not dispatch
  // scoped keyword handlers inside the plugin special category.
-@@ -192,6 +202,15 @@ struct SPluginConfig {
+@@ -192,6 +208,24 @@ struct SPluginConfig {
      // against the live framebuffer (which contains the glass) instead of its
      // pre-frame cached blur.
      Hyprlang::INT* const* manageWindowBlur = nullptr;
@@ -941,6 +1017,15 @@ index 8dba9a8..d6a648c 100644
 +    // Alpha at or above this counts as opaque content for hyprglass_masked
 +    // windows (glass suppressed there).
 +    Hyprlang::FLOAT* const* maskThreshold  = nullptr;
++    // Rect-scoped video handling on windows carrying hyprglass_rect: tags
++    // (CGlassRectDecoration): draw the inactive dim with holes at the rects;
++    // redraw the window's own surface inside the rects at rect_redraw_alpha
++    // so a compositor-translucent window shows its video pixel-exact;
++    // rect_padding grows each rect (logical px) to hide player edge fringe.
++    Hyprlang::INT* const*   rectDim         = nullptr;
++    Hyprlang::INT* const*   rectRedraw      = nullptr;
++    Hyprlang::FLOAT* const* rectRedrawAlpha = nullptr;
++    Hyprlang::INT* const*   rectPadding     = nullptr;
      StringConfigPtr      defaultTheme;
      StringConfigPtr      defaultPreset;
  
@@ -1004,13 +1089,13 @@ index 32fa9c5..a96c64e 100644
          // in a single pass. surfacePixel is premultiplied alpha from Hyprland's
          // surface rendering, so we unpremultiply before the 'over' blend.
 diff --git a/src/main.cpp b/src/main.cpp
-index 4e93536..3d51543 100644
+index 4e93536..2f0ea09 100644
 --- a/src/main.cpp
 +++ b/src/main.cpp
 @@ -1,4 +1,6 @@
 +#include "GlassBackgroundElement.hpp"
  #include "GlassDecoration.hpp"
-+#include "GlassDimDecoration.hpp"
++#include "GlassRectDecoration.hpp"
  #include "GlassLayerCompositeElement.hpp"
  #include "GlassLayerPassElement.hpp"
  #include "GlassLayerSurface.hpp"
@@ -1026,31 +1111,32 @@ index 4e93536..3d51543 100644
  
  #include <cstdlib>
  #include <sstream>
-@@ -43,6 +50,12 @@ static void onNewWindow(PHLWINDOW window) {
+@@ -43,6 +50,13 @@ static void onNewWindow(PHLWINDOW window) {
      g_pGlobalState->decorations.emplace_back(decoration);
      decoration->m_self = decoration;
      HyprlandAPI::addWindowDecoration(PHANDLE, window, std::move(decoration));
 +
-+    // Rect-scoped dim overlay (OVER layer). Idle until the window carries a
-+    // hyprglass_rect: tag, so every window gets one.
-+    auto dimDecoration = makeUnique<CGlassDimDecoration>(window);
-+    g_pGlobalState->dimDecorations.emplace_back(dimDecoration);
-+    HyprlandAPI::addWindowDecoration(PHANDLE, window, std::move(dimDecoration));
++    // Rect-scoped video handling (OVER layer: dim with holes + surface
++    // redraw). Idle until the window carries a hyprglass_rect: tag, so every
++    // window gets one.
++    auto rectDecoration = makeUnique<CGlassRectDecoration>(window);
++    g_pGlobalState->rectDecorations.emplace_back(rectDecoration);
++    HyprlandAPI::addWindowDecoration(PHANDLE, window, std::move(rectDecoration));
  }
  
  static void onCloseWindow(PHLWINDOW window) {
-@@ -50,6 +63,10 @@ static void onCloseWindow(PHLWINDOW window) {
+@@ -50,6 +64,10 @@ static void onCloseWindow(PHLWINDOW window) {
          auto* deco = decoration.get();
          return !deco || deco->getOwner() == window;
      });
-+    std::erase_if(g_pGlobalState->dimDecorations, [&window](const auto& decoration) {
++    std::erase_if(g_pGlobalState->rectDecorations, [&window](const auto& decoration) {
 +        auto* deco = decoration.get();
 +        return !deco || deco->getOwner() == window;
 +    });
  }
  
  // ── Layer surface support ────────────────────────────────────────────────────
-@@ -254,6 +271,113 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
+@@ -254,6 +272,113 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
              if (ws) if (auto mon = ws->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon);
          });
  
@@ -1164,7 +1250,7 @@ index 4e93536..3d51543 100644
      // Clear pending presets/layers before config re-parse, commit after
      static auto onPreConfigReload = Event::bus()->m_events.config.preReload.listen([&]() {
          clearPendingPresets();
-@@ -266,6 +390,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
+@@ -266,6 +391,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
          parseLayerNamespaceFilters();
          commitPendingLayers(); // merge Lua layer() calls on top of string config
          validateConfig();
@@ -1173,7 +1259,7 @@ index 4e93536..3d51543 100644
      });
  
  
-@@ -323,6 +449,13 @@ APICALL EXPORT void PLUGIN_EXIT() {
+@@ -323,6 +450,13 @@ APICALL EXPORT void PLUGIN_EXIT() {
      g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassPassElement");
      g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerPassElement");
      g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerCompositeElement");
@@ -1187,15 +1273,15 @@ index 4e93536..3d51543 100644
  
      for (auto& decoration : g_pGlobalState->decorations) {
          if (auto* deco = decoration.get())
-@@ -330,6 +463,12 @@ APICALL EXPORT void PLUGIN_EXIT() {
+@@ -330,6 +464,12 @@ APICALL EXPORT void PLUGIN_EXIT() {
      }
      g_pGlobalState->decorations.clear();
  
-+    for (auto& decoration : g_pGlobalState->dimDecorations) {
++    for (auto& decoration : g_pGlobalState->rectDecorations) {
 +        if (auto* deco = decoration.get())
 +            HyprlandAPI::removeWindowDecoration(PHANDLE, deco);
 +    }
-+    g_pGlobalState->dimDecorations.clear();
++    g_pGlobalState->rectDecorations.clear();
 +
      if (g_pGlobalState->renderLayerHook) {
          HyprlandAPI::removeFunctionHook(PHANDLE, g_pGlobalState->renderLayerHook);
