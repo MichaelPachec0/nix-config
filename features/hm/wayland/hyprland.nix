@@ -1224,7 +1224,11 @@ in {
           # largest possible sampling area with all of its glass occluded,
           # the worst cost-to-benefit ratio the plugin can hit, and it is
           # also what catches games whose class cannot be enumerated.
-          ++ generatedHyprglass.glassOptOutRules;
+          ++ generatedHyprglass.glassOptOutRules
+          # maskGlass (hyprglass.nix): apps owning their per-pixel alpha --
+          # compositor opacity 1.0 plus the hyprglass_masked tag, so glass
+          # follows the app's own transparency (firefox translucent chrome).
+          ++ generatedHyprglass.maskGlassRules;
 
           # hl.layer_rule({...}) -- frost the bar. blur enables wallpaper blur
           # behind the bar layer; ignore_alpha 0.5 restricts it to pixels with
