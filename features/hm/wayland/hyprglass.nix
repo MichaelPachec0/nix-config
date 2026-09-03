@@ -113,12 +113,13 @@
   # Compositor opacity goes to 1.0 -- exactly one owner per pixel: with the
   # 0.9 rule on top, Firefox's deliberately-opaque video pixels would be made
   # translucent again by the compositor. Glass is gated by the app's own
-  # alpha via the hyprglass_masked tag (mask mode). Unanchored class regex,
-  # so "firefox" covers firefox-dev too.
+  # alpha via the hyprglass_masked tag (mask mode). Hyprland class matching is
+  # an ANCHORED regex (full match, verified live), so "firefox" alone would
+  # NOT match "firefox-dev"; "firefox.*" matches both firefox and firefox-dev.
   maskGlass = [
     {
       name = "firefox";
-      match = {class = "firefox";};
+      match = {class = "firefox.*";};
     }
   ];
 in {
@@ -213,7 +214,7 @@ in {
           background: transparent !important;
         }
         #navigator-toolbox {
-          background-color: rgba(${rgb theme.palette.bgMain}, 0.55) !important;
+          background-color: rgba(${rgb theme.palette.bgMain}, 0.32) !important;
           background-image: none !important;
         }
         #nav-bar,
