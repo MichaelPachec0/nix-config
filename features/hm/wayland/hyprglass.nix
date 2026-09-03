@@ -36,6 +36,15 @@
   # two presets differ in geometry/tone parameters, not tint.
   tint = "0x${theme.palette.bgMain}60";
 
+  # The extension + native-messaging host pair (pkgs/ff-hyprglass-bridge).
+  # callPackage here rather than an overlay attr: nothing else consumes it.
+  bridgePkg = pkgs.callPackage ../../../pkgs/ff-hyprglass-bridge {};
+
+  # theme.palette hex -> "r, g, b" for the glass chrome stylesheet.
+  rgb = hex: let
+    c = i: toString (lib.fromHexString (builtins.substring i 2 hex));
+  in "${c 0}, ${c 2}, ${c 4}";
+
   luaBool = b:
     if b
     then "true"
@@ -182,7 +191,50 @@ in {
     };
   };
 
-  config = {
+  config = lib.mkMerge [
+    (lib.mkIf config.hyprglass.enable {
+      # Firefox glass chrome. HM manages ONLY this stylesheet; the owner's
+      # hand-maintained userChrome.css imports it via a one-line @import at
+      # its top (their file backed up as userChrome.css.pre-hyprglass.bak),
+      # and their user.js carries browser.tabs.allow_transparent_browser.
+      # That split keeps their curated files theirs -- option (b) of the
+      # profile-management fork.
+      #
+      # Starting values, tuned by eye: window root transparent so alpha
+      # reaches the compositor, toolbox translucent bgMain, bars transparent
+      # so the toolbox shade is the single chrome tint. Content area is
+      # untouched and stays opaque.
+      home.file.".mozilla/firefox/${config.hyprglass.videoBridge.firefoxProfileDir}/chrome/hyprglass-glass.css".text = ''
+        /* hyprglass glass chrome -- managed by home-manager (hyprglass.nix).
+           Edit there, not here. */
+        #main-window,
+        #browser,
+        #tabbrowser-tabpanels {
+          background: transparent !important;
+        }
+        #navigator-toolbox {
+          background-color: rgba(${rgb theme.palette.bgMain}, 0.55) !important;
+          background-image: none !important;
+        }
+        #nav-bar,
+        #toolbar-menubar,
+        #PersonalToolbar {
+          background-color: transparent !important;
+        }
+      '';
+
+      # One config file for the whole bridge; the host reads it and hands the
+      # extension its half (playSignal, pauseGraceMs) over the port.
+      xdg.configFile."ff-hyprglass-bridge.json".text = builtins.toJSON {
+        inherit (config.hyprglass.videoBridge) playbackAction playSignal pauseGraceMs;
+      };
+
+      # Links lib/mozilla/native-messaging-hosts/*.json into firefox's search
+      # path; the extension itself is loaded unpacked from
+      # ${bridgePkg}/share/ff-hyprglass-bridge/extension via about:debugging.
+      programs.firefox.nativeMessagingHosts = [bridgePkg];
+    })
+    {
     # The plugin config, at the TOP LEVEL of the generated hyprland.lua (the
     # hyprland module appends extraConfig verbatim; types.lines merges with
     # hyprland.nix's monitors block). This is the mechanism upstream's Lua
@@ -442,5 +494,6 @@ in {
           tag = "+hyprglass_disabled";
         };
     };
-  };
+    }
+  ];
 }
