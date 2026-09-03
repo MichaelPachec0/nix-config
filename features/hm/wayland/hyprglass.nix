@@ -100,6 +100,18 @@
       match = {class = "heroic";};
     }
   ];
+  # Apps that own their per-pixel alpha (translucent chrome, opaque content).
+  # Compositor opacity goes to 1.0 -- exactly one owner per pixel: with the
+  # 0.9 rule on top, Firefox's deliberately-opaque video pixels would be made
+  # translucent again by the compositor. Glass is gated by the app's own
+  # alpha via the hyprglass_masked tag (mask mode). Unanchored class regex,
+  # so "firefox" covers firefox-dev too.
+  maskGlass = [
+    {
+      name = "firefox";
+      match = {class = "firefox";};
+    }
+  ];
 in {
   options.hyprglass = {
     # Not mkEnableOption: that hardcodes `default = false`, and the default
@@ -141,6 +153,32 @@ in {
       type = lib.types.bool;
       default = true;
       description = "Tag fullscreen windows hyprglass_disabled.";
+    };
+
+    # ff-hyprglass-bridge behaviour (consumed by the native host and, over
+    # the native-messaging port, by the extension -- one config file, the
+    # host distributes it). The plugin is not involved.
+    videoBridge = {
+      playbackAction = lib.mkOption {
+        type = lib.types.enum ["strip" "undim"];
+        default = "strip";
+        description = "While video plays: strip = hyprglass_disabled + no_blur + no_dim; undim = no_dim only.";
+      };
+      playSignal = lib.mkOption {
+        type = lib.types.enum ["activeTab" "audible" "any"];
+        default = "activeTab";
+        description = "Which playing videos count: the window's visible tab only, unmuted ones anywhere, or any at all.";
+      };
+      pauseGraceMs = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 3000;
+        description = "Pause must survive this long before tags clear, so seeks do not strobe the glass.";
+      };
+      firefoxProfileDir = lib.mkOption {
+        type = lib.types.str;
+        default = "cxnb9yr4.dev-edition-default";
+        description = "Profile directory under ~/.mozilla/firefox that receives the glass chrome stylesheet.";
+      };
     };
   };
 
@@ -374,6 +412,23 @@ in {
 
       # glassOptOut expands to noglass only, plus the fullscreen rule.
       # `fullscreen = true` verified accepted by 0.56.2's hl.window_rule.
+      # maskGlass expanded: compositor-opaque yet glassed via the app's own
+      # alpha. NOTE this deliberately breaks the "opacity 1.0 means opted
+      # out" reading: these windows are 1.0 AND masked-glassed.
+      maskGlassRules =
+        map (app: {
+          name = "opacity-mask-${app.name}";
+          inherit (app) match;
+          opacity = "1.0 1.0";
+        })
+        maskGlass
+        ++ map (app: {
+          name = "maskglass-${app.name}";
+          inherit (app) match;
+          tag = "+hyprglass_masked";
+        })
+        maskGlass;
+
       glassOptOutRules =
         map (app: {
           name = "noglass-${app.name}";
