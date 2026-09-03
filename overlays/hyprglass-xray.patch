@@ -150,10 +150,35 @@ index 0000000..9c0a79e
 +    [[nodiscard]] ePassElementType type() override { return EK_CUSTOM; }
 +};
 diff --git a/src/GlassDecoration.cpp b/src/GlassDecoration.cpp
-index 90bd1cb..7e5682b 100644
+index 90bd1cb..cc9310d 100644
 --- a/src/GlassDecoration.cpp
 +++ b/src/GlassDecoration.cpp
-@@ -188,6 +188,20 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
+@@ -8,6 +8,8 @@
+ #include <algorithm>
+ #include <GLES3/gl32.h>
+ #include <hyprland/src/desktop/view/Window.hpp>
++#include <hyprland/src/protocols/core/Compositor.hpp>
++#include <hyprland/src/render/Texture.hpp>
+ #include <hyprland/src/desktop/rule/windowRule/WindowRuleApplicator.hpp>
+ #include <hyprland/src/render/OpenGL.hpp>
+ #include <hyprland/src/render/Renderer.hpp>
+@@ -81,6 +83,15 @@ bool CGlassDecoration::resolveEnabled() const {
+     return globalEnabled;
+ }
+ 
++bool CGlassDecoration::resolveMasked() const {
++    try {
++        const auto window = m_window.lock();
++        if (window && window->m_ruleApplicator)
++            return window->m_ruleApplicator->m_tagKeeper.isTagged(std::string(TAG_MASKED));
++    } catch (...) {}
++    return false;
++}
++
+ bool CGlassDecoration::resolveThemeIsDark() const {
+     try {
+         const auto window = m_window.lock();
+@@ -188,6 +199,20 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
      if (!source)
          return;
  
@@ -174,7 +199,7 @@ index 90bd1cb..7e5682b 100644
      auto optBox = WindowGeometry::computeWindowBox(window, monitor);
      if (!optBox)
          return;
-@@ -206,13 +220,45 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
+@@ -206,13 +231,45 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
      const SResolveContext ctx  = {preset, isDark, g_pGlobalState->config, g_pGlobalState->customPresets};
  
      float blurStrength   = resolvePresetFloat(ctx, &SPresetValues::blurStrength, &SOverridableConfig::blurStrength);
@@ -226,7 +251,55 @@ index 90bd1cb..7e5682b 100644
  
      float monitorScale  = monitor->m_scale;
      float cornerRadius  = window->rounding() * monitorScale;
-@@ -257,9 +303,15 @@ void CGlassDecoration::damageEntire() {
+@@ -227,9 +284,46 @@ void CGlassDecoration::renderPass(PHLMONITOR monitor, const float& alpha) {
+     if (const auto workspace = window->m_workspace; workspace && !window->m_pinned)
+         glassAlpha *= workspace->m_alpha->value();
+ 
++    // Mask mode (hyprglass_masked): gate glass by the window's OWN alpha --
++    // glass only where the surface is transparent (translucent chrome),
++    // nothing under opaque content (page, video). The surface texture is
++    // sampled live as the mask; Hyprland draws the window itself after us.
++    GlassRenderer::SMaskInfo maskInfo;
++    const GlassRenderer::SMaskInfo* maskPtr = nullptr;
++    if (resolveMasked()) {
++        const auto wlSurface       = window->wlSurface();
++        const auto surfaceResource = wlSurface ? wlSurface->resource() : nullptr;
++        const auto surfaceTexture  = surfaceResource ? surfaceResource->m_current.texture : nullptr;
++        if (surfaceTexture && surfaceTexture->m_texID) {
++            // RGBX buffers carry no meaningful alpha: every fragment reads
++            // opaque, the gate would discard everything -- skip the draw.
++            if (surfaceTexture->m_type == Render::TEXTURE_RGBX)
++                return;
++            float maskThreshold = 0.5f;
++            if (g_pGlobalState->config.maskThreshold && *g_pGlobalState->config.maskThreshold)
++                maskThreshold = static_cast<float>(**g_pGlobalState->config.maskThreshold);
++            maskInfo = GlassRenderer::SMaskInfo{
++                // 0.56.2 binds BOTH dmabuf and shm surface textures to
++                // GL_TEXTURE_2D (GLTexture.cpp: the external path is
++                // commented out upstream), so a plain sampler2D works.
++                .textureId      = surfaceTexture->m_texID,
++                .target         = GL_TEXTURE_2D,
++                // Glass quad == window box, so UV maps identity. If the mask
++                // renders vertically flipped on first live test, flip here
++                // (uvScale.y = -1, uvOffset.y = 1), not in the shader.
++                .uvOffset       = Vector2D(0.0, 0.0),
++                .uvScale        = Vector2D(1.0, 1.0),
++                .alphaThreshold = maskThreshold,
++                .gateOnly       = true,
++            };
++            maskPtr = &maskInfo;
++        }
++    }
++
+     GlassRenderer::applyGlassEffect(m_sampleFramebuffer, source,
+                                      windowBox, transformBox, glassAlpha,
+-                                     cornerRadius, roundingPower, m_samplePaddingRatio, ctx);
++                                     cornerRadius, roundingPower, m_samplePaddingRatio, ctx,
++                                     maskPtr);
+ }
+ 
+ eDecorationType CGlassDecoration::getDecorationType() {
+@@ -257,9 +351,15 @@ void CGlassDecoration::damageEntire() {
      // Without this, the scissored render pass leaves stale previous-frame
      // content in the padding area, causing noise artifacts.
      // surfaceBox is in logical coords; convert pixel padding to logical.
@@ -246,7 +319,7 @@ index 90bd1cb..7e5682b 100644
      g_pHyprRenderer->damageBox(surfaceBox);
  }
 diff --git a/src/GlassDecoration.hpp b/src/GlassDecoration.hpp
-index 08658e9..3c9ee50 100644
+index 08658e9..37fcdeb 100644
 --- a/src/GlassDecoration.hpp
 +++ b/src/GlassDecoration.hpp
 @@ -30,8 +30,26 @@ class CGlassDecoration : public IHyprWindowDecoration {
@@ -276,6 +349,14 @@ index 08658e9..3c9ee50 100644
      // Track last rendered position/size to detect actual changes and seed damage
      Vector2D m_lastPosition;
      Vector2D m_lastSize;
+@@ -47,6 +65,7 @@ class CGlassDecoration : public IHyprWindowDecoration {
+     void withdrawNoBlur();
+ 
+     [[nodiscard]] bool        resolveEnabled() const;
++    [[nodiscard]] bool        resolveMasked() const;
+     [[nodiscard]] bool        resolveThemeIsDark() const;
+     [[nodiscard]] std::string resolvePresetName() const;
+ 
 diff --git a/src/GlassLayerSurface.cpp b/src/GlassLayerSurface.cpp
 index 18ca4bd..cf31649 100644
 --- a/src/GlassLayerSurface.cpp
@@ -369,7 +450,7 @@ index 81fb64f..9ecd30b 100644
      return m_data.decoration.valid() && m_data.decoration->getOwner();
  }
 diff --git a/src/GlassRenderer.cpp b/src/GlassRenderer.cpp
-index ea45ebe..9a942ac 100644
+index ea45ebe..794c76d 100644
 --- a/src/GlassRenderer.cpp
 +++ b/src/GlassRenderer.cpp
 @@ -92,7 +92,8 @@ void sampleBackground(SP<Render::IFramebuffer>& sampleFramebuffer, SP<Render::IF
@@ -391,11 +472,34 @@ index ea45ebe..9a942ac 100644
      if (!blurTempFramebuffer)
          blurTempFramebuffer = g_pHyprRenderer->createFB("hyprglass-blur-temp");
  
+@@ -226,9 +227,11 @@ void applyGlassEffect(SP<Render::IFramebuffer> sampleFramebuffer, SP<Render::IFr
+             static_cast<float>(mask->uvScale.x),
+             static_cast<float>(mask->uvScale.y));
+         glUniform1f(uniforms.maskAlphaThreshold, mask->alphaThreshold);
++        glUniform1i(uniforms.maskGateOnly, mask->gateOnly ? 1 : 0);
+     } else {
+         glUniform1i(uniforms.useMask, 0);
+         glUniform1f(uniforms.maskAlphaThreshold, 0.001f);
++        glUniform1i(uniforms.maskGateOnly, 0);
+     }
+ 
+     shader->setUniformFloat(SHADER_RADIUS, cornerRadius);
 diff --git a/src/GlassRenderer.hpp b/src/GlassRenderer.hpp
-index 92d4daa..1bbe6d7 100644
+index 92d4daa..a80a44c 100644
 --- a/src/GlassRenderer.hpp
 +++ b/src/GlassRenderer.hpp
-@@ -36,7 +36,13 @@ void sampleBackground(SP<Render::IFramebuffer>& sampleFramebuffer, SP<Render::IF
+@@ -28,6 +28,10 @@ struct SMaskInfo {
+     Vector2D uvOffset; // mapping from glass box UV → full surface UV
+     Vector2D uvScale;
+     float    alphaThreshold = 0.001f;
++    // Layers: glass only where the surface HAS content (composite in-pass).
++    // Windows (gateOnly): the INVERSE -- glass only where the surface is
++    // transparent, and never composite (Hyprland draws the window after us).
++    bool     gateOnly       = false;
+ };
+ 
+ void sampleBackground(SP<Render::IFramebuffer>& sampleFramebuffer, SP<Render::IFramebuffer> sourceFramebuffer,
+@@ -36,7 +40,13 @@ void sampleBackground(SP<Render::IFramebuffer>& sampleFramebuffer, SP<Render::IF
  // callerFramebuffer is re-bound after the blur ping-pong; the viewport is
  // restored from its size so it always matches the re-bound framebuffer
  // (monitor fields would be wrong on 90°/270° transformed monitors).
@@ -484,40 +588,53 @@ index 0e78548..f9ae286 100644
          if (!mon)
              return 0;
 diff --git a/src/PluginConfig.cpp b/src/PluginConfig.cpp
-index 2db4b86..fbac5c3 100644
+index 2db4b86..6647a70 100644
 --- a/src/PluginConfig.cpp
 +++ b/src/PluginConfig.cpp
-@@ -35,6 +35,9 @@ static int handleLuaConfig(lua_State* L);
+@@ -35,6 +35,10 @@ static int handleLuaConfig(lua_State* L);
  void registerConfig(HANDLE handle) {
      addConfigValue<Config::Values::Int>(handle, ConfigKeys::ENABLED, Config::INTEGER{1});
      addConfigValue<Config::Values::Int>(handle, ConfigKeys::MANAGE_WINDOW_BLUR, Config::INTEGER{1});
 +    // Off by default: xray changes what the effect shows (the windowless
 +    // backdrop), not only what it costs, so it is opt-in.
 +    addConfigValue<Config::Values::Int>(handle, ConfigKeys::XRAY, Config::INTEGER{0});
++    addConfigValue<Config::Values::Float>(handle, ConfigKeys::MASK_THRESHOLD, Config::FLOAT{0.5});
      addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_THEME, Config::STRING{"dark"});
      addConfigValue<Config::Values::String>(handle, ConfigKeys::DEFAULT_PRESET, Config::STRING{"default"});
  
-@@ -155,6 +158,7 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
+@@ -155,6 +159,8 @@ static void initOverridablePointers(HANDLE handle, SOverridableConfig& layer,
  void initConfigPointers(HANDLE handle, SPluginConfig& config) {
      config.enabled          = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::ENABLED);
      config.manageWindowBlur = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::MANAGE_WINDOW_BLUR);
 +    config.xray             = getStaticPtr<Hyprlang::INT>(handle, ConfigKeys::XRAY);
++    config.maskThreshold    = getStaticPtr<Hyprlang::FLOAT>(handle, ConfigKeys::MASK_THRESHOLD);
      config.defaultTheme  = getStringPtr(handle, ConfigKeys::DEFAULT_THEME);
      config.defaultPreset = getStringPtr(handle, ConfigKeys::DEFAULT_PRESET);
  
 diff --git a/src/PluginConfig.hpp b/src/PluginConfig.hpp
-index 8dba9a8..bc8d4dd 100644
+index 8dba9a8..c355e51 100644
 --- a/src/PluginConfig.hpp
 +++ b/src/PluginConfig.hpp
-@@ -41,6 +41,7 @@ inline constexpr auto ENABLED            = "plugin:hyprglass:enabled";
+@@ -17,6 +17,9 @@ inline constexpr std::string_view TAG_PRESET_PREFIX = "hyprglass_preset_";
+ // `hyprglass_disabled` always wins if both are present.
+ inline constexpr std::string_view TAG_ENABLED  = "hyprglass_enabled";
+ inline constexpr std::string_view TAG_DISABLED = "hyprglass_disabled";
++// Mask mode: glass gated by the window's OWN alpha -- drawn only where the
++// surface is transparent (chrome), skipped where opaque (content, video).
++inline constexpr std::string_view TAG_MASKED   = "hyprglass_masked";
+ 
+ // Hyprland stores dynamic tags (`tagwindow` dispatcher, dynamic window rules)
+ // with a trailing '*'. CTagKeeper::isTagged() normalizes this for exact lookups,
+@@ -41,6 +44,8 @@ inline constexpr auto ENABLED            = "plugin:hyprglass:enabled";
  inline constexpr auto DEFAULT_THEME      = "plugin:hyprglass:default_theme";
  inline constexpr auto DEFAULT_PRESET     = "plugin:hyprglass:default_preset";
  inline constexpr auto MANAGE_WINDOW_BLUR = "plugin:hyprglass:manage_window_blur";
 +inline constexpr auto XRAY               = "plugin:hyprglass:xray";
++inline constexpr auto MASK_THRESHOLD     = "plugin:hyprglass:mask_threshold";
  
  // Preset keyword, registered as unscoped because Hyprlang does not dispatch
  // scoped keyword handlers inside the plugin special category.
-@@ -192,6 +193,12 @@ struct SPluginConfig {
+@@ -192,6 +197,15 @@ struct SPluginConfig {
      // against the live framebuffer (which contains the glass) instead of its
      // pre-frame cached blur.
      Hyprlang::INT* const* manageWindowBlur = nullptr;
@@ -527,9 +644,71 @@ index 8dba9a8..bc8d4dd 100644
 +    // window motion never invalidates other windows' glass. Mirrors
 +    // decoration:blur:xray.
 +    Hyprlang::INT* const* xray             = nullptr;
++    // Alpha at or above this counts as opaque content for hyprglass_masked
++    // windows (glass suppressed there).
++    Hyprlang::FLOAT* const* maskThreshold  = nullptr;
      StringConfigPtr      defaultTheme;
      StringConfigPtr      defaultPreset;
  
+diff --git a/src/ShaderManager.cpp b/src/ShaderManager.cpp
+index 2ddc18e..bc72621 100644
+--- a/src/ShaderManager.cpp
++++ b/src/ShaderManager.cpp
+@@ -49,6 +49,7 @@ bool CShaderManager::compileGlassShader() {
+     glassUniforms.maskUVOffset        = glGetUniformLocation(program, "maskUVOffset");
+     glassUniforms.maskUVScale         = glGetUniformLocation(program, "maskUVScale");
+     glassUniforms.maskAlphaThreshold  = glGetUniformLocation(program, "maskAlphaThreshold");
++    glassUniforms.maskGateOnly        = glGetUniformLocation(program, "maskGateOnly");
+ 
+     return true;
+ }
+diff --git a/src/ShaderManager.hpp b/src/ShaderManager.hpp
+index 64e70af..74d1f22 100644
+--- a/src/ShaderManager.hpp
++++ b/src/ShaderManager.hpp
+@@ -26,6 +26,7 @@ struct SGlassUniforms {
+     GLint maskUVOffset = -1;
+     GLint maskUVScale = -1;
+     GLint maskAlphaThreshold = -1;
++    GLint maskGateOnly = -1;
+ };
+ 
+ struct SBlurUniforms {
+diff --git a/src/Shaders.hpp b/src/Shaders.hpp
+index 32fa9c5..a96c64e 100644
+--- a/src/Shaders.hpp
++++ b/src/Shaders.hpp
+@@ -57,6 +57,7 @@ uniform int useMask;
+ uniform vec2 maskUVOffset;
+ uniform vec2 maskUVScale;
+ uniform float maskAlphaThreshold;
++uniform int maskGateOnly;
+ 
+ in vec2 v_texcoord;
+ layout(location = 0) out vec4 fragColor;
+@@ -123,7 +124,12 @@ void main() {
+     if (hasMask) {
+         vec2 maskUV = uv * maskUVScale + maskUVOffset;
+         surfacePixel = texture(maskTex, clamp(maskUV, 0.001, 0.999));
+-        if (surfacePixel.a < maskAlphaThreshold) discard;
++        if (maskGateOnly == 1) {
++            // Windows (gate-only): glass only where the surface is
++            // TRANSPARENT; the window draws itself after this pass, so
++            // opaque content (video, page) suppresses glass entirely.
++            if (surfacePixel.a >= maskAlphaThreshold) discard;
++        } else if (surfacePixel.a < maskAlphaThreshold) discard;
+     }
+ 
+     float cornerSdf = getCornerSDF(uv);
+@@ -260,7 +266,7 @@ void main() {
+ 
+     float glassA = glassOpacity * cornerAlpha;
+ 
+-    if (hasMask) {
++    if (hasMask && maskGateOnly == 0) {
+         // Layers only: composite the rendered surface over the glass effect
+         // in a single pass. surfacePixel is premultiplied alpha from Hyprland's
+         // surface rendering, so we unpremultiply before the 'over' blend.
 diff --git a/src/main.cpp b/src/main.cpp
 index 4e93536..d85e97a 100644
 --- a/src/main.cpp
