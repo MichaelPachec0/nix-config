@@ -451,10 +451,10 @@ index 81fb64f..9ecd30b 100644
  }
 diff --git a/src/GlassRectDecoration.cpp b/src/GlassRectDecoration.cpp
 new file mode 100644
-index 0000000..eaf0886
+index 0000000..ad66ce5
 --- /dev/null
 +++ b/src/GlassRectDecoration.cpp
-@@ -0,0 +1,262 @@
+@@ -0,0 +1,269 @@
 +#include "GlassRectDecoration.hpp"
 +#include "Globals.hpp"
 +#include "PluginConfig.hpp"
@@ -578,6 +578,13 @@ index 0000000..eaf0886
 +
 +    const bool tagged = refreshRects(window);
 +
++    // Hyprland passes decorations fullAlpha = active alpha (the opacity rule,
++    // e.g. 0.9) x fade alpha. The redraw exists precisely to escape the rule
++    // alpha, so divide it back out and keep only the fade. Standalone and
++    // fullscreen renders pass rule alpha 1.0; the clamp covers that ratio.
++    const float ruleAlpha = window->alphaValue(Desktop::View::WINDOW_ALPHA_ACTIVE);
++    const float fade      = std::clamp(ruleAlpha > 0.001f ? alpha / ruleAlpha : alpha, 0.f, 1.f);
++
 +    static auto PDIMENABLED  = CConfigValue<Config::INTEGER>("decoration:dim_inactive");
 +    static auto PDIMSTRENGTH = CConfigValue<Config::FLOAT>("decoration:dim_strength");
 +    static auto PDIMMODAL    = CConfigValue<Config::INTEGER>("decoration:dim_modal");
@@ -641,7 +648,7 @@ index 0000000..eaf0886
 +                CTexPassElement::SRenderData data;
 +                data.tex           = surfaceTexture;
 +                data.box           = windowBox;
-+                data.a             = redrawA * alpha;
++                data.a             = redrawA * fade;
 +                data.round         = ROUND;
 +                data.roundingPower = ROUNDINGPOWER;
 +                data.clipBox       = hole;
@@ -659,7 +666,7 @@ index 0000000..eaf0886
 +    // running after the bridge flipped no_dim. b keeps (1-a)(1-b) == (1-D).
 +    const float a = window->m_dimPercent ? std::clamp(window->m_dimPercent->value(), 0.f, 0.999f) : 0.f;
 +    float       b = 1.f - (1.f - D) / (1.f - a);
-+    b             = std::clamp(b, 0.f, 1.f) * alpha;
++    b             = std::clamp(b, 0.f, 1.f) * fade;
 +    if (b <= 0.002f)
 +        return;
 +
