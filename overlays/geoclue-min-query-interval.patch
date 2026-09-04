@@ -1,0 +1,359 @@
+Add a configurable minimum interval between web geolocation queries.
+
+geoclue has no rate limit of any kind. Every source that talks to a web
+service queries whenever it is asked to, and the WiFi source is asked to on
+every wpa_supplicant scan: on_scan_wait_done() refreshes 1 second after the
+BSS list changes, and in any dense area the BSS list always changed. The
+result is that the query rate is set by whoever else is scanning, usually
+NetworkManager, not by geoclue.
+
+Measured on an idle laptop with one CITY-accuracy consumer (localtimed) and
+26 visible APs: one query every 32.8 seconds, sustained, or about 2,600 per
+day. That is 8x the 10,000 requests/month free allowance of the Google
+Geolocation provider, which the free allowance survives for 3.8 days.
+gclue-wifi.c already limits its own rescan to WIFI_SCAN_TIMEOUT_LOW_ACCURACY
+(300s) at that accuracy level, but that timer only governs scans geoclue
+starts itself, so it has no effect on the observed rate.
+
+There is no way to bound this from the outside. A consumer can only stop
+holding a client, which starves it of location without bounding anything else
+on the system, and any second consumer reintroduces the full rate.
+
+This adds a global "network/min-query-interval" key, defaulting to 600
+seconds, enforced in gclue_web_source_real_refresh_async(), the single point
+through which both the WiFi source (by chaining up) and the IP source send
+HTTP. Zero or a negative value restores the previous unthrottled behaviour.
+
+Three details worth stating:
+
+- The interval state is file-static, not per-instance. The sources are
+  refcounted singletons that are destroyed once the last client drops
+  (on_wifi_destroyed clears the static slot), so per-instance state would
+  reset on every consumer stop/start and a bursty consumer would evade the
+  limit entirely. One budget covers every web source, which is the point: the
+  provider bills the machine, not the source.
+
+- A throttled refresh replays the last response rather than returning
+  nothing. Consumers have no concept of throttling and must not need one, so
+  the location is duplicated with a fresh timestamp and set on the source,
+  exactly as gclue_wifi_refresh_async() already does on a cache hit. The task
+  itself returns G_IO_ERROR_PENDING, which query_callback() already logs at
+  debug rather than warning level, and which makes wifi's refresh_cb() skip
+  add_cached_location(). Returning the replayed location instead would bind a
+  stale fix to the current BSS key for up to 48 hours.
+
+- The interval is reset in on_network_changed(). Joining a different network
+  is the one moment the cached answer is most likely wrong, so it is worth a
+  query immediately; without this a machine that travelled while suspended
+  would answer with the location of the place it left.
+
+Throttled calls are coalesced rather than dropped: the first one inside a
+window schedules a single deferred refresh for when the interval expires, so
+a real location change is delayed by at most the interval instead of being
+lost until some later scan happens to fire.
+
+An interval of N seconds allows at most 2592000/N queries per 30 days: 4,320
+at the 600s default, against the 80,100 measured without it.
+
+--- a/src/gclue-config.c
++++ b/src/gclue-config.c
+@@ -30,6 +30,13 @@
+ #define CONFIG_FILE_PATH SYSCONFDIR "/geoclue/geoclue.conf"
+ #define CONFIG_D_DIRECTORY SYSCONFDIR "/geoclue/conf.d/"
+ 
++/* Minimum seconds between two web service queries. Providers meter and
++ * bill per query, and the sources refresh on every WiFi scan, so the
++ * unthrottled rate is set by how often something else scans. Zero or a
++ * negative value restores that unthrottled behaviour.
++ */
++#define DEFAULT_MIN_QUERY_INTERVAL 600
++
+ /* This class will be responsible for fetching configuration. */
+ 
+ struct _GClueConfigPrivate
+@@ -55,6 +62,7 @@
+         char *ip_method;
+         char *ip_url;
+         double ip_accuracy;
++        gint min_query_interval;
+ 
+         GList *app_configs;
+ };
+@@ -210,7 +218,8 @@
+ {
+         const char *known_groups[] = { "agent", "wifi", "3g", "cdma",
+                                        "modem-gps", "network-nmea", "compass",
+-                                       "static-source", "ip", NULL };
++                                       "static-source", "ip", "network",
++                                       NULL };
+         GClueConfigPrivate *priv = config->priv;
+         gsize num_groups = 0, i;
+         g_auto(GStrv) groups = NULL;
+@@ -440,6 +449,27 @@
+ }
+ 
+ static void
++load_network_config (GClueConfig *config)
++{
++        GClueConfigPrivate *priv = config->priv;
++
++        if (g_key_file_has_key (priv->key_file, "network",
++                                "min-query-interval", NULL)) {
++                g_autoptr(GError) error = NULL;
++                gint value = g_key_file_get_integer (priv->key_file,
++                                                     "network",
++                                                     "min-query-interval",
++                                                     &error);
++                if (error == NULL) {
++                        priv->min_query_interval = value;
++                } else {
++                        g_warning ("Failed to get config \"network/min-query-interval\": %s",
++                                   error->message);
++                }
++        }
++}
++
++static void
+ load_config_file (GClueConfig *config, const char *path) {
+         g_autoptr(GError) error = NULL;
+ 
+@@ -464,6 +494,7 @@
+         load_compass_config (config);
+         load_static_source_config (config);
+         load_ip_source_config (config);
++        load_network_config (config);
+ }
+ 
+ static void
+@@ -576,6 +607,11 @@
+                 g_debug ("\tIP accuracy: (method default)");
+         g_debug ("Compass: %s",
+                  enabled_disabled (priv->enable_compass));
++        if (priv->min_query_interval > 0)
++                g_debug ("Minimum web query interval: %d seconds",
++                         priv->min_query_interval);
++        else
++                g_debug ("Minimum web query interval: (unthrottled)");
+         g_debug ("Application configs:");
+         for (node = priv->app_configs; node != NULL; node = node->next) {
+                 app_config = (AppConfig *) node->data;
+@@ -619,6 +655,7 @@
+         priv->wifi_submit_nick = g_strdup (DEFAULT_WIFI_SUBMIT_NICK);
+         priv->ip_url = NULL;
+         priv->ip_accuracy = GCLUE_LOCATION_ACCURACY_UNKNOWN;
++        priv->min_query_interval = DEFAULT_MIN_QUERY_INTERVAL;
+ 
+         /* Load config file from default path, log all missing parameters */
+         priv->key_file = g_key_file_new ();
+@@ -898,3 +935,9 @@
+ {
+         return config->priv->ip_accuracy;
+ }
++
++gint
++gclue_config_get_min_query_interval (GClueConfig *config)
++{
++        return config->priv->min_query_interval;
++}
+--- a/src/gclue-config.h
++++ b/src/gclue-config.h
+@@ -88,6 +88,7 @@
+ const char *        gclue_config_get_ip_method          (GClueConfig     *config);
+ const char *        gclue_config_get_ip_url             (GClueConfig     *config);
+ double              gclue_config_get_ip_accuracy        (GClueConfig     *config);
++gint                gclue_config_get_min_query_interval (GClueConfig     *config);
+ gboolean            gclue_config_get_enable_wifi_source (GClueConfig     *config);
+ gboolean            gclue_config_get_enable_3g_source   (GClueConfig     *config);
+ gboolean            gclue_config_get_enable_cdma_source (GClueConfig     *config);
+--- a/src/gclue-web-source.c
++++ b/src/gclue-web-source.c
+@@ -25,6 +25,7 @@
+ #include <json-glib/json-glib.h>
+ #include <string.h>
+ #include "gclue-web-source.h"
++#include "gclue-config.h"
+ #include "gclue-error.h"
+ #include "gclue-location.h"
+ #include "gclue-mozilla.h"
+@@ -58,8 +59,19 @@
+         gboolean locate_url_reachable;
+         gboolean submit_url_reachable;
+         gboolean refresh_needed;
++
++        GClueLocation *last_location;
++        guint throttle_timeout_id;
+ };
+ 
++/* Time of the last query sent by any web source, as monotonic microseconds.
++ * Deliberately not per-instance: the sources are refcounted singletons that
++ * are destroyed when the last client goes away, so per-instance state would
++ * reset whenever a consumer stops and restarts, and a bursty consumer would
++ * evade the limit entirely. One budget covers every web source.
++ */
++static gint64 last_query_time;
++
+ enum
+ {
+         PROP_0,
+@@ -77,6 +89,54 @@
+                               GAsyncResult *result,
+                               gpointer      user_data);
+ 
++/* Hand consumers the last response again instead of nothing. Same idiom as
++ * the WiFi source's own cache hit: duplicated so the timestamp is refreshed,
++ * so a throttled window looks like an unchanged location rather than a
++ * missing one. Consumers have no concept of throttling and must not need one.
++ */
++static void
++replay_last_location (GClueWebSource *source)
++{
++        GClueWebSourcePrivate *priv = source->priv;
++        g_autoptr(GClueLocation) replay = NULL;
++
++        if (priv->last_location == NULL)
++                return;
++
++        replay = gclue_location_duplicate_fresh (priv->last_location);
++        gclue_location_source_set_location (GCLUE_LOCATION_SOURCE (source),
++                                            replay);
++}
++
++static gboolean
++on_throttle_timeout (gpointer user_data)
++{
++        GClueWebSource *source = GCLUE_WEB_SOURCE (user_data);
++
++        source->priv->throttle_timeout_id = 0;
++        gclue_web_source_refresh (source);
++
++        return G_SOURCE_REMOVE;
++}
++
++/* Coalesce, do not drop: one deferred query stands in for every call that
++ * arrives inside the window, so a location change is delayed by at most the
++ * interval rather than lost until the next scan happens to fire.
++ */
++static void
++schedule_throttled_refresh (GClueWebSource *source,
++                            guint           seconds)
++{
++        GClueWebSourcePrivate *priv = source->priv;
++
++        if (priv->throttle_timeout_id != 0)
++                return;
++
++        priv->throttle_timeout_id = g_timeout_add_seconds (seconds,
++                                                           on_throttle_timeout,
++                                                           source);
++}
++
+ static void
+ gclue_web_source_real_refresh_async (GClueWebSource      *source,
+                                      GCancellable        *cancellable,
+@@ -85,6 +145,7 @@
+ {
+         g_autoptr(GTask) task = NULL;
+         g_autoptr(GError) local_error = NULL;
++        gint interval;
+ 
+         task = g_task_new (source, cancellable, callback, user_data);
+         g_task_set_source_tag (task, gclue_web_source_real_refresh_async);
+@@ -109,6 +170,39 @@
+                 return;
+         }
+ 
++        interval = gclue_config_get_min_query_interval
++                (gclue_config_get_singleton ());
++        if (interval > 0) {
++                gint64 now = g_get_monotonic_time ();
++                gint64 next = last_query_time +
++                        (gint64) interval * G_USEC_PER_SEC;
++
++                if (last_query_time != 0 && now < next) {
++                        guint remaining = (next - now + G_USEC_PER_SEC - 1) /
++                                G_USEC_PER_SEC;
++
++                        replay_last_location (source);
++                        schedule_throttled_refresh (source, remaining);
++
++                        /* Not an error the consumer must handle: it already
++                         * has a location. G_IO_ERROR_PENDING keeps this off
++                         * the warning path and stops the WiFi source from
++                         * caching a replayed location under the current BSS
++                         * key, which would bind a stale fix to a new place.
++                         */
++                        g_task_return_new_error (task, G_IO_ERROR,
++                                                 G_IO_ERROR_PENDING,
++                                                 "Query throttled, next in %u seconds",
++                                                 remaining);
++                        return;
++                }
++
++                /* Stamped before the send: a query that fails still cost a
++                 * request against the provider's quota.
++                 */
++                last_query_time = now;
++        }
++
+         source->priv->query = GCLUE_WEB_SOURCE_GET_CLASS (source)->create_query
+                 (source, &source->priv->query_data_description, &local_error);
+         if (source->priv->query == NULL) {
+@@ -170,6 +264,8 @@
+                 return;
+         }
+ 
++        g_set_object (&web->priv->last_location, location);
++
+         gclue_location_source_set_location (GCLUE_LOCATION_SOURCE (web),
+                                             location);
+ 
+@@ -343,6 +439,13 @@
+ 
+         cancellable_cancel_recreate (web);
+ 
++        /* A different network is the one moment where the cached answer is
++         * most likely wrong, so spend a query on it immediately. This is what
++         * keeps the throttle from stranding a machine that travelled while
++         * suspended on a location from the airport it left.
++         */
++        last_query_time = 0;
++
+         if (web->priv->submit_url) {
+                 submit_addr = g_network_address_parse_uri (web->priv->submit_url,
+                                                            80, NULL);
+@@ -436,6 +539,12 @@
+                 g_clear_object (&priv->soup_session);
+         }
+ 
++        if (priv->throttle_timeout_id != 0) {
++                g_source_remove (priv->throttle_timeout_id);
++                priv->throttle_timeout_id = 0;
++        }
++
++        g_clear_object (&priv->last_location);
+         g_clear_object (&priv->query);
+         g_clear_object (&priv->cancellable);
+ 
+--- a/data/geoclue.conf.in
++++ b/data/geoclue.conf.in
+@@ -59,6 +59,20 @@
+ # Enable Modem GPS source
+ enable=true
+ 
++# Global network query configuration options
++[network]
++
++# Minimum number of seconds between two queries to a web geolocation
++# service, across all sources. Queries that arrive sooner are answered with
++# the last known location, and a single query is scheduled for when the
++# interval expires. A change of network resets the interval, so arriving
++# somewhere new is not delayed.
++#
++# This bounds the request rate against providers that meter or bill per
++# query: an interval of N seconds allows at most 2592000/N queries per 30
++# days. Set to 0 or a negative value to query as often as the sources ask.
++min-query-interval=600
++
+ # WiFi source configuration options
+ [wifi]
+ 
