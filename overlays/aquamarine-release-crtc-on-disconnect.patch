@@ -1,0 +1,38 @@
+--- a/src/backend/drm/DRM.cpp
++++ b/src/backend/drm/DRM.cpp
+@@ -2133,6 +2133,35 @@
+     backend->cancelAsyncOutput(output.get());
+     invalidateFrame();
+ 
++    // Release the CRTC in the kernel before this connector is forgotten.
++    //
++    // The kernel keeps connector -> CRTC routing until userspace commits a
++    // state that detaches it. Nothing below does that: status flips to
++    // DISCONNECTED, commitState() then refuses every commit for this
++    // connector, and recheckCRTCs() only clears the userspace bookkeeping.
++    // For a connector that stays registered (a plain DP/HDMI port going
++    // idle) that is harmless. For a DP MST port it is not: the kernel
++    // unregisters the connector when the port vanishes (dock unplugged,
++    // one monitor dropping off the hub), and update_connector_routing()
++    // in drm_atomic_helper.c rejects, with a silent -EINVAL, any atomic
++    // state that activates a CRTC while an unregistered connector is still
++    // routed to it. The replacement connector gets handed that same CRTC,
++    // so every modeset on it fails, at every mode, until something else
++    // (fbcon's restore on a VT switch, a compositor restart) commits a
++    // full configuration. An On -> Off commit on an unregistered connector
++    // is the one case the kernel explicitly allows, so do that here.
++    if (crtc && backend->backend->session->active) {
++        SDRMConnectorCommitData data;
++        data.enabled  = false;
++        data.modeset  = true;
++        data.blocking = true;
++
++        if (!backend->impl->commit(self.lock(), data))
++            backend->backend->log(AQ_LOG_ERROR, std::format("drm: failed to release crtc {} from disconnected connector {}", crtc->id, szName));
++        else
++            backend->backend->log(AQ_LOG_DEBUG, std::format("drm: released crtc {} from disconnected connector {}", crtc->id, szName));
++    }
++
+     status = DRM_MODE_DISCONNECTED;
+     releaseFBReferences();
+ 

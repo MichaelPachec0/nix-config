@@ -36,6 +36,15 @@
   # two presets differ in geometry/tone parameters, not tint.
   tint = "0x${theme.palette.bgMain}60";
 
+  # The extension + native-messaging host pair (pkgs/ff-hyprglass-bridge).
+  # callPackage here rather than an overlay attr: nothing else consumes it.
+  bridgePkg = pkgs.callPackage ../../../pkgs/ff-hyprglass-bridge {};
+
+  # theme.palette hex -> "r, g, b" for the glass chrome stylesheet.
+  rgb = hex: let
+    c = i: toString (lib.fromHexString (builtins.substring i 2 hex));
+  in "${c 0}, ${c 2}, ${c 4}";
+
   luaBool = b:
     if b
     then "true"
@@ -100,6 +109,109 @@
       match = {class = "heroic";};
     }
   ];
+  # Nix float -> Hyprland number without toString's "0.900000" padding.
+  num = builtins.toJSON;
+
+  # Per-app glass entry (hyprglass.apps). Every field maps to one window rule
+  # or one plugin tag, so `hyprctl clients -j` shows exactly what applied and
+  # any of it can be overridden live with hl.dsp.window.set_prop / tag.
+  appModule = lib.types.submodule {
+    options = {
+      name = lib.mkOption {
+        type = lib.types.str;
+        description = "Rule-name suffix.";
+      };
+      match = lib.mkOption {
+        type = lib.types.attrsOf lib.types.anything;
+        description = "hl.window_rule match table (class/title are ANCHORED regexes: \"firefox.*\" for firefox-dev).";
+      };
+      opacity = lib.mkOption {
+        type = lib.types.nullOr (lib.types.submodule {
+          options = {
+            active = lib.mkOption {
+              type = lib.types.float;
+              default = 0.9;
+            };
+            inactive = lib.mkOption {
+              type = lib.types.float;
+              default = 0.9;
+            };
+          };
+        });
+        default = null;
+        description = "Compositor opacity rule; null leaves the global opacity-all rule in force.";
+      };
+      preset = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "hyprglass preset name (hyprglass_preset_<name> tag); null = default_preset.";
+      };
+      theme = lib.mkOption {
+        type = lib.types.nullOr (lib.types.enum ["dark" "light"]);
+        default = null;
+        description = "hyprglass theme routing (hyprglass_theme_<t> tag); null = default_theme.";
+      };
+      mask = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Mask mode: glass only where the app's own pixels are transparent (hyprglass_masked tag).";
+      };
+      glass = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "false = hyprglass_disabled tag + no_blur, the window renders plain.";
+      };
+      videoRect = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Honour hyprglass_rect: tags from the playback bridge (dim holes + surface redraw); false = hyprglass_rect_off tag.";
+      };
+    };
+  };
+
+  # hyprglass.apps -> window rules + tags. One rule per effect, in the order
+  # opacity, glass-off, mask, preset, theme, rect-off. Opacity entries must
+  # splice in AFTER the global opacity-all rule to override it (hyprland.nix
+  # honours that by appending these after it).
+  appRules = lib.concatMap (app:
+    lib.optional (app.opacity != null) {
+      name = "opacity-${app.name}";
+      inherit (app) match;
+      opacity = "${num app.opacity.active} ${num app.opacity.inactive}";
+    }
+    ++ lib.optionals (!app.glass) [
+      {
+        name = "noglass-${app.name}";
+        inherit (app) match;
+        tag = "+hyprglass_disabled";
+      }
+      {
+        name = "noblur-${app.name}";
+        inherit (app) match;
+        no_blur = true;
+      }
+    ]
+    ++ lib.optional app.mask {
+      name = "maskglass-${app.name}";
+      inherit (app) match;
+      tag = "+hyprglass_masked";
+    }
+    ++ lib.optional (app.preset != null) {
+      name = "preset-${app.name}";
+      inherit (app) match;
+      tag = "+hyprglass_preset_${app.preset}";
+    }
+    ++ lib.optional (app.theme != null) {
+      name = "theme-${app.name}";
+      inherit (app) match;
+      tag = "+hyprglass_theme_${app.theme}";
+    }
+    ++ lib.optional (!app.videoRect) {
+      name = "rectoff-${app.name}";
+      inherit (app) match;
+      tag = "+hyprglass_rect_off";
+    })
+  config.hyprglass.apps;
 in {
   options.hyprglass = {
     # Not mkEnableOption: that hardcodes `default = false`, and the default
@@ -142,9 +254,189 @@ in {
       default = true;
       description = "Tag fullscreen windows hyprglass_disabled.";
     };
+
+    # ff-hyprglass-bridge behaviour (consumed by the native host and, over
+    # the native-messaging port, by the extension -- one config file, the
+    # host distributes it). The plugin is not involved.
+    videoBridge = {
+      playbackAction = lib.mkOption {
+        type = lib.types.enum ["strip" "undim" "rect"];
+        default = "rect";
+        description = ''
+          While video plays: strip = hyprglass_disabled + no_blur + no_dim on
+          the whole window; undim = no_dim only; rect = undim ONLY the
+          on-screen video rect(s), which the extension reports as
+          hyprglass_rect: tags and the plugin's dim overlay honours.
+        '';
+      };
+      rectFallback = lib.mkOption {
+        type = lib.types.enum ["none" "undim" "strip"];
+        default = "none";
+        description = ''
+          rect mode only: what to do when the window reports playback but no
+          visible rect (video scrolled out, hidden tab, canvas players, PiP).
+          none keeps Hyprland's normal dim.
+        '';
+      };
+      rectRateHz = lib.mkOption {
+        type = lib.types.ints.between 1 60;
+        default = 10;
+        description = ''
+          rect mode only: cap on rect updates per window per second while the
+          rect moves (scroll/resize). Each update costs one hyprctl fork and
+          one window-rule re-evaluation in the compositor.
+        '';
+      };
+      playSignal = lib.mkOption {
+        type = lib.types.enum ["activeTab" "audible" "any"];
+        default = "activeTab";
+        description = "Which playing videos count: the window's visible tab only, unmuted ones anywhere, or any at all.";
+      };
+      pauseGraceMs = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 3000;
+        description = "Pause must survive this long before tags clear, so seeks do not strobe the glass.";
+      };
+    };
+
+    # Per-app glass configuration, the declarative twin of the window rules
+    # and tags the plugin reads. Firefox: back in the global 0.9 opacity
+    # family so page content is glassy like every other window; the video
+    # stays pixel-exact through the rect redraw (hyprglass.rect) while the
+    # bridge reports a rect. Mask mode (opacity 1.0 + mask = true) remains
+    # one edit away. The PiP toplevel is opaque and glass-free on its own:
+    # the extension cannot see into it.
+    apps = lib.mkOption {
+      type = lib.types.listOf appModule;
+      default = [
+        {
+          name = "firefox";
+          match = {class = "firefox.*";};
+          opacity = {
+            active = 0.9;
+            inactive = 0.9;
+          };
+        }
+        {
+          name = "firefox-pip";
+          match = {
+            class = "firefox.*";
+            title = "^Picture-in-Picture$";
+          };
+          opacity = {
+            active = 1.0;
+            inactive = 1.0;
+          };
+          glass = false;
+          videoRect = false;
+        }
+      ];
+      description = "Per-app opacity/preset/theme/mask/glass/videoRect, expanded to window rules and plugin tags.";
+    };
+
+    # Plugin-side rect handling (plugin:hyprglass:rect_*), reloadable through
+    # hg.config like xray. Applies to any window carrying hyprglass_rect: tags.
+    rect = {
+      dim = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Draw the inactive dim with holes at the rects (rect_dim).";
+      };
+      redraw = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Redraw the window surface inside each rect on top of the translucent window (rect_redraw).";
+      };
+      redrawAlpha = lib.mkOption {
+        type = lib.types.float;
+        default = 1.0;
+        description = "Alpha of that redraw: 1.0 = video opaque, lower keeps some glass through it (rect_redraw_alpha).";
+      };
+      padding = lib.mkOption {
+        type = lib.types.int;
+        default = 0;
+        description = "Logical px grown around each rect, hides player edge fringe (rect_padding).";
+      };
+    };
+
+    # Firefox chrome stylesheet (HM-owned, imported by the profile's own
+    # userChrome.css) plus the bridge install.
+    firefox = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = config.hyprglass.enable;
+        defaultText = lib.literalExpression "config.hyprglass.enable";
+        description = "Ship the glass chrome stylesheet and the playback bridge.";
+      };
+      chromeAlpha = lib.mkOption {
+        type = lib.types.float;
+        default = 0.32;
+        description = "Alpha of the toolbox tint; multiplies with the compositor opacity of the firefox apps entry.";
+      };
+      chromeColor = lib.mkOption {
+        type = lib.types.str;
+        default = theme.palette.bgMain;
+        defaultText = lib.literalExpression "theme.palette.bgMain";
+        description = "Toolbox tint colour, 6-digit hex without #.";
+      };
+      profileDir = lib.mkOption {
+        type = lib.types.str;
+        default = "cxnb9yr4.dev-edition-default";
+        description = "Profile directory under ~/.mozilla/firefox that receives the glass chrome stylesheet.";
+      };
+    };
   };
 
-  config = {
+  config = lib.mkMerge [
+    (lib.mkIf config.hyprglass.firefox.enable {
+      # Firefox glass chrome. HM manages ONLY this stylesheet; the owner's
+      # hand-maintained userChrome.css imports it via a one-line @import at
+      # its top (their file backed up as userChrome.css.pre-hyprglass.bak),
+      # and their user.js carries browser.tabs.allow_transparent_browser.
+      # That split keeps their curated files theirs -- option (b) of the
+      # profile-management fork.
+      #
+      # Window root transparent so alpha reaches the compositor, toolbox
+      # tinted at chromeAlpha, bars transparent so the toolbox shade is the
+      # single chrome tint. Content area is untouched: pages paint their own
+      # backgrounds and the compositor opacity (hyprglass.apps) makes them
+      # glassy.
+      home.file.".mozilla/firefox/${config.hyprglass.firefox.profileDir}/chrome/hyprglass-glass.css".text = ''
+        /* hyprglass glass chrome -- managed by home-manager (hyprglass.nix).
+           Edit there, not here. */
+        /* body is load-bearing: since the chrome document became HTML the
+           opaque window background is painted by <body>, not #main-window.
+           Bisected on 156.0b1 with throwaway profiles: without body every
+           other rule here leaves the toolbar opaque. */
+        #main-window,
+        body,
+        #browser,
+        #tabbrowser-tabpanels {
+          background: transparent !important;
+        }
+        #navigator-toolbox {
+          background-color: rgba(${rgb config.hyprglass.firefox.chromeColor}, ${num config.hyprglass.firefox.chromeAlpha}) !important;
+          background-image: none !important;
+        }
+        #nav-bar,
+        #toolbar-menubar,
+        #PersonalToolbar {
+          background-color: transparent !important;
+        }
+      '';
+
+      # One config file for the whole bridge; the host reads it and hands the
+      # extension its half (playSignal, pauseGraceMs) over the port.
+      xdg.configFile."ff-hyprglass-bridge.json".text = builtins.toJSON {
+        inherit (config.hyprglass.videoBridge) playbackAction playSignal pauseGraceMs rectFallback rectRateHz;
+      };
+
+      # Links lib/mozilla/native-messaging-hosts/*.json into firefox's search
+      # path; the extension itself is loaded unpacked from
+      # ${bridgePkg}/share/ff-hyprglass-bridge/extension via about:debugging.
+      programs.firefox.nativeMessagingHosts = [bridgePkg];
+    })
+    {
     # The plugin config, at the TOP LEVEL of the generated hyprland.lua (the
     # hyprland module appends extraConfig verbatim; types.lines merges with
     # hyprland.nix's monitors block). This is the mechanism upstream's Lua
@@ -174,6 +466,10 @@ in {
           default_theme = "${theme.meta.mode}",
           default_preset = "current_set",
           xray = ${luaBool config.hyprglass.xray},
+          rect_dim = ${luaBool config.hyprglass.rect.dim},
+          rect_redraw = ${luaBool config.hyprglass.rect.redraw},
+          rect_redraw_alpha = ${num config.hyprglass.rect.redrawAlpha},
+          rect_padding = ${toString config.hyprglass.rect.padding},
           layers = { enabled = ${luaBool config.hyprglass.layers.enable} },
         })
         -- Three permanent presets so A/B runs side by side on tagged windows
@@ -372,6 +668,10 @@ in {
         })
         colorCritical;
 
+      # hyprglass.apps expanded (see appRules above). Emitted unconditionally
+      # like the other families; tags are inert without the plugin.
+      inherit appRules;
+
       # glassOptOut expands to noglass only, plus the fullscreen rule.
       # `fullscreen = true` verified accepted by 0.56.2's hl.window_rule.
       glassOptOutRules =
@@ -387,5 +687,6 @@ in {
           tag = "+hyprglass_disabled";
         };
     };
-  };
+    }
+  ];
 }

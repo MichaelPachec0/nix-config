@@ -1,0 +1,99 @@
+Reset the query interval on regained reachability, not on every network signal.
+
+Follow-up to the min-query-interval patch. That one resets the interval in
+on_network_changed() so that arriving somewhere new is not delayed by up to
+the interval. Measured over 5 hours of uptime on a laptop, the result ran at
+roughly twice the configured rate: one query per 300 to 390 seconds against a
+600 second interval.
+
+on_network_changed() is not "the network changed". It is called from the
+GNetworkMonitor "network-changed" signal, from the "notify::connectivity"
+handler, and directly during construction, and on a link that flaps it fires
+repeatedly for the same network. Every one of those was granting a free query.
+
+Gate the reset on the rising edge of locate URL reachability instead. That is
+the same edge locate_url_checked_cb() already computes and logs, and it is the
+edge that actually means the service went away and came back: a suspend and
+resume, or an association with a different network. A wobble that never takes
+the locate URL out of reach no longer resets anything.
+
+Also stop throttling a source that has nothing to replay. Throttling is only
+tolerable because the consumer is handed the last response instead of nothing,
+and priv->last_location is per-instance while the interval is process-global.
+The sources are refcounted singletons destroyed when the last client drops, so
+a consumer that starts a client after a quiet period can get a freshly
+constructed source whose last_location is NULL, and would then wait out the
+whole interval with no location at all rather than a slightly stale one. Let
+that query through; it costs at most one query per source lifetime.
+
+Known limitation: a move between networks where the locate URL never becomes
+unreachable does not reset the interval, so such a move can be answered with
+the previous location for up to the interval. get_internet_available() makes
+that more likely, since it overrides an unreachable result whenever glib still
+believes the internet is up. The bound is the interval and the consumer always
+has a location, which is the trade this whole mechanism is making anyway.
+
+--- a/src/gclue-web-source.c
++++ b/src/gclue-web-source.c
+@@ -170,9 +170,15 @@
+                 return;
+         }
+ 
++        /* Throttling is only tolerable because the consumer gets the last
++         * response instead. A source with nothing to replay would starve it
++         * for the whole interval, so let the query through: the singletons
++         * are destroyed once the last client drops, and a consumer that
++         * returns after that would otherwise wait with no location at all.
++         */
+         interval = gclue_config_get_min_query_interval
+                 (gclue_config_get_singleton ());
+-        if (interval > 0) {
++        if (interval > 0 && source->priv->last_location != NULL) {
+                 gint64 now = g_get_monotonic_time ();
+                 gint64 next = last_query_time +
+                         (gint64) interval * G_USEC_PER_SEC;
+@@ -368,6 +374,17 @@
+                 g_debug ("Network changed: %s",
+                          reachable ? "Enabling locate URL queries" :
+                                      "Disabling locate URL queries");
++
++                /* Regaining the service is the one moment the replayed
++                 * answer is most likely wrong, so spend a query on it
++                 * immediately. Gated on the edge rather than on the
++                 * network-changed signal itself: GNetworkMonitor emits that
++                 * on every connectivity wobble, and on a flapping link most
++                 * of them are the same network, which was enough to run at
++                 * roughly twice the configured rate.
++                 */
++                if (reachable)
++                        last_query_time = 0;
+         }
+         if (!reachable)
+                 return;
+@@ -439,13 +456,6 @@
+ 
+         cancellable_cancel_recreate (web);
+ 
+-        /* A different network is the one moment where the cached answer is
+-         * most likely wrong, so spend a query on it immediately. This is what
+-         * keeps the throttle from stranding a machine that travelled while
+-         * suspended on a location from the airport it left.
+-         */
+-        last_query_time = 0;
+-
+         if (web->priv->submit_url) {
+                 submit_addr = g_network_address_parse_uri (web->priv->submit_url,
+                                                            80, NULL);
+--- a/data/geoclue.conf.in
++++ b/data/geoclue.conf.in
+@@ -70,8 +70,8 @@
+ # Minimum number of seconds between two queries to a web geolocation
+ # service, across all sources. Queries that arrive sooner are answered with
+ # the last known location, and a single query is scheduled for when the
+-# interval expires. A change of network resets the interval, so arriving
+-# somewhere new is not delayed.
++# interval expires. Regaining reachability of the service resets the
++# interval, so a resume or a move to another network is not delayed.
+ #
+ # This bounds the request rate against providers that meter or bill per
+ # query: an interval of N seconds allows at most 2592000/N queries per 30
