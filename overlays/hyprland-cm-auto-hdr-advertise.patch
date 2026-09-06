@@ -1,0 +1,212 @@
+diff -ru a/src/Compositor.cpp b/src/Compositor.cpp
+--- a/src/Compositor.cpp
++++ b/src/Compositor.cpp
+@@ -957,7 +957,7 @@
+     }
+     Log::logger->log(Log::WARN, "FIXME: color management protocol is enabled, determine correct preferred image description");
+     // should determine some common settings to avoid unnecessary transformations while keeping maximum displayable precision
+-    return State::monitorState()->monitors().size() == 1 ? State::monitorState()->monitors()[0]->m_imageDescription :
++    return State::monitorState()->monitors().size() == 1 ? State::monitorState()->monitors()[0]->advertisedImageDescription() :
+                                                            CImageDescription::from(SImageDescription{.primaries = NColorPrimaries::BT709});
+ }
+ 
+diff -ru a/src/config/values/ConfigValues.cpp b/src/config/values/ConfigValues.cpp
+--- a/src/config/values/ConfigValues.cpp
++++ b/src/config/values/ConfigValues.cpp
+@@ -568,6 +568,9 @@
+         MS<Bool>("render:send_content_type", "Report content type to allow monitor profile autoswitch", true),
+         MS<Int>("render:cm_auto_hdr", "Auto-switch to hdr mode when fullscreen app is in hdr", 1,
+                 {.min = 0, .max = 2, .map = OptionMap{{"disable", 0}, {"hdr", 1}, {"hdredid", 2}}}),
++        MS<Bool>("render:cm_auto_hdr_advertise",
++                 "With cm_auto_hdr, advertise the HDR image description of HDR-capable outputs to clients while they idle in SDR, so apps detect an HDR display and can trigger the switch.",
++                 false),
+         MS<Bool>("render:new_render_scheduling", "enable new render scheduling, which should improve FPS on underpowered devices.", false),
+         MS<Int>("render:non_shader_cm", "Enable CM without shader.", 3, {.min = 0, .max = 3, .map = OptionMap{{"disable", 0}, {"always", 1}, {"ondemand", 2}, {"ignore", 3}}}),
+         MS<String>("render:cm_sdr_eotf", "Default transfer function for displaying SDR apps.", "default"),
+diff -ru a/src/output/Monitor.cpp b/src/output/Monitor.cpp
+--- a/src/output/Monitor.cpp
++++ b/src/output/Monitor.cpp
+@@ -539,8 +539,8 @@
+     }
+ }
+ 
+-void CMonitor::applyCMType(NCMType::eCMType cmType, NTransferFunction::eTF cmSdrEotf) {
+-    auto                                                              oldImageDescription = m_imageDescription;
++NColorManagement::PImageDescription CMonitor::makeImageDescription(NCMType::eCMType cmType, NTransferFunction::eTF cmSdrEotf) {
++    NColorManagement::PImageDescription                               desc                = m_imageDescription;
+     const auto                                                        chosenSdrEotf       = chooseTF(cmSdrEotf);
+ 
+     const auto                                                        masteringPrimaries  = getMasteringPrimaries();
+@@ -551,12 +551,12 @@
+ 
+     switch (cmType) {
+         case NCMType::CM_SRGB:
+-            m_imageDescription = CImageDescription::from({.transferFunction = chosenSdrEotf,
++            desc = CImageDescription::from({.transferFunction = chosenSdrEotf,
+                                                           .primariesNamed   = NColorManagement::CM_PRIMARIES_SRGB,
+                                                           .primaries        = NColorManagement::getPrimaries(NColorManagement::CM_PRIMARIES_SRGB)});
+             break; // assumes SImageDescription defaults to sRGB
+         case NCMType::CM_WIDE:
+-            m_imageDescription = CImageDescription::from({.transferFunction    = chosenSdrEotf,
++            desc = CImageDescription::from({.transferFunction    = chosenSdrEotf,
+                                                           .primariesNameSet    = true,
+                                                           .primariesNamed      = NColorManagement::CM_PRIMARIES_BT2020,
+                                                           .primaries           = NColorManagement::getPrimaries(NColorManagement::CM_PRIMARIES_BT2020),
+@@ -566,7 +566,7 @@
+                                                           .maxFALL             = maxFALL});
+             break;
+         case NCMType::CM_DCIP3:
+-            m_imageDescription = CImageDescription::from({.transferFunction    = chosenSdrEotf,
++            desc = CImageDescription::from({.transferFunction    = chosenSdrEotf,
+                                                           .primariesNameSet    = true,
+                                                           .primariesNamed      = NColorManagement::CM_PRIMARIES_DCI_P3,
+                                                           .primaries           = NColorManagement::getPrimaries(NColorManagement::CM_PRIMARIES_DCI_P3),
+@@ -576,7 +576,7 @@
+                                                           .maxFALL             = maxFALL});
+             break;
+         case NCMType::CM_DP3:
+-            m_imageDescription = CImageDescription::from({.transferFunction    = chosenSdrEotf,
++            desc = CImageDescription::from({.transferFunction    = chosenSdrEotf,
+                                                           .primariesNameSet    = true,
+                                                           .primariesNamed      = NColorManagement::CM_PRIMARIES_DISPLAY_P3,
+                                                           .primaries           = NColorManagement::getPrimaries(NColorManagement::CM_PRIMARIES_DISPLAY_P3),
+@@ -586,7 +586,7 @@
+                                                           .maxFALL             = maxFALL});
+             break;
+         case NCMType::CM_ADOBE:
+-            m_imageDescription = CImageDescription::from({.transferFunction    = chosenSdrEotf,
++            desc = CImageDescription::from({.transferFunction    = chosenSdrEotf,
+                                                           .primariesNameSet    = true,
+                                                           .primariesNamed      = NColorManagement::CM_PRIMARIES_ADOBE_RGB,
+                                                           .primaries           = NColorManagement::getPrimaries(NColorManagement::CM_PRIMARIES_ADOBE_RGB),
+@@ -596,7 +596,7 @@
+                                                           .maxFALL             = maxFALL});
+             break;
+         case NCMType::CM_EDID:
+-            m_imageDescription = CImageDescription::from({.transferFunction    = chosenSdrEotf,
++            desc = CImageDescription::from({.transferFunction    = chosenSdrEotf,
+                                                           .primariesNameSet    = false,
+                                                           .primariesNamed      = NColorManagement::CM_PRIMARIES_BT2020,
+                                                           .primaries           = masteringPrimaries,
+@@ -606,7 +606,7 @@
+                                                           .maxFALL             = maxFALL});
+             break;
+         case NCMType::CM_HDR:
+-            m_imageDescription = CImageDescription::from({.transferFunction    = NColorManagement::CM_TRANSFER_FUNCTION_ST2084_PQ,
++            desc = CImageDescription::from({.transferFunction    = NColorManagement::CM_TRANSFER_FUNCTION_ST2084_PQ,
+                                                           .primariesNameSet    = true,
+                                                           .primariesNamed      = NColorManagement::CM_PRIMARIES_BT2020,
+                                                           .primaries           = NColorManagement::getPrimaries(NColorManagement::CM_PRIMARIES_BT2020),
+@@ -619,7 +619,7 @@
+                                                           .maxFALL             = maxFALL});
+             break;
+         case NCMType::CM_HDR_EDID:
+-            m_imageDescription = CImageDescription::from(
++            desc = CImageDescription::from(
+                 {.transferFunction = NColorManagement::CM_TRANSFER_FUNCTION_ST2084_PQ,
+                  .primariesNameSet = false,
+                  .primariesNamed   = NColorManagement::CM_PRIMARIES_BT2020,
+@@ -636,12 +636,29 @@
+         default: UNREACHABLE();
+     }
+     if ((minLuminance() >= 0 || maxLuminance() > 0) && (cmType == NCMType::CM_HDR || cmType == NCMType::CM_HDR_EDID))
+-        m_imageDescription = m_imageDescription->with({
+-            .min       = minLuminance() >= 0 ? minLuminance() : m_imageDescription->value().luminances.min, //
+-            .max       = maxLuminance() > 0 ? maxLuminance() : m_imageDescription->value().luminances.max,  //
+-            .reference = m_imageDescription->value().luminances.reference                                   //
++        desc = desc->with({
++            .min       = minLuminance() >= 0 ? minLuminance() : desc->value().luminances.min, //
++            .max       = maxLuminance() > 0 ? maxLuminance() : desc->value().luminances.max,  //
++            .reference = desc->value().luminances.reference                                   //
+         });
+ 
++    return desc;
++}
++
++void CMonitor::applyCMType(NCMType::eCMType cmType, NTransferFunction::eTF cmSdrEotf) {
++    static auto PAUTOHDR            = CConfigValue<Config::INTEGER>("render:cm_auto_hdr");
++    auto        oldImageDescription = m_imageDescription;
++
++    m_imageDescription = makeImageDescription(cmType, cmSdrEotf);
++
++    // The description this output flips to under cm_auto_hdr (mirrors
++    // IHyprRenderer::handleFullscreenSettings: 2 = hdredid, otherwise hdr).
++    // Built here, next to the real one, so it follows the same EDID/monitor-rule
++    // luminance overrides; CImageDescription::from() dedups by value, so its id
++    // is stable across the SDR <-> HDR flips and clients do not see churn.
++    m_autoHDRImageDescription =
++        supportsHDR() ? makeImageDescription(*PAUTOHDR == 2 ? NCMType::CM_HDR_EDID : NCMType::CM_HDR, cmSdrEotf) : NColorManagement::PImageDescription{};
++
+     if (oldImageDescription != m_imageDescription) {
+         if (PROTO::colorManagement)
+             PROTO::colorManagement->onMonitorImageDescriptionChanged(m_self);
+@@ -649,6 +666,22 @@
+     }
+ }
+ 
++NColorManagement::PImageDescription CMonitor::advertisedImageDescription() {
++    static auto PAUTOHDR   = CConfigValue<Config::INTEGER>("render:cm_auto_hdr");
++    static auto PADVERTISE = CConfigValue<Config::INTEGER>("render:cm_auto_hdr_advertise");
++
++    // Under cm_auto_hdr the output idles in SDR and switches to HDR only once a
++    // fullscreen client presents a PQ/HLG surface. Clients decide whether to do
++    // that from the output / preferred image description, which is the SDR one
++    // (sRGB, 80 cd/m2), so Firefox, mpv and friends all conclude "SDR display"
++    // and never ask: auto-HDR cannot start on its own. When asked to, tell
++    // HDR-capable outputs' clients about the HDR description they would get.
++    if (*PADVERTISE && *PAUTOHDR && supportsHDR() && m_autoHDRImageDescription.valid())
++        return m_autoHDRImageDescription;
++
++    return m_imageDescription;
++}
++
+ bool CMonitor::applyMonitorRuleSoft(Config::CMonitorRule&& pMonitorRule) {
+     m_activeMonitorRule = std::move(pMonitorRule);
+     m_reservedArea.setStatic(m_activeMonitorRule.m_reservedArea);
+diff -ru a/src/output/Monitor.hpp b/src/output/Monitor.hpp
+--- a/src/output/Monitor.hpp
++++ b/src/output/Monitor.hpp
+@@ -261,6 +261,11 @@
+         void         onConnect(bool noRule);
+         void         onDisconnect(bool destroy = false);
+         void         applyCMType(NCMType::eCMType cmType, NTransferFunction::eTF cmSdrEotf);
++        NColorManagement::PImageDescription makeImageDescription(NCMType::eCMType cmType, NTransferFunction::eTF cmSdrEotf);
++        // what clients are told about this output: the current image description, or
++        // under cm_auto_hdr + cm_auto_hdr_advertise the HDR one this output would
++        // switch to, so that clients learn the display is HDR-capable and ask for it.
++        NColorManagement::PImageDescription advertisedImageDescription();
+         void         addDamage(const pixman_region32_t* rg);
+         void         addDamage(const CRegion& rg);
+         void         addDamage(const CBox& box);
+@@ -367,6 +372,7 @@
+         std::optional<bool>                 m_cachedSameGPU;
+ 
+         NColorManagement::PImageDescription m_imageDescription = NColorManagement::CImageDescription::from(NColorManagement::SImageDescription{});
++        NColorManagement::PImageDescription m_autoHDRImageDescription; // valid only when supportsHDR()
+         bool                                m_noShaderCTM      = false; // sets drm CTM, restore needed
+ 
+         bool                                m_blurFBDirty        = true;
+diff -ru a/src/protocols/ColorManagement.cpp b/src/protocols/ColorManagement.cpp
+--- a/src/protocols/ColorManagement.cpp
++++ b/src/protocols/ColorManagement.cpp
+@@ -269,7 +269,7 @@
+         if (!m_output || !m_output->m_monitor.valid())
+             RESOURCE->m_resource->sendFailed(WP_IMAGE_DESCRIPTION_V1_CAUSE_NO_OUTPUT, "No output");
+         else {
+-            RESOURCE->m_settings = m_output->m_monitor->m_imageDescription;
++            RESOURCE->m_settings = m_output->m_monitor->advertisedImageDescription();
+ 
+             RESOURCE->sendMaybeReady();
+         }
+diff -ru a/src/protocols/core/Compositor.cpp b/src/protocols/core/Compositor.cpp
+--- a/src/protocols/core/Compositor.cpp
++++ b/src/protocols/core/Compositor.cpp
+@@ -685,7 +685,7 @@
+     else if (m_hlSurface.valid() && WINDOW)
+         monitor = WINDOW->m_monitor;
+ 
+-    return monitor ? monitor->m_imageDescription : g_pCompositor->getPreferredImageDescription();
++    return monitor ? monitor->advertisedImageDescription() : g_pCompositor->getPreferredImageDescription();
+ }
+ 
+ void CWLSurfaceResource::sortSubsurfaces() {

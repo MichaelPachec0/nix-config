@@ -1,0 +1,220 @@
+diff -ru a/src/helpers/Format.cpp b/src/helpers/Format.cpp
+--- a/src/helpers/Format.cpp
++++ b/src/helpers/Format.cpp
+@@ -41,6 +41,9 @@
+         case DRM_FORMAT_NV21:
+         case DRM_FORMAT_NV16:
+         case DRM_FORMAT_NV61:
++        case DRM_FORMAT_P010:
++        case DRM_FORMAT_P012:
++        case DRM_FORMAT_P016:
+         case DRM_FORMAT_YUV410:
+         case DRM_FORMAT_YUV411:
+         case DRM_FORMAT_YUV420:
+diff -ru a/src/helpers/Format.hpp b/src/helpers/Format.hpp
+--- a/src/helpers/Format.hpp
++++ b/src/helpers/Format.hpp
+@@ -16,6 +16,17 @@
+     SHMFormat   drmToShm(DRMFormat drm);
+     DRMFormat   shmToDRM(SHMFormat shm);
+     bool        isFormatYUV(uint32_t drmFormat);
++
++    // Which YCbCr matrix the driver should use when it converts a YUV dmabuf on
++    // sampling. AUTO = guess from bit depth (deep semi-planar formats carry
++    // BT.2020, 8-bit is BT.709); the rest name it explicitly, normally from the
++    // surface's color-management image description once the buffer is attached.
++    enum eYUVColorSpace : uint8_t {
++        YUV_CS_AUTO = 0,
++        YUV_CS_BT601,
++        YUV_CS_BT709,
++        YUV_CS_BT2020,
++    };
+     bool        isShmBufferLayoutValid(DRMFormat drmFormat, const Vector2D& size, int32_t stride, int32_t offset, size_t poolSize);
+     std::string drmFormatName(DRMFormat drm);
+     std::string drmModifierName(uint64_t mod);
+diff -ru a/src/protocols/core/Compositor.cpp b/src/protocols/core/Compositor.cpp
+--- a/src/protocols/core/Compositor.cpp
++++ b/src/protocols/core/Compositor.cpp
+@@ -12,6 +12,7 @@
+ #include "../PresentationTime.hpp"
+ #include "../DRMSyncobj.hpp"
+ #include "../types/DMABuffer.hpp"
++#include "../ColorManagement.hpp"
+ #include "../../render/Renderer.hpp"
+ #include "config/ConfigValue.hpp"
+ #include "../../managers/eventLoop/EventLoopManager.hpp"
+@@ -628,6 +629,24 @@
+     auto lastTexture = m_current.texture;
+     m_current.updateFrom(state);
+ 
++    // A YUV dmabuf was imported before any surface owned it, with a guessed
++    // YCbCr matrix. Now the surface's image description says which one the
++    // content really uses (BT.2020 for PQ/HLG video, BT.709 otherwise), so make
++    // the buffer's texture match and pick up the re-imported texture.
++    if (m_current.buffer && m_current.buffer->type() == Aquamarine::BUFFER_TYPE_DMABUF) {
++        const auto DMABUF = dc<CDMABuffer*>(m_current.buffer.m_buffer.get());
++        if (DMABUF && NFormatUtils::isFormatYUV(DMABUF->dmabuf().format)) {
++            auto cs = NFormatUtils::YUV_CS_BT709;
++            if (m_colorManagement.valid() && m_colorManagement->hasImageDescription()) {
++                const auto& DESC = m_colorManagement->imageDescription();
++                if (m_colorManagement->isHDR() || DESC.primariesNamed == CM_PRIMARIES_BT2020)
++                    cs = NFormatUtils::YUV_CS_BT2020;
++            }
++            DMABUF->setYUVColorSpace(cs);
++            m_current.texture = DMABUF->m_texture;
++        }
++    }
++
+     if (m_current.buffer) {
+         if (m_current.buffer->isSynchronous())
+             m_current.updateSynchronousTexture(lastTexture);
+diff -ru a/src/protocols/types/DMABuffer.cpp b/src/protocols/types/DMABuffer.cpp
+--- a/src/protocols/types/DMABuffer.cpp
++++ b/src/protocols/types/DMABuffer.cpp
+@@ -73,6 +73,22 @@
+     // FIXME:
+ }
+ 
++void CDMABuffer::setYUVColorSpace(NFormatUtils::eYUVColorSpace cs) {
++    if (cs == NFormatUtils::YUV_CS_AUTO || cs == m_yuvColorSpace || !NFormatUtils::isFormatYUV(m_attrs.format))
++        return;
++
++    // the same buffer objects get reused frame after frame (a pool of a few), so
++    // this happens once per buffer, not once per frame.
++    auto tex = g_pHyprRenderer->createTexture(m_attrs, m_opaque, cs);
++    if (!tex || !tex->ok()) {
++        Log::logger->log(Log::ERR, "CDMABuffer: failed to re-import EGLImage for YUV color space {}", sc<int>(cs));
++        return;
++    }
++
++    m_texture       = tex;
++    m_yuvColorSpace = cs;
++}
++
+ bool CDMABuffer::good() {
+     return m_success;
+ }
+diff -ru a/src/protocols/types/DMABuffer.hpp b/src/protocols/types/DMABuffer.hpp
+--- a/src/protocols/types/DMABuffer.hpp
++++ b/src/protocols/types/DMABuffer.hpp
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include "Buffer.hpp"
++#include "../../helpers/Format.hpp"
+ #include <hyprutils/os/FileDescriptor.hpp>
+ 
+ class CDMABuffer : public IHLBuffer {
+@@ -17,11 +18,16 @@
+     virtual void                                   endDataPtr();
+     bool                                           good();
+     void                                           closeFDs();
++    // Re-import the texture with this YCbCr matrix if it differs from the one
++    // used so far. No-op for RGB formats. Called when a surface with a
++    // color-management image description attaches the buffer.
++    void                                           setYUVColorSpace(NFormatUtils::eYUVColorSpace cs);
+     std::vector<Hyprutils::OS::CFileDescriptor>    exportSyncFiles();
+     bool                                           m_success = false;
+ 
+   private:
+-    Aquamarine::SDMABUFAttrs m_attrs;
++    Aquamarine::SDMABUFAttrs     m_attrs;
++    NFormatUtils::eYUVColorSpace m_yuvColorSpace = NFormatUtils::YUV_CS_AUTO;
+ 
+     struct {
+         CHyprSignalListener resourceDestroy;
+diff -ru a/src/render/GLRenderer.cpp b/src/render/GLRenderer.cpp
+--- a/src/render/GLRenderer.cpp
++++ b/src/render/GLRenderer.cpp
+@@ -195,9 +195,9 @@
+     return makeShared<CGLTexture>(drmFormat, pixels, stride, size, keepDataCopy, opaque);
+ }
+ 
+-SP<ITexture> CHyprGLRenderer::createTexture(const Aquamarine::SDMABUFAttrs& attrs, bool opaque) {
++SP<ITexture> CHyprGLRenderer::createTexture(const Aquamarine::SDMABUFAttrs& attrs, bool opaque, NFormatUtils::eYUVColorSpace yuvColorSpace) {
+     g_pHyprOpenGL->makeEGLCurrent();
+-    const auto image = g_pHyprOpenGL->createEGLImage(attrs);
++    const auto image = g_pHyprOpenGL->createEGLImage(attrs, yuvColorSpace);
+     if (!image)
+         return nullptr;
+     return makeShared<CGLTexture>(attrs, image, opaque);
+diff -ru a/src/render/GLRenderer.hpp b/src/render/GLRenderer.hpp
+--- a/src/render/GLRenderer.hpp
++++ b/src/render/GLRenderer.hpp
+@@ -15,7 +15,7 @@
+         SP<ITexture>            createStencilTexture(const int width, const int height) override;
+         SP<ITexture>            createTexture(bool opaque = false) override;
+         SP<ITexture>            createTexture(uint32_t drmFormat, uint8_t* pixels, uint32_t stride, const Vector2D& size, bool keepDataCopy = false, bool opaque = false) override;
+-        SP<ITexture>            createTexture(const Aquamarine::SDMABUFAttrs&, bool opaque = false) override;
++        SP<ITexture>            createTexture(const Aquamarine::SDMABUFAttrs&, bool opaque = false, NFormatUtils::eYUVColorSpace yuvColorSpace = NFormatUtils::YUV_CS_AUTO) override;
+         SP<ITexture>            createTexture(const int width, const int height, unsigned char* const data) override;
+         SP<ITexture>            createTexture(cairo_surface_t* cairo) override;
+         SP<ITexture>            createTexture(std::span<const float> lut3D, size_t N) override;
+diff -ru a/src/render/OpenGL.cpp b/src/render/OpenGL.cpp
+--- a/src/render/OpenGL.cpp
++++ b/src/render/OpenGL.cpp
+@@ -612,8 +612,8 @@
+     m_drmFormats = dmaFormats;
+ }
+ 
+-EGLImageKHR CHyprOpenGLImpl::createEGLImage(const Aquamarine::SDMABUFAttrs& attrs) {
+-    std::array<EGLint, 50> attribs;
++EGLImageKHR CHyprOpenGLImpl::createEGLImage(const Aquamarine::SDMABUFAttrs& attrs, NFormatUtils::eYUVColorSpace yuvColorSpace) {
++    std::array<EGLint, 64> attribs;
+     size_t                 idx = 0;
+ 
+     attribs[idx++] = EGL_WIDTH;
+@@ -651,6 +651,29 @@
+         }
+     }
+ 
++    // YUV dmabufs are bound as GL_TEXTURE_2D and the driver converts YCbCr ->
++    // RGB when the texture is sampled (Mesa lowers it in the shader). Which
++    // matrix and range it uses come from these two hints, and
++    // EGL_EXT_image_dma_buf_import defaults them to BT.601 / narrow when they
++    // are absent. Video is BT.709 (HD) or BT.2020 (HDR), never BT.601, so the
++    // default skews hue: visibly red on BT.2020 content (a browser's HDR video
++    // exported as P010 or NV12 lands here). The exact matrix is named by the
++    // surface's image description, which is not known at import time; the
++    // buffer is re-imported with the right one once a surface attaches it (see
++    // CDMABuffer::setYUVColorSpace). Until then, guess from bit depth.
++    if (NFormatUtils::isFormatYUV(attrs.format)) {
++        auto cs = yuvColorSpace;
++        if (cs == NFormatUtils::YUV_CS_AUTO) {
++            const bool DEEP = attrs.format == DRM_FORMAT_P010 || attrs.format == DRM_FORMAT_P012 || attrs.format == DRM_FORMAT_P016;
++            cs              = DEEP ? NFormatUtils::YUV_CS_BT2020 : NFormatUtils::YUV_CS_BT709;
++        }
++
++        attribs[idx++] = EGL_YUV_COLOR_SPACE_HINT_EXT;
++        attribs[idx++] = cs == NFormatUtils::YUV_CS_BT2020 ? EGL_ITU_REC2020_EXT : cs == NFormatUtils::YUV_CS_BT601 ? EGL_ITU_REC601_EXT : EGL_ITU_REC709_EXT;
++        attribs[idx++] = EGL_SAMPLE_RANGE_HINT_EXT;
++        attribs[idx++] = EGL_YUV_NARROW_RANGE_EXT;
++    }
++
+     attribs[idx++] = EGL_IMAGE_PRESERVED_KHR;
+     attribs[idx++] = EGL_TRUE;
+     attribs[idx++] = EGL_NONE;
+diff -ru a/src/render/OpenGL.hpp b/src/render/OpenGL.hpp
+--- a/src/render/OpenGL.hpp
++++ b/src/render/OpenGL.hpp
+@@ -236,7 +236,7 @@
+ 
+         std::vector<SDRMFormat>                   getDRMFormats();
+         std::vector<uint64_t>                     getDRMFormatModifiers(DRMFormat format);
+-        EGLImageKHR                               createEGLImage(const Aquamarine::SDMABUFAttrs& attrs);
++        EGLImageKHR                               createEGLImage(const Aquamarine::SDMABUFAttrs& attrs, NFormatUtils::eYUVColorSpace yuvColorSpace = NFormatUtils::YUV_CS_AUTO);
+ 
+         bool                                      initShaders(const std::string& path = "");
+ 
+diff -ru a/src/render/Renderer.hpp b/src/render/Renderer.hpp
+--- a/src/render/Renderer.hpp
++++ b/src/render/Renderer.hpp
+@@ -169,7 +169,7 @@
+         virtual SP<ITexture>         createStencilTexture(const int width, const int height)                                                                                   = 0;
+         virtual SP<ITexture>         createTexture(bool opaque = false)                                                                                                        = 0;
+         virtual SP<ITexture>         createTexture(uint32_t drmFormat, uint8_t* pixels, uint32_t stride, const Vector2D& size, bool keepDataCopy = false, bool opaque = false) = 0;
+-        virtual SP<ITexture>         createTexture(const Aquamarine::SDMABUFAttrs&, bool opaque = false)                                                                       = 0;
++        virtual SP<ITexture>         createTexture(const Aquamarine::SDMABUFAttrs&, bool opaque = false, NFormatUtils::eYUVColorSpace yuvColorSpace = NFormatUtils::YUV_CS_AUTO) = 0;
+         virtual SP<ITexture>         createTexture(const int width, const int height, unsigned char* const)                                                                    = 0;
+         virtual SP<ITexture>         createTexture(cairo_surface_t* cairo)                                                                                                     = 0;
+         virtual SP<ITexture>         createTexture(std::span<const float> lut3D, size_t N)                                                                                     = 0;

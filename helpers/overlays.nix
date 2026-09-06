@@ -250,6 +250,54 @@
           # create_source moved the crash instead of removing it. Still unfixed
           # on main as of 2026-08-20, so upstreamable rather than a backport.
           ../overlays/hyprland-session-lock-surface-stale-output.patch
+          # YUV dmabufs (NV12/P010 from a hardware video decoder, e.g. Firefox
+          # in HDR mode exporting P010) are bound as GL_TEXTURE_2D and Mesa does
+          # the YCbCr->RGB conversion at sample time using the EGLImage's
+          # colour-space hint. createEGLImage passed none, so EGL's default
+          # BT.601/narrow applied to BT.2020 HDR video: a red hue skew on every
+          # frame, windowed or fullscreen, with or without the monitor in HDR.
+          # Sets the hint at import (guessed from bit depth: P010/P012/P016 ->
+          # BT.2020, 8-bit -> BT.709) and re-imports the buffer with the matrix
+          # named by the surface's image description once a surface attaches it
+          # (Firefox exports HDR as 8-bit NV12 tagged BT.2020/PQ, so bit depth
+          # alone picks wrong). Teaches isFormatYUV about P010/P012/P016. Same
+          # gap on main as of 2026-09-05, so upstreamable as-is.
+          ../overlays/hyprland-yuv-dmabuf-colorspace-hint.patch
+          # Under cm_auto_hdr an HDR-capable output idles in SDR and Hyprland
+          # advertises exactly that to clients (output + preferred image
+          # description = sRGB, 80 cd/m2), so Firefox, mpv and everything else
+          # conclude "SDR display" and never present PQ: auto-HDR can only ever
+          # start from a client-side force switch (Firefox
+          # gfx.color_management.hdr.force_enabled, mpv
+          # --target-colorspace-hint-mode=source). Adds render:cm_auto_hdr_advertise
+          # (opt-in): HDR-capable outputs advertise the HDR description they
+          # would switch to. Refactors applyCMType into a reusable builder so the
+          # advertised description carries the same EDID/rule luminance
+          # overrides. Same gap on main as of 2026-09-05.
+          ../overlays/hyprland-cm-auto-hdr-advertise.patch
+          # wp_color_representation_v1 (wayland-protocols 1.49 staging, which
+          # Hyprland already requires): a client names the YCbCr matrix and
+          # range of its YUV buffers per surface. Feeds the YUV import hints
+          # ahead of the image-description inference in the colorspace-hint
+          # patch above, so full-range, BT.601 and BT.2020 content no longer
+          # depend on guessing. Advertises premultiplied alpha and
+          # identity/bt601/bt709/bt2020; pixel_format mismatches are logged
+          # and ignored rather than killing the client. mpv already asks for
+          # this protocol and logged its absence. Stacks on the yuv patch.
+          ../overlays/hyprland-color-representation.patch
+          # Root cause of red video from YUV-exporting clients (Firefox HDR):
+          # YUV dmabufs were bound as GL_TEXTURE_2D and sampled with sampler2D,
+          # but Mesa only lowers the multi-plane fetch and the YCbCr -> RGB
+          # matrix for samplerExternalOES, so a non-native NV12/P010 drew as its
+          # luma plane (red monochrome) and the import hints from the two
+          # patches above never applied. Binds YUV as GL_TEXTURE_EXTERNAL_OES and
+          # adds a USE_EXTERNAL variant of surface.frag (samplerExternalOES) so
+          # the full CM/tonemap/blur pipeline runs on video too. Also stops
+          # dropping external-only modifiers for YUV formats, so tiled and
+          # 10-bit (P010) video buffers can be exported directly instead of
+          # falling back to implicit-modifier NV12. Same gap on main as of
+          # 2026-09-05.
+          ../overlays/hyprland-yuv-external-sampler.patch
           # A window-rule `tag = "+foo"` was never removed once the rule stopped
           # matching: applyDynamicRule stored the effect WITH its "+" in
           # m_dynamicTags, while CTagKeeper strips the prefix and stores
