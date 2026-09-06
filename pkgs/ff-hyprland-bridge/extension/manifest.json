@@ -1,11 +1,11 @@
 {
   "manifest_version": 2,
-  "name": "ff-hyprglass-bridge",
-  "version": "0.1.0",
-  "description": "Signals Hyprland (hyprglass) when a video is playing in this window.",
+  "name": "ff-hyprland-bridge",
+  "version": "0.2.0",
+  "description": "Reports video playback rects to Hyprland so hyprglass can undim them, and answers video-dynamic-range per window from the monitor's EDID, which Firefox's content process cannot do on Wayland.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "ff-hyprglass-bridge@michaelpacheco.org",
+      "id": "ff-hyprland-bridge@michaelpacheco.org",
       "strict_min_version": "115.0"
     }
   },

@@ -1,4 +1,4 @@
-// Aggregates per-frame media reports into a per-WINDOW state (playing, and
+// ff-hyprland-bridge background. Aggregates per-frame media reports into a per-WINDOW state (playing, and
 // in rect mode the visible video rects) and forwards transitions to the
 // native host, which tags the Hyprland window.
 // Config (playbackAction, playSignal, pauseGraceMs, rectRateHz) arrives FROM
@@ -6,7 +6,7 @@
 // exactly one config file. rectRateHz is relayed to the content scripts.
 "use strict";
 
-const HOST = "ff_hyprglass_bridge";
+const HOST = "ff_hyprland_bridge";
 
 let config = {playbackAction: "rect", playSignal: "activeTab", pauseGraceMs: 3000, rectRateHz: 10};
 let port = null;

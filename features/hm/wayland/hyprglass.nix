@@ -36,10 +36,6 @@
   # two presets differ in geometry/tone parameters, not tint.
   tint = "0x${theme.palette.bgMain}60";
 
-  # The extension + native-messaging host pair (pkgs/ff-hyprglass-bridge).
-  # callPackage here rather than an overlay attr: nothing else consumes it.
-  bridgePkg = pkgs.callPackage ../../../pkgs/ff-hyprglass-bridge {};
-
   # theme.palette hex -> "r, g, b" for the glass chrome stylesheet.
   rgb = hex: let
     c = i: toString (lib.fromHexString (builtins.substring i 2 hex));
@@ -213,6 +209,13 @@
     })
   config.hyprglass.apps;
 in {
+  # The bridge options used to live under hyprglass.videoBridge; they are now
+  # ffHyprlandBridge.video (features/hm/wayland/ff-hyprland-bridge.nix).
+  imports =
+    map (name:
+      lib.mkRenamedOptionModule ["hyprglass" "videoBridge" name] ["ffHyprlandBridge" "video" name])
+    ["playbackAction" "rectFallback" "rectRateHz" "playSignal" "pauseGraceMs"];
+
   options.hyprglass = {
     # Not mkEnableOption: that hardcodes `default = false`, and the default
     # here reads config: glass is on exactly where the hardware can afford
@@ -253,50 +256,6 @@ in {
       type = lib.types.bool;
       default = true;
       description = "Tag fullscreen windows hyprglass_disabled.";
-    };
-
-    # ff-hyprglass-bridge behaviour (consumed by the native host and, over
-    # the native-messaging port, by the extension -- one config file, the
-    # host distributes it). The plugin is not involved.
-    videoBridge = {
-      playbackAction = lib.mkOption {
-        type = lib.types.enum ["strip" "undim" "rect"];
-        default = "rect";
-        description = ''
-          While video plays: strip = hyprglass_disabled + no_blur + no_dim on
-          the whole window; undim = no_dim only; rect = undim ONLY the
-          on-screen video rect(s), which the extension reports as
-          hyprglass_rect: tags and the plugin's dim overlay honours.
-        '';
-      };
-      rectFallback = lib.mkOption {
-        type = lib.types.enum ["none" "undim" "strip"];
-        default = "none";
-        description = ''
-          rect mode only: what to do when the window reports playback but no
-          visible rect (video scrolled out, hidden tab, canvas players, PiP).
-          none keeps Hyprland's normal dim.
-        '';
-      };
-      rectRateHz = lib.mkOption {
-        type = lib.types.ints.between 1 60;
-        default = 10;
-        description = ''
-          rect mode only: cap on rect updates per window per second while the
-          rect moves (scroll/resize). Each update costs one hyprctl fork and
-          one window-rule re-evaluation in the compositor.
-        '';
-      };
-      playSignal = lib.mkOption {
-        type = lib.types.enum ["activeTab" "audible" "any"];
-        default = "activeTab";
-        description = "Which playing videos count: the window's visible tab only, unmuted ones anywhere, or any at all.";
-      };
-      pauseGraceMs = lib.mkOption {
-        type = lib.types.ints.positive;
-        default = 3000;
-        description = "Pause must survive this long before tags clear, so seeks do not strobe the glass.";
-      };
     };
 
     # Per-app glass configuration, the declarative twin of the window rules
@@ -366,7 +325,7 @@ in {
         type = lib.types.bool;
         default = config.hyprglass.enable;
         defaultText = lib.literalExpression "config.hyprglass.enable";
-        description = "Ship the glass chrome stylesheet and the playback bridge.";
+        description = "Ship the glass chrome stylesheet and enable the Firefox to Hyprland bridge.";
       };
       chromeAlpha = lib.mkOption {
         type = lib.types.float;
@@ -425,16 +384,9 @@ in {
         }
       '';
 
-      # One config file for the whole bridge; the host reads it and hands the
-      # extension its half (playSignal, pauseGraceMs) over the port.
-      xdg.configFile."ff-hyprglass-bridge.json".text = builtins.toJSON {
-        inherit (config.hyprglass.videoBridge) playbackAction playSignal pauseGraceMs rectFallback rectRateHz;
-      };
-
-      # Links lib/mozilla/native-messaging-hosts/*.json into firefox's search
-      # path; the extension itself is loaded unpacked from
-      # ${bridgePkg}/share/ff-hyprglass-bridge/extension via about:debugging.
-      programs.firefox.nativeMessagingHosts = [bridgePkg];
+      # The playback bridge moved to its own module (ffHyprlandBridge); the
+      # glass chrome just turns it on.
+      ffHyprlandBridge.enable = true;
     })
     {
     # The plugin config, at the TOP LEVEL of the generated hyprland.lua (the

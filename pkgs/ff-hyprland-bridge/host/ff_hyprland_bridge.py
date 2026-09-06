@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native-messaging host for ff-hyprglass-bridge.
+"""Native-messaging host for ff-hyprland-bridge.
 
 Receives per-window playback state from the WebExtension and applies or
 clears Hyprland window tags/props through `hyprctl eval` (the Lua config
@@ -13,6 +13,13 @@ Actions (config key playbackAction):
          With playback reported but no visible rect, `rectFallback`
          (none|undim|strip) decides what, if anything, happens.
 
+HDR (config key hdrEnable, default true):
+  Answers, per Firefox window, whether the monitor it sits on is HDR-capable
+  (EDID: SMPTE ST 2084 EOTF plus BT.2020 colorimetry). The extension turns
+  that into the page's video-dynamic-range answer. Firefox's content process
+  cannot do this itself on Wayland: it has no window position and resolves
+  every window to the first wl_output.
+
 Every failure degrades to doing nothing: the compositor keeps R2 mask-mode
 behaviour, which is already visually correct without this bridge.
 """
@@ -22,7 +29,7 @@ import struct
 import subprocess
 import sys
 
-CONFIG_PATH = os.path.expanduser("~/.config/ff-hyprglass-bridge.json")
+CONFIG_PATH = os.path.expanduser("~/.config/ff-hyprland-bridge.json")
 RECT_PREFIX = "hyprglass_rect:"
 
 DEFAULTS = {
@@ -31,6 +38,7 @@ DEFAULTS = {
     "pauseGraceMs": 3000,
     "rectFallback": "none",
     "rectRateHz": 10,
+    "hdrEnable": True,
 }
 
 
@@ -235,6 +243,7 @@ def main():
             "playSignal": cfg.get("playSignal", DEFAULTS["playSignal"]),
             "pauseGraceMs": cfg.get("pauseGraceMs", DEFAULTS["pauseGraceMs"]),
             "rectRateHz": cfg.get("rectRateHz", DEFAULTS["rectRateHz"]),
+            "hdr": bool(cfg.get("hdrEnable", DEFAULTS["hdrEnable"])),
         }
     )
     applied_by_addr = {}
