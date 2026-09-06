@@ -23,11 +23,14 @@ HDR (config key hdrEnable, default true):
 Every failure degrades to doing nothing: the compositor keeps R2 mask-mode
 behaviour, which is already visually correct without this bridge.
 """
+import glob
 import json
 import os
+import socket
 import struct
 import subprocess
 import sys
+import threading
 
 CONFIG_PATH = os.path.expanduser("~/.config/ff-hyprland-bridge.json")
 RECT_PREFIX = "hyprglass_rect:"
@@ -82,6 +85,87 @@ def hyprctl(*args):
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return ""
+
+
+# --- EDID: is this connector's monitor HDR-capable? --------------------------
+
+EDID_MAGIC = bytes.fromhex("00ffffffffffff00")
+CTA_TAG = 0x02
+CTA_EXTENDED = 7
+CTA_EXT_COLORIMETRY = 0x05
+CTA_EXT_HDR_STATIC = 0x06
+EOTF_ST2084 = 0x04              # HDR static metadata byte 1, bit 2
+COLORIMETRY_BT2020_MASK = 0xE0  # byte 1, bits 5..7: BT2020cYCC / YCC / RGB
+
+
+def print_err(msg):
+    sys.stderr.write(f"ff_hyprland_bridge: {msg}\n")
+    sys.stderr.flush()
+
+
+def edid_hdr_capable(data):
+    """SMPTE ST 2084 EOTF and BT.2020 colorimetry both present in a CTA-861
+    extension block. This is the pair Hyprland's supportsHDR() needs, so
+    "capable" here means "Hyprland will flip this output to HDR". Anything
+    malformed is not capable; never raises."""
+    try:
+        if len(data) < 128 or data[:8] != EDID_MAGIC:
+            return False
+        pq = bt2020 = False
+        for i in range(1, data[126] + 1):
+            blk = data[128 * i:128 * (i + 1)]
+            if len(blk) < 128 or blk[0] != CTA_TAG:
+                continue
+            end = blk[2] if blk[2] >= 4 else 127
+            p = 4
+            while p < end:
+                tag, ln = blk[p] >> 5, blk[p] & 0x1F
+                body = blk[p + 1:p + 1 + ln]
+                if tag == CTA_EXTENDED and ln >= 2:
+                    if body[0] == CTA_EXT_HDR_STATIC and body[1] & EOTF_ST2084:
+                        pq = True
+                    elif body[0] == CTA_EXT_COLORIMETRY and body[1] & COLORIMETRY_BT2020_MASK:
+                        bt2020 = True
+                p += 1 + ln
+        return pq and bt2020
+    except Exception:
+        return False
+
+
+def connector_edid_path(name, sysfs="/sys/class/drm"):
+    """/sys/class/drm/card*-<name>/edid, preferring a connected card with a
+    non-empty EDID (MST and multi-GPU expose the same connector name on more
+    than one card). sysfs reports binary attributes as size 0, so
+    non-emptiness is probed with a one-byte read, not stat."""
+    candidates = sorted(glob.glob(os.path.join(sysfs, f"card*-{name}", "edid")))
+    for path in candidates:
+        try:
+            with open(os.path.join(os.path.dirname(path), "status")) as f:
+                status = f.read().strip()
+            with open(path, "rb") as f:
+                has_data = bool(f.read(1))
+            if status == "connected" and has_data:
+                return path
+        except OSError:
+            continue
+    return candidates[0] if candidates else None
+
+
+def monitor_hdr_capable(name, sysfs="/sys/class/drm", log=print_err):
+    path = connector_edid_path(name, sysfs)
+    if not path:
+        log(f"no EDID node for connector {name}; treating as SDR")
+        return False
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError as e:
+        log(f"cannot read {path}: {e}; treating as SDR")
+        return False
+    if not data:
+        log(f"empty EDID at {path}; treating as SDR")
+        return False
+    return edid_hdr_capable(data)
 
 
 def find_window(title):

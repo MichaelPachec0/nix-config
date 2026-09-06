@@ -32,6 +32,9 @@ in
     patchShebangs $out/bin/${hostName}
     python3 -m py_compile $out/bin/${hostName}
 
+    # Unit tests for the host's pure parts (EDID parser, mapper, bridge).
+    (cd ${./host} && python3 -m unittest discover -s tests -t . -q)
+
     # native-messaging manifest; hyprctl is resolved from the session PATH on
     # purpose -- the running compositor's hyprctl must match the compositor,
     # not whatever this package pinned at build time.
