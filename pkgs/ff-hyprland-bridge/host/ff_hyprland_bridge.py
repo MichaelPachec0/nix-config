@@ -71,11 +71,15 @@ def read_message():
         return None
 
 
+_SEND_LOCK = threading.Lock()  # the main loop and the socket2 thread both send
+
+
 def send_message(obj):
     data = json.dumps(obj).encode()
-    sys.stdout.buffer.write(struct.pack("<I", len(data)))
-    sys.stdout.buffer.write(data)
-    sys.stdout.buffer.flush()
+    with _SEND_LOCK:
+        sys.stdout.buffer.write(struct.pack("<I", len(data)))
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
 
 
 def hyprctl(*args):
@@ -175,7 +179,7 @@ class HyprState:
     monitor id -> connector name, and cached HDR capability per connector."""
 
     def __init__(self, hyprctl=hyprctl, ppid=None, sysfs="/sys/class/drm", log=print_err):
-        self._hyprctl = hyprctl
+        self.hyprctl = hyprctl
         self._ppid = ppid if ppid is not None else os.getppid()
         self._sysfs = sysfs
         self._log = log
@@ -186,7 +190,7 @@ class HyprState:
 
     def _json(self, *args):
         try:
-            return json.loads(self._hyprctl(*args) or "[]")
+            return json.loads(self.hyprctl(*args) or "[]")
         except ValueError:
             return None
 
@@ -297,6 +301,159 @@ class Mapper:
                 self.learn(state, wid, title)
 
 
+# --- Bridge controller ------------------------------------------------------
+
+REFRESH_EVENTS = {
+    "openwindow", "closewindow", "movewindow", "movewindowv2",
+    "moveworkspace", "moveworkspacev2", "focusedmon", "focusedmonv2",
+    "monitoradded", "monitoraddedv2", "monitorremoved", "monitorremovedv2",
+}
+MONITOR_EVENTS = {"monitoradded", "monitoraddedv2", "monitorremoved", "monitorremovedv2"}
+DEBOUNCE_S = 0.15
+
+
+class Bridge:
+    """Glue: port messages in, socket2 events in, hdr messages and playback
+    tags out. Thread-safe through state.lock; every public method may be
+    called from either thread."""
+
+    def __init__(self, state, mapper, send, load_config=load_config):
+        self.state = state
+        self.mapper = mapper
+        self._send = send
+        self._load_config = load_config
+        self.applied = {}          # address -> Applied
+        self.last_hdr = {}         # window_id -> bool last sent
+        self.reported = {}         # window_id -> last title from the extension
+        self.pending_refresh = False
+        self.pending_monitor = False
+
+    # -- inbound: extension ---------------------------------------------------
+
+    def on_message(self, msg):
+        kind = msg.get("type")
+        if kind not in ("state", "window", "hdr-query"):
+            return
+        wid = msg.get("windowId")
+        title = str(msg.get("title", ""))
+        if wid is None:
+            return
+        with self.state.lock:
+            self.reported[wid] = title
+            self.state.refresh_clients()
+            address = self.mapper.learn(self.state, wid, title)
+            if kind == "state":
+                client = self.state.client(address) if address else None
+                if client:
+                    applied = self.applied.setdefault(address, Applied())
+                    apply_state(address, client, bool(msg.get("playing")), msg.get("rects") or [],
+                                msg.get("outer"), self._load_config(), applied, run=self.state.hyprctl)
+            self.publish()
+
+    # -- inbound: Hyprland socket2 --------------------------------------------
+
+    def on_event(self, line):
+        name, sep, payload = line.partition(">>")
+        if not sep:
+            return
+        if name == "windowtitlev2":
+            addr, _, title = payload.partition(",")
+            with self.state.lock:
+                self.state.set_title(self._hex(addr), title)
+                for wid, t in list(self.mapper.pending.items()):
+                    self.mapper.learn(self.state, wid, t)
+                self.publish()
+            return
+        if name == "closewindow":
+            addr = self._hex(payload)
+            with self.state.lock:
+                self.state.drop(addr)
+                self.mapper.forget_address(addr)
+                self.applied.pop(addr, None)
+        if name in REFRESH_EVENTS:
+            self.pending_refresh = True
+            if name in MONITOR_EVENTS:
+                self.pending_monitor = True
+
+    @staticmethod
+    def _hex(addr):
+        addr = addr.strip()
+        return addr if addr.startswith("0x") else "0x" + addr
+
+    def flush(self):
+        """Debounced refresh: one hyprctl clients -j per event burst."""
+        if not self.pending_refresh:
+            return
+        self.pending_refresh = False
+        with self.state.lock:
+            if self.pending_monitor:
+                self.pending_monitor = False
+                self.state.refresh_monitors()
+            self.state.refresh_clients()
+            for addr in [a for a in set(self.mapper.mapping.values()) if a not in self.state.clients]:
+                self.mapper.forget_address(addr)
+                self.applied.pop(addr, None)
+            self.mapper.check_divergence(self.state, self.reported)
+            for wid, t in list(self.mapper.pending.items()):
+                self.mapper.learn(self.state, wid, t)
+            self.publish()
+
+    # -- outbound -------------------------------------------------------------
+
+    def publish(self):
+        if not self._load_config().get("hdrEnable", True):
+            return
+        with self.state.lock:
+            for wid, addr in list(self.mapper.mapping.items()):
+                hdr = self.state.hdr_for(addr)
+                if hdr is None or self.last_hdr.get(wid) == hdr:
+                    continue
+                self.last_hdr[wid] = hdr
+                c = self.state.client(addr) or {}
+                self._send({"type": "hdr", "windowId": wid, "hdr": hdr,
+                            "monitor": self.state.monitors.get(c.get("monitor"), "")})
+            for wid in [w for w in self.last_hdr if w not in self.mapper.mapping]:
+                del self.last_hdr[wid]
+
+
+# --- socket2 reader ----------------------------------------------------------
+
+def socket2_path(env=os.environ):
+    run = env.get("XDG_RUNTIME_DIR")
+    sig = env.get("HYPRLAND_INSTANCE_SIGNATURE")
+    if not run or not sig:
+        return None
+    return os.path.join(run, "hypr", sig, ".socket2.sock")
+
+
+def event_loop(bridge, path, stop, log=print_err):
+    """Read socket2 lines forever; debounce refreshes; reconnect with backoff.
+    Runs on its own thread. Any failure just retries: the port keeps working
+    on incoming messages alone."""
+    backoff = 1.0
+    timer = None
+    while not stop.is_set():
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.connect(path)
+                backoff = 1.0
+                f = s.makefile("r", encoding="utf-8", errors="replace")
+                for line in f:
+                    if stop.is_set():
+                        return
+                    bridge.on_event(line.rstrip("\n"))
+                    if bridge.pending_refresh:
+                        if timer:
+                            timer.cancel()
+                        timer = threading.Timer(DEBOUNCE_S, bridge.flush)
+                        timer.daemon = True
+                        timer.start()
+        except OSError as e:
+            log(f"socket2 {path}: {e}; retrying in {backoff:.0f}s")
+        stop.wait(backoff)
+        backoff = min(backoff * 2, 30.0)
+
+
 # --- dispatcher fragments (verified table forms, numeric prop values) -------
 
 def lua_tag(address, tag):
@@ -362,7 +519,7 @@ class Applied:
         self.rect_dim = False  # no_dim held because rects are present
 
 
-def apply_state(address, client, playing, rects, outer, cfg, applied):
+def apply_state(address, client, playing, rects, outer, cfg, applied, run=hyprctl):
     action = cfg.get("playbackAction", "rect")
     calls = []
 
@@ -408,7 +565,7 @@ def apply_state(address, client, playing, rects, outer, cfg, applied):
         applied.rect_dim = want_rect_dim
 
     if calls:
-        hyprctl("eval", "\n".join(calls))
+        run("eval", "\n".join(calls))
 
 
 def clear_all(applied_by_addr):
@@ -436,25 +593,29 @@ def main():
     )
     state = HyprState()
     state.refresh_monitors()
-    mapper = Mapper()
-    applied_by_addr = {}
+    state.refresh_clients()
+    bridge = Bridge(state, Mapper(), send_message)
+
+    stop = threading.Event()
+    path = socket2_path()
+    if path and os.path.exists(path):
+        threading.Thread(target=event_loop, args=(bridge, path, stop), daemon=True).start()
+    else:
+        path = None
+        print_err("no Hyprland socket2; HDR answers refresh only on extension messages")
+
     try:
         while True:
             msg = read_message()
             if msg is None:
                 break
-            if msg.get("type") != "state":
-                continue
-            cfg = load_config()  # cheap; picks up edits without restart
-            state.refresh_clients()
-            address = mapper.learn(state, msg.get("windowId"), str(msg.get("title", "")))
-            client = state.client(address) if address else None
-            if not client:
-                continue
-            applied = applied_by_addr.setdefault(address, Applied())
-            apply_state(address, client, bool(msg.get("playing")), msg.get("rects") or [], msg.get("outer"), cfg, applied)
+            if path is None:
+                bridge.pending_refresh = True
+                bridge.flush()
+            bridge.on_message(msg)
     finally:
-        clear_all(applied_by_addr)
+        stop.set()
+        clear_all(bridge.applied)
 
 
 if __name__ == "__main__":

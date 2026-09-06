@@ -155,5 +155,76 @@ class MapperTest(unittest.TestCase):
         self.assertEqual(m.address_for(7), "0xa2")  # relearned
 
 
+class BridgeTest(unittest.TestCase):
+    def setUp(self):
+        self.fake = FakeHyprctl()
+        self.state, _ = make_state(self.fake)
+        self.sent = []
+        self.bridge = b.Bridge(self.state, b.Mapper(), send=self.sent.append, load_config=lambda: dict(b.DEFAULTS))
+
+    def hdr_msgs(self):
+        return [m for m in self.sent if m["type"] == "hdr"]
+
+    def test_window_message_maps_and_answers(self):
+        self.bridge.on_message({"type": "window", "windowId": 7, "title": "Video - YouTube"})
+        self.assertEqual(self.hdr_msgs(), [{"type": "hdr", "windowId": 7, "hdr": True, "monitor": "HDMI-A-1"}])
+
+    def test_unresolved_window_sends_nothing(self):
+        self.bridge.on_message({"type": "hdr-query", "windowId": 9, "title": "nowhere"})
+        self.assertEqual(self.hdr_msgs(), [])
+
+    def test_move_changes_answer_once(self):
+        self.bridge.on_message({"type": "window", "windowId": 7, "title": "Video - YouTube"})
+        self.fake.clients[0]["monitor"] = 0  # dragged to eDP-1
+        for _ in range(10):
+            self.bridge.on_event("movewindowv2>>0xa1,1,1")
+        calls_before = len(self.fake.calls)
+        self.bridge.flush()
+        self.assertEqual(len(self.fake.calls) - calls_before, 1)  # one clients -j for the burst
+        self.assertEqual([m["hdr"] for m in self.hdr_msgs()], [True, False])
+        self.bridge.flush()
+        self.assertEqual(len(self.hdr_msgs()), 2)  # unchanged -> nothing new
+
+    def test_monitor_event_refreshes_monitors_and_capability(self):
+        self.bridge.on_event("monitorremoved>>HDMI-A-1")
+        self.assertTrue(self.bridge.pending_monitor)
+        self.bridge.flush()
+        self.assertIn(("monitors", "-j"), self.fake.calls)
+
+    def test_windowtitlev2_feeds_learner(self):
+        self.fake.clients[1]["title"] = "New Tab"
+        self.state.refresh_clients()
+        self.bridge.on_message({"type": "window", "windowId": 3, "title": "Inbox"})
+        self.assertEqual(self.hdr_msgs(), [])
+        self.bridge.on_event("windowtitlev2>>0xa2,Inbox")
+        self.assertEqual(self.hdr_msgs(), [{"type": "hdr", "windowId": 3, "hdr": False, "monitor": "eDP-1"}])
+
+    def test_closewindow_drops_mapping(self):
+        self.bridge.on_message({"type": "window", "windowId": 7, "title": "Video - YouTube"})
+        self.bridge.on_event("closewindow>>0xa1")
+        self.assertIsNone(self.bridge.mapper.address_for(7))
+
+    def test_state_applies_tags_through_mapping(self):
+        self.bridge.on_message({"type": "state", "windowId": 7, "title": "Video - YouTube", "playing": True,
+                                "rects": [{"x": 10, "y": 20, "w": 100, "h": 50}], "outer": {"w": 1900, "h": 1000}})
+        evals = [c for c in self.fake.calls if c[0] == "eval"]
+        self.assertEqual(len(evals), 1)
+        self.assertIn("+hyprglass_rect:10,20,100,50", evals[0][1])
+        self.assertIn("address:0xa1", evals[0][1])
+
+    def test_hdr_disabled_sends_no_hdr(self):
+        cfg = dict(b.DEFAULTS, hdrEnable=False)
+        bridge = b.Bridge(self.state, b.Mapper(), send=self.sent.append, load_config=lambda: cfg)
+        bridge.on_message({"type": "window", "windowId": 7, "title": "Video - YouTube"})
+        self.assertEqual(self.hdr_msgs(), [])
+
+
+class Socket2PathTest(unittest.TestCase):
+    def test_path_from_env(self):
+        env = {"XDG_RUNTIME_DIR": "/run/user/1000", "HYPRLAND_INSTANCE_SIGNATURE": "sig"}
+        self.assertEqual(b.socket2_path(env), "/run/user/1000/hypr/sig/.socket2.sock")
+        self.assertIsNone(b.socket2_path({}))
+
+
 if __name__ == "__main__":
     unittest.main()
