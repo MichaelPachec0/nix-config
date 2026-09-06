@@ -387,6 +387,12 @@
             # whole group into its parent (group). Upstream has neither:
             # makegroup's `toggle` only collapses a single-CHILD group.
             ../overlays/0005-feat-hy3-ungroup-dispatcher.patch
+            # removeTarget left a window's hidden flag set when a non-visible
+            # tab was floated (or moved) out of its group: nothing rendered it,
+            # it got no frame callbacks, and Firefox reported its documents as
+            # hidden. Clears the flag on removal; a group re-applies its own
+            # on the next geometry pass. Same on hy3 master as of 2026-09-06.
+            ../overlays/0006-fix-hy3-unhide-window-on-remove.patch
           ];
       });
       # hyprglass: liquid-glass window decoration. NOT in nixpkgs: PR #547498
