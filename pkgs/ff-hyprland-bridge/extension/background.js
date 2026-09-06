@@ -8,9 +8,40 @@
 
 const HOST = "ff_hyprland_bridge";
 
-let config = {playbackAction: "rect", playSignal: "activeTab", pauseGraceMs: 3000, rectRateHz: 10};
+let config = {playbackAction: "rect", playSignal: "activeTab", pauseGraceMs: 3000, rectRateHz: 10, hdr: true};
 let port = null;
 let portRetryMs = 1000;
+
+// windowId -> bool: the host's answer for "is this window's monitor HDR".
+// Default (no entry) is false, which is Firefox's own answer today.
+const hdrByWindow = new Map();
+
+async function sendWindow(windowId) {
+  if (!port || windowId === undefined || windowId < 0) return;
+  let title = "";
+  try {
+    title = (await browser.windows.get(windowId)).title || "";
+  } catch (e) {
+    return;
+  }
+  port.postMessage({type: "window", windowId, title});
+}
+
+function pushHdr(windowId, hdr) {
+  browser.tabs.query({windowId}).then((list) => {
+    for (const t of list) {
+      try {
+        browser.tabs.sendMessage(t.id, {type: "hdr", hdr}).catch(() => {});
+      } catch (e) {}
+    }
+  }, () => {});
+}
+
+function replayWindows() {
+  browser.windows.getAll().then((all) => {
+    for (const w of all) sendWindow(w.id);
+  }, () => {});
+}
 
 // tabId -> { frames: Map<frameId, {playing, audible, rects, outer}>, windowId }
 const tabs = new Map();
@@ -37,18 +68,27 @@ function connect() {
   }
   portRetryMs = 1000;
   port.onMessage.addListener((m) => {
-    if (m && m.type === "config") {
+    if (!m) return;
+    if (m.type === "config") {
       if (m.playbackAction) config.playbackAction = m.playbackAction;
       if (m.playSignal) config.playSignal = m.playSignal;
       if (Number.isFinite(m.pauseGraceMs)) config.pauseGraceMs = m.pauseGraceMs;
       if (Number.isFinite(m.rectRateHz)) config.rectRateHz = m.rectRateHz;
+      if (typeof m.hdr === "boolean") config.hdr = m.hdr;
       broadcastConfig();
       // The host restarted (or just started): it has no memory of what was
-      // applied, so replay every window's current state.
+      // applied or which window is which, so replay state and window titles.
       for (const [windowId, w] of windows) {
         w.sent = "";
         refreshWindow(windowId);
       }
+      replayWindows();
+      return;
+    }
+    if (m.type === "hdr" && Number.isInteger(m.windowId) && typeof m.hdr === "boolean") {
+      if (hdrByWindow.get(m.windowId) === m.hdr) return;
+      hdrByWindow.set(m.windowId, m.hdr);
+      pushHdr(m.windowId, m.hdr);
     }
   });
   port.onDisconnect.addListener(() => {
@@ -149,6 +189,16 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   if (!msg || !sender.tab) return;
   if (msg.type === "hello")
     return Promise.resolve({type: "config", rectRateHz: config.rectRateHz});
+  if (msg.type === "hdr-hello") {
+    const windowId = sender.tab.windowId;
+    if (!config.hdr) return Promise.resolve({hdr: false});
+    if (!hdrByWindow.has(windowId) && port) {
+      browser.windows.get(windowId).then((w) => {
+        port.postMessage({type: "hdr-query", windowId, title: w.title || ""});
+      }, () => {});
+    }
+    return Promise.resolve({hdr: hdrByWindow.get(windowId) === true});
+  }
   if (msg.type !== "media") return;
   const tabId = sender.tab.id;
   const frameId = sender.frameId ?? 0;
@@ -178,5 +228,19 @@ browser.tabs.onAttached.addListener((tabId, info) => {
     refreshWindow(old);
     refreshWindow(info.newWindowId);
   }
+  if (hdrByWindow.has(info.newWindowId))
+    browser.tabs.sendMessage(tabId, {type: "hdr", hdr: hdrByWindow.get(info.newWindowId)}).catch(() => {});
 });
-browser.windows.onRemoved.addListener((windowId) => windows.delete(windowId));
+browser.windows.onRemoved.addListener((windowId) => {
+  windows.delete(windowId);
+  hdrByWindow.delete(windowId);
+});
+
+// Window identity for the host's learner: it maps our windowId to a Hyprland
+// client by title, so tell it every time a window appears, gains focus, or
+// its active tab retitles.
+browser.windows.onCreated.addListener((w) => sendWindow(w.id));
+browser.windows.onFocusChanged.addListener((windowId) => sendWindow(windowId));
+browser.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.title !== undefined && tab.active) sendWindow(tab.windowId);
+});
