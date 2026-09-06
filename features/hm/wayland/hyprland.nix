@@ -758,7 +758,15 @@ in {
 
             render = {
               cm_enabled = true;
+              # Flip an HDR-capable output (KTC, VG259QM) to HDR only while a
+              # fullscreen client presents PQ/HLG; SDR desktop otherwise.
               cm_auto_hdr = 1;
+              # Local patch (overlays/hyprland-cm-auto-hdr-advertise.patch): let
+              # those outputs tell clients they are HDR while idling in SDR, so
+              # Firefox/mpv detect an HDR display and trigger the flip without
+              # their force-source switches (gfx.color_management.hdr.force_enabled,
+              # --target-colorspace-hint-mode=source).
+              cm_auto_hdr_advertise = true;
               cm_sdr_eotf = 0;
             };
 

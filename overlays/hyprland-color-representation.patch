@@ -1,0 +1,516 @@
+diff -ruN a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -597,6 +597,7 @@
+ protocolnew("staging/security-context" "security-context-v1" false)
+ protocolnew("staging/content-type" "content-type-v1" false)
+ protocolnew("staging/color-management" "color-management-v1" false)
++protocolnew("staging/color-representation" "color-representation-v1" false)
+ protocolnew("staging/xdg-toplevel-tag" "xdg-toplevel-tag-v1" false)
+ protocolnew("staging/xdg-system-bell" "xdg-system-bell-v1" false)
+ protocolnew("staging/ext-workspace" "ext-workspace-v1" false)
+diff -ruN a/src/helpers/Format.hpp b/src/helpers/Format.hpp
+--- a/src/helpers/Format.hpp
++++ b/src/helpers/Format.hpp
+@@ -27,6 +27,13 @@
+         YUV_CS_BT709,
+         YUV_CS_BT2020,
+     };
++
++    // Sample range of a YUV dmabuf: limited (studio, the video default) or full.
++    enum eYUVRange : uint8_t {
++        YUV_RANGE_AUTO = 0,
++        YUV_RANGE_LIMITED,
++        YUV_RANGE_FULL,
++    };
+     bool        isShmBufferLayoutValid(DRMFormat drmFormat, const Vector2D& size, int32_t stride, int32_t offset, size_t poolSize);
+     std::string drmFormatName(DRMFormat drm);
+     std::string drmModifierName(uint64_t mod);
+diff -ruN a/src/managers/ProtocolManager.cpp b/src/managers/ProtocolManager.cpp
+--- a/src/managers/ProtocolManager.cpp
++++ b/src/managers/ProtocolManager.cpp
+@@ -62,6 +62,7 @@
+ #include "../protocols/core/Shm.hpp"
+ #include "../protocols/ColorManagement.hpp"
+ #include "../protocols/ContentType.hpp"
++#include "../protocols/ColorRepresentation.hpp"
+ #include "../protocols/XDGTag.hpp"
+ #include "../protocols/XDGBell.hpp"
+ #include "../protocols/Hotkey.hpp"
+@@ -231,8 +232,10 @@
+     PROTO::imageCaptureSource = makeUnique<CImageCaptureSourceProtocol>(); // ctor inits actual protos, output and toplevel
+     PROTO::imageCopyCapture   = makeUnique<CImageCopyCaptureProtocol>(&ext_image_copy_capture_manager_v1_interface, 1, "ImageCopyCapture");
+ 
+-    if (*PENABLECM)
+-        PROTO::colorManagement = makeUnique<CColorManagementProtocol>(&wp_color_manager_v1_interface, *PCMV1_2 ? 3 : 1, "ColorManagement", *PDEBUGCM);
++    if (*PENABLECM) {
++        PROTO::colorManagement     = makeUnique<CColorManagementProtocol>(&wp_color_manager_v1_interface, *PCMV1_2 ? 3 : 1, "ColorManagement", *PDEBUGCM);
++        PROTO::colorRepresentation = makeUnique<CColorRepresentationProtocol>(&wp_color_representation_manager_v1_interface, 1, "ColorRepresentation");
++    }
+ 
+     // ! please read the top of this file before adding another protocol
+ 
+@@ -324,6 +327,7 @@
+     PROTO::hyprlandSurface.reset();
+     PROTO::contentType.reset();
+     PROTO::colorManagement.reset();
++    PROTO::colorRepresentation.reset();
+     PROTO::xdgTag.reset();
+     PROTO::xdgBell.reset();
+     PROTO::hotkey.reset();
+diff -ruN a/src/protocols/ColorRepresentation.cpp b/src/protocols/ColorRepresentation.cpp
+--- a/src/protocols/ColorRepresentation.cpp
++++ b/src/protocols/ColorRepresentation.cpp
+@@ -0,0 +1,154 @@
++#include "ColorRepresentation.hpp"
++#include "color-representation-v1.hpp"
++#include <array>
++
++CColorRepresentationManager::CColorRepresentationManager(SP<CWpColorRepresentationManagerV1> resource) : m_resource(resource) {
++    if UNLIKELY (!good())
++        return;
++
++    m_resource->setDestroy([this](CWpColorRepresentationManagerV1* r) { PROTO::colorRepresentation->destroyResource(this); });
++    m_resource->setOnDestroy([this](CWpColorRepresentationManagerV1* r) { PROTO::colorRepresentation->destroyResource(this); });
++
++    m_resource->setGetSurface([](CWpColorRepresentationManagerV1* r, uint32_t id, wl_resource* surface) {
++        LOGM(Log::TRACE, "Get color representation surface for id={}, surface={}", id, (uintptr_t)surface);
++        auto SURF = CWLSurfaceResource::fromResource(surface);
++
++        if (!SURF) {
++            LOGM(Log::ERR, "No surface for resource {}", (uintptr_t)surface);
++            r->error(-1, "Invalid surface");
++            return;
++        }
++
++        if (SURF->m_colorRepresentation) {
++            r->error(WP_COLOR_REPRESENTATION_MANAGER_V1_ERROR_SURFACE_EXISTS, "Surface already has a color representation object");
++            return;
++        }
++
++        const auto RESOURCE = PROTO::colorRepresentation->m_surfaces.emplace_back(
++            makeShared<CColorRepresentationSurface>(makeShared<CWpColorRepresentationSurfaceV1>(r->client(), r->version(), id), SURF));
++        if UNLIKELY (!RESOURCE->good()) {
++            r->noMemory();
++            PROTO::colorRepresentation->m_surfaces.pop_back();
++            return;
++        }
++
++        RESOURCE->m_self            = RESOURCE;
++        SURF->m_colorRepresentation = RESOURCE;
++    });
++
++    // what this compositor can honor: premultiplied alpha (the only thing the
++    // renderer does) and the YCbCr matrices EGL_EXT_image_dma_buf_import can name.
++    m_resource->sendSupportedAlphaMode(WP_COLOR_REPRESENTATION_SURFACE_V1_ALPHA_MODE_PREMULTIPLIED_ELECTRICAL);
++
++    static const std::array<std::pair<wpColorRepresentationSurfaceV1Coefficients, wpColorRepresentationSurfaceV1Range>, 7> PAIRS = {{
++        {WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_IDENTITY, WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_FULL},
++        {WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT601, WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_LIMITED},
++        {WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT601, WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_FULL},
++        {WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT709, WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_LIMITED},
++        {WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT709, WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_FULL},
++        {WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT2020, WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_LIMITED},
++        {WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT2020, WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_FULL},
++    }};
++    for (const auto& [COEFFS, RANGE] : PAIRS)
++        m_resource->sendSupportedCoefficientsAndRanges(COEFFS, RANGE);
++
++    m_resource->sendDone();
++}
++
++bool CColorRepresentationManager::good() {
++    return m_resource->resource();
++}
++
++CColorRepresentationSurface::CColorRepresentationSurface(SP<CWpColorRepresentationSurfaceV1> resource, WP<CWLSurfaceResource> surface) :
++    m_surface(surface), m_resource(resource) {
++    if UNLIKELY (!good())
++        return;
++
++    m_client = m_resource->client();
++
++    m_resource->setDestroy([this](CWpColorRepresentationSurfaceV1* r) { PROTO::colorRepresentation->destroyResource(this); });
++    m_resource->setOnDestroy([this](CWpColorRepresentationSurfaceV1* r) { PROTO::colorRepresentation->destroyResource(this); });
++
++    // the wl_surface can go away first; the object then becomes inert.
++    m_surfaceDestroy = m_surface->m_events.destroy.listen([this] { m_surface.reset(); });
++
++    m_resource->setSetAlphaMode([this](CWpColorRepresentationSurfaceV1* r, wpColorRepresentationSurfaceV1AlphaMode mode) {
++        if (!m_surface) {
++            r->error(WP_COLOR_REPRESENTATION_SURFACE_V1_ERROR_INERT, "Surface is gone");
++            return;
++        }
++        if (mode != WP_COLOR_REPRESENTATION_SURFACE_V1_ALPHA_MODE_PREMULTIPLIED_ELECTRICAL) {
++            r->error(WP_COLOR_REPRESENTATION_SURFACE_V1_ERROR_ALPHA_MODE, "Unsupported alpha mode");
++            return;
++        }
++        m_pending.alphaMode = mode;
++    });
++
++    m_resource->setSetCoefficientsAndRange(
++        [this](CWpColorRepresentationSurfaceV1* r, wpColorRepresentationSurfaceV1Coefficients coefficients, wpColorRepresentationSurfaceV1Range range) {
++            if (!m_surface) {
++                r->error(WP_COLOR_REPRESENTATION_SURFACE_V1_ERROR_INERT, "Surface is gone");
++                return;
++            }
++            if (!CColorRepresentationProtocol::supportsCoefficients(coefficients, range)) {
++                r->error(WP_COLOR_REPRESENTATION_SURFACE_V1_ERROR_COEFFICIENTS, "Unsupported coefficients/range");
++                return;
++            }
++            m_pending.coefficients = coefficients;
++            m_pending.range        = range;
++        });
++
++    m_resource->setSetChromaLocation([this](CWpColorRepresentationSurfaceV1* r, wpColorRepresentationSurfaceV1ChromaLocation location) {
++        if (!m_surface) {
++            r->error(WP_COLOR_REPRESENTATION_SURFACE_V1_ERROR_INERT, "Surface is gone");
++            return;
++        }
++        // stored for completeness; the import path does not pass siting hints.
++        m_pending.chromaLocation = location;
++    });
++}
++
++bool CColorRepresentationSurface::good() {
++    return m_resource && m_resource->resource();
++}
++
++wl_client* CColorRepresentationSurface::client() {
++    return m_client;
++}
++
++void CColorRepresentationSurface::onCommit() {
++    m_current = m_pending;
++}
++
++CColorRepresentationProtocol::CColorRepresentationProtocol(const wl_interface* iface, const int& ver, const std::string& name) : IWaylandProtocol(iface, ver, name) {
++    ;
++}
++
++void CColorRepresentationProtocol::bindManager(wl_client* client, void* data, uint32_t ver, uint32_t id) {
++    const auto RESOURCE = m_managers.emplace_back(makeShared<CColorRepresentationManager>(makeShared<CWpColorRepresentationManagerV1>(client, ver, id)));
++
++    if UNLIKELY (!RESOURCE->good()) {
++        wl_client_post_no_memory(client);
++        m_managers.pop_back();
++        return;
++    }
++}
++
++bool CColorRepresentationProtocol::supportsCoefficients(wpColorRepresentationSurfaceV1Coefficients coefficients, wpColorRepresentationSurfaceV1Range range) {
++    switch (coefficients) {
++        case WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_IDENTITY: return range == WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_FULL;
++        case WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT601:
++        case WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT709:
++        case WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT2020:
++            return range == WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_FULL || range == WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_LIMITED;
++        default: return false;
++    }
++}
++
++void CColorRepresentationProtocol::destroyResource(CColorRepresentationManager* resource) {
++    std::erase_if(m_managers, [&](const auto& other) { return other.get() == resource; });
++}
++
++void CColorRepresentationProtocol::destroyResource(CColorRepresentationSurface* resource) {
++    std::erase_if(m_surfaces, [&](const auto& other) { return other.get() == resource; });
++}
+diff -ruN a/src/protocols/ColorRepresentation.hpp b/src/protocols/ColorRepresentation.hpp
+--- a/src/protocols/ColorRepresentation.hpp
++++ b/src/protocols/ColorRepresentation.hpp
+@@ -0,0 +1,72 @@
++#pragma once
++
++#include <optional>
++#include "WaylandProtocol.hpp"
++#include "core/Compositor.hpp"
++#include "color-representation-v1.hpp"
++
++class CColorRepresentationManager {
++  public:
++    CColorRepresentationManager(SP<CWpColorRepresentationManagerV1> resource);
++
++    bool good();
++
++  private:
++    SP<CWpColorRepresentationManagerV1> m_resource;
++};
++
++class CColorRepresentationSurface {
++  public:
++    CColorRepresentationSurface(SP<CWpColorRepresentationSurfaceV1> resource, WP<CWLSurfaceResource> surface);
++
++    bool       good();
++    wl_client* client();
++
++    // color-representation state is double-buffered: requests fill m_pending,
++    // wl_surface.commit copies it to m_current (CWLSurfaceResource::commitState).
++    struct SState {
++        std::optional<wpColorRepresentationSurfaceV1AlphaMode>      alphaMode;
++        std::optional<wpColorRepresentationSurfaceV1Coefficients>   coefficients;
++        std::optional<wpColorRepresentationSurfaceV1Range>          range;
++        std::optional<wpColorRepresentationSurfaceV1ChromaLocation> chromaLocation;
++    };
++
++    SState                          m_pending, m_current;
++    void                            onCommit();
++
++    WP<CColorRepresentationSurface> m_self;
++    WP<CWLSurfaceResource>          m_surface;
++
++  private:
++    SP<CWpColorRepresentationSurfaceV1> m_resource;
++    wl_client*                          m_client = nullptr;
++
++    CHyprSignalListener                 m_surfaceDestroy;
++
++    friend class CColorRepresentationProtocol;
++};
++
++class CColorRepresentationProtocol : public IWaylandProtocol {
++  public:
++    CColorRepresentationProtocol(const wl_interface* iface, const int& ver, const std::string& name);
++
++    virtual void bindManager(wl_client* client, void* data, uint32_t ver, uint32_t id);
++
++    // the coefficient/range pairs this compositor can honor through the EGL
++    // import hints; also what bindManager advertises.
++    static bool  supportsCoefficients(wpColorRepresentationSurfaceV1Coefficients coefficients, wpColorRepresentationSurfaceV1Range range);
++
++  private:
++    void                                         destroyResource(CColorRepresentationManager* resource);
++    void                                         destroyResource(CColorRepresentationSurface* resource);
++
++    std::vector<SP<CColorRepresentationManager>> m_managers;
++    std::vector<SP<CColorRepresentationSurface>> m_surfaces;
++
++    friend class CColorRepresentationManager;
++    friend class CColorRepresentationSurface;
++};
++
++namespace PROTO {
++    inline UP<CColorRepresentationProtocol> colorRepresentation;
++};
+diff -ruN a/src/protocols/core/Compositor.cpp b/src/protocols/core/Compositor.cpp
+--- a/src/protocols/core/Compositor.cpp
++++ b/src/protocols/core/Compositor.cpp
+@@ -13,6 +13,7 @@
+ #include "../DRMSyncobj.hpp"
+ #include "../types/DMABuffer.hpp"
+ #include "../ColorManagement.hpp"
++#include "../ColorRepresentation.hpp"
+ #include "../../render/Renderer.hpp"
+ #include "config/ConfigValue.hpp"
+ #include "../../managers/eventLoop/EventLoopManager.hpp"
+@@ -629,20 +630,52 @@
+     auto lastTexture = m_current.texture;
+     m_current.updateFrom(state);
+ 
++    // color-representation state is double-buffered; commit applies it.
++    if (m_colorRepresentation.valid())
++        m_colorRepresentation->onCommit();
++
+     // A YUV dmabuf was imported before any surface owned it, with a guessed
+-    // YCbCr matrix. Now the surface's image description says which one the
+-    // content really uses (BT.2020 for PQ/HLG video, BT.709 otherwise), so make
+-    // the buffer's texture match and pick up the re-imported texture.
++    // YCbCr matrix. Now the surface can say which one the content really uses:
++    // the client's color-representation coefficients if it set them, otherwise
++    // the color-management image description (BT.2020 for PQ/HLG video, BT.709
++    // else). Make the buffer's texture match and pick up the re-imported one.
+     if (m_current.buffer && m_current.buffer->type() == Aquamarine::BUFFER_TYPE_DMABUF) {
+         const auto DMABUF = dc<CDMABuffer*>(m_current.buffer.m_buffer.get());
+-        if (DMABUF && NFormatUtils::isFormatYUV(DMABUF->dmabuf().format)) {
+-            auto cs = NFormatUtils::YUV_CS_BT709;
+-            if (m_colorManagement.valid() && m_colorManagement->hasImageDescription()) {
+-                const auto& DESC = m_colorManagement->imageDescription();
+-                if (m_colorManagement->isHDR() || DESC.primariesNamed == CM_PRIMARIES_BT2020)
+-                    cs = NFormatUtils::YUV_CS_BT2020;
++        const bool YUV    = DMABUF && NFormatUtils::isFormatYUV(DMABUF->dmabuf().format);
++
++        auto       cs    = NFormatUtils::YUV_CS_AUTO;
++        auto       range = NFormatUtils::YUV_RANGE_AUTO;
++
++        if (m_colorRepresentation.valid() && m_colorRepresentation->m_current.coefficients.has_value()) {
++            const auto COEFFS = *m_colorRepresentation->m_current.coefficients;
++            const bool RGBISH = COEFFS == WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_IDENTITY;
++            if (RGBISH == YUV) {
++                // the protocol asks for the pixel_format error here. Lenient by
++                // choice: warn and fall back to inference, a mis-tagged frame
++                // should not kill the client.
++                Log::logger->log(Log::WARN, "color-representation: coefficients {} do not match a {} buffer, ignoring", sc<int>(COEFFS), YUV ? "YUV" : "RGB");
++            } else if (YUV) {
++                switch (COEFFS) {
++                    case WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT601: cs = NFormatUtils::YUV_CS_BT601; break;
++                    case WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT709: cs = NFormatUtils::YUV_CS_BT709; break;
++                    case WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_BT2020: cs = NFormatUtils::YUV_CS_BT2020; break;
++                    default: break;
++                }
++                if (m_colorRepresentation->m_current.range.has_value())
++                    range = *m_colorRepresentation->m_current.range == WP_COLOR_REPRESENTATION_SURFACE_V1_RANGE_FULL ? NFormatUtils::YUV_RANGE_FULL : NFormatUtils::YUV_RANGE_LIMITED;
++            }
++        }
++
++        if (YUV) {
++            if (cs == NFormatUtils::YUV_CS_AUTO) {
++                cs = NFormatUtils::YUV_CS_BT709;
++                if (m_colorManagement.valid() && m_colorManagement->hasImageDescription()) {
++                    const auto& DESC = m_colorManagement->imageDescription();
++                    if (m_colorManagement->isHDR() || DESC.primariesNamed == CM_PRIMARIES_BT2020)
++                        cs = NFormatUtils::YUV_CS_BT2020;
++                }
+             }
+-            DMABUF->setYUVColorSpace(cs);
++            DMABUF->setYUVColorSpace(cs, range);
+             m_current.texture = DMABUF->m_texture;
+         }
+     }
+diff -ruN a/src/protocols/core/Compositor.hpp b/src/protocols/core/Compositor.hpp
+--- a/src/protocols/core/Compositor.hpp
++++ b/src/protocols/core/Compositor.hpp
+@@ -33,6 +33,7 @@
+ class CFifoResource;
+ class CCommitTimerResource;
+ class CColorManagementSurface;
++class CColorRepresentationSurface;
+ class CContentType;
+ 
+ class CWLCallbackResource {
+@@ -117,6 +118,7 @@
+     WP<CFifoResource>                      m_fifo;        // may not be present
+     WP<CCommitTimerResource>               m_commitTimer; // may not be present
+     WP<CColorManagementSurface>            m_colorManagement;
++    WP<CColorRepresentationSurface>        m_colorRepresentation;
+     WP<CContentType>                       m_contentType;
+ 
+     void                                   breadthfirst(std::function<void(SP<CWLSurfaceResource>, const Vector2D&, void*)> fn, void* data);
+diff -ruN a/src/protocols/types/DMABuffer.cpp b/src/protocols/types/DMABuffer.cpp
+--- a/src/protocols/types/DMABuffer.cpp
++++ b/src/protocols/types/DMABuffer.cpp
+@@ -73,20 +73,27 @@
+     // FIXME:
+ }
+ 
+-void CDMABuffer::setYUVColorSpace(NFormatUtils::eYUVColorSpace cs) {
+-    if (cs == NFormatUtils::YUV_CS_AUTO || cs == m_yuvColorSpace || !NFormatUtils::isFormatYUV(m_attrs.format))
++void CDMABuffer::setYUVColorSpace(NFormatUtils::eYUVColorSpace cs, NFormatUtils::eYUVRange range) {
++    if (!NFormatUtils::isFormatYUV(m_attrs.format))
++        return;
++    if (cs == NFormatUtils::YUV_CS_AUTO)
++        cs = m_yuvColorSpace;
++    if (range == NFormatUtils::YUV_RANGE_AUTO)
++        range = m_yuvRange;
++    if (cs == m_yuvColorSpace && range == m_yuvRange)
+         return;
+ 
+     // the same buffer objects get reused frame after frame (a pool of a few), so
+     // this happens once per buffer, not once per frame.
+-    auto tex = g_pHyprRenderer->createTexture(m_attrs, m_opaque, cs);
++    auto tex = g_pHyprRenderer->createTexture(m_attrs, m_opaque, cs, range);
+     if (!tex || !tex->ok()) {
+-        Log::logger->log(Log::ERR, "CDMABuffer: failed to re-import EGLImage for YUV color space {}", sc<int>(cs));
++        Log::logger->log(Log::ERR, "CDMABuffer: failed to re-import EGLImage for YUV color space {} range {}", sc<int>(cs), sc<int>(range));
+         return;
+     }
+ 
+     m_texture       = tex;
+     m_yuvColorSpace = cs;
++    m_yuvRange      = range;
+ }
+ 
+ bool CDMABuffer::good() {
+diff -ruN a/src/protocols/types/DMABuffer.hpp b/src/protocols/types/DMABuffer.hpp
+--- a/src/protocols/types/DMABuffer.hpp
++++ b/src/protocols/types/DMABuffer.hpp
+@@ -21,13 +21,14 @@
+     // Re-import the texture with this YCbCr matrix if it differs from the one
+     // used so far. No-op for RGB formats. Called when a surface with a
+     // color-management image description attaches the buffer.
+-    void                                           setYUVColorSpace(NFormatUtils::eYUVColorSpace cs);
++    void                                           setYUVColorSpace(NFormatUtils::eYUVColorSpace cs, NFormatUtils::eYUVRange range = NFormatUtils::YUV_RANGE_AUTO);
+     std::vector<Hyprutils::OS::CFileDescriptor>    exportSyncFiles();
+     bool                                           m_success = false;
+ 
+   private:
+     Aquamarine::SDMABUFAttrs     m_attrs;
+     NFormatUtils::eYUVColorSpace m_yuvColorSpace = NFormatUtils::YUV_CS_AUTO;
++    NFormatUtils::eYUVRange      m_yuvRange      = NFormatUtils::YUV_RANGE_AUTO;
+ 
+     struct {
+         CHyprSignalListener resourceDestroy;
+diff -ruN a/src/render/GLRenderer.cpp b/src/render/GLRenderer.cpp
+--- a/src/render/GLRenderer.cpp
++++ b/src/render/GLRenderer.cpp
+@@ -195,9 +195,9 @@
+     return makeShared<CGLTexture>(drmFormat, pixels, stride, size, keepDataCopy, opaque);
+ }
+ 
+-SP<ITexture> CHyprGLRenderer::createTexture(const Aquamarine::SDMABUFAttrs& attrs, bool opaque, NFormatUtils::eYUVColorSpace yuvColorSpace) {
++SP<ITexture> CHyprGLRenderer::createTexture(const Aquamarine::SDMABUFAttrs& attrs, bool opaque, NFormatUtils::eYUVColorSpace yuvColorSpace, NFormatUtils::eYUVRange yuvRange) {
+     g_pHyprOpenGL->makeEGLCurrent();
+-    const auto image = g_pHyprOpenGL->createEGLImage(attrs, yuvColorSpace);
++    const auto image = g_pHyprOpenGL->createEGLImage(attrs, yuvColorSpace, yuvRange);
+     if (!image)
+         return nullptr;
+     return makeShared<CGLTexture>(attrs, image, opaque);
+diff -ruN a/src/render/GLRenderer.hpp b/src/render/GLRenderer.hpp
+--- a/src/render/GLRenderer.hpp
++++ b/src/render/GLRenderer.hpp
+@@ -15,7 +15,8 @@
+         SP<ITexture>            createStencilTexture(const int width, const int height) override;
+         SP<ITexture>            createTexture(bool opaque = false) override;
+         SP<ITexture>            createTexture(uint32_t drmFormat, uint8_t* pixels, uint32_t stride, const Vector2D& size, bool keepDataCopy = false, bool opaque = false) override;
+-        SP<ITexture>            createTexture(const Aquamarine::SDMABUFAttrs&, bool opaque = false, NFormatUtils::eYUVColorSpace yuvColorSpace = NFormatUtils::YUV_CS_AUTO) override;
++        SP<ITexture>            createTexture(const Aquamarine::SDMABUFAttrs&, bool opaque = false, NFormatUtils::eYUVColorSpace yuvColorSpace = NFormatUtils::YUV_CS_AUTO,
++                                              NFormatUtils::eYUVRange yuvRange = NFormatUtils::YUV_RANGE_AUTO) override;
+         SP<ITexture>            createTexture(const int width, const int height, unsigned char* const data) override;
+         SP<ITexture>            createTexture(cairo_surface_t* cairo) override;
+         SP<ITexture>            createTexture(std::span<const float> lut3D, size_t N) override;
+diff -ruN a/src/render/OpenGL.cpp b/src/render/OpenGL.cpp
+--- a/src/render/OpenGL.cpp
++++ b/src/render/OpenGL.cpp
+@@ -612,7 +612,7 @@
+     m_drmFormats = dmaFormats;
+ }
+ 
+-EGLImageKHR CHyprOpenGLImpl::createEGLImage(const Aquamarine::SDMABUFAttrs& attrs, NFormatUtils::eYUVColorSpace yuvColorSpace) {
++EGLImageKHR CHyprOpenGLImpl::createEGLImage(const Aquamarine::SDMABUFAttrs& attrs, NFormatUtils::eYUVColorSpace yuvColorSpace, NFormatUtils::eYUVRange yuvRange) {
+     std::array<EGLint, 64> attribs;
+     size_t                 idx = 0;
+ 
+@@ -671,7 +671,7 @@
+         attribs[idx++] = EGL_YUV_COLOR_SPACE_HINT_EXT;
+         attribs[idx++] = cs == NFormatUtils::YUV_CS_BT2020 ? EGL_ITU_REC2020_EXT : cs == NFormatUtils::YUV_CS_BT601 ? EGL_ITU_REC601_EXT : EGL_ITU_REC709_EXT;
+         attribs[idx++] = EGL_SAMPLE_RANGE_HINT_EXT;
+-        attribs[idx++] = EGL_YUV_NARROW_RANGE_EXT;
++        attribs[idx++] = yuvRange == NFormatUtils::YUV_RANGE_FULL ? EGL_YUV_FULL_RANGE_EXT : EGL_YUV_NARROW_RANGE_EXT;
+     }
+ 
+     attribs[idx++] = EGL_IMAGE_PRESERVED_KHR;
+diff -ruN a/src/render/OpenGL.hpp b/src/render/OpenGL.hpp
+--- a/src/render/OpenGL.hpp
++++ b/src/render/OpenGL.hpp
+@@ -236,7 +236,8 @@
+ 
+         std::vector<SDRMFormat>                   getDRMFormats();
+         std::vector<uint64_t>                     getDRMFormatModifiers(DRMFormat format);
+-        EGLImageKHR                               createEGLImage(const Aquamarine::SDMABUFAttrs& attrs, NFormatUtils::eYUVColorSpace yuvColorSpace = NFormatUtils::YUV_CS_AUTO);
++        EGLImageKHR                               createEGLImage(const Aquamarine::SDMABUFAttrs& attrs, NFormatUtils::eYUVColorSpace yuvColorSpace = NFormatUtils::YUV_CS_AUTO,
++                                                                 NFormatUtils::eYUVRange yuvRange = NFormatUtils::YUV_RANGE_AUTO);
+ 
+         bool                                      initShaders(const std::string& path = "");
+ 
+diff -ruN a/src/render/Renderer.hpp b/src/render/Renderer.hpp
+--- a/src/render/Renderer.hpp
++++ b/src/render/Renderer.hpp
+@@ -169,7 +169,8 @@
+         virtual SP<ITexture>         createStencilTexture(const int width, const int height)                                                                                   = 0;
+         virtual SP<ITexture>         createTexture(bool opaque = false)                                                                                                        = 0;
+         virtual SP<ITexture>         createTexture(uint32_t drmFormat, uint8_t* pixels, uint32_t stride, const Vector2D& size, bool keepDataCopy = false, bool opaque = false) = 0;
+-        virtual SP<ITexture>         createTexture(const Aquamarine::SDMABUFAttrs&, bool opaque = false, NFormatUtils::eYUVColorSpace yuvColorSpace = NFormatUtils::YUV_CS_AUTO) = 0;
++        virtual SP<ITexture>         createTexture(const Aquamarine::SDMABUFAttrs&, bool opaque = false, NFormatUtils::eYUVColorSpace yuvColorSpace = NFormatUtils::YUV_CS_AUTO,
++                                                   NFormatUtils::eYUVRange yuvRange = NFormatUtils::YUV_RANGE_AUTO) = 0;
+         virtual SP<ITexture>         createTexture(const int width, const int height, unsigned char* const)                                                                    = 0;
+         virtual SP<ITexture>         createTexture(cairo_surface_t* cairo)                                                                                                     = 0;
+         virtual SP<ITexture>         createTexture(std::span<const float> lut3D, size_t N)                                                                                     = 0;

@@ -5,6 +5,7 @@
   lib,
   pkgs,
   inputs,
+  theme,
   ...
 }: {
   imports = [
@@ -19,6 +20,7 @@
     ./store-preload
     ./hypr-wl-debug.nix
     ./hyprglass.nix
+    ./ff-hyprland-bridge.nix
     ./hyprland.nix
     ./hypr-window-keeper.nix
     ./hypr-monitor-arrange.nix
@@ -225,10 +227,14 @@
       # logind (which is better built for this purpose)
     };
     dconf.settings = {
-      #"org/gnome/desktop/interface" = {
-      #cursor-size = 32;
-      #text-scaling-factor = 1;
-      #};
+      "org/gnome/desktop/interface" = {
+        #cursor-size = 32;
+        #text-scaling-factor = 1;
+        color-scheme =
+          if theme.meta.mode == "dark"
+          then "prefer-dark"
+          else "prefer-light";
+      };
       "org/gnome/mutter" = {
         experimental-features = ["scale-monitor-framebuffer"];
       };
@@ -240,7 +246,7 @@
       };
       "org/gtk/settings/file-chooser" = {
         date-format = "regular";
-        location-mode = "path-bar";
+        location-mode = "filename-entry";
         show-hidden = true;
         show-size-column = true;
         show-type-column = true;
@@ -249,6 +255,8 @@
         sort-order = "descending";
         type-format = "category";
       };
+      # gtk file picker to type-in path
+      "org/gtk/gtk4/settings/file-chooser".location-mode = "filename-entry"; # GTK4
     };
     home.sessionVariables = {
       # TODO: (med prio) Move this away from a static variable ( in case sway is run).

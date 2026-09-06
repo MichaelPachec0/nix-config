@@ -451,10 +451,10 @@ index 81fb64f..9ecd30b 100644
  }
 diff --git a/src/GlassRectDecoration.cpp b/src/GlassRectDecoration.cpp
 new file mode 100644
-index 0000000..ad66ce5
+index 0000000..f291250
 --- /dev/null
 +++ b/src/GlassRectDecoration.cpp
-@@ -0,0 +1,269 @@
+@@ -0,0 +1,335 @@
 +#include "GlassRectDecoration.hpp"
 +#include "Globals.hpp"
 +#include "PluginConfig.hpp"
@@ -470,7 +470,7 @@ index 0000000..ad66ce5
 +#include <hyprland/src/render/Renderer.hpp>
 +#include <hyprland/src/render/Texture.hpp>
 +#include <hyprland/src/render/pass/RectPassElement.hpp>
-+#include <hyprland/src/render/pass/TexPassElement.hpp>
++#include <hyprland/src/render/pass/SurfacePassElement.hpp>
 +#include <hyprutils/math/Region.hpp>
 +
 +#include <algorithm>
@@ -490,6 +490,33 @@ index 0000000..ad66ce5
 +PHLWINDOW CGlassRectDecoration::getOwner() {
 +    return m_window.lock();
 +}
++
++// Hyprland's surface element, restricted to a clip box. The stock element
++// reports its whole texture box as opaque when drawn at alpha 1, which would
++// let the pass simplifier discard everything beneath the window outside the
++// hole (the base render, the glass). Report nothing opaque and only the
++// clipped area as bounds; the draw itself is the stock one.
++class CGlassRectSurfaceElement : public CSurfacePassElement {
++  public:
++    explicit CGlassRectSurfaceElement(const SRenderData& data) : CSurfacePassElement(data) {}
++
++    std::optional<CBox> boundingBox() override {
++        auto bb = CSurfacePassElement::boundingBox();
++        if (!bb || m_data.clipBox.empty())
++            return bb;
++        const auto mon   = m_data.pMonitor.lock();
++        const auto scale = mon ? mon->m_scale : 1.f;
++        return bb->intersection(m_data.clipBox.copy().scale(1.f / scale));
++    }
++
++    CRegion opaqueRegion() override {
++        return {};
++    }
++
++    const char* passName() override {
++        return "CGlassRectSurfaceElement";
++    }
++};
 +
 +// Parses "hyprglass_rect:x,y,w,h" (window-logical px, integers). A trailing
 +// '*' marks a dynamic tag and is ignored. Returns false on any malformed
@@ -634,27 +661,66 @@ index 0000000..ad66ce5
 +            holes.push_back(CBox{x1, y1, x2 - x1, y2 - y1});
 +    }
 +
-+    // 1. Redraw the surface inside each rect. The full window box is the
-+    //    texture's destination (identity mapping onto the main surface box,
-+    //    the same assumption mask mode makes), clipped to the rect. Popups and
-+    //    subsurfaces are not part of this texture; video is (verified:
-+    //    Firefox composites video into the main buffer).
++    // 1. Redraw the window's surfaces inside each rect, clipped to it, through
++    //    Hyprland's own surface element. That is deliberate: the toplevel
++    //    texture alone is NOT enough (Firefox draws page and video into a
++    //    wl_subsurface), and a plain texture blit of a subsurface ignores its
++    //    wp_viewporter crop, so a video whose surface is cropped as the page
++    //    scrolls came out squashed, and YUV video skipped the colour path.
++    //    CSurfacePassElement walks the same UV/viewport/colour code the base
++    //    render used; we only feed it alpha 1 (escaping the opacity rule),
++    //    the fade, and a clip box per hole. Surface tree walked breadthfirst
++    //    like renderWindow: subsurfaces, not popups.
 +    if (tagged && redrawOn && redrawA > 0.001f && !holes.empty()) {
-+        const auto wlSurface       = window->wlSurface();
-+        const auto surfaceResource = wlSurface ? wlSurface->resource() : nullptr;
-+        const auto surfaceTexture  = surfaceResource ? surfaceResource->m_current.texture : nullptr;
-+        if (surfaceTexture && surfaceTexture->m_texID) {
-+            for (const auto& hole : holes) {
-+                CTexPassElement::SRenderData data;
-+                data.tex           = surfaceTexture;
-+                data.box           = windowBox;
-+                data.a             = redrawA * fade;
-+                data.round         = ROUND;
-+                data.roundingPower = ROUNDINGPOWER;
-+                data.clipBox       = hole;
-+                data.blur          = false;
-+                g_pHyprRenderer->addPassElement(makeUnique<CTexPassElement>(data));
-+            }
++        const auto wlSurface = window->wlSurface();
++        const auto mainRes   = wlSurface ? wlSurface->resource() : nullptr;
++        if (mainRes) {
++            // Same geometry the holes were cut from, back in logical
++            // monitor-global units, so hole and redraw cannot drift apart.
++            const Vector2D realPos  = Vector2D{windowBox.x, windowBox.y} / scale + monitor->m_position;
++            const Vector2D realSize = Vector2D{windowBox.width, windowBox.height} / scale;
++            int            counter  = 0;
++            mainRes->breadthfirst(
++                [&](SP<CWLSurfaceResource> s, const Vector2D& offset, void*) {
++                    if (!s || !s->m_current.texture)
++                        return;
++                    if (s->m_current.size.x < 1 || s->m_current.size.y < 1)
++                        return;
++
++                    const bool isMain = s == mainRes;
++                    // Monitor-px extent of this surface, only for the cheap
++                    // "does it touch the hole at all" test below.
++                    const CBox sbox = isMain ? windowBox :
++                                               CBox{windowBox.x + offset.x * scale, windowBox.y + offset.y * scale, //
++                                            s->m_current.size.x * scale, s->m_current.size.y * scale};
++
++                    for (const auto& hole : holes) {
++                        if (sbox.x >= hole.x + hole.width || sbox.x + sbox.width <= hole.x || sbox.y >= hole.y + hole.height || sbox.y + sbox.height <= hole.y)
++                            continue;
++                        CSurfacePassElement::SRenderData data;
++                        data.pMonitor       = monitor;
++                        data.pos            = realPos;
++                        data.w              = std::max(realSize.x, 5.0);
++                        data.h              = std::max(realSize.y, 5.0);
++                        data.localPos       = offset;
++                        data.surface        = s;
++                        data.texture        = s->m_current.texture;
++                        data.mainSurface    = isMain;
++                        data.pWindow        = window;
++                        data.alpha          = redrawA;
++                        data.fadeAlpha      = fade;
++                        data.blur           = false;
++                        data.decorate       = false;
++                        data.rounding       = ROUND;
++                        data.roundingPower  = ROUNDINGPOWER;
++                        data.dontRound      = false;
++                        data.surfaceCounter = counter;
++                        data.clipBox        = hole;
++                        g_pHyprRenderer->addPassElement(makeUnique<CGlassRectSurfaceElement>(data));
++                    }
++                    ++counter;
++                },
++                nullptr);
 +        }
 +    }
 +
@@ -1096,7 +1162,7 @@ index 32fa9c5..a96c64e 100644
          // in a single pass. surfacePixel is premultiplied alpha from Hyprland's
          // surface rendering, so we unpremultiply before the 'over' blend.
 diff --git a/src/main.cpp b/src/main.cpp
-index 4e93536..2f0ea09 100644
+index 4e93536..2d19a54 100644
 --- a/src/main.cpp
 +++ b/src/main.cpp
 @@ -1,4 +1,6 @@
@@ -1143,7 +1209,7 @@ index 4e93536..2f0ea09 100644
  }
  
  // ── Layer surface support ────────────────────────────────────────────────────
-@@ -254,6 +272,113 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
+@@ -254,6 +272,129 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
              if (ws) if (auto mon = ws->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon);
          });
  
@@ -1233,6 +1299,22 @@ index 4e93536..2f0ea09 100644
 +    static auto onRenderPre = Event::bus()->m_events.render.pre.listen([&](PHLMONITOR mon) {
 +        if (!xrayEnabled() || !mon)
 +            return;
++        // Belt and braces for the commit listeners above: a background/bottom
++        // layer on this monitor that has none yet (attach at layer.opened
++        // found no surface, or the layer was re-homed by a monitor hotplug)
++        // gets one now, and the capture is redone once. Seen as "glass draws
++        // over a black background on the re-docked monitor until the next
++        // config reload".
++        for (auto& tier : mon->m_layerSurfaceLayers) {
++            for (auto& lsRef : tier) {
++                const auto ls = lsRef.lock();
++                if (!ls || ls->m_layer > 1 || g_pGlobalState->layerCommitListeners.contains(ls.get()))
++                    continue;
++                watchLayerCommits(ls);
++                if (g_pGlobalState->layerCommitListeners.contains(ls.get()))
++                    g_pGlobalState->dirtyBackground(mon);
++            }
++        }
 +        const bool noFB = !g_pGlobalState->backgroundFB.contains(mon->m_id);
 +        if (noFB || g_pGlobalState->backgroundFBDirty[mon->m_id])
 +            g_pHyprRenderer->damageMonitor(mon);
@@ -1257,7 +1339,7 @@ index 4e93536..2f0ea09 100644
      // Clear pending presets/layers before config re-parse, commit after
      static auto onPreConfigReload = Event::bus()->m_events.config.preReload.listen([&]() {
          clearPendingPresets();
-@@ -266,6 +391,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
+@@ -266,6 +407,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
          parseLayerNamespaceFilters();
          commitPendingLayers(); // merge Lua layer() calls on top of string config
          validateConfig();
@@ -1266,7 +1348,7 @@ index 4e93536..2f0ea09 100644
      });
  
  
-@@ -323,6 +450,13 @@ APICALL EXPORT void PLUGIN_EXIT() {
+@@ -323,6 +466,13 @@ APICALL EXPORT void PLUGIN_EXIT() {
      g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassPassElement");
      g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerPassElement");
      g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerCompositeElement");
@@ -1280,7 +1362,7 @@ index 4e93536..2f0ea09 100644
  
      for (auto& decoration : g_pGlobalState->decorations) {
          if (auto* deco = decoration.get())
-@@ -330,6 +464,12 @@ APICALL EXPORT void PLUGIN_EXIT() {
+@@ -330,6 +480,12 @@ APICALL EXPORT void PLUGIN_EXIT() {
      }
      g_pGlobalState->decorations.clear();
  

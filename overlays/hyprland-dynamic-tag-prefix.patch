@@ -1,0 +1,17 @@
+--- a/src/desktop/rule/windowRule/WindowRuleApplicator.cpp
++++ b/src/desktop/rule/windowRule/WindowRuleApplicator.cpp
+@@ -159,7 +159,13 @@
+                 break;
+             }
+             case WINDOW_RULE_EFFECT_TAG: {
+-                m_dynamicTags.emplace_back(effect, rule->getPropertiesMask());
++                // Store the bare tag name: removeDynamicTag() matches
++                // name + "*", and CTagKeeper strips the +/- prefix before
++                // inserting, so keeping the prefix here made every "+tag"
++                // rule permanent once it had matched (e.g. a fullscreen rule
++                // tag survived leaving fullscreen).
++                const auto TAGNAME = effect.starts_with("+") || effect.starts_with("-") ? effect.substr(1) : effect;
++                m_dynamicTags.emplace_back(TAGNAME, rule->getPropertiesMask());
+                 m_tagKeeper.applyTag(effect, true);
+                 result.tagsChanged = true;
+                 break;
