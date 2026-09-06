@@ -168,29 +168,133 @@ def monitor_hdr_capable(name, sysfs="/sys/class/drm", log=print_err):
     return edid_hdr_capable(data)
 
 
-def find_window(title):
-    """Correlate the extension's window title with a Hyprland client record.
+# --- Hyprland state: this Firefox's windows, monitors, HDR per monitor -------
 
-    Firefox toplevel titles carry the page title, so exact match first; fall
-    back to the focused firefox window, then to the sole firefox window.
-    A miss returns None and the caller does nothing (degrade stance).
-    """
-    try:
-        clients = json.loads(hyprctl("clients", "-j") or "[]")
-    except ValueError:
-        return None
-    ff = [c for c in clients if str(c.get("class", "")).startswith("firefox")]
-    if not ff:
-        return None
-    for c in ff:
-        if c.get("title") == title:
-            return c
-    focused = [c for c in ff if c.get("focusHistoryID") == 0]
-    if focused:
-        return focused[0]
-    if len(ff) == 1:
-        return ff[0]
-    return None
+class HyprState:
+    """Clients of THIS Firefox (pid == our parent: Firefox spawns the host),
+    monitor id -> connector name, and cached HDR capability per connector."""
+
+    def __init__(self, hyprctl=hyprctl, ppid=None, sysfs="/sys/class/drm", log=print_err):
+        self._hyprctl = hyprctl
+        self._ppid = ppid if ppid is not None else os.getppid()
+        self._sysfs = sysfs
+        self._log = log
+        self.lock = threading.RLock()
+        self.clients = {}   # address -> {"title", "monitor", "size"}
+        self.monitors = {}  # id -> name
+        self.capable = {}   # name -> bool
+
+    def _json(self, *args):
+        try:
+            return json.loads(self._hyprctl(*args) or "[]")
+        except ValueError:
+            return None
+
+    def refresh_clients(self):
+        data = self._json("clients", "-j")
+        if data is None:
+            return  # keep the last good table
+        with self.lock:
+            self.clients = {
+                c["address"]: {"title": c.get("title", ""), "monitor": c.get("monitor"), "size": c.get("size") or []}
+                for c in data
+                if c.get("pid") == self._ppid and c.get("address")
+            }
+
+    def refresh_monitors(self):
+        data = self._json("monitors", "-j")
+        if data is None:
+            return
+        with self.lock:
+            self.monitors = {m["id"]: m["name"] for m in data if "id" in m and "name" in m}
+            self.capable = {}
+
+    def set_title(self, address, title):
+        with self.lock:
+            if address in self.clients:
+                self.clients[address]["title"] = title
+
+    def drop(self, address):
+        with self.lock:
+            self.clients.pop(address, None)
+
+    def client(self, address):
+        with self.lock:
+            return self.clients.get(address)
+
+    def hdr_for(self, address):
+        with self.lock:
+            c = self.clients.get(address)
+            if not c:
+                return None
+            name = self.monitors.get(c.get("monitor"))
+            if name is None:
+                return None
+            if name not in self.capable:
+                self.capable[name] = monitor_hdr_capable(name, self._sysfs, self._log)
+            return self.capable[name]
+
+
+class Mapper:
+    """windowId (extension) -> address (Hyprland), learned from titles."""
+
+    def __init__(self):
+        self.mapping = {}   # window_id -> address
+        self.pending = {}   # window_id -> last reported title
+        self.strikes = {}   # window_id -> consecutive divergence count
+
+    def address_for(self, window_id):
+        return self.mapping.get(window_id)
+
+    def forget_address(self, address):
+        for wid in [w for w, a in self.mapping.items() if a == address]:
+            del self.mapping[wid]
+            self.strikes.pop(wid, None)
+
+    def learn(self, state, window_id, title):
+        with state.lock:
+            addr = self.mapping.get(window_id)
+            if addr in state.clients:
+                return addr
+            self.mapping.pop(window_id, None)
+            self.pending[window_id] = title
+            mapped = set(self.mapping.values())
+            exact = [a for a, c in state.clients.items() if c["title"] == title and a not in mapped]
+            if len(exact) == 1:
+                return self._map(window_id, exact[0])
+            unmapped = [a for a in state.clients if a not in mapped]
+            if len(unmapped) == 1 and len(self.pending) == 1:
+                return self._map(window_id, unmapped[0])
+            return None
+
+    def _map(self, window_id, address):
+        self.mapping[window_id] = address
+        self.pending.pop(window_id, None)
+        self.strikes.pop(window_id, None)
+        return address
+
+    def check_divergence(self, state, reported):
+        """reported: window_id -> title the extension last sent. A mapping
+        whose client title differs while another client matches exactly, two
+        checks in a row, is dropped and relearned (bad tie-break guard)."""
+        with state.lock:
+            for wid, title in reported.items():
+                addr = self.mapping.get(wid)
+                c = state.clients.get(addr)
+                if not c or c["title"] == title:
+                    self.strikes.pop(wid, None)
+                    continue
+                others = [a for a, cc in state.clients.items() if a != addr and cc["title"] == title]
+                if not others:
+                    self.strikes.pop(wid, None)
+                    continue
+                n = self.strikes.get(wid, 0) + 1
+                if n < 2:
+                    self.strikes[wid] = n
+                    continue
+                del self.mapping[wid]
+                self.strikes.pop(wid, None)
+                self.learn(state, wid, title)
 
 
 # --- dispatcher fragments (verified table forms, numeric prop values) -------
@@ -330,6 +434,9 @@ def main():
             "hdr": bool(cfg.get("hdrEnable", DEFAULTS["hdrEnable"])),
         }
     )
+    state = HyprState()
+    state.refresh_monitors()
+    mapper = Mapper()
     applied_by_addr = {}
     try:
         while True:
@@ -339,20 +446,13 @@ def main():
             if msg.get("type") != "state":
                 continue
             cfg = load_config()  # cheap; picks up edits without restart
-            client = find_window(str(msg.get("title", "")))
+            state.refresh_clients()
+            address = mapper.learn(state, msg.get("windowId"), str(msg.get("title", "")))
+            client = state.client(address) if address else None
             if not client:
                 continue
-            address = client["address"]
             applied = applied_by_addr.setdefault(address, Applied())
-            apply_state(
-                address,
-                client,
-                bool(msg.get("playing")),
-                msg.get("rects") or [],
-                msg.get("outer"),
-                cfg,
-                applied,
-            )
+            apply_state(address, client, bool(msg.get("playing")), msg.get("rects") or [], msg.get("outer"), cfg, applied)
     finally:
         clear_all(applied_by_addr)
 
