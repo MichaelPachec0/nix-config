@@ -62,6 +62,28 @@ in {
       };
     };
 
+    extension = {
+      install = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Link the unsigned XPI into the profile's extensions/ dir so the
+          extension persists across Firefox restarts. A temporary add-on
+          loaded via about:debugging dies with the browser, which twice
+          left every window untagged after a switch. Needs
+          xpinstall.signatures.required=false and
+          extensions.autoDisableScopes=0 in the profile's user.js
+          (Developer Edition honours the first); Firefox picks the file up
+          at its next start.
+        '';
+      };
+      profileDir = lib.mkOption {
+        type = lib.types.str;
+        default = config.hyprglass.firefox.profileDir;
+        description = "Profile directory name under ~/.mozilla/firefox that receives the XPI.";
+      };
+    };
+
     hdr.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -85,5 +107,13 @@ in {
     # path; the extension itself is loaded unpacked from
     # ${bridgePkg}/share/ff-hyprland-bridge/extension via about:debugging.
     programs.firefox.nativeMessagingHosts = [bridgePkg];
+
+    # Same layout home-manager's profiles.<p>.extensions.packages produces,
+    # but by hand: this profile is not HM-declared (declaring it would make HM
+    # own profiles.ini), so only the one file is linked.
+    home.file.".mozilla/firefox/${cfg.extension.profileDir}/extensions/${bridgePkg.extensionId}.xpi" =
+      lib.mkIf cfg.extension.install {
+        source = "${bridgePkg}/share/ff-hyprland-bridge/${bridgePkg.extensionId}.xpi";
+      };
   };
 }
