@@ -250,6 +250,14 @@
           # create_source moved the crash instead of removing it. Still unfixed
           # on main as of 2026-08-20, so upstreamable rather than a backport.
           ../overlays/hyprland-session-lock-surface-stale-output.patch
+          # A window-rule `tag = "+foo"` was never removed once the rule stopped
+          # matching: applyDynamicRule stored the effect WITH its "+" in
+          # m_dynamicTags, while CTagKeeper strips the prefix and stores
+          # "foo*", so removeDynamicTag("+foo") matched nothing. Visible as
+          # the noglass-fullscreen tag (hyprglass_disabled) staying on every
+          # window that had ever been fullscreen. Stores the bare name. Same
+          # bug on main as of 2026-09-06.
+          ../overlays/hyprland-dynamic-tag-prefix.patch
         ];
     });
     # xdg-desktop-portal-hyprland past its v1.4.0 tag, for 71ae1a3a
