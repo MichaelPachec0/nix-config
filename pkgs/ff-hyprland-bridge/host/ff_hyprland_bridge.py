@@ -33,6 +33,10 @@ import sys
 import threading
 
 CONFIG_PATH = os.path.expanduser("~/.config/ff-hyprland-bridge.json")
+# Debug aid: set FF_HYPRLAND_BRIDGE_LOG=<file> in Firefox's environment and
+# the host appends one line per message in either direction plus its startup
+# facts (ppid, socket2 path, client count). Off when unset.
+TRACE_PATH = os.environ.get("FF_HYPRLAND_BRIDGE_LOG")
 RECT_PREFIX = "hyprglass_rect:"
 
 DEFAULTS = {
@@ -55,6 +59,16 @@ def load_config():
     return cfg
 
 
+def trace(kind, obj):
+    if not TRACE_PATH:
+        return
+    try:
+        with open(TRACE_PATH, "a", encoding="utf-8") as f:
+            f.write(f"{kind} {json.dumps(obj)}\n")
+    except OSError:
+        pass
+
+
 def read_message():
     raw = sys.stdin.buffer.read(4)
     if len(raw) < 4:
@@ -66,15 +80,18 @@ def read_message():
     if len(data) < length:
         return None
     try:
-        return json.loads(data)
+        msg = json.loads(data)
     except ValueError:
         return None
+    trace("in", msg)
+    return msg
 
 
 _SEND_LOCK = threading.Lock()  # the main loop and the socket2 thread both send
 
 
 def send_message(obj):
+    trace("out", obj)
     data = json.dumps(obj).encode()
     with _SEND_LOCK:
         sys.stdout.buffer.write(struct.pack("<I", len(data)))
@@ -594,6 +611,8 @@ def main():
     state = HyprState()
     state.refresh_monitors()
     state.refresh_clients()
+    trace("start", {"ppid": os.getppid(), "socket2": socket2_path(), "clients": len(state.clients),
+                    "monitors": state.monitors})
     bridge = Bridge(state, Mapper(), send_message)
 
     stop = threading.Event()
