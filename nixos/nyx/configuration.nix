@@ -34,6 +34,7 @@ in {
     ../../helpers/caches.nix
     ../../features/nixos/virtualization
     ../../features/nixos/common/deploy.nix
+    ../../features/nixos/common/remote-sudo.nix
     inputs.nix-gaming.nixosModules.pipewireLowLatency
     inputs.idrive-nix.nixosModules.idrive
   ];

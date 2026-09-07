@@ -40,6 +40,7 @@ in {
     ./disk-config.nix
     ../../features/nixos/common
     ../../features/nixos/common/deploy.nix
+    ../../features/nixos/common/remote-sudo.nix
     ../../features/nixos/server
     ../../features/nixos/server/base.nix
     ../../helpers/caches.nix

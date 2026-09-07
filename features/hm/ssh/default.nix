@@ -13,7 +13,14 @@
     options ? {},
   }: {
     inherit hostname identityFile user port;
-    extraOptions = {PreferredAuthentications = "publickey";} // options;
+    extraOptions =
+      {
+        PreferredAuthentications = "publickey";
+        # Load the sk key into ssh-agent on first use so a forwarded agent
+        # (ssh -A) has something to sign sudo challenges with on the far end.
+        AddKeysToAgent = "yes";
+      }
+      // options;
     identitiesOnly = true;
   };
 in {

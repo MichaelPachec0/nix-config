@@ -24,6 +24,16 @@
         };
 
         initExtra = ''
+          # Keep a stable path to the forwarded ssh-agent socket. sshd hands
+          # every connection a fresh /tmp/ssh-XXXX/agent.N path, so shells in
+          # a tmux session from an older connection point at a dead socket
+          # and sudo-over-agent (pam_rssh) silently falls back to password.
+          # Re-point the symlink on each login; old shells follow it.
+          if [ -n "$SSH_CONNECTION" ] && [ -S "$SSH_AUTH_SOCK" ] \
+             && [ "$SSH_AUTH_SOCK" != "$HOME/.ssh/agent_sock" ]; then
+            ln -sf "$SSH_AUTH_SOCK" "$HOME/.ssh/agent_sock"
+            export SSH_AUTH_SOCK="$HOME/.ssh/agent_sock"
+          fi
           ZSH_AUTOSUGGEST_STRATEGY=(completion history)
           RPS1='$(kubectx_prompt_info)'
           PROMPT='$(kube_ps1)'$PROMPT
