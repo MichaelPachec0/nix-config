@@ -72,14 +72,18 @@ in {
         enableSSHSupport = true;
         enableExtraSocket = true;
         enableBrowserSocket = true;
-        # This is the builtin pinentry app in gnupg
-        # pinentryFlavor =
-        #   if graphical
-        #   then "gtk2"
-        #   else "curses";
+        # One package, both frontends. nixpkgs builds pinentry-gnome3 with
+        # the gnome3, curses and tty flavors in a single derivation, so the
+        # graphical build already carries bin/pinentry-curses and
+        # bin/pinentry-tty next to the GTK3/GCR bin/pinentry-gnome3 that
+        # bin/pinentry points at; that binary falls back to curses when no
+        # display is reachable (ssh, VT). Adding pinentry-curses as a second
+        # package would only duplicate bin/pinentry-curses. Headless hosts
+        # get the curses-only build. The gnupg module wires gcr onto D-Bus
+        # by itself when the package carries the gnome3 flavor.
         pinentryPackage =
           if graphical
-          then pkgs.pinentry-gtk2
+          then pkgs.pinentry-gnome3
           else pkgs.pinentry-curses;
       };
     };
@@ -91,8 +95,13 @@ in {
       udev.packages = [pkgs.yubikey-personalization];
     };
 
+    # The gnupg module only installs gnupg itself; the pinentry package it
+    # points gpg-agent at is not on PATH unless added here. This puts
+    # pinentry, pinentry-curses and pinentry-tty (and pinentry-gnome3 on
+    # graphical hosts) on PATH for anything besides gpg-agent that prompts.
     environment.systemPackages = with pkgs;
       [
+        config.programs.gnupg.agent.pinentryPackage
         yubico-piv-tool
         #yubikey-manager
         # 2025-11-05: pcsctools changed to pcsc-tools

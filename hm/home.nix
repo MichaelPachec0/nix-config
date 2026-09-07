@@ -307,13 +307,16 @@ in {
     #   propagatedBuildInputs = (old.propagatedBuildInputs or []) ++ [pkgs.fzf];
     # });
   in
-    with pkgs; [
-      #fastanime
-      claude-code
-      # fluffychat
-      playground.workstyle
-      kdePackages.kate
-    ];
+    with pkgs;
+      [
+        #fastanime
+        # fluffychat
+        playground.workstyle
+        kdePackages.kate
+      ]
+      ++ (with inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}; [
+        claude-code
+      ]);
 
   services.udiskie = {
     enable = true;
