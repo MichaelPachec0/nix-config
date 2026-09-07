@@ -912,22 +912,32 @@ in {
               scale = 1.0;
             }
             {
+              # KTC native max is 2560x1440@165, but Renoir DCN 2.1 has a shared
+              # display-clock budget: @165 is only reachable when the other two
+              # externals are near-idle. With VG279 and VG259QM both active above
+              # 100Hz, DC caps this pipe at 144 (measured 2026-09-04: @165 request
+              # falls back to 144 even with the others at 100/100 or 120/60). 144
+              # is the best achievable here and clears the >=120 priority.
               output = "desc:Shenzhen KTC Technology Group H27S17 0x00000001";
-              mode = "2560x1440@119.99";
+              mode = "2560x1440@144";
               position = "3840x0";
               scale = 1.0;
               bitdepth = 10;
             }
             {
+              # VG279 native panel max is 1920x1080@144 (over the dock MST link).
               output = "desc:ASUSTek COMPUTER INC VG279 K5LMQS018158";
-              mode = "1920x1080@119.98";
+              mode = "1920x1080@144";
               position = "0x0";
               scale = 1.0;
               bitdepth = 10;
             }
             {
+              # VG259QM is on the laptop's native HDMI (not the dock) and reaches
+              # its full 1920x1080@240 even with the other two externals active;
+              # the HDMI pipe is not on the DP/MST clock path. 10-bit holds at 240.
               output = "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054";
-              mode = "1920x1080@119.88";
+              mode = "1920x1080@239.76";
               position = "1920x0";
               scale = 1.0;
               bitdepth = 10;
@@ -1049,194 +1059,195 @@ in {
           # NOT ported (no Hyprland equivalent): sway's window_role (pop-up,
           # bubble, task_dialog, Preferences) and window_type (dialog, menu)
           # float criteria -- Hyprland has no role/type match.
-          window_rule = [
-            # -- Floating (title) --
-            {
-              name = "float-ff-share";
-              match = {title = "Firefox.*Sharing Indicator";};
-              float = true;
-              no_focus = true;
-            }
-            {
-              name = "float-pip";
-              match = {title = "Picture-in-Picture";};
-              float = true;
-            }
-            {
-              name = "float-ff-dropdown";
-              match = {title = "Dropdown";};
-              float = true;
-            }
-            {
-              name = "float-ff-about";
-              match = {title = "^About.*[Ff]irefox.*$";};
-              float = true;
-            }
-            {
-              name = "float-complete-install";
-              match = {title = "^Complete Installation$";};
-              float = true;
-            }
-            {
-              name = "float-steam-news";
-              match = {title = "^Steam - News";};
-              float = true;
-            }
-            {
-              name = "float-steam-update";
-              match = {title = "^Steam - Update";};
-              float = true;
-            }
-            {
-              name = "float-steam-selfupd";
-              match = {title = "^Steam - Self Updater$";};
-              float = true;
-            }
-            {
-              name = "float-steam-guard";
-              match = {title = "^Steam Guard";};
-              float = true;
-            }
-            {
-              name = "float-zoom";
-              match = {title = "^zoom$";};
-              float = true;
-            }
+          window_rule =
+            [
+              # -- Floating (title) --
+              {
+                name = "float-ff-share";
+                match = {title = "Firefox.*Sharing Indicator";};
+                float = true;
+                no_focus = true;
+              }
+              {
+                name = "float-pip";
+                match = {title = "Picture-in-Picture";};
+                float = true;
+              }
+              {
+                name = "float-ff-dropdown";
+                match = {title = "Dropdown";};
+                float = true;
+              }
+              {
+                name = "float-ff-about";
+                match = {title = "^About.*[Ff]irefox.*$";};
+                float = true;
+              }
+              {
+                name = "float-complete-install";
+                match = {title = "^Complete Installation$";};
+                float = true;
+              }
+              {
+                name = "float-steam-news";
+                match = {title = "^Steam - News";};
+                float = true;
+              }
+              {
+                name = "float-steam-update";
+                match = {title = "^Steam - Update";};
+                float = true;
+              }
+              {
+                name = "float-steam-selfupd";
+                match = {title = "^Steam - Self Updater$";};
+                float = true;
+              }
+              {
+                name = "float-steam-guard";
+                match = {title = "^Steam Guard";};
+                float = true;
+              }
+              {
+                name = "float-zoom";
+                match = {title = "^zoom$";};
+                float = true;
+              }
 
-            # -- Floating (class / app_id -> Hyprland class) --
-            {
-              name = "float-keepassxc";
-              match = {class = "^org.keepassxc.KeePassXC$";};
-              center = true;
-              float = true;
-              size = "800 600";
-              workspace = "special:magic"; # park in the cycling scratchpad
-            }
-            {
-              name = "float-mpv";
-              match = {class = "^Mpv$";};
-              float = true;
-            }
-            {
-              name = "float-pavucontrol";
-              match = {class = "[Pp]avucontrol";};
-              float = true;
-            }
-            {
-              name = "float-launcher";
-              match = {class = "launcher";};
-              float = true;
-            }
-            {
-              name = "float-nm-editor";
-              match = {class = "^nm-connection-editor$";};
-              float = true;
-            }
-            {
-              name = "float-ibus";
-              match = {class = "Ibus-ui-gtk3";};
-              float = true;
-            }
-            {
-              name = "float-pinentry";
-              match = {class = "Pinentry";};
-              float = true;
-            }
-            {
-              name = "float-force-float";
-              match = {class = ".*force_float.*";};
-              float = true;
-            }
-            {
-              name = "float-zenity";
-              match = {class = "zenity";};
-              float = true;
-            }
-            {
-              name = "float-floating-update";
-              match = {class = "floating_update";};
-              float = true;
-            }
-            # Windscribe VPN mini-window + scratchpad. Matched by TITLE --
-            # Windscribe is a Qt app that sets no Wayland app_id (empty class),
-            # so a class rule never fires; title is the only reliable key.
-            # Fixed 350x240 mini-window, no border/rounding, tearing on; floated
-            # so it never tiles when cycled onto a workspace, and parked in the
-            # cycling scratchpad (special:magic). Centering while it's out of the
-            # pad is handled live by hypr-window-keeper -- Windscribe shoves its
-            # own window up when the Locations panel expands, and app-driven
-            # resizes emit no rule event. Opacity 1.0 lives in the
-            # opacity-exceptions block below (must beat opacity-all).
-            {
-              name = "scratch-windscribe";
-              match = {title = "^Windscribe$";};
-              float = true;
-              size = "350 240";
-              min_size = "1 1";
-              border_size = 0;
-              rounding = 0;
-              immediate = true;
-              workspace = "special:magic";
-            }
+              # -- Floating (class / app_id -> Hyprland class) --
+              {
+                name = "float-keepassxc";
+                match = {class = "^org.keepassxc.KeePassXC$";};
+                center = true;
+                float = true;
+                size = "800 600";
+                workspace = "special:magic"; # park in the cycling scratchpad
+              }
+              {
+                name = "float-mpv";
+                match = {class = "^Mpv$";};
+                float = true;
+              }
+              {
+                name = "float-pavucontrol";
+                match = {class = "[Pp]avucontrol";};
+                float = true;
+              }
+              {
+                name = "float-launcher";
+                match = {class = "launcher";};
+                float = true;
+              }
+              {
+                name = "float-nm-editor";
+                match = {class = "^nm-connection-editor$";};
+                float = true;
+              }
+              {
+                name = "float-ibus";
+                match = {class = "Ibus-ui-gtk3";};
+                float = true;
+              }
+              {
+                name = "float-pinentry";
+                match = {class = "Pinentry";};
+                float = true;
+              }
+              {
+                name = "float-force-float";
+                match = {class = ".*force_float.*";};
+                float = true;
+              }
+              {
+                name = "float-zenity";
+                match = {class = "zenity";};
+                float = true;
+              }
+              {
+                name = "float-floating-update";
+                match = {class = "floating_update";};
+                float = true;
+              }
+              # Windscribe VPN mini-window + scratchpad. Matched by TITLE --
+              # Windscribe is a Qt app that sets no Wayland app_id (empty class),
+              # so a class rule never fires; title is the only reliable key.
+              # Fixed 350x240 mini-window, no border/rounding, tearing on; floated
+              # so it never tiles when cycled onto a workspace, and parked in the
+              # cycling scratchpad (special:magic). Centering while it's out of the
+              # pad is handled live by hypr-window-keeper -- Windscribe shoves its
+              # own window up when the Locations panel expands, and app-driven
+              # resizes emit no rule event. Opacity 1.0 lives in the
+              # opacity-exceptions block below (must beat opacity-all).
+              {
+                name = "scratch-windscribe";
+                match = {title = "^Windscribe$";};
+                float = true;
+                size = "350 240";
+                min_size = "1 1";
+                border_size = 0;
+                rounding = 0;
+                immediate = true;
+                workspace = "special:magic";
+              }
 
-            # -- Floating (Anki child windows: class + title) --
-            {
-              name = "float-anki-profiles";
-              match = {
-                class = "Anki";
-                title = "Profiles";
-              };
-              float = true;
-            }
-            {
-              name = "float-anki-add";
-              match = {
-                class = "Anki";
-                title = "Add";
-              };
-              float = true;
-            }
-            {
-              name = "float-anki-browse";
-              match = {
-                class = "Anki";
-                title = "^Browse.*";
-              };
-              float = true;
-            }
+              # -- Floating (Anki child windows: class + title) --
+              {
+                name = "float-anki-profiles";
+                match = {
+                  class = "Anki";
+                  title = "Profiles";
+                };
+                float = true;
+              }
+              {
+                name = "float-anki-add";
+                match = {
+                  class = "Anki";
+                  title = "Add";
+                };
+                float = true;
+              }
+              {
+                name = "float-anki-browse";
+                match = {
+                  class = "Anki";
+                  title = "^Browse.*";
+                };
+                float = true;
+              }
 
-            # -- Opacity (sway "for_window opacity set"). The global 0.9 mirrors
-            # sway's translucency; drop it if you prefer opaque windows on
-            # Hyprland (the decoration block above keeps active/inactive at 1.0).
-            # Per-app 1.0 exceptions must follow the global rule to override
-            # it: the generated colorCritical rules below splice in AFTER this
-            # entry, never at the head of the list.
-            {
-              name = "opacity-all";
-              match = {class = ".*";};
-              opacity = "0.9 0.9";
-            }
-          ]
-          # colorCritical (hyprglass.nix): apps whose colour fidelity must not
-          # be touched. One six-entry list expands to opacity 1.0, no_blur and
-          # a hyprglass_disabled tag per app, replacing the hand-written
-          # opacity-*/noblur-* rules that used to live here so the three
-          # families cannot drift apart. Emitted on every host (the tag is
-          # inert without the plugin) so nyx and thanatos keep identical rule
-          # lists.
-          ++ generatedHyprglass.colorCriticalRules
-          # glassOptOut (hyprglass.nix): windows expensive or pointless to
-          # glass (opaque full-motion content): noglass tag only, opacity
-          # and blur untouched. Includes the fullscreen rule (gated on
-          # hyprglass.disableOnFullscreen): a fullscreen window is the
-          # largest possible sampling area with all of its glass occluded,
-          # the worst cost-to-benefit ratio the plugin can hit, and it is
-          # also what catches games whose class cannot be enumerated.
-          ++ generatedHyprglass.glassOptOutRules
-          # hyprglass.apps (hyprglass.nix): per-app opacity / preset / theme /
-          # mask / glass / videoRect, one rule or tag per field. The opacity
-          # entries rely on splicing in after opacity-all above.
-          ++ generatedHyprglass.appRules;
+              # -- Opacity (sway "for_window opacity set"). The global 0.9 mirrors
+              # sway's translucency; drop it if you prefer opaque windows on
+              # Hyprland (the decoration block above keeps active/inactive at 1.0).
+              # Per-app 1.0 exceptions must follow the global rule to override
+              # it: the generated colorCritical rules below splice in AFTER this
+              # entry, never at the head of the list.
+              {
+                name = "opacity-all";
+                match = {class = ".*";};
+                opacity = "0.9 0.9";
+              }
+            ]
+            # colorCritical (hyprglass.nix): apps whose colour fidelity must not
+            # be touched. One six-entry list expands to opacity 1.0, no_blur and
+            # a hyprglass_disabled tag per app, replacing the hand-written
+            # opacity-*/noblur-* rules that used to live here so the three
+            # families cannot drift apart. Emitted on every host (the tag is
+            # inert without the plugin) so nyx and thanatos keep identical rule
+            # lists.
+            ++ generatedHyprglass.colorCriticalRules
+            # glassOptOut (hyprglass.nix): windows expensive or pointless to
+            # glass (opaque full-motion content): noglass tag only, opacity
+            # and blur untouched. Includes the fullscreen rule (gated on
+            # hyprglass.disableOnFullscreen): a fullscreen window is the
+            # largest possible sampling area with all of its glass occluded,
+            # the worst cost-to-benefit ratio the plugin can hit, and it is
+            # also what catches games whose class cannot be enumerated.
+            ++ generatedHyprglass.glassOptOutRules
+            # hyprglass.apps (hyprglass.nix): per-app opacity / preset / theme /
+            # mask / glass / videoRect, one rule or tag per field. The opacity
+            # entries rely on splicing in after opacity-all above.
+            ++ generatedHyprglass.appRules;
 
           # hl.layer_rule({...}) -- frost the bar. blur enables wallpaper blur
           # behind the bar layer; ignore_alpha 0.5 restricts it to pixels with
