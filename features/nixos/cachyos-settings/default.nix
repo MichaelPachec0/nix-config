@@ -136,9 +136,9 @@ in {
     };
 
     # ---- usr/lib/systemd/journald.conf.d/00-journal-size.conf -------------
-    services.journald.extraConfig = ''
-      SystemMaxUse=50M
-    '';
+    services.journald.settings.Journal = {
+      SystemMaxUse = "50M";
+    };
 
     # ---- usr/lib/systemd/system/user@.service.d/delegate.conf -------------
     # Hands the user manager its own cgroup subtree for these controllers, so
