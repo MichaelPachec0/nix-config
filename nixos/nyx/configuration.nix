@@ -1310,9 +1310,28 @@ in {
     #
     # This block is for autotimezone setup
     services.localtimed.enable = true;
-    # ssssh v2
+    # since this does not change any functionality or libs only override here, setting an
+    # overlay would have cascading effects compile a whole host of gtk apps, this nets a win
+    # on changing geoclue (throttling requests) while still keeping vanilla behavior: no new error codes
+    # for consumers to handle
     services.geoclue2 = {
       enable = true;
+      package = pkgs.geoclue2.overrideAttrs (old: {
+        patches =
+          (old.patches or [])
+          ++ [
+            ../../overlays/geoclue-min-query-interval.patch
+            # Patch 1 reset the interval in on_network_changed(), which is not
+            # "the network changed": GNetworkMonitor emits it on every
+            # connectivity wobble, and on a flapping link most of those are the
+            # same network. Measured effect was ~2x the configured rate, one
+            # query per 300-390s against a 600s interval. This gates the reset
+            # on the rising edge of locate URL reachability, and stops
+            # throttling a source that has no last response to replay.
+            ../../overlays/geoclue-reset-on-reachability-edge.patch
+          ];
+      });
+
       enableWifi = true;
       # Real key is injected at runtime from sops via the geoclue.conf template
       # below; only this placeholder lands in the world-readable /nix/store.
