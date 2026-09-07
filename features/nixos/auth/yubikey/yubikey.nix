@@ -154,8 +154,27 @@ in {
         };
         login = {
           u2fAuth = true;
-          # TODO: disable this asap
+          # u2f stays a `sufficient` alternative (control set below via rules),
+          # not a forced 2nd factor, so keep this false.
           use2Factor = false;
+          # Goal: password ALWAYS required, plus EITHER YubiKey or fingerprint.
+          # NixOS' stock stack makes each factor a standalone `sufficient` that
+          # sits before pam_unix, so a factor logs you in with no password.
+          # Reorder: pam_unix first as `required` (no nullok), grab the token
+          # for the keyring, then u2f / fprintd as the sufficient 2nd factor.
+          rules.auth = {
+            "unix-early".enable = lib.mkForce false;
+            unix = {
+              control = lib.mkForce "required";
+              order = lib.mkForce 10700;
+              settings = {
+                nullok = lib.mkForce false;
+                try_first_pass = lib.mkForce false;
+              };
+            };
+            gnome_keyring.order = lib.mkForce 10750;
+            u2f.order = lib.mkForce 10800;
+          };
         };
         greetd =
           if greetdEnabled
