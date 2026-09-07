@@ -25,6 +25,7 @@ in {
     # ../../features/nixos/kernel
     # ../../features/nixos/virtualization
     ../../features/nixos/common/deploy.nix
+    ../../features/nixos/common/remote-sudo.nix
     ../../features/nixos/server
     ../../features/nixos/server/base.nix
     ../../helpers/caches.nix
