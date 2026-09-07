@@ -298,7 +298,7 @@ in {
   # derivation that hardcodes its own -j still overshoots.
   nix.settings = {
     max-jobs = 4;
-    cores = 4;
+    cores = 6;
   };
 
   # Protected side. The desktop working set spans THREE branches under
