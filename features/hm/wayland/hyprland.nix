@@ -912,22 +912,32 @@ in {
               scale = 1.0;
             }
             {
+              # KTC native max is 2560x1440@165, but Renoir DCN 2.1 has a shared
+              # display-clock budget: @165 is only reachable when the other two
+              # externals are near-idle. With VG279 and VG259QM both active above
+              # 100Hz, DC caps this pipe at 144 (measured 2026-09-04: @165 request
+              # falls back to 144 even with the others at 100/100 or 120/60). 144
+              # is the best achievable here and clears the >=120 priority.
               output = "desc:Shenzhen KTC Technology Group H27S17 0x00000001";
-              mode = "2560x1440@119.99";
+              mode = "2560x1440@144";
               position = "3840x0";
               scale = 1.0;
               bitdepth = 10;
             }
             {
+              # VG279 native panel max is 1920x1080@144 (over the dock MST link).
               output = "desc:ASUSTek COMPUTER INC VG279 K5LMQS018158";
-              mode = "1920x1080@119.98";
+              mode = "1920x1080@144";
               position = "0x0";
               scale = 1.0;
               bitdepth = 10;
             }
             {
+              # VG259QM is on the laptop's native HDMI (not the dock) and reaches
+              # its full 1920x1080@240 even with the other two externals active;
+              # the HDMI pipe is not on the DP/MST clock path. 10-bit holds at 240.
               output = "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054";
-              mode = "1920x1080@119.88";
+              mode = "1920x1080@239.76";
               position = "1920x0";
               scale = 1.0;
               bitdepth = 10;
