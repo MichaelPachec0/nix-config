@@ -1,12 +1,13 @@
 # features/nixos/auth/pam/quickshell-lock.nix
-# PAM service the Quickshell lock authenticates against. auth-only, includes the
-# system 'login' stack (same shape as hyprlock/swaylock). Shared by all hosts
-# that import features/nixos/auth.
+# PAM service the Quickshell lock authenticates against. Single-factor unlock:
+# YubiKey OR fingerprint OR password, each `sufficient` (same shape as
+# swaylock). It must NOT `include login`: the login stack is now 2FA (password
+# required + a second factor), which would force two factors just to unlock the
+# screen. Shared by all hosts that import features/nixos/auth.
 { ... }:
 {
   security.pam.services.quickshell-lock = {
-    text = ''
-      auth include login
-    '';
+    u2fAuth = true;
+    use2Factor = false;
   };
 }
