@@ -9,7 +9,7 @@
   # keys [in order] =  799, 718, 838, 828, 766, 791, 082
   # This is fine to keep in plaintext since the private bits are on the yubikey themselves.
   # u2f_keys = "michael:wgLH6pLDQwlL/RbQnT/CtMuSFn7VH14qQLqkex1t9VsZRCcUMqaaiyqEjsmdAOxuXp9QBKZIXFLAhs/9McmZJQ==,+1u7ifuqoxjSIlCrY7vzF5uI1uhWiNGE39kv0tjjk+PoozygIQHi2CIB4hUDv9WXTPcJk4MhGiFSwGgwSecmhA==,es256,+presence:afjG830wh8QnGsZmb8raLQ5CP3RvXVyKhZBK1e8p8JHvcZHjrIkE8xQifHkjmKqTFL58EUGtePhotzfo9pjOaw==,9hyR6kqSYa3B1nNzpDywlzLVlKXFsEGNbx212VhS34IijOsQTX0o8NQkk+5Q/amQR/hS1UsRcTMx2Q/sxWgGfg==,es256,+presence:6JSCUKfEYEfv7lh4SUTfcrbaxmjD6DnlBMyD25z8MVuO1f9fQaKiaPKTxOtD8u2gUibi4tRUcj8BuUFiwumGhA==,UD90YpoXfGvHcjYBieOWcBmTp5IGoYbpsIAmcjE5chGFDAskKjCXLpxYilwKl7R/ZL9z9uUUqUuFmtdESB4eag==,es256,+presence:R5TGyqiAs9GfCUpBToAIjFRZiLNnc9ICfu95X+27T/DpqS8d4xOZiQnZrvmpC7cKdXnzDyouZOahtkJF2QQGrQ==,lcav0kKf72rJ7Ko7Yxn/hncMf8Vh/OBVTydtLnkiS4WpWDJXuWdmazSF1iiPwZ5Sf7c0gwUm0c52pnXSpL7uFA==,es256,+presence:Q0I4TGH8oTp9/KQcpepuQEv2YpmPwagUHsDfmSb6Y+tl5Q4Uu7J2DnHLh0yc2sGTrjthijdksW+bwF/WPXvpUg==,KQi+kBqBLu073JpQsxSXZbHn+nJBY8pQL/ZBT8KcGvdrwuYgF8rzNjMmfF3Rc+7B+/MzP91yldaW1Q7hC2PA7g==,es256,+presence:TbW3UH6hr8Q94zaiNh5zVJ97otKm1PfvwkvvpLf2u/8+6ENoo4eHx4lVaD3w/pnZjlNKNdA/c4fQniAe9qI9bA==,7Vo1bCaBliJB1XCWDtyii/GfW2IOS4JFYJ1iTIku9BtT5gboh3ZZDOLj+vPmEwUXjt91/zd4KmaHw8ktsQUKAA==,es256,+presence:wSXzaXYKntS3z5S1uxOigp5ipUPx2449us9wtUgbxGquUQ6NP55LOxcL0cI2LLPT6w7abkp57Vay0YeZ7eJ85Q==,wpbua+5NhHHkbdLXU6EajdMMdxrBcBchJQP5jTlghEKUvg71uCNhWnGNlwpCax9Q8Klve/zqx0/Es9GfAU7vSw==,es256,+presence";
-  u2f_keys = "michael:FIH47PlEwW5mfA1CACTuPnIUGGFCnSZlBTul4KlMzRDl7x8hme4tZ5sH4gVdvHtzffaVeieqP2rkm7bf8TDMVQ==,YngIzzoVGwRHfoz/p2ZSdJwT/gFPOMq48PwswN5lX/+gvDVWC2NdHQfAe3tjri47sJ+Uq0wi+/lRfZZ29grF/Q==,es256,+presenc:L45Cphx++6+mCemwWr/wRFYn5zddetqMnex3vjNe7yp5p2ZCpVzoHf/MAyINOG9kqgSa7tuVqYHzo3oLFTMRSw==,eoPBfTwzR41DS7iblrO4Mx+TfFBn7Yl9cYx3m7Wu2UBuDynJEfDSyqIk83bxaudiPSzIAwGkuqbc5qTCLHB4xQ==,es256,+presence";
+  u2f_keys = "michael:FIH47PlEwW5mfA1CACTuPnIUGGFCnSZlBTul4KlMzRDl7x8hme4tZ5sH4gVdvHtzffaVeieqP2rkm7bf8TDMVQ==,YngIzzoVGwRHfoz/p2ZSdJwT/gFPOMq48PwswN5lX/+gvDVWC2NdHQfAe3tjri47sJ+Uq0wi+/lRfZZ29grF/Q==,es256,+presence:L45Cphx++6+mCemwWr/wRFYn5zddetqMnex3vjNe7yp5p2ZCpVzoHf/MAyINOG9kqgSa7tuVqYHzo3oLFTMRSw==,eoPBfTwzR41DS7iblrO4Mx+TfFBn7Yl9cYx3m7Wu2UBuDynJEfDSyqIk83bxaudiPSzIAwGkuqbc5qTCLHB4xQ==,es256,+presence";
   cfg = config.desktop;
   u2f_file = pkgs.writeText "u2f_mapping" u2f_keys;
   graphical = cfg.wayland.laptop || cfg.wayland.desktop;
@@ -115,23 +115,7 @@ in {
         yubioath-flutter
         # stable.yubikey-manager-qt
       ];
-    # environment.etc."ssh/authorized_keys.d/michael".text = ''
-    #   # 791
-    #   sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIILWGChqPz8wzEO811YHGO222xgM60eF+oAMGgXqTEqqAAAABHNzaDo= thanatos
-    #   sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIHMuXKaokH9SxXDGHAloLW9hyee+cjcfthdljpP96DiwAAAABHNzaDo= michael@nyx
-    #   # 718/082
-    #   sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIAMd8o25peRqhUadrPW0Pjw+tsypjp2s4/qri4BxlxLvAAAABHNzaDo= michael@nyx
-    # '';
     security.pam = {
-      rssh = {
-        enable = true;
-        settings = {
-          loglevel = "debug";
-          cue = true;
-          # authorized_keys_command_user = "nobody";
-          # cue_prompt = "Yo! slap that button on the Yubikey!";
-        };
-      };
       u2f = {
         enable = true;
         settings = let
@@ -148,7 +132,6 @@ in {
       };
       services = {
         sudo = {
-          rssh = true;
           u2fAuth = true;
           use2Factor = false;
         };
