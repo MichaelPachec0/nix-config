@@ -48,10 +48,10 @@ index ef3b5f0..960bfbe 100644
  .PHONY: all clean
 diff --git a/src/GlassBackgroundElement.cpp b/src/GlassBackgroundElement.cpp
 new file mode 100644
-index 0000000..5c8aff3
+index 0000000..e4158aa
 --- /dev/null
 +++ b/src/GlassBackgroundElement.cpp
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,59 @@
 +#include "GlassBackgroundElement.hpp"
 +#include "Globals.hpp"
 +
@@ -104,6 +104,7 @@ index 0000000..5c8aff3
 +    glBindFramebuffer(GL_FRAMEBUFFER, fbId(source));
 +
 +    g_pGlobalState->backgroundFBDirty[monitor->m_id] = false;
++    g_pGlobalState->captureQueued[monitor->m_id]     = false;
 +    // Content changed: invalidate every window decoration's cached sample on
 +    // this monitor (they compare against this counter).
 +    g_pGlobalState->backgroundGeneration[monitor->m_id]++;
@@ -927,7 +928,7 @@ index 92d4daa..a80a44c 100644
  
  // When mask is non-null (layers only), the shader composites the surface content
 diff --git a/src/Globals.hpp b/src/Globals.hpp
-index 0e78548..c8a084e 100644
+index 0e78548..03c4a17 100644
 --- a/src/Globals.hpp
 +++ b/src/Globals.hpp
 @@ -16,18 +16,17 @@
@@ -952,7 +953,7 @@ index 0e78548..c8a084e 100644
      // Layer surface glass state (one per tracked layer, keyed by raw pointer).
      // shared_ptr so CGlassLayerPassElement can hold a copy that survives map erasure mid-frame.
      std::unordered_map<Desktop::View::CLayerSurface*, std::shared_ptr<CGlassLayerSurface>> layerSurfaces;
-@@ -50,6 +49,58 @@ struct SGlobalState {
+@@ -50,6 +49,70 @@ struct SGlobalState {
      // stale entry can never alias a reallocated monitor object.
      std::unordered_map<MONITORID, uint64_t> sceneGeneration;
  
@@ -965,6 +966,18 @@ index 0e78548..c8a084e 100644
 +    // Hyprland's own m_blurFBDirty: monitor-level and NOT per-frame -- window
 +    // motion never sets it, which is precisely why xray is cheap.
 +    std::unordered_map<MONITORID, bool> backgroundFBDirty;
++    // Set while a CGlassBackgroundElement sits in the pass being built for
++    // this monitor and has not drawn yet. RENDER_PRE_WINDOWS fires once per
++    // workspace rendered into the frame: the active one, then every special
++    // workspace whose alpha is above zero (on EVERY monitor, the loop does not
++    // check the workspace's monitor). backgroundFBDirty is only cleared when
++    // the element draws, at pass execution, so at the second emission the flag
++    // still read dirty and a second capture was queued AFTER the active
++    // workspace's windows: it blitted those windows into the backdrop. Seen as
++    // the previous workspace ghosting under the new one after a switch, and as
++    // every glassed window flickering per notification, whenever the
++    // scratchpad was open or fading out.
++    std::unordered_map<MONITORID, bool> captureQueued;
 +
 +    // Bumped each time the capture is actually re-blitted (see
 +    // CGlassBackgroundElement::draw). A window decoration caches its blurred
@@ -1162,7 +1175,7 @@ index 32fa9c5..a96c64e 100644
          // in a single pass. surfacePixel is premultiplied alpha from Hyprland's
          // surface rendering, so we unpremultiply before the 'over' blend.
 diff --git a/src/main.cpp b/src/main.cpp
-index 4e93536..2d19a54 100644
+index 4e93536..73677ac 100644
 --- a/src/main.cpp
 +++ b/src/main.cpp
 @@ -1,4 +1,6 @@
@@ -1209,7 +1222,7 @@ index 4e93536..2d19a54 100644
  }
  
  // ── Layer surface support ────────────────────────────────────────────────────
-@@ -254,6 +272,129 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
+@@ -254,6 +272,158 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
              if (ws) if (auto mon = ws->m_monitor.lock()) g_pGlobalState->bumpSceneGeneration(mon);
          });
  
@@ -1263,22 +1276,41 @@ index 4e93536..2d19a54 100644
 +        if (g_pGlobalState && mon) {
 +            g_pGlobalState->backgroundFB.erase(mon->m_id);
 +            g_pGlobalState->backgroundFBDirty.erase(mon->m_id);
++            g_pGlobalState->captureQueued.erase(mon->m_id);
 +        }
 +    });
 +    static auto onMonitorLayout = Event::bus()->m_events.monitor.layoutChanged.listen(
 +        [&]() { if (g_pGlobalState) g_pGlobalState->dirtyAllBackgrounds(); });
-+    // Layer events carry the surface, not its monitor; these are rare enough
-+    // that dirtying every monitor is cheaper than chasing the association.
++    // Only background and bottom layers are in the capture (the same tier
++    // test the commit watchers apply): a toast or bar on top/overlay draws
++    // after the windows and never touches it. A notification daemon maps one
++    // overlay layer per monitor per toast and unmaps it after; unfiltered,
++    // each toast forced two full-monitor redraws and recaptures on every
++    // monitor. Dirty the layer's own monitor; all monitors only when it has
++    // none (unmapped before it was assigned one).
++    static auto dirtyForLayer = [](PHLLS ls) {
++        if (!g_pGlobalState)
++            return;
++        if (ls && ls->m_layer > 1)
++            return;
++        if (ls) {
++            if (auto mon = ls->m_monitor.lock()) {
++                g_pGlobalState->dirtyBackground(mon);
++                return;
++            }
++        }
++        g_pGlobalState->dirtyAllBackgrounds();
++    };
 +    static auto onLayerOpenedX = Event::bus()->m_events.layer.opened.listen([&](PHLLS ls) {
 +        if (!g_pGlobalState)
 +            return;
-+        g_pGlobalState->dirtyAllBackgrounds();
++        dirtyForLayer(ls);
 +        watchLayerCommits(ls);
 +    });
 +    static auto onLayerClosedX = Event::bus()->m_events.layer.closed.listen([&](PHLLS ls) {
 +        if (!g_pGlobalState)
 +            return;
-+        g_pGlobalState->dirtyAllBackgrounds();
++        dirtyForLayer(ls);
 +        if (ls)
 +            g_pGlobalState->layerCommitListeners.erase(ls.get());
 +    });
@@ -1315,6 +1347,10 @@ index 4e93536..2d19a54 100644
 +                    g_pGlobalState->dirtyBackground(mon);
 +            }
 +        }
++        // New frame, new pass: a capture queued into a pass that never drew it
++        // (empty damage, render error) must not block the next one; the dirty
++        // flag it left behind re-queues it below.
++        g_pGlobalState->captureQueued[mon->m_id] = false;
 +        const bool noFB = !g_pGlobalState->backgroundFB.contains(mon->m_id);
 +        if (noFB || g_pGlobalState->backgroundFBDirty[mon->m_id])
 +            g_pHyprRenderer->damageMonitor(mon);
@@ -1333,13 +1369,19 @@ index 4e93536..2d19a54 100644
 +        const bool haveFB = fbIt != g_pGlobalState->backgroundFB.end() && fbIt->second;
 +        if (haveFB && !g_pGlobalState->backgroundFBDirty[mon->m_id])
 +            return; // cache valid: the capture costs nothing this frame
++        // One capture per frame, at the FIRST emission: the only point in the
++        // pass with the bottom layers in and no window yet. Later emissions
++        // (special workspaces) come after the active workspace's windows.
++        if (g_pGlobalState->captureQueued[mon->m_id])
++            return;
++        g_pGlobalState->captureQueued[mon->m_id] = true;
 +        g_pHyprRenderer->m_renderPass.add(makeUnique<CGlassBackgroundElement>());
 +    });
 +
      // Clear pending presets/layers before config re-parse, commit after
      static auto onPreConfigReload = Event::bus()->m_events.config.preReload.listen([&]() {
          clearPendingPresets();
-@@ -266,6 +407,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
+@@ -266,6 +436,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
          parseLayerNamespaceFilters();
          commitPendingLayers(); // merge Lua layer() calls on top of string config
          validateConfig();
@@ -1348,7 +1390,7 @@ index 4e93536..2d19a54 100644
      });
  
  
-@@ -323,6 +466,13 @@ APICALL EXPORT void PLUGIN_EXIT() {
+@@ -323,6 +495,14 @@ APICALL EXPORT void PLUGIN_EXIT() {
      g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassPassElement");
      g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerPassElement");
      g_pHyprRenderer->m_renderPass.removeAllOfType("CGlassLayerCompositeElement");
@@ -1358,11 +1400,12 @@ index 4e93536..2d19a54 100644
 +    // detach the commit watchers before their target surfaces outlive us.
 +    g_pGlobalState->backgroundFB.clear();
 +    g_pGlobalState->backgroundFBDirty.clear();
++    g_pGlobalState->captureQueued.clear();
 +    g_pGlobalState->layerCommitListeners.clear();
  
      for (auto& decoration : g_pGlobalState->decorations) {
          if (auto* deco = decoration.get())
-@@ -330,6 +480,12 @@ APICALL EXPORT void PLUGIN_EXIT() {
+@@ -330,6 +510,12 @@ APICALL EXPORT void PLUGIN_EXIT() {
      }
      g_pGlobalState->decorations.clear();
  
