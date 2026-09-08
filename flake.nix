@@ -343,6 +343,7 @@
           ++ [
             inputs.impermanence.nixosModules.impermanence
             inputs.disko.nixosModules.disko
+            inputs.sops-nix.nixosModules.sops
             ./nixos/kore/configuration.nix
             ./features/nixos/home/server.nix
           ];

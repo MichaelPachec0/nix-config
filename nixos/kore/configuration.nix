@@ -210,6 +210,17 @@ in {
   users.users.sysadmin = {
     openssh.authorizedKeys.keys = keys.all;
   };
+  # sops-nix: age key derived from the host ssh key, secrets shared in
+  # secrets/default.yaml. kore's recipient must be present in that file
+  # (ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub on kore, then
+  # `sops updatekeys secrets/default.yaml`).
+  sops = {
+    defaultSopsFile = ../../secrets/default.yaml;
+    defaultSopsFormat = "yaml";
+    age.sshKeyPaths = ["/etc/ssh/ssh_host_ed25519_key"];
+    age.keyFile = "/var/lib/sops-nix/key.txt";
+    age.generateKey = true;
+  };
   # TODO: (med prio) move this away from server config, ideally makes this a feature option.
   programs.zsh = {
     enableBashCompletion = true;
