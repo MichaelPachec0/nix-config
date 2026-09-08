@@ -26,6 +26,13 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = ntfy.enable;
+        message = "local.bootFallbackAlert needs local.ntfy.enable for the alert sender.";
+      }
+    ];
+
     systemd.services.boot-fallback-alert = {
       description = "Report a boot fallback and halt nightly upgrades";
       wantedBy = ["multi-user.target"];
