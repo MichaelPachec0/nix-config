@@ -31,4 +31,8 @@ run_case genB 02:59 03:00 05:00 none      # boundary below
 run_case genB 23:30 23:00 05:00 reboot    # window across midnight, evening side
 run_case genB 04:00 23:00 05:00 reboot    # window across midnight, morning side
 run_case genB 12:00 23:00 05:00 none      # across midnight, daytime
+run_case genB 03:00 03:00 05:00 none      # exactly lower
+run_case genB 05:00 03:00 05:00 none      # exactly upper
+run_case genB 23:00 23:00 05:00 none      # exactly lower, window across midnight
+run_case genB 05:00 23:00 05:00 none      # exactly upper, window across midnight
 echo "all auto-upgrade-reboot cases passed"

@@ -52,7 +52,8 @@ in {
       enable = true;
       inherit (cfg) flake;
       operation = "boot";
-      flags = ["--refresh" "-L"];
+      # Upstream already adds --refresh when flake is set; do not duplicate it.
+      flags = ["-L"];
       dates = "02:30";
       randomizedDelaySec = "10min";
       # Upstream's reboot logic only fires on kernel changes; ours below
