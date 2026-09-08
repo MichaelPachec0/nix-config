@@ -44,6 +44,11 @@ in {
     ../../features/nixos/server
     ../../features/nixos/server/base.nix
     ../../features/nixos/server/sysadmin-password.nix
+    ../../features/nixos/server/boot-counting
+    ../../features/nixos/server/boot-health.nix
+    ../../features/nixos/server/ntfy.nix
+    ../../features/nixos/server/auto-upgrade.nix
+    ../../features/nixos/server/boot-fallback-alert.nix
     ../../helpers/caches.nix
     # "${inputs.nixpkgs}/nixos/modules/services/matrix/conduwuit.nix"
     # Self-hosted AFFiNE (services.affine). aarch64 package + module come from
@@ -74,6 +79,19 @@ in {
       kernelParams = [
         "boot.shell_on_fail"
       ];
+    };
+    # Unattended upgrades with boot-counted fallback (see kore). The Oracle
+    # VM exposes no hardware watchdog; softdog lets systemd.watchdog reset a
+    # hung kernel.
+    boot.kernelModules = ["softdog"];
+    local = {
+      bootHealth = {
+        enable = true;
+        zerotierNetwork = "565799d8f65ab6a3";
+      };
+      ntfy.enable = true;
+      autoUpgrade.enable = true;
+      bootFallbackAlert.enable = true;
     };
     networking = {
       hostName = "selene";
