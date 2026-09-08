@@ -502,6 +502,11 @@
       qs-greeter = import ./pkgs/qs-greeter/nixos-test.nix {
         pkgs = nixpkgs.legacyPackages."x86_64-linux";
       };
+      # Boot-counted fallback on nixpkgs-stable: a generation without sshd
+      # fails boot-health twice, systemd-boot falls back, the alert fires.
+      auto-upgrade-rollback = import ./features/nixos/server/tests/vm-test.nix {
+        pkgs = nixpkgs-stable.legacyPackages."x86_64-linux";
+      };
     };
     # packages = {
     #

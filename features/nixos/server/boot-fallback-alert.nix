@@ -18,18 +18,27 @@ in {
   options.local.bootFallbackAlert = {
     enable = lib.mkEnableOption "alert and halt upgrades after a boot fallback";
     ntfySend = lib.mkOption {
-      type = lib.types.path;
-      default = "${ntfy.package}/bin/ntfy-send";
-      defaultText = lib.literalExpression ''"''${config.local.ntfy.package}/bin/ntfy-send"'';
-      description = "Program that receives TITLE PRIORITY TAGS and the body on stdin. Tests stub it.";
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Program that receives TITLE PRIORITY TAGS and the body on stdin.
+        Null means use local.ntfy's sender
+        (`''${config.local.ntfy.package}/bin/ntfy-send`); set this to a
+        path to override it (tests stub it this way).
+      '';
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = lib.mkIf cfg.enable (let
+    sender =
+      if cfg.ntfySend != null
+      then cfg.ntfySend
+      else "${ntfy.package}/bin/ntfy-send";
+  in {
     assertions = [
       {
-        assertion = ntfy.enable;
-        message = "local.bootFallbackAlert needs local.ntfy.enable for the alert sender.";
+        assertion = ntfy.enable || cfg.ntfySend != null;
+        message = "local.bootFallbackAlert needs either local.ntfy.enable or an explicit local.bootFallbackAlert.ntfySend.";
       }
     ];
 
@@ -47,7 +56,7 @@ in {
         StateDirectory = "auto-upgrade";
         LoadCredential = lib.mkIf ntfy.enable ntfy.loadCredential;
       };
-      environment.NTFY_SEND = toString cfg.ntfySend;
+      environment.NTFY_SEND = toString sender;
     };
-  };
+  });
 }
