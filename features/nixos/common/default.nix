@@ -16,6 +16,13 @@ in {
   };
   config = let
   in {
+    # Magic SysRq, emergency reboot only: 16 sync + 32 remount-ro + 128
+    # reboot = 176. Alt+SysRq+S, U, B gives a clean reboot when PID 1 is
+    # unusable (2026-09-07). The kernel keyboard layer handles the keys, so
+    # the compositor and kanata do not block them. The NixOS default 16
+    # permits only sync.
+    boot.kernel.sysctl."kernel.sysrq" = 176;
+
     programs.neovim = {
       package = inputs.neovim.packages.${pkgs.stdenv.hostPlatform.system}.default;
       enable = true;

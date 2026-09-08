@@ -35,6 +35,7 @@ in {
     ../../features/nixos/virtualization
     ../../features/nixos/common/deploy.nix
     ../../features/nixos/common/remote-sudo.nix
+    ../../features/nixos/common/reexec-downgrade-guard.nix
     inputs.nix-gaming.nixosModules.pipewireLowLatency
     inputs.idrive-nix.nixosModules.idrive
   ];
