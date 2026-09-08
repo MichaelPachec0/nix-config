@@ -83,6 +83,25 @@ in {
       };
     };
 
+    # OnSuccess= alone only reboots when the build finishes inside the
+    # window. A build served from the binary cache usually finishes before
+    # the window opens, so the staged generation would sit unactivated
+    # until the next night repeats the same race. This timer runs the same
+    # idempotent script every night at the window's lower bound; it is a
+    # no-op when nothing is staged.
+    systemd.timers.auto-upgrade-reboot = {
+      wantedBy = ["timers.target"];
+      timerConfig = {
+        OnCalendar = "*-*-* ${cfg.rebootWindow.lower}:00";
+        # Stay comfortably inside the window; firing at exactly the lower
+        # bound would be treated as outside it by the script's strict
+        # greater-than check.
+        RandomizedDelaySec = "15min";
+        Persistent = true;
+        AccuracySec = "1min";
+      };
+    };
+
     systemd.services.upgrade-failed-alert = {
       description = "Alert: nightly upgrade failed";
       path = [ntfy.package config.systemd.package pkgs.hostname];

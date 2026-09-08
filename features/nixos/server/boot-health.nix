@@ -86,9 +86,9 @@ in {
     # A frozen kernel must also burn a try instead of sitting there. The
     # watchdog kernel module is per host (sp5100_tco on kore, softdog on
     # selene) and lives in the host configuration.
-    systemd.watchdog = {
-      runtimeTime = "30s";
-      rebootTime = "2min";
+    systemd.settings.Manager = {
+      RuntimeWatchdogSec = "30s";
+      RebootWatchdogSec = "2min";
     };
   };
 }
