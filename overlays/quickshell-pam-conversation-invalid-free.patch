@@ -21,12 +21,54 @@ still blocked in a slow module (e.g. pam_fprintd's ~30s verify): the next
 conversation message hits EPIPE.
 
 Applies to Quickshell v0.3.0; unfixed on master as of 28771c7.
-See docs/quickshell-pam-invalid-free for the full analysis and upstream report.
+
+Second hunk: add O_CLOEXEC to the IPC pipe creation in
+PamConversation::createSubprocess(). The pipe() calls at the top of that
+function have no O_CLOEXEC, so both the fds the parent keeps and the fds the
+PAM worker keeps survive any execve() in either process. The worker's own
+crash handler (src/crash/handler.cpp) forks and execve()s a separate crash
+reporter binary on a fatal signal; without O_CLOEXEC that reporter inherits
+the worker's write end of the IPC pipe. As long as the reporter process is
+alive it holds that write end open, so the parent's read() on its end never
+returns EOF and PamConversation::onMessage() never fires -- the shell hangs
+on "authenticating" forever even though the worker is dead.
+
+The parent already turns a genuine EOF into a completion: PamIpcPipes::
+readBytes() treats a 0-byte read() as failure, onMessage()'s `fail:` label
+calls PamConversation::internalError(), which emits error(InternalError),
+which PamContext::onError() turns into completed(PamResult::Error) for QML's
+onCompleted. So O_CLOEXEC alone is sufficient here: it lets the crash
+reporter exec without inheriting the pipe, restoring a real EOF that the
+existing parent-side logic already converts into a completion. No dup2 is
+needed -- neither the PAM worker (which stores its fds as PamSubprocess
+constructor arguments) nor the crash reporter (which receives its own fds
+by dup()ing and passing them through env vars) depend on these pipes
+keeping specific fd numbers.
+
+Uses pipe2() for atomicity (no fork-then-fcntl race). fcntl.h is added to
+the includes for O_CLOEXEC; pipe2() is declared by unistd.h, already
+included above.
 ---
 diff --git a/src/services/pam/subprocess.cpp b/src/services/pam/subprocess.cpp
 --- a/src/services/pam/subprocess.cpp
 +++ b/src/services/pam/subprocess.cpp
-@@ -201,6 +201,6 @@ int PamSubprocess::conversation(
+@@ -1,4 +1,5 @@
+ #include "subprocess.hpp"
+ #include <array>
++#include <fcntl.h>
+ #include <ostream>
+ #include <string>
+@@ -27,7 +28,8 @@ pid_t PamConversation::createSubprocess(
+ 	auto toSubprocess = std::array<int, 2>();
+ 	auto fromSubprocess = std::array<int, 2>();
+
+-	if (pipe(toSubprocess.data()) == -1 || pipe(fromSubprocess.data()) == -1) {
++	if (pipe2(toSubprocess.data(), O_CLOEXEC) == -1
++	    || pipe2(fromSubprocess.data(), O_CLOEXEC) == -1) {
+ 		qCDebug(logPam) << "Failed to create pipes for subprocess.";
+ 		return 0;
+ 	}
+@@ -201,6 +203,6 @@ int PamSubprocess::conversation(
  	return PAM_SUCCESS;
 
  fail:
