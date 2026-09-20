@@ -69,12 +69,17 @@ in {
     "vm.dirty_bytes" = 64 * 1024 * 1024;
     "vm.dirty_background_bytes" = 16 * 1024 * 1024;
 
-    # THP is madvise-only, so proactive compaction only spends latency building
-    # huge pages nothing asked for. compact_stall was ~10k before this.
+    # THP is `always` (the CachyOS kernel default, kept: the gaming stack and
+    # large-working-set apps benefit). With defrag at defer+madvise a fault
+    # never waits for compaction, so proactive compaction would only spend
+    # background latency building huge pages ahead of demand. compact_stall was
+    # ~10k before this. Cost of `always` under zswap: a 2M folio is stored
+    # all-or-nothing, 512 x ~16us inline on zstd; thp_swpout in /proc/vmstat
+    # runs ~50/day here, so it is not a lever yet.
     "vm.compaction_proactiveness" = 0;
   };
 
-  # ---- zswap (replaces zram) ------------------------------------------------
+  # ---- zswap (replaces zram) ----------------------------------------------
   # zram pinned its whole compressed pool in RAM and, when full, spilled
   # whatever reclaim touched next onto the 48G cryptswap at priority -1, hot or
   # cold. The one recorded episode (zram at 50% of RAM ran full during a build,
@@ -291,7 +296,8 @@ in {
   #   - use-cgroups is off, so all builders share the ONE MemoryHigh above rather
   #     than getting a budget each: at 16 jobs that is ~512M apiece before the
   #     cgroup starts forcing reclaim, versus ~2G at 4. Reclaim here compresses
-  #     into zram on these same cores, so overshoot is paid in desktop latency.
+  #     into the zswap pool on these same cores, so overshoot is paid in
+  #     desktop latency.
   #     (Unverified as the trigger -- nix-daemon.service's memory.events `high`
   #     counter during a build is what would confirm it; the counter resets when
   #     the daemon restarts, which a rebuild does.)
