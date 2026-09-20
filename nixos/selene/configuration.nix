@@ -43,6 +43,7 @@ in {
     ../../features/nixos/common/remote-sudo.nix
     ../../features/nixos/server
     ../../features/nixos/server/base.nix
+    ../../features/nixos/server/sysadmin-password.nix
     ../../helpers/caches.nix
     # "${inputs.nixpkgs}/nixos/modules/services/matrix/conduwuit.nix"
     # Self-hosted AFFiNE (services.affine). aarch64 package + module come from
@@ -550,16 +551,6 @@ in {
       "/run/affine-schema:${config.services.affine.package}/app/src"
     ];
 
-    # Recover sysadmin's password. base.nix sets an invalid placeholder hash and
-    # mutableUsers = false, so it can't be fixed at runtime — override it here with
-    # the sops-managed hash. Store it under the `selene:` MAP (like the other
-    # selene/* secrets); sops-nix walks maps at any depth but NOT the old `users:`
-    # LIST entry. Create secrets/default.yaml -> selene.sysadmin.password before
-    # deploying.
-    users.users.sysadmin.hashedPassword = lib.mkForce null;
-    users.users.sysadmin.hashedPasswordFile =
-      config.sops.secrets."users/sysadmin/password".path;
-
     sops.defaultSopsFile = ../../secrets/default.yaml;
     sops.defaultSopsFormat = "yaml";
     sops.age.sshKeyPaths = ["/etc/ssh/ssh_host_ed25519_key"];
@@ -584,9 +575,6 @@ in {
       # Read by systemd as root (LoadCredential / EnvironmentFile), so no owner.
       "affine/admin-login-password" = {};
       "affine/email-password" = {};
-      # sysadmin login hash — neededForUsers so it's decrypted before user setup
-      # (required with mutableUsers = false).
-      "users/sysadmin/password" = {neededForUsers = true;};
       "dummy-token" = {};
     };
   };

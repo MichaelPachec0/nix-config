@@ -29,11 +29,11 @@
 
   # Common sysadmin user attributes. Each host adds its own
   # `users.users.sysadmin.openssh.authorizedKeys.keys` (and `shell`), which
-  # merge with these.
+  # merge with these. No password here: hosts that import sops-nix add the
+  # login hash through ./sysadmin-password.nix. Without it the account is
+  # SSH-key only and sudo goes through pam_rssh (../common/remote-sudo.nix).
   users.mutableUsers = false;
   users.users.sysadmin = {
-    # TODO: (high prio) regenerate password.
-    hashedPassword = "***PASSWORD-HASH-REMOVED***";
     isNormalUser = true;
     extraGroups = ["wheel" "networkmanager" "video" "audio" "input" "builders"];
   };
