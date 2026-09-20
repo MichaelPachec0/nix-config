@@ -734,9 +734,9 @@ in {
 
               shadow = {
                 enabled = true;
-                range = 4;
-                render_power = 17;
-                color = "rgba(${theme.palette.bgMain}66)"; # active: stronger
+                range = 40;
+                render_power = 3;
+                color = "rgba(${theme.palette.black}ff)"; # active: stronger
                 color_inactive = "rgba(${theme.palette.bgMain}22)"; # inactive: recede
               };
             };
