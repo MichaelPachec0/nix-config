@@ -441,6 +441,13 @@
             # hidden. Clears the flag on removal; a group re-applies its own
             # on the next geometry pass. Same on hy3 master as of 2026-09-06.
             ../overlays/0006-fix-hy3-unhide-window-on-remove.patch
+            # Tab-bar gradient colors: the 18 fill/border/text color options
+            # register as Hyprland's native gradient type, so the Lua config can
+            # pass a {colors, angle} table (or a plain rgba string, a 1-stop
+            # gradient) and hy3 samples it per-pixel in tab.frag. A single color
+            # renders identically to before. WIP: dominant-state render only so
+            # far (cross-fade, borderangle spin, and gradient text still to land).
+            ../overlays/0007-feat-hy3-tab-gradients.patch
           ];
       });
       # hyprglass: liquid-glass window decoration. NOT in nixpkgs: PR #547498
