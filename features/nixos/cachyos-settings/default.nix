@@ -55,10 +55,13 @@ in {
 
       # ---- usr/lib/udev/rules.d/30-zram.rules --------------------------
       # Upstream ships 100 in its sysctl file and then raises it to 150 from a
-      # udev rule the moment zram0 initialises. Every host here runs zram
-      # unconditionally, so the two-step is collapsed into the settled value:
-      # 150 is what a CachyOS box with zram actually ends up running, and the
-      # 100 baseline only ever applies to a machine without it.
+      # udev rule the moment zram0 initialises. The two-step is collapsed into
+      # the settled value: 150 is what a CachyOS box with zram actually ends up
+      # running, and the 100 baseline only ever applies to a machine without it.
+      #
+      # thanatos runs zswap instead of zram and keeps 150 anyway, as a recorded
+      # deviation: zswap hits are RAM-cheap like zram's, misses are not, and the
+      # value has not been measured against 100 in that configuration.
       #
       # Above 100 tells the kernel that swap IO is cheaper than filesystem IO,
       # which is true for zram and false for a disk swap. What keeps the disk
@@ -91,13 +94,17 @@ in {
     # pass costs CPU for essentially nothing and it also breaks zramctl's
     # accounting of what is actually stored.
     #
+    # The rule is a consequence of running zram, not a setting in its own right,
+    # so it is gated on zramSwap.enable: a host without zram takes the kernel's
+    # ZSWAP_DEFAULT_ON=y and runs zswap in front of its disk swap. thanatos is
+    # that host (see nixos/thanatos/memory.nix); nyx keeps zram and the param.
+    #
     # Expressed as a kernel parameter rather than upstream's udev RUN+= because
     # the parameter takes effect before any swap is set up, which removes the
     # window where zswap is live and the ordering question with
     # systemd-zram-setup entirely. Verify with
-    #   cat /sys/module/zswap/parameters/enabled     -> N
-    # This read Y before the change.
-    boot.kernelParams = ["zswap.enabled=0"];
+    #   cat /sys/module/zswap/parameters/enabled     -> N with zram, Y without
+    boot.kernelParams = lib.mkIf config.zramSwap.enable ["zswap.enabled=0"];
 
     # ---- usr/lib/tmpfiles.d/thp-shrinker.conf ----------------------------
     # khugepaged will collapse a region into a huge page while up to this many
