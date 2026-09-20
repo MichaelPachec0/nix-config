@@ -66,7 +66,9 @@ in {
       # Above 100 tells the kernel that swap IO is cheaper than filesystem IO,
       # which is true for zram and false for a disk swap. What keeps the disk
       # tier out of reach is swap PRIORITY, not this value -- see
-      # zramSwap.priority below.
+      # zramSwap.priority below. On thanatos that role is played by zswap's
+      # writeback ordering instead; priority is inert with a single swap
+      # device.
       #
       # Was 180 here. That was not arbitrary, but it was also never measured
       # against 150, so it is a deviation and it goes back to upstream's value
@@ -82,9 +84,9 @@ in {
     # here so the mirror is a real mirror and the next reader does not have to
     # rediscover that 5 and 100 rank identically against one disk tier.
     #
-    # NOT mirrored from the same upstream file: zram-size. Upstream uses `ram`
-    # (100%); thanatos deliberately oversubscribes to 200% against a measured
-    # ~4.2x compression ratio. See nixos/thanatos/memory.nix.
+    # NOT mirrored from the same upstream file: zram-size. nyx runs the
+    # NixOS default (50% of RAM); thanatos has no zram at all (zswap in
+    # front of its disk swap, see nixos/thanatos/memory.nix).
     zramSwap.priority = 100;
 
     # ---- usr/lib/udev/rules.d/30-zram.rules ------------------------------
@@ -113,8 +115,8 @@ in {
     # memory that was never touched into pages that must then be compressed.
     # 409 is upstream's value: at most 80% may be empty.
     #
-    # This matters more here than on the desktops upstream targets, because this
-    # host runs zram at 200% of RAM -- see nixos/thanatos/memory.nix.
+    # This matters on any host swapping into compressed RAM (zram on nyx,
+    # zswap on thanatos), which pays to compress pages khugepaged inflated.
     systemd.tmpfiles.rules = [
       "w! /sys/kernel/mm/transparent_hugepage/khugepaged/max_ptes_none - - - - 409"
       # usr/lib/tmpfiles.d/coredump.conf: clear coredumps after 3 days.
@@ -223,8 +225,8 @@ in {
     #     belongs in the same comparison.
     #
     #   zram-generator: zram-size = ram
-    #     Ours is 200% of RAM, deliberately oversubscribed against a measured
-    #     ~4.2x compression ratio.
+    #     nyx is the NixOS default (50%); thanatos has no zram (zswap, 40%
+    #     pool cap, see nixos/thanatos/memory.nix).
     #
     # Not mirrored for reasons that are NOT open questions:
     #

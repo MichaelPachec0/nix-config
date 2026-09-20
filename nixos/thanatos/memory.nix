@@ -71,11 +71,16 @@ in {
 
     # THP is `always` (the CachyOS kernel default, kept: the gaming stack and
     # large-working-set apps benefit). With defrag at defer+madvise a fault
-    # never waits for compaction, so proactive compaction would only spend
-    # background latency building huge pages ahead of demand. compact_stall was
-    # ~10k before this. Cost of `always` under zswap: a 2M folio is stored
-    # all-or-nothing, 512 x ~16us inline on zstd; thp_swpout in /proc/vmstat
-    # runs ~50/day here, so it is not a lever yet.
+    # outside an MADV_HUGEPAGE region never waits for compaction (a madvised
+    # region still compacts inline, as under `always`), so proactive
+    # compaction would only spend background latency building huge pages
+    # ahead of demand. compact_stall was ~10k before this. Cost of `always`
+    # under zswap: a 2M folio is stored all-or-nothing, 512 x ~16us inline on
+    # zstd; the inline cost shows up under
+    # hugepages-2048kB/stats/zswpout, not thp_swpout in /proc/vmstat, which
+    # now only counts THPs that bypassed the pool and went straight to disk
+    # -- that ran ~50/day under zram, measured before this switch, so it is
+    # not a lever yet.
     "vm.compaction_proactiveness" = 0;
   };
 
@@ -88,7 +93,8 @@ in {
   # zswap keeps a compressed pool in RAM (zsmalloc, charged to the owning
   # cgroup) in front of the same cryptswap, and its shrinker writes the coldest
   # entries back to disk under memcg pressure, LRU-ordered. The disk tier is
-  # reached by age, not by the pool running out.
+  # reached by age first; the pool running out is the fallback (see
+  # max_pool_percent below).
   #
   # The mirror module drops its zswap.enabled=0 param once zramSwap.enable is
   # false, so the kernel's ZSWAP_DEFAULT_ON=y takes over. Deliberately no
@@ -153,9 +159,10 @@ in {
   # it if that bites.
   #
   # 10G, was 8G: the pool bytes this cgroup owns are charged to it and LRU
-  # reclaim cannot free them (only the zswap shrinker can, by writing them to
-  # disk), so up to MemoryZSwapMax of the budget is not reclaimable. +2G keeps
-  # the reclaimable budget where it was.
+  # reclaim of its pages cannot free them; they leave the pool only when the
+  # zswap shrinker writes them back, on a swap-in, or when the owner exits.
+  # So up to MemoryZSwapMax of the budget is not reclaimable. +2G keeps the
+  # reclaimable budget where it was.
   #
   # MemoryZSwapMax caps this cgroup's share of the shared pool. Past it,
   # builder pages skip the pool and go straight to the cryptswap, which is the
@@ -177,9 +184,10 @@ in {
     # Explicit, not inherited: claim no reclaim protection at all.
     MemoryLow = "0";
     # When system swap crosses oomd's 90% limit, this is the preferred casualty.
-    # Total swap is the 48G cryptswap alone now (was zram + disk), and SwapFree
-    # counts slots held by pages sitting in the zswap pool, so the trigger is
-    # closer than it was; the policy is unchanged.
+    # Total swap is the 48G cryptswap alone now (was zram + disk), and every
+    # page in the zswap pool still occupies a swap slot, so SwapFree falls
+    # before a single page reaches the disk; the trigger is closer than it
+    # was, the policy is unchanged.
     ManagedOOMSwap = "kill";
   };
 
