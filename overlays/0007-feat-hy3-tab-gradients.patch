@@ -1,0 +1,952 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 83b0bbd..340c9be 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -29,6 +29,9 @@ file(READ ${CMAKE_CURRENT_BINARY_DIR}/src/tab.vert SHADER_TAB_VERT)
+ configure_file(src/tab.frag ${CMAKE_CURRENT_BINARY_DIR}/src/tab.frag COPYONLY)
+ file(READ ${CMAKE_CURRENT_BINARY_DIR}/src/tab.frag SHADER_TAB_FRAG)
+ 
++configure_file(src/text.frag ${CMAKE_CURRENT_BINARY_DIR}/src/text.frag COPYONLY)
++file(READ ${CMAKE_CURRENT_BINARY_DIR}/src/text.frag SHADER_TEXT_FRAG)
++
+ configure_file(src/shader_content.hpp.in src/shader_content.hpp @ONLY)
+ target_include_directories(hy3 PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src)
+ 
+diff --git a/src/TabGroup.cpp b/src/TabGroup.cpp
+index 8a5f638..c79ff95 100644
+--- a/src/TabGroup.cpp
++++ b/src/TabGroup.cpp
+@@ -1,4 +1,5 @@
+ #include "TabGroup.hpp"
++#include <cmath>
+ #include <optional>
+ #include <utility>
+ #include <vector>
+@@ -9,6 +10,7 @@
+ #include <hyprland/src/Compositor.hpp>
+ #include <hyprland/src/desktop/state/FocusState.hpp>
+ #include <hyprland/src/config/ConfigManager.hpp>
++#include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
+ #include <hyprland/src/desktop/DesktopTypes.hpp>
+ #include <hyprland/src/desktop/Workspace.hpp>
+ #include <hyprland/src/desktop/view/types/Geometric.hpp>
+@@ -192,65 +194,135 @@ void Hy3TabBarEntry::render(float scale, CBox& box, float opacity_mul) {
+ 	static const auto border_width = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:border_width");
+ 	static const auto s_opacity = CConfigValue<Config::FLOAT>("plugin:hy3:tabs:opacity");
+ 	static const auto blur = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:blur");
+-	static const auto col_active = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:active");
+-	static const auto col_border_active = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:active_border");
+-	static const auto col_focused = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:focused");
+-	static const auto col_border_focused = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:focused_border");
+-	static const auto col_urgent = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:urgent");
+-	static const auto col_border_urgent = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:urgent_border");
+-	static const auto col_locked = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:locked");
+-	static const auto col_border_locked = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:locked_border");
+-	static const auto col_active_alt_monitor = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:active_alt_monitor");
+-	static const auto col_border_active_alt_monitor = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:active_alt_monitor_border");
+-	static const auto col_inactive = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:inactive");
+-	static const auto col_border_inactive = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:inactive_border");
++	static const auto col_active = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:active");
++	static const auto col_border_active = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:active_border");
++	static const auto col_focused = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:focused");
++	static const auto col_border_focused = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:focused_border");
++	static const auto col_urgent = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:urgent");
++	static const auto col_border_urgent = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:urgent_border");
++	static const auto col_locked = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:locked");
++	static const auto col_border_locked = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:locked_border");
++	static const auto col_active_alt_monitor = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:active_alt_monitor");
++	static const auto col_border_active_alt_monitor = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:active_alt_monitor_border");
++	static const auto col_inactive = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:inactive");
++	static const auto col_border_inactive = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:inactive_border");
+ 	// clang-format on
+ 
+ 	auto radius = std::min((double) *s_radius * scale, std::min(box.width * 0.5, box.height * 0.5));
+ 
+-	auto color =
+-	    this->mergeColors(*col_active, *col_focused, *col_urgent, *col_locked, *col_active_alt_monitor, *col_inactive);
++	// Pick the dominant state by the same weights mergeColors uses, then render
++	// that state's gradient. Cross-fading between two gradients comes later; for
++	// now the winning state's gradient is drawn outright.
++	auto active_v = this->active->value();
++	auto urgent_v = std::max(0.0f, this->urgent->value() - active_v);
++	auto focused_v = std::max(0.0f, this->focused->value() - active_v - urgent_v);
++	auto locked_v = std::max(0.0f, this->tab_bar.locked->value() - active_v - urgent_v - focused_v);
++	auto inactive_v = 1.0f - (active_v + urgent_v + focused_v + locked_v);
++	auto active_monitor_v = this->active_monitor->value();
++	auto active_alt_monitor_v = active_v * (1.0f - active_monitor_v);
++	active_v *= active_monitor_v;
+ 
+-	auto border_color = this->mergeColors(
+-	    *col_border_active,
+-	    *col_border_focused,
+-	    *col_border_urgent,
+-	    *col_border_locked,
+-	    *col_border_active_alt_monitor,
+-	    *col_border_inactive
+-	);
++	// Order matches the fill/border pointer arrays below.
++	const float weights[6] = {active_v, focused_v, urgent_v, locked_v, active_alt_monitor_v, inactive_v};
++	const CConfigValue<Config::IComplexConfigValue>* fillG[6] =
++	    {&col_active, &col_focused, &col_urgent, &col_locked, &col_active_alt_monitor, &col_inactive};
++	const CConfigValue<Config::IComplexConfigValue>* borderG[6] = {
++	    &col_border_active,
++	    &col_border_focused,
++	    &col_border_urgent,
++	    &col_border_locked,
++	    &col_border_active_alt_monitor,
++	    &col_border_inactive};
++
++	// Cross-fade the two highest-weighted states: `to` = dominant, `from` = the
++	// next-highest, mixed by their weight share. A fully settled state has the
++	// runner-up at weight 0, so mix = 1 and only `to` shows. At a 50/50 crossing
++	// the two slots contribute equally, so the dom/from swap is seamless.
++	int dom = 0;
++	for (int i = 1; i < 6; i++)
++		if (weights[i] > weights[dom]) dom = i;
++	int sec = -1;
++	for (int i = 0; i < 6; i++) {
++		if (i == dom) continue;
++		if (sec == -1 || weights[i] > weights[sec]) sec = i;
++	}
++
++	float denom = weights[dom] + weights[sec];
++	float mix = denom > 0.0f ? weights[dom] / denom : 1.0f;
++
++	auto grad = [](const CConfigValue<Config::IComplexConfigValue>* v) {
++		return static_cast<const Config::CGradientValueData*>(v->ptr());
++	};
++	Hy3GradientBlend fill_blend = {grad(fillG[sec]), grad(fillG[dom]), mix};
++	Hy3GradientBlend border_blend = {grad(borderG[sec]), grad(borderG[dom]), mix};
++
++	// Text colors, indexed the same way, so the title uses the same from/to state
++	// and mix as the fill/border. Order matches the weights array above.
++	static const auto col_text_active = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:active_text");
++	static const auto col_text_focused = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:focused_text");
++	static const auto col_text_urgent = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:urgent_text");
++	static const auto col_text_locked = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:locked_text");
++	static const auto col_text_active_alt_monitor = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:active_alt_monitor_text");
++	static const auto col_text_inactive = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:inactive_text");
++	const CConfigValue<Config::IComplexConfigValue>* textG[6] =
++	    {&col_text_active, &col_text_focused, &col_text_urgent, &col_text_locked, &col_text_active_alt_monitor, &col_text_inactive};
++	Hy3GradientBlend text_blend = {grad(textG[sec]), grad(textG[dom]), mix};
+ 
+ 	box.round();
+ 
+ 	// sometimes enabled before our renderer is called
+ 	Render::GL::g_pHyprOpenGL->scissor(nullptr);
+ 
++	// Spin the gradient angle (borderangle animation) only while a shown gradient
++	// actually has >1 stop; a solid-color tab wants no rotation and no redraws.
++	auto multi = [](const Config::CGradientValueData* g) { return g && g->m_colors.size() > 1; };
++	bool anyMultiStop = multi(fill_blend.from) || multi(fill_blend.to) || multi(border_blend.from)
++	    || multi(border_blend.to) || multi(text_blend.from) || multi(text_blend.to);
++
++	this->tab_bar.gradient_angle_wanted = anyMultiStop;
++	float spinOffset = 0.0f;
++	bool spinning = false;
++	if (anyMultiStop && this->tab_bar.gradient_angle->enabled()) {
++		this->tab_bar.startGradientAngle();
++		spinOffset = this->tab_bar.gradient_angle->value() * 2.0f * (float) M_PI;
++		spinning = true;
++	}
++
+ 	Hy3Render::renderTab(
+ 	    box,
+ 	    opacity * *s_opacity,
+ 	    *blur,
+-	    color,
+-	    border_color,
++	    fill_blend,
++	    border_blend,
+ 	    *border_width,
+-	    radius
++	    radius,
++	    spinOffset,
++	    spinning
+ 	);
+ 
+-	this->renderText(scale, box, opacity);
++	this->renderText(scale, box, opacity, text_blend, spinOffset, spinning);
+ }
+ 
+-void Hy3TabBarEntry::renderText(float scale, CBox& box, float opacity) {
++void Hy3TabBarEntry::renderText(
++    float scale,
++    CBox& box,
++    float opacity,
++    const Hy3GradientBlend& text_blend,
++    float spinOffset,
++    bool spinning
++) {
+ 	// clang-format off
+ 	static const auto render_text = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:render_text");
+ 	static const auto text_center = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:text_center");
+ 	static const auto text_font = CConfigValue<Config::STRING>("plugin:hy3:tabs:text_font");
+ 	static const auto text_height = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:text_height");
+ 	static const auto text_padding = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:text_padding");
+-	static const auto col_text_active = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:active_text");
+-	static const auto col_text_focused = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:focused_text");
+-	static const auto col_text_urgent = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:urgent_text");
+-	static const auto col_text_locked = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:locked_text");
+-	static const auto col_text_active_alt_monitor = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:active_alt_monitor_text");
+-	static const auto col_text_inactive = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:inactive_text");
++	static const auto col_text_active = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:active_text");
++	static const auto col_text_focused = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:focused_text");
++	static const auto col_text_urgent = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:urgent_text");
++	static const auto col_text_locked = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:locked_text");
++	static const auto col_text_active_alt_monitor = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:active_alt_monitor_text");
++	static const auto col_text_inactive = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:inactive_text");
+ 	// clang-format on
+ 
+ 	if (!*render_text) {
+@@ -353,22 +425,9 @@ void Hy3TabBarEntry::renderText(float scale, CBox& box, float opacity) {
+ 
+ 	texture_box.round();
+ 
+-	auto c = mergeColors(
+-	    *col_text_active,
+-	    *col_text_focused,
+-	    *col_text_urgent,
+-	    *col_text_locked,
+-	    *col_text_active_alt_monitor,
+-	    *col_text_inactive
+-	);
+-
+-	glBlendFunc(GL_CONSTANT_COLOR, GL_ONE_MINUS_SRC_ALPHA);
+-	glBlendColor(c.r, c.g, c.b, c.a);
+-
+-	Render::GL::g_pHyprOpenGL->renderTexture(this->texture, texture_box, { .a = opacity });
+-
+-	glBlendColor(1, 1, 1, 1);
+-	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
++	// Tint the glyph texture with the text gradient (from/to + mix + spin),
++	// evaluated in tab-box space so it lines up with the fill/border gradient.
++	Hy3Render::renderTabText(texture_box, box, this->texture, text_blend, opacity, spinOffset, spinning);
+ }
+ 
+ CHyprColor Hy3TabBarEntry::mergeColors(
+@@ -415,8 +474,38 @@ Hy3TabBar::Hy3TabBar() {
+ 	    AVARDAMAGE_NONE
+ 	);
+ 
++	mgr->createAnimation(
++	    0.0f,
++	    this->gradient_angle,
++	    Config::animationTree()->getAnimationPropertyConfig("borderangle"),
++	    AVARDAMAGE_NONE
++	);
++
+ 	this->fade_opacity->setUpdateCallback([this](auto) { this->dirty = true; });
+ 	this->locked->setUpdateCallback([this](auto) { this->dirty = true; });
++	this->gradient_angle->setUpdateCallback([this](auto) { this->dirty = true; });
++}
++
++void Hy3TabBar::startGradientAngle() {
++	if (!this->gradient_angle_wanted) return;
++	if (!this->gradient_angle->enabled()) return;
++	if (this->gradient_angle->isBeingAnimated()) return;
++	this->gradient_angle->setValueAndWarp(0.0f);
++	this->gradient_angle->setCallbackOnEnd([this](auto) { this->onGradientAngleEnd(); }, false);
++	*this->gradient_angle = 1.0f;
++}
++
++void Hy3TabBar::onGradientAngleEnd() {
++	// Re-arm to loop, but only while a multi-stop gradient still wants the spin
++	// and the borderangle animation is a looping style. Otherwise let it stop, so
++	// solid-color tabs (or a non-loop style) cause no idle redraws. Clearing the
++	// callback before setValueAndWarp avoids recursing through this handler.
++	if (!this->gradient_angle_wanted) return;
++	if (!this->gradient_angle->enabled() || this->gradient_angle->getStyle() != "loop") return;
++	this->gradient_angle->setCallbackOnEnd(nullptr);
++	this->gradient_angle->setValueAndWarp(0.0f);
++	*this->gradient_angle = 1.0f;
++	this->gradient_angle->setCallbackOnEnd([this](auto) { this->onGradientAngleEnd(); }, false);
+ }
+ 
+ void Hy3TabBar::beginDestroy() {
+@@ -873,22 +962,30 @@ bool Hy3TabPassElement::needsPrecomputeBlur() {
+ 	// clang-format off
+ 	static const auto s_opacity = CConfigValue<Config::FLOAT>("plugin:hy3:tabs:opacity");
+ 	static const auto blur = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:blur");
+-	static const auto col_active = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:active");
+-	static const auto col_border_active = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:active_border");
+-	static const auto col_focused = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:focused");
+-	static const auto col_border_focused = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:focused_border");
+-	static const auto col_urgent = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:urgent");
+-	static const auto col_border_urgent = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:urgent_border");
+-	static const auto col_locked = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:locked");
+-	static const auto col_border_locked = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:locked_border");
+-	static const auto col_inactive = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:inactive");
+-	static const auto col_border_inactive = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:inactive_border");
++	static const auto col_active = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:active");
++	static const auto col_border_active = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:active_border");
++	static const auto col_focused = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:focused");
++	static const auto col_border_focused = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:focused_border");
++	static const auto col_urgent = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:urgent");
++	static const auto col_border_urgent = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:urgent_border");
++	static const auto col_locked = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:locked");
++	static const auto col_border_locked = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:locked_border");
++	static const auto col_inactive = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:inactive");
++	static const auto col_border_inactive = CConfigValue<Config::IComplexConfigValue>("plugin:hy3:tabs:colors:inactive_border");
+ 	// clang-format on
+ 
+ 	if (!*blur) return false;
+ 	if (*s_opacity < 1.0) return false;
+ 
+-	auto needsblur = [](const auto& col) { return CHyprColor(*col).a < 1.0; };
++	// A gradient needs the blur precompute if any of its stops is translucent.
++	// For a 1-stop (single color) gradient this is the old check on that color.
++	auto needsblur = [](const CConfigValue<Config::IComplexConfigValue>& col) {
++		auto* g = static_cast<Config::CGradientValueData*>(col.ptr());
++		if (!g) return false;
++		for (auto& c : g->m_colors)
++			if (c.a < 1.0) return true;
++		return false;
++	};
+ 	return needsblur(col_active) || needsblur(col_border_active) || needsblur(col_focused)
+ 	    || needsblur(col_border_focused) || needsblur(col_urgent) || needsblur(col_border_urgent)
+ 	    || needsblur(col_locked) || needsblur(col_border_locked) || needsblur(col_inactive)
+diff --git a/src/TabGroup.hpp b/src/TabGroup.hpp
+index be3d794..9b5ceca 100644
+--- a/src/TabGroup.hpp
++++ b/src/TabGroup.hpp
+@@ -31,6 +31,7 @@ struct Hy3TabGroupWrapper {
+ };
+ 
+ #include "Hy3Node.hpp"
++#include "render.hpp"
+ 
+ struct Hy3TabBarEntry {
+ 	std::string window_title;
+@@ -81,7 +82,7 @@ struct Hy3TabBarEntry {
+ 	void render(float scale, CBox& box, float opacity_mul);
+ 
+ private:
+-	void renderText(float scale, CBox& box, float opacity);
++	void renderText(float scale, CBox& box, float opacity, const Hy3GradientBlend& text_blend, float spinOffset, bool spinning);
+ 	CHyprColor mergeColors(
+ 	    const CHyprColor& active,
+ 	    const CHyprColor& focused,
+@@ -99,6 +100,10 @@ public:
+ 	bool damaged = true;
+ 	PHLANIMVAR<float> fade_opacity;
+ 	PHLANIMVAR<float> locked;
++	// Looping 0..1 -> 0..2pi gradient spin, driven by the `borderangle` animation
++	// config (same as window borders). Only runs while `gradient_angle_wanted`.
++	PHLANIMVAR<float> gradient_angle;
++	bool gradient_angle_wanted = false;
+ 	// The monitor this bar resides on
+ 	MONITORID monitor_id = MONITOR_INVALID;
+ 
+@@ -106,6 +111,11 @@ public:
+ 	void beginDestroy();
+ 	void damageBox(const Vector2D* position, const Vector2D* size);
+ 
++	// Kick off / re-arm the looping gradient spin. Safe to call every frame:
++	// no-ops unless a multi-stop gradient wants it and it is not already running.
++	void startGradientAngle();
++	void onGradientAngleEnd();
++
+ 	void tick();
+ 	void updateNodeList(std::list<UP<Hy3Node>>& nodes);
+ 	void updateAnimations(bool warp = false);
+diff --git a/src/main.cpp b/src/main.cpp
+index e94689e..2b7f1c3 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -52,24 +52,28 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
+ 	CONF("tabs:text_padding", Int, 3);
+ 	CONF("tabs:opacity", Float, 1.0);
+ 	CONF("tabs:blur", Bool, true);
+-	CONF("tabs:colors:active", Color, 0x4033ccff);
+-	CONF("tabs:colors:active_border", Color, 0xee33ccff);
+-	CONF("tabs:colors:active_text", Color, 0xffffffff);
+-	CONF("tabs:colors:active_alt_monitor", Color, 0x40606060);
+-	CONF("tabs:colors:active_alt_monitor_border", Color, 0xee808080);
+-	CONF("tabs:colors:active_alt_monitor_text", Color, 0xffffffff);
+-	CONF("tabs:colors:focused", Color, 0x40606060);
+-	CONF("tabs:colors:focused_border", Color, 0xee808080);
+-	CONF("tabs:colors:focused_text", Color, 0xffffffff);
+-	CONF("tabs:colors:inactive", Color, 0x20303030);
+-	CONF("tabs:colors:inactive_border", Color, 0xaa606060);
+-	CONF("tabs:colors:inactive_text", Color, 0xffffffff);
+-	CONF("tabs:colors:urgent", Color, 0x40ff2233);
+-	CONF("tabs:colors:urgent_border", Color, 0xeeff2233);
+-	CONF("tabs:colors:urgent_text", Color, 0xffffffff);
+-	CONF("tabs:colors:locked", Color, 0x40909033);
+-	CONF("tabs:colors:locked_border", Color, 0xee909033);
+-	CONF("tabs:colors:locked_text", Color, 0xffffffff);
++	// Tab colors are native gradients so the Lua config can pass either a
++	// single color (a 1-stop gradient, back-compat) or a {colors, angle}
++	// table, marshalled by Hyprland core into a CGradientValueData. The
++	// default is a single CHyprColor, matching the old flat defaults.
++	CONF("tabs:colors:active", Gradient, CHyprColor((uint64_t) 0x4033ccffUL));
++	CONF("tabs:colors:active_border", Gradient, CHyprColor((uint64_t) 0xee33ccffUL));
++	CONF("tabs:colors:active_text", Gradient, CHyprColor((uint64_t) 0xffffffffUL));
++	CONF("tabs:colors:active_alt_monitor", Gradient, CHyprColor((uint64_t) 0x40606060UL));
++	CONF("tabs:colors:active_alt_monitor_border", Gradient, CHyprColor((uint64_t) 0xee808080UL));
++	CONF("tabs:colors:active_alt_monitor_text", Gradient, CHyprColor((uint64_t) 0xffffffffUL));
++	CONF("tabs:colors:focused", Gradient, CHyprColor((uint64_t) 0x40606060UL));
++	CONF("tabs:colors:focused_border", Gradient, CHyprColor((uint64_t) 0xee808080UL));
++	CONF("tabs:colors:focused_text", Gradient, CHyprColor((uint64_t) 0xffffffffUL));
++	CONF("tabs:colors:inactive", Gradient, CHyprColor((uint64_t) 0x20303030UL));
++	CONF("tabs:colors:inactive_border", Gradient, CHyprColor((uint64_t) 0xaa606060UL));
++	CONF("tabs:colors:inactive_text", Gradient, CHyprColor((uint64_t) 0xffffffffUL));
++	CONF("tabs:colors:urgent", Gradient, CHyprColor((uint64_t) 0x40ff2233UL));
++	CONF("tabs:colors:urgent_border", Gradient, CHyprColor((uint64_t) 0xeeff2233UL));
++	CONF("tabs:colors:urgent_text", Gradient, CHyprColor((uint64_t) 0xffffffffUL));
++	CONF("tabs:colors:locked", Gradient, CHyprColor((uint64_t) 0x40909033UL));
++	CONF("tabs:colors:locked_border", Gradient, CHyprColor((uint64_t) 0xee909033UL));
++	CONF("tabs:colors:locked_text", Gradient, CHyprColor((uint64_t) 0xffffffffUL));
+ 
+ 	// autotiling
+ 	CONF("autotile:enable", Bool, false);
+diff --git a/src/render.cpp b/src/render.cpp
+index b507605..b6ea539 100644
+--- a/src/render.cpp
++++ b/src/render.cpp
+@@ -8,6 +8,9 @@
+ #include <hyprutils/math/Misc.hpp>
+ #include <hyprutils/math/Vector2D.hpp>
+ 
++#include <algorithm>
++#include <cmath>
++
+ #include "render/Renderer.hpp"
+ #include "render/Texture.hpp"
+ #include "shaders.hpp"
+@@ -15,14 +18,44 @@
+ using Render::GL::g_pHyprOpenGL;
+ using Hyprutils::Math::CBox;
+ 
++// Wrap an angle into [0, 2pi). The tab.frag angle-quadrant logic assumes the
++// angle is in that range, so a spin offset that pushes it past 2pi is wrapped.
++static float normalizeAngleRad(float a) {
++	const float TAU = 2.0f * (float) M_PI;
++	a = std::fmod(a, TAU);
++	if (a < 0.0f) a += TAU;
++	return a;
++}
++
++// Upload a gradient's precomputed OkLab stops (4 floats/stop: L, a, b, straight
++// alpha) into the shader's stop array, plus its stop count and the given angle
++// (radians). Stops clamped to HY3_MAX_STOPS (10).
++static void uploadGradient(
++    GLint stopsLoc,
++    GLint countLoc,
++    GLint angleLoc,
++    const Config::CGradientValueData& g,
++    float angle
++) {
++	float buf[10 * 4] = {0};
++	int n = (int) std::min<size_t>(g.m_colors.size(), 10);
++	int floats = (int) std::min<size_t>((size_t) n * 4, g.m_colorsOkLabA.size());
++	for (int i = 0; i < floats; i++) buf[i] = g.m_colorsOkLabA[i];
++	GLCALL(glUniform4fv(stopsLoc, 10, buf));
++	GLCALL(glUniform1i(countLoc, n));
++	GLCALL(glUniform1f(angleLoc, angle));
++}
++
+ void Hy3Render::renderTab(
+     const CBox& box,
+     float opacity,
+     bool blur,
+-    const CHyprColor& fillColor,
+-    const CHyprColor& borderColor,
++    const Hy3GradientBlend& fill,
++    const Hy3GradientBlend& border,
+     int borderWidth,
+-    int radius
++    int radius,
++    float angleOffset,
++    bool spinning
+ ) {
+ 	static auto& shader = Hy3Shaders::instance()->tab;
+ 	auto& rdata = g_pHyprRenderer->m_renderData;
+@@ -60,23 +93,29 @@ void Hy3Render::renderTab(
+ 
+ 	GLCALL(glUniform1i(shader.applyBlur, blur));
+ 
+-	// premultiplied
+-	GLCALL(glUniform4f(
+-	    shader.fillColor,
+-	    fillColor.r * fillColor.a,
+-	    fillColor.g * fillColor.a,
+-	    fillColor.b * fillColor.a,
+-	    fillColor.a
+-	));
++	// When spinning, both gradients of a channel share the same animated angle
++	// (base angle of `to` + offset), matching Hyprland's border decoration: it
++	// syncs the two gradients' angles so the cross-fade does not fade between two
++	// different angles while also rotating. Otherwise each side keeps its own.
++	float fillAngleAv, fillAngleBv, borderAngleAv, borderAngleBv;
++	if (spinning) {
++		fillAngleAv = fillAngleBv = normalizeAngleRad(fill.to->m_angle + angleOffset);
++		borderAngleAv = borderAngleBv = normalizeAngleRad(border.to->m_angle + angleOffset);
++	} else {
++		fillAngleAv = fill.from->m_angle;
++		fillAngleBv = fill.to->m_angle;
++		borderAngleAv = border.from->m_angle;
++		borderAngleBv = border.to->m_angle;
++	}
++
++	uploadGradient(shader.fillStopsA, shader.fillCountA, shader.fillAngleA, *fill.from, fillAngleAv);
++	uploadGradient(shader.fillStopsB, shader.fillCountB, shader.fillAngleB, *fill.to, fillAngleBv);
++	GLCALL(glUniform1f(shader.fillMix, fill.mix));
+ 
+ 	if (borderWidth != 0) {
+-		GLCALL(glUniform4f(
+-		    shader.borderColor,
+-		    borderColor.r * borderColor.a,
+-		    borderColor.g * borderColor.a,
+-		    borderColor.b * borderColor.a,
+-		    borderColor.a
+-		));
++		uploadGradient(shader.borderStopsA, shader.borderCountA, shader.borderAngleA, *border.from, borderAngleAv);
++		uploadGradient(shader.borderStopsB, shader.borderCountB, shader.borderAngleB, *border.to, borderAngleBv);
++		GLCALL(glUniform1f(shader.borderMix, border.mix));
+ 	}
+ 
+ 	GLCALL(glUniform2f(shader.monitorSize, monitorSize.x, monitorSize.y));
+@@ -95,3 +134,67 @@ void Hy3Render::renderTab(
+ 		GLCALL(glBindTexture(GL_TEXTURE_2D, 0));
+ 	}
+ }
++
++void Hy3Render::renderTabText(
++    const CBox& textBox,
++    const CBox& tabBox,
++    SP<Render::ITexture> texture,
++    const Hy3GradientBlend& text,
++    float opacity,
++    float angleOffset,
++    bool spinning
++) {
++	if (!texture) return;
++
++	static auto& shader = Hy3Shaders::instance()->text;
++	auto& rdata = g_pHyprRenderer->m_renderData;
++
++	auto tbox = textBox;
++	rdata.renderModif.applyToBox(tbox);
++	auto tabbox = tabBox;
++	rdata.renderModif.applyToBox(tabbox);
++
++	const auto& monitorSize = rdata.pMonitor->m_transformedSize;
++	auto monitorBox = CBox {Vector2D(), monitorSize};
++	auto glMatrix = g_pHyprRenderer->projectBoxToTarget(monitorBox, Hyprutils::Math::HYPRUTILS_TRANSFORM_NORMAL);
++
++	g_pHyprOpenGL->useShader(shader.program);
++
++#ifndef GLES2
++	glUniformMatrix3fv(shader.proj, 1, GL_TRUE, glMatrix.getMatrix().data());
++#else
++	glMatrix.transpose();
++	glUniformMatrix3fv(shader.proj, 1, GL_FALSE, glMatrix.getMatrix().data());
++#endif
++
++	GLCALL(glActiveTexture(GL_TEXTURE0));
++	GLCALL(glBindTexture(GL_TEXTURE_2D, texture->m_texID));
++	GLCALL(glUniform1i(shader.tex, 0));
++
++	float angA, angB;
++	if (spinning) {
++		angA = angB = normalizeAngleRad(text.to->m_angle + angleOffset);
++	} else {
++		angA = text.from->m_angle;
++		angB = text.to->m_angle;
++	}
++	uploadGradient(shader.textStopsA, shader.textCountA, shader.textAngleA, *text.from, angA);
++	uploadGradient(shader.textStopsB, shader.textCountB, shader.textAngleB, *text.to, angB);
++	GLCALL(glUniform1f(shader.textMix, text.mix));
++
++	GLCALL(glUniform2f(shader.monitorSize, monitorSize.x, monitorSize.y));
++	GLCALL(glUniform2f(shader.pixelOffset, tbox.x, tbox.y));
++	GLCALL(glUniform2f(shader.pixelSize, tbox.w, tbox.h));
++	GLCALL(glUniform2f(shader.tabOffset, tabbox.x, tabbox.y));
++	GLCALL(glUniform2f(shader.tabSize, tabbox.w, tabbox.h));
++	GLCALL(glUniform1f(shader.opacity, opacity));
++
++	// premultiplied-over, matching the tab shader's output
++	GLCALL(glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA));
++
++	GLCALL(glBindVertexArray(shader.program->getUniformLocation(SHADER_SHADER_VAO)));
++	GLCALL(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
++	GLCALL(glBindVertexArray(0));
++
++	GLCALL(glBindTexture(GL_TEXTURE_2D, 0));
++}
+diff --git a/src/render.hpp b/src/render.hpp
+index be38720..b3963fb 100644
+--- a/src/render.hpp
++++ b/src/render.hpp
+@@ -1,16 +1,40 @@
+ #pragma once
+ #include <hyprland/src/helpers/Color.hpp>
++#include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
++#include <hyprland/src/render/Texture.hpp>
+ #include <hyprutils/math/Box.hpp>
+ 
++// A cross-fade between two gradients: `from` (rendered at mix 0) and `to`
++// (rendered at mix 1). Pointers are owned by the config; never null in use.
++struct Hy3GradientBlend {
++	const Config::CGradientValueData* from;
++	const Config::CGradientValueData* to;
++	float mix;
++};
++
+ class Hy3Render {
+ public:
+ 	static void renderTab(
+ 	    const Hyprutils::Math::CBox& box,
+ 	    float opacity,
+ 	    bool blur,
+-	    const CHyprColor& fillColor,
+-	    const CHyprColor& borderColor,
++	    const Hy3GradientBlend& fill,
++	    const Hy3GradientBlend& border,
+ 	    int borderWidth,
+-	    int radius
++	    int radius,
++	    float angleOffset,
++	    bool spinning
++	);
++
++	// Draw a glyph texture tinted by a gradient (the text pill). The gradient is
++	// evaluated in tabBox space so it lines up with the fill/border gradient.
++	static void renderTabText(
++	    const Hyprutils::Math::CBox& textBox,
++	    const Hyprutils::Math::CBox& tabBox,
++	    SP<Render::ITexture> texture,
++	    const Hy3GradientBlend& text,
++	    float opacity,
++	    float angleOffset,
++	    bool spinning
+ 	);
+ };
+diff --git a/src/shader_content.hpp.in b/src/shader_content.hpp.in
+index 8d1d84a..59f6bcc 100644
+--- a/src/shader_content.hpp.in
++++ b/src/shader_content.hpp.in
+@@ -2,3 +2,4 @@
+ 
+ constexpr std::string_view SHADER_TAB_VERT = R"(@SHADER_TAB_VERT@)";
+ constexpr std::string_view SHADER_TAB_FRAG = R"(@SHADER_TAB_FRAG@)";
++constexpr std::string_view SHADER_TEXT_FRAG = R"(@SHADER_TEXT_FRAG@)";
+diff --git a/src/shaders.cpp b/src/shaders.cpp
+index f120cb5..2cbc6f8 100644
+--- a/src/shaders.cpp
++++ b/src/shaders.cpp
+@@ -22,11 +22,48 @@ Hy3Shaders::Hy3Shaders() {
+ 		s.applyBlur = glGetUniformLocation(program, "applyBlur");
+ 		s.blurTex = glGetUniformLocation(program, "blurTex");
+ 		s.opacity = glGetUniformLocation(program, "opacity");
+-		s.fillColor = glGetUniformLocation(program, "fillColor");
+-		s.borderColor = glGetUniformLocation(program, "borderColor");
++		s.fillStopsA = glGetUniformLocation(program, "fillStopsA");
++		s.fillCountA = glGetUniformLocation(program, "fillCountA");
++		s.fillAngleA = glGetUniformLocation(program, "fillAngleA");
++		s.fillStopsB = glGetUniformLocation(program, "fillStopsB");
++		s.fillCountB = glGetUniformLocation(program, "fillCountB");
++		s.fillAngleB = glGetUniformLocation(program, "fillAngleB");
++		s.fillMix = glGetUniformLocation(program, "fillMix");
++		s.borderStopsA = glGetUniformLocation(program, "borderStopsA");
++		s.borderCountA = glGetUniformLocation(program, "borderCountA");
++		s.borderAngleA = glGetUniformLocation(program, "borderAngleA");
++		s.borderStopsB = glGetUniformLocation(program, "borderStopsB");
++		s.borderCountB = glGetUniformLocation(program, "borderCountB");
++		s.borderAngleB = glGetUniformLocation(program, "borderAngleB");
++		s.borderMix = glGetUniformLocation(program, "borderMix");
+ 		s.borderWidth = glGetUniformLocation(program, "borderWidth");
+ 		s.outerRadius = glGetUniformLocation(program, "outerRadius");
+ 	}
++
++	{
++		auto& s = this->text;
++		s.program = makeShared<CShader>();
++		// Reuse the tab vertex shader; text.frag only reads pixCoord.
++		if (!s.program->createProgram(std::string(SHADER_TAB_VERT), std::string(SHADER_TEXT_FRAG))) {
++			throw std::runtime_error("hy3 text shader compilation fails");
++		}
++		auto program = s.program->program();
++		s.proj = glGetUniformLocation(program, "proj");
++		s.monitorSize = glGetUniformLocation(program, "monitorSize");
++		s.pixelOffset = glGetUniformLocation(program, "pixelOffset");
++		s.pixelSize = glGetUniformLocation(program, "pixelSize");
++		s.tabOffset = glGetUniformLocation(program, "tabOffset");
++		s.tabSize = glGetUniformLocation(program, "tabSize");
++		s.tex = glGetUniformLocation(program, "tex");
++		s.opacity = glGetUniformLocation(program, "opacity");
++		s.textStopsA = glGetUniformLocation(program, "textStopsA");
++		s.textCountA = glGetUniformLocation(program, "textCountA");
++		s.textAngleA = glGetUniformLocation(program, "textAngleA");
++		s.textStopsB = glGetUniformLocation(program, "textStopsB");
++		s.textCountB = glGetUniformLocation(program, "textCountB");
++		s.textAngleB = glGetUniformLocation(program, "textAngleB");
++		s.textMix = glGetUniformLocation(program, "textMix");
++	}
+ }
+ 
+ Hy3Shaders* Hy3Shaders::instance() {
+diff --git a/src/shaders.hpp b/src/shaders.hpp
+index ed15b94..9bbcec5 100644
+--- a/src/shaders.hpp
++++ b/src/shaders.hpp
+@@ -15,12 +15,43 @@ public:
+ 		GLint applyBlur;
+ 		GLint blurTex;
+ 		GLint opacity;
+-		GLint fillColor;
+-		GLint borderColor;
++		GLint fillStopsA;
++		GLint fillCountA;
++		GLint fillAngleA;
++		GLint fillStopsB;
++		GLint fillCountB;
++		GLint fillAngleB;
++		GLint fillMix;
++		GLint borderStopsA;
++		GLint borderCountA;
++		GLint borderAngleA;
++		GLint borderStopsB;
++		GLint borderCountB;
++		GLint borderAngleB;
++		GLint borderMix;
+ 		GLint borderWidth;
+ 		GLint outerRadius;
+ 	} tab;
+ 
++	struct {
++		SP<CShader> program;
++		GLint proj;
++		GLint monitorSize;
++		GLint pixelOffset;
++		GLint pixelSize;
++		GLint tabOffset;
++		GLint tabSize;
++		GLint tex;
++		GLint opacity;
++		GLint textStopsA;
++		GLint textCountA;
++		GLint textAngleA;
++		GLint textStopsB;
++		GLint textCountB;
++		GLint textAngleB;
++		GLint textMix;
++	} text;
++
+ 	static Hy3Shaders* instance();
+ 
+ private:
+diff --git a/src/tab.frag b/src/tab.frag
+index 49ea01a..a57f117 100644
+--- a/src/tab.frag
++++ b/src/tab.frag
+@@ -2,18 +2,109 @@ precision highp float;
+ 
+ uniform highp vec2 pixelSize;
+ uniform float opacity;
+-uniform highp vec4 fillColor;
+-uniform highp vec4 borderColor;
+ uniform float outerRadius;
+ uniform float borderWidth;
+ 
+ uniform bool applyBlur;
+ uniform sampler2D blurTex;
+ 
++#define HY3_MAX_STOPS 10
++// Two gradients per channel (from = A, to = B) cross-faded by *Mix. Stops are
++// (OkLab L, a, b, straight alpha) from CGradientValueData::m_colorsOkLabA. The
++// gradient math below is ported verbatim from Hyprland's own border gradient
++// shader (src/render/shaders/glsl/gradient.glsl) so tab gradients match window
++// borders exactly: OkLab stop interpolation, cross-fade in OkLab, then convert
++// to sRGB with a gamma 2.2 transfer, and the same angle/progress mapping.
++uniform highp vec4 fillStopsA[HY3_MAX_STOPS];
++uniform int fillCountA;
++uniform float fillAngleA;
++uniform highp vec4 fillStopsB[HY3_MAX_STOPS];
++uniform int fillCountB;
++uniform float fillAngleB;
++uniform float fillMix;
++uniform highp vec4 borderStopsA[HY3_MAX_STOPS];
++uniform int borderCountA;
++uniform float borderAngleA;
++uniform highp vec4 borderStopsB[HY3_MAX_STOPS];
++uniform int borderCountB;
++uniform float borderAngleB;
++uniform float borderMix;
++
+ varying highp vec2 pixCoord;
+ varying highp vec2 monitorTexCoord;
+ 
++// OkLabA {l,a,b,alpha} -> sRGB (gamma 2.2 encoded), straight alpha. Verbatim
++// port of gradient.glsl okLabAToSrgb (fromLinearRGB with GAMMA22 = pow 1/2.2).
++vec4 okLabAToSrgb(vec4 lab) {
++	float l = pow(lab[0] + lab[1] * 0.3963377774 + lab[2] * 0.2158037573, 3.0);
++	float m = pow(lab[0] + lab[1] * (-0.1055613458) + lab[2] * (-0.0638541728), 3.0);
++	float s = pow(lab[0] + lab[1] * (-0.0894841775) + lab[2] * (-1.2914855480), 3.0);
++	vec3 lin = vec3(
++	    l * 4.0767416621 + m * (-3.3077115913) + s * 0.2309699292,
++	    l * (-1.2684380046) + m * 2.6097574011 + s * (-0.3413193965),
++	    l * (-0.0041960863) + m * (-0.7034186147) + s * 1.7076147010);
++	return vec4(pow(max(lin, 0.0), vec3(1.0 / 2.2)), lab[3]);
++}
++
++// Sample one gradient at normalizedCoord, returning an OkLabA color. Port of
++// getOkColorForCoordArray from gradient.glsl: the same angle quadrant flips and
++// sine-weighted progress. Segment interpolation uses a fixed clamp-chain (GLSL
++// ES 1.00 safe, no dynamic array indexing) which is bit-equivalent to vanilla's
++// floor/adjacent lerp: for progress in [k,k+1] it yields mix(grad[k],grad[k+1]).
++vec4 sampleOkGradient(vec2 nc, int len, highp vec4 grad[HY3_MAX_STOPS], float angle) {
++	if (len <= 0) return vec4(0.0);
++	if (len < 2) return grad[0];
++
++	float finalAng = 0.0;
++	if (angle > 4.71 /* 270 deg */) {
++		nc[1] = 1.0 - nc[1];
++		finalAng = 6.28 - angle;
++	} else if (angle > 3.14 /* 180 deg */) {
++		nc[0] = 1.0 - nc[0];
++		nc[1] = 1.0 - nc[1];
++		finalAng = angle - 3.14;
++	} else if (angle > 1.57 /* 90 deg */) {
++		nc[0] = 1.0 - nc[0];
++		finalAng = 3.14 - angle;
++	} else {
++		finalAng = angle;
++	}
++
++	float sine = sin(finalAng);
++	float progress = (nc[1] * sine + nc[0] * (1.0 - sine)) * float(len - 1);
++
++	vec4 lab = grad[0];
++	for (int i = 1; i < HY3_MAX_STOPS; i++) {
++		if (i >= len) break;
++		float w = clamp(progress - float(i - 1), 0.0, 1.0);
++		lab = mix(lab, grad[i], w);
++	}
++	return lab;
++}
++
++// Port of gradient.glsl getColorForCoord: sample both gradients in OkLab, mix
++// them in OkLab by lerp, THEN convert to sRGB. Returns straight (non-premul).
++vec4 blendColorForCoord(
++    vec2 nc,
++    int lenA, highp vec4 gA[HY3_MAX_STOPS], float angA,
++    int lenB, highp vec4 gB[HY3_MAX_STOPS], float angB,
++    float lerp
++) {
++	vec4 r1 = sampleOkGradient(nc, lenA, gA, angA);
++	if (lenB <= 0) return okLabAToSrgb(r1);
++	vec4 r2 = sampleOkGradient(nc, lenB, gB, angB);
++	return okLabAToSrgb(mix(r1, r2, lerp));
++}
++
+ void main() {
++	vec2 nc = pixCoord / pixelSize;
++
++	vec4 fillStraight = blendColorForCoord(nc, fillCountA, fillStopsA, fillAngleA, fillCountB, fillStopsB, fillAngleB, fillMix);
++	vec4 fillColor = vec4(fillStraight.rgb * fillStraight.a, fillStraight.a);
++
++	vec4 borderStraight = blendColorForCoord(nc, borderCountA, borderStopsA, borderAngleA, borderCountB, borderStopsB, borderAngleB, borderMix);
++	vec4 borderColor = vec4(borderStraight.rgb * borderStraight.a, borderStraight.a);
++
+ 	float opacityMul = opacity;
+ 	highp vec2 cornerDist = min(pixCoord, pixelSize - pixCoord);
+ 
+diff --git a/src/text.frag b/src/text.frag
+new file mode 100644
+index 0000000..301270b
+--- /dev/null
++++ b/src/text.frag
+@@ -0,0 +1,90 @@
++precision highp float;
++
++// Gradient-tinted tab title text. The glyph coverage comes from `tex` (a white
++// pango/cairo texture, alpha = coverage); the color comes from the same OkLab
++// gradient math as tab.frag, evaluated in TAB-box space so the text gradient
++// lines up with the fill/border gradient underneath it. Reuses tab.vert.
++
++uniform sampler2D tex;
++uniform highp vec2 pixelSize;   // text quad size (px)
++uniform highp vec2 pixelOffset; // text quad origin on the monitor (px)
++uniform highp vec2 tabOffset;   // tab box origin on the monitor (px)
++uniform highp vec2 tabSize;     // tab box size (px)
++uniform float opacity;
++
++#define HY3_MAX_STOPS 10
++uniform highp vec4 textStopsA[HY3_MAX_STOPS];
++uniform int textCountA;
++uniform float textAngleA;
++uniform highp vec4 textStopsB[HY3_MAX_STOPS];
++uniform int textCountB;
++uniform float textAngleB;
++uniform float textMix;
++
++varying highp vec2 pixCoord;
++varying highp vec2 monitorTexCoord;
++
++// --- OkLab gradient math, identical to tab.frag (ported from Hyprland) ---
++vec4 okLabAToSrgb(vec4 lab) {
++	float l = pow(lab[0] + lab[1] * 0.3963377774 + lab[2] * 0.2158037573, 3.0);
++	float m = pow(lab[0] + lab[1] * (-0.1055613458) + lab[2] * (-0.0638541728), 3.0);
++	float s = pow(lab[0] + lab[1] * (-0.0894841775) + lab[2] * (-1.2914855480), 3.0);
++	vec3 lin = vec3(
++	    l * 4.0767416621 + m * (-3.3077115913) + s * 0.2309699292,
++	    l * (-1.2684380046) + m * 2.6097574011 + s * (-0.3413193965),
++	    l * (-0.0041960863) + m * (-0.7034186147) + s * 1.7076147010);
++	return vec4(pow(max(lin, 0.0), vec3(1.0 / 2.2)), lab[3]);
++}
++
++vec4 sampleOkGradient(vec2 nc, int len, highp vec4 grad[HY3_MAX_STOPS], float angle) {
++	if (len <= 0) return vec4(0.0);
++	if (len < 2) return grad[0];
++
++	float finalAng = 0.0;
++	if (angle > 4.71) {
++		nc[1] = 1.0 - nc[1];
++		finalAng = 6.28 - angle;
++	} else if (angle > 3.14) {
++		nc[0] = 1.0 - nc[0];
++		nc[1] = 1.0 - nc[1];
++		finalAng = angle - 3.14;
++	} else if (angle > 1.57) {
++		nc[0] = 1.0 - nc[0];
++		finalAng = 3.14 - angle;
++	} else {
++		finalAng = angle;
++	}
++
++	float sine = sin(finalAng);
++	float progress = (nc[1] * sine + nc[0] * (1.0 - sine)) * float(len - 1);
++
++	vec4 lab = grad[0];
++	for (int i = 1; i < HY3_MAX_STOPS; i++) {
++		if (i >= len) break;
++		float w = clamp(progress - float(i - 1), 0.0, 1.0);
++		lab = mix(lab, grad[i], w);
++	}
++	return lab;
++}
++
++vec4 blendColorForCoord(
++    vec2 nc,
++    int lenA, highp vec4 gA[HY3_MAX_STOPS], float angA,
++    int lenB, highp vec4 gB[HY3_MAX_STOPS], float angB,
++    float lerp
++) {
++	vec4 r1 = sampleOkGradient(nc, lenA, gA, angA);
++	if (lenB <= 0) return okLabAToSrgb(r1);
++	vec4 r2 = sampleOkGradient(nc, lenB, gB, angB);
++	return okLabAToSrgb(mix(r1, r2, lerp));
++}
++
++void main() {
++	float glyphA = texture2D(tex, pixCoord / pixelSize).a;
++
++	// Gradient coordinate in tab-box space so text aligns with fill/border.
++	vec2 nc = (pixelOffset + pixCoord - tabOffset) / tabSize;
++
++	vec4 straight = blendColorForCoord(nc, textCountA, textStopsA, textAngleA, textCountB, textStopsB, textAngleB, textMix);
++	gl_FragColor = vec4(straight.rgb * straight.a, straight.a) * glyphA * opacity;
++}
