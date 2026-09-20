@@ -31,6 +31,9 @@
   ];
   vimPluginsOverlayList = let
     local = final: prev: {
+      # WORKAROUND: the neotest lua package fails its tests under nixpkgs, so
+      # build it with doCheck off inside neovim's lua set. Drop this override
+      # when https://github.com/nvim-neotest/neotest/issues/530 is fixed.
       neovim-unwrapped = prev.neovim-unwrapped.overrideAttrs (old: {
         lua = old.lua.override {
           packageOverrides = final': prev': {
@@ -61,17 +64,6 @@
             };
           });
         };
-
-      # WARN: this avoids the failing tests when packaging neovim plugins
-      # TODO: CHECK WHEN THIS GETS FIXED IN NEOTEST AND NIXPKGS
-      # https://github.com/nvim-neotest/neotest/issues/530
-      # luaPackages =
-      #   final.luaPackages
-      #   // {
-      #     neotest = prev.luaPackages.neotest.override {
-      #       doCheck = false;
-      #     };
-      #   };
     };
   in [
     inputs.rustaceanvim.overlays.default
