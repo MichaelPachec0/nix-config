@@ -577,6 +577,15 @@ in {
     # where the look is defined, so it opts in here.
     hyprglass.xray = true;
 
+    # Off. Hyprland core already drops every decoration, glass included, for
+    # a true FSMODE_FULLSCREEN window (Renderer.cpp decoration gate), so the
+    # hyprglass_disabled tag saves nothing there. Worse, the tag would also
+    # kill glass on FSMODE_FULLSCREEN_DECORATOR windows (local patch
+    # overlays/hyprland-fullscreen-decorator-mode.patch), whose whole point is
+    # glass in full-monitor fullscreen. kitty and firefox opt into that mode
+    # through the decorate_fullscreen tag (window rules below).
+    hyprglass.disableOnFullscreen = false;
+
     # `keybind-cheatsheet` on PATH so it's runnable from a terminal too (the
     # Super+/ bind invokes it by store path regardless).
     home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript scratchpadCycleScript];
@@ -1247,7 +1256,27 @@ in {
             # hyprglass.apps (hyprglass.nix): per-app opacity / preset / theme /
             # mask / glass / videoRect, one rule or tag per field. The opacity
             # entries rely on splicing in after opacity-all above.
-            ++ generatedHyprglass.appRules;
+            ++ generatedHyprglass.appRules
+            # decorate_fullscreen tag: the local FSMODE_FULLSCREEN_DECORATOR
+            # patch (overlays/hyprland-fullscreen-decorator-mode.patch) turns a
+            # fullscreen request on a tagged window into the decorator mode:
+            # full-monitor coverage, but decorations (the glass backing) keep
+            # rendering, no border, no rounding, still composited. The tag is
+            # unconditional; the upgrade happens only when the window goes
+            # fullscreen. hyprglass.disableOnFullscreen is off above for the
+            # same reason.
+            ++ [
+              {
+                name = "kitty-decorate-fullscreen";
+                match = {class = "kitty";};
+                tag = "+decorate_fullscreen";
+              }
+              {
+                name = "firefox-decorate-fullscreen";
+                match = {class = "firefox-dev.*";};
+                tag = "+decorate_fullscreen";
+              }
+            ];
 
           # hl.layer_rule({...}) -- frost the bar. blur enables wallpaper blur
           # behind the bar layer; ignore_alpha 0.5 restricts it to pixels with

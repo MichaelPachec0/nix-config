@@ -300,6 +300,12 @@
           # window that had ever been fullscreen. Stores the bare name. Same
           # bug on main as of 2026-09-06.
           ../overlays/hyprland-dynamic-tag-prefix.patch
+          # Third fullscreen mode FSMODE_FULLSCREEN_DECORATOR: full-monitor
+          # coverage like FSMODE_FULLSCREEN but keeps decorations rendering, so a
+          # decoration-based effect (hyprglass) survives fullscreen. Triggered
+          # per-window by the `decorate_fullscreen` tag (see hyprland.nix). Same
+          # gap on main as of 2026-09-09.
+          ../overlays/hyprland-fullscreen-decorator-mode.patch
         ];
     });
     # xdg-desktop-portal-hyprland past its v1.4.0 tag, for 71ae1a3a

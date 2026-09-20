@@ -1,0 +1,285 @@
+Add a third internal fullscreen mode, FSMODE_FULLSCREEN_DECORATOR, that occupies
+the whole monitor exactly like FSMODE_FULLSCREEN but keeps window decorations
+rendering. Purpose: let a window (opted in per-window) go full-monitor fullscreen
+while a decoration-based background effect (hyprglass liquid glass, drawn at
+DECORATION_LAYER_BOTTOM) survives. Upstream drops ALL decorations for a true-
+fullscreen window (src/render/Renderer.cpp:597, internal != FSMODE_FULLSCREEN),
+so such an effect can never survive true fullscreen; maximize keeps decorations
+but does not cover the bar/gaps.
+
+Trigger is a plain window tag: a window tagged `decorate_fullscreen` that would
+go FSMODE_FULLSCREEN is upgraded to FSMODE_FULLSCREEN_DECORATOR in
+setFullscreenMode (post-clamp; tag-only, not raw-dispatcher reachable). The
+client mode is left untouched so the app is still told plain fullscreen.
+
+Differences from FSMODE_FULLSCREEN, all deliberate:
+  - decorations render      : free, mode 3 != FSMODE_FULLSCREEN at Renderer.cpp:597
+  - no border               : mode added to the border/groupbar/border-size gates
+  - rounding off            : mode added to Renderer.cpp dontRound
+  - stays composited        : direct-scanout (Monitor.cpp) and alphaFullscreen
+                              (Window.cpp) LEFT UNCHANGED, so the surface stays
+                              translucent and the compositor keeps compositing it,
+                              which is what lets the bottom-layer effect show.
+
+fsCovers(mode) (added to the enum header) folds "true fullscreen OR decorator"
+into every coverage/layout/scanout/input/protocol site that must treat the new
+mode as full-monitor. isFullscreen(window) with a nullopt mode already returns
+`internal != FSMODE_NONE` (FullscreenHandler.cpp:54), so hy3 (which only calls
+the controller helpers) needs no patch. The built-in scrolling layout is NOT
+updated on purpose (this host runs hy3; the scrolling handler never executes).
+
+Same behaviour on hyprland main as of 2026-09-09; line numbers are 0.56.x.
+
+diff -ruN a/src/config/shared/monitor/MonitorRuleManager.cpp b/src/config/shared/monitor/MonitorRuleManager.cpp
+diff -ruN a/src/config/shared/actions/ConfigActions.cpp b/src/config/shared/actions/ConfigActions.cpp
+--- a/src/config/shared/actions/ConfigActions.cpp	2026-09-09 03:39:49.605130133 -0700
++++ b/src/config/shared/actions/ConfigActions.cpp	2026-09-09 03:39:49.605321767 -0700
+@@ -275,7 +275,12 @@
+     if (!window)
+         return {};
+ 
+-    if (Fullscreen::controller()->isFullscreen(window, mode))
++    // A decorate_fullscreen-tagged window enters as FSMODE_FULLSCREEN_DECORATOR
++    // (setFullscreenMode substitution), so a repeat toggle asking for
++    // FSMODE_FULLSCREEN must treat the decorator mode as already-fullscreen or
++    // it can never toggle off.
++    if (Fullscreen::controller()->isFullscreen(window, mode)
++        || (mode == Fullscreen::FSMODE_FULLSCREEN && Fullscreen::controller()->isFullscreen(window, Fullscreen::FSMODE_FULLSCREEN_DECORATOR)))
+         Fullscreen::controller()->setFullscreenMode(window, Fullscreen::FSMODE_NONE, std::nullopt, layoutAware);
+     else
+         Fullscreen::controller()->setFullscreenMode(window, mode, std::nullopt, layoutAware);
+@@ -298,7 +303,10 @@
+ 
+     const Fullscreen::SFullscreenMode NEW_MODES = {.internal = internalMode, .client = clientMode};
+ 
+-    if (const auto PAST_FS_MODES = Fullscreen::controller()->getFullscreenModes(window); PAST_FS_MODES.internal == NEW_MODES.internal && PAST_FS_MODES.client == NEW_MODES.client)
++    if (const auto PAST_FS_MODES = Fullscreen::controller()->getFullscreenModes(window);
++        (PAST_FS_MODES.internal == NEW_MODES.internal
++         || (NEW_MODES.internal == Fullscreen::FSMODE_FULLSCREEN && PAST_FS_MODES.internal == Fullscreen::FSMODE_FULLSCREEN_DECORATOR))
++        && PAST_FS_MODES.client == NEW_MODES.client)
+         Fullscreen::controller()->setFullscreenMode(window, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE, layoutAware);
+     else
+         Fullscreen::controller()->setFullscreenMode(
+diff -ruN a/src/config/shared/monitor/MonitorRuleManager.cpp b/src/config/shared/monitor/MonitorRuleManager.cpp
+--- a/src/config/shared/monitor/MonitorRuleManager.cpp	2026-09-09 03:39:49.599847730 -0700
++++ b/src/config/shared/monitor/MonitorRuleManager.cpp	2026-09-09 03:39:49.599918995 -0700
+@@ -214,7 +214,7 @@
+ 
+         if (USEVRR == 1) {
+             bool wantVRR = true;
+-            if (PWORKSPACE && Fullscreen::controller()->getFullscreenModes(PWORKSPACE).internal == Fullscreen::FSMODE_FULLSCREEN)
++            if (PWORKSPACE && Fullscreen::fsCovers(Fullscreen::controller()->getFullscreenModes(PWORKSPACE).internal))
+                 wantVRR = !Fullscreen::controller()->getFullscreenWindow(PWORKSPACE)->m_ruleApplicator->noVRR().valueOrDefault();
+ 
+             if (wantVRR) {
+@@ -244,7 +244,7 @@
+             return;
+         } else if (USEVRR == 2 || USEVRR == 3) {
+ 
+-            bool wantVRR = Fullscreen::controller()->getFullscreenModes(PWORKSPACE).internal == Fullscreen::FSMODE_FULLSCREEN;
++            bool wantVRR = Fullscreen::fsCovers(Fullscreen::controller()->getFullscreenModes(PWORKSPACE).internal);
+             if (wantVRR && Fullscreen::controller()->getFullscreenWindow(PWORKSPACE)->m_ruleApplicator->noVRR().valueOrDefault())
+                 wantVRR = false;
+ 
+diff -ruN a/src/desktop/view/Window.cpp b/src/desktop/view/Window.cpp
+--- a/src/desktop/view/Window.cpp	2026-09-09 03:39:49.603148960 -0700
++++ b/src/desktop/view/Window.cpp	2026-09-09 03:39:49.603740283 -0700
+@@ -1139,7 +1139,7 @@
+     if (!m_borderSizeCacheDirty)
+         return m_cachedBorderSize;
+ 
+-    if ((m_workspace && Fullscreen::controller()->getFullscreenModes(m_self.lock()).internal == Fullscreen::FSMODE_FULLSCREEN) || !m_ruleApplicator->decorate().valueOrDefault()) {
++    if ((m_workspace && Fullscreen::fsCovers(Fullscreen::controller()->getFullscreenModes(m_self.lock()).internal)) || !m_ruleApplicator->decorate().valueOrDefault()) {
+         m_cachedBorderSize     = 0;
+         m_borderSizeCacheDirty = false;
+         return 0;
+diff -ruN a/src/layout/target/WindowTarget.cpp b/src/layout/target/WindowTarget.cpp
+--- a/src/layout/target/WindowTarget.cpp	2026-09-09 03:39:49.595835619 -0700
++++ b/src/layout/target/WindowTarget.cpp	2026-09-09 03:39:49.595921492 -0700
+@@ -90,7 +90,7 @@
+     if (const auto FSMODES = Fullscreen::controller()->getFullscreenModes(m_window.lock());
+         FSMODES.internal != Fullscreen::FSMODE_NONE && !Fullscreen::controller()->layoutManagedFS(m_self->window())) {
+ 
+-        if (FSMODES.internal == Fullscreen::FSMODE_FULLSCREEN) {
++        if (Fullscreen::fsCovers(FSMODES.internal)) {
+             m_window->setBox(m_box.logicalBox);
+ 
+         } else if (FSMODES.internal == Fullscreen::FSMODE_MAXIMIZED) {
+@@ -119,7 +119,7 @@
+         CBox visualBox = m_box.visualBox.empty() ? nodeBox : m_box.visualBox;
+         nodeBox.round();
+         visualBox.round();
+-        if (FSMODES.internal == Fullscreen::FSMODE_FULLSCREEN) {
++        if (Fullscreen::fsCovers(FSMODES.internal)) {
+             m_window->setBox(visualBox);
+         } else if (FSMODES.internal == Fullscreen::FSMODE_MAXIMIZED) {
+ 
+diff -ruN a/src/managers/fullscreen/FullscreenController.cpp b/src/managers/fullscreen/FullscreenController.cpp
+--- a/src/managers/fullscreen/FullscreenController.cpp	2026-09-09 03:39:49.593894332 -0700
++++ b/src/managers/fullscreen/FullscreenController.cpp	2026-09-09 03:39:49.593994282 -0700
+@@ -210,7 +210,7 @@
+     if (!activeWorkspace)
+         return false;
+ 
+-    return hasFullscreen(activeWorkspace) && getFullscreenModes(activeWorkspace).internal == FSMODE_FULLSCREEN;
++    return hasFullscreen(activeWorkspace) && fsCovers(getFullscreenModes(activeWorkspace).internal);
+ }
+ PHLWINDOW CFullscreenController::getFullscreenWindow(const PHLMONITOR monitor, const std::optional<bool> covering) {
+     if (!monitor)
+@@ -222,7 +222,7 @@
+ 
+     const auto FS_WINDOW = getFullscreenWindow(activeWorkspace, covering);
+ 
+-    return getFullscreenModes(FS_WINDOW).internal == FSMODE_FULLSCREEN ? getFullscreenWindow(activeWorkspace, covering) : nullptr;
++    return fsCovers(getFullscreenModes(FS_WINDOW).internal) ? getFullscreenWindow(activeWorkspace, covering) : nullptr;
+ }
+ 
+ SFullscreenMode CFullscreenController::getFullscreenModes(const PHLMONITOR monitor, const std::optional<bool> covering) {
+@@ -291,6 +291,15 @@
+         internal = std::clamp(internal.value(), sc<eFullscreenMode>(0), FSMODE_FULLSCREEN);
+     if (client.has_value())
+         client = std::clamp(client.value(), sc<eFullscreenMode>(0), FSMODE_FULLSCREEN);
++    // decorate_fullscreen tag: a rule-tagged window that would go true
++    // fullscreen gets the decorator variant instead (full coverage, decorations
++    // kept, composited so a glass backing still renders). Post-clamp so it is
++    // the final internal mode; client is left untouched, so the app is still
++    // told plain fullscreen. isTagged() is non-strict (matches the dynamic
++    // "decorate_fullscreen*" form a rule applies). m_ruleApplicator may be null.
++    if (internal.value_or(FSMODE_NONE) == FSMODE_FULLSCREEN && window->m_ruleApplicator
++        && window->m_ruleApplicator->m_tagKeeper.isTagged("decorate_fullscreen"))
++        internal = FSMODE_FULLSCREEN_DECORATOR;
+ 
+     eFullscreenMode targetInternalMode = internal.value_or(FSMODE_NONE);
+     eFullscreenMode targetClientMode   = client.value_or(FSMODE_NONE);
+@@ -513,7 +522,7 @@
+ 
+     FS_HANDLER->setTargetFullscreenModeClient(window->m_target, mode);
+ 
+-    g_pXWaylandManager->setWindowFullscreen(window, mode == FSMODE_FULLSCREEN);
++    g_pXWaylandManager->setWindowFullscreen(window, fsCovers(mode));
+ }
+ 
+ WP<IFullscreenHandler> CFullscreenController::getFsHandler(const PHLWINDOW window, std::optional<bool> layoutHandled) {
+diff -ruN a/src/managers/fullscreen/FullscreenController.hpp b/src/managers/fullscreen/FullscreenController.hpp
+--- a/src/managers/fullscreen/FullscreenController.hpp	2026-09-09 03:39:49.593063714 -0700
++++ b/src/managers/fullscreen/FullscreenController.hpp	2026-09-09 03:39:49.593164776 -0700
+@@ -13,7 +13,15 @@
+         FSMODE_NONE = 0,
+         FSMODE_MAXIMIZED,
+         FSMODE_FULLSCREEN,
++        FSMODE_FULLSCREEN_DECORATOR,
+     };
++    // True for any mode that occupies the whole monitor: true fullscreen or the
++    // decorator variant (which keeps decorations). Coverage/layout/scanout/input
++    // checks that used to test `== FSMODE_FULLSCREEN` use this so the decorator
++    // mode is treated as full-monitor too.
++    inline bool fsCovers(eFullscreenMode mode) {
++        return mode == FSMODE_FULLSCREEN || mode == FSMODE_FULLSCREEN_DECORATOR;
++    }
+ 
+     enum eFullscreenHandler : uint8_t {
+         FULLSCREEN_HANDLER_NONE = 0, // default/error case
+diff -ruN a/src/managers/fullscreen/handler/FullscreenHandler.cpp b/src/managers/fullscreen/handler/FullscreenHandler.cpp
+--- a/src/managers/fullscreen/handler/FullscreenHandler.cpp	2026-09-09 03:39:49.594673251 -0700
++++ b/src/managers/fullscreen/handler/FullscreenHandler.cpp	2026-09-09 03:39:49.594754606 -0700
+@@ -188,7 +188,7 @@
+     // must set pos of the highest level target (i.e. if target a part of a group, must set that group's pos which will set the pos of all member targets)
+     const auto LAYOUT_TARGET = target->window()->layoutTarget();
+ 
+-    if (TARGET_INTERNAL_MODE == FSMODE_FULLSCREEN) {
++    if (fsCovers(TARGET_INTERNAL_MODE)) {
+         const CBox MONBOX                                  = MONITOR->logicalBox();
+         Fullscreen::controller()->m_windowPosSettingQueued = true;
+         LAYOUT_TARGET->setPositionGlobal(MONBOX);
+@@ -217,7 +217,7 @@
+     // must set pos of the highest level target (i.e. if target a part of a group, must set that group's pos which will set the pos of all member targets)
+     const auto LAYOUT_TARGET = FS_TARGET->window()->layoutTarget();
+ 
+-    if (TARGET_INTERNAL_MODE == FSMODE_FULLSCREEN) {
++    if (fsCovers(TARGET_INTERNAL_MODE)) {
+ 
+         const CBox MONBOX         = MONITOR->logicalBox();
+         const CBox ROUNDED_MONBOX = MONITOR->logicalBox().round();
+diff -ruN a/src/managers/input/InputManager.cpp b/src/managers/input/InputManager.cpp
+--- a/src/managers/input/InputManager.cpp	2026-09-09 03:39:49.598306853 -0700
++++ b/src/managers/input/InputManager.cpp	2026-09-09 03:39:49.598555014 -0700
+@@ -487,8 +487,8 @@
+     };
+ 
+     const bool HAS_EXCLUSIVE_FULLSCREEN =
+-        (Fullscreen::controller()->hasFullscreen(PWORKSPACE) && Fullscreen::controller()->getFullscreenModes(PWORKSPACE).internal == Fullscreen::FSMODE_FULLSCREEN) ||
+-        (Fullscreen::controller()->hasFullscreen(PMONITOR) && Fullscreen::controller()->getFullscreenModes(PMONITOR).internal == Fullscreen::FSMODE_FULLSCREEN);
++        (Fullscreen::controller()->hasFullscreen(PWORKSPACE) && Fullscreen::fsCovers(Fullscreen::controller()->getFullscreenModes(PWORKSPACE).internal)) ||
++        (Fullscreen::controller()->hasFullscreen(PMONITOR) && Fullscreen::fsCovers(Fullscreen::controller()->getFullscreenModes(PMONITOR).internal));
+ 
+     if (HAS_EXCLUSIVE_FULLSCREEN) {
+         const auto IS_LS_UNFOCUSABLE = pFoundLayerSurface &&
+diff -ruN a/src/managers/input/UnifiedWorkspaceSwipeGesture.cpp b/src/managers/input/UnifiedWorkspaceSwipeGesture.cpp
+--- a/src/managers/input/UnifiedWorkspaceSwipeGesture.cpp	2026-09-09 03:39:49.598782737 -0700
++++ b/src/managers/input/UnifiedWorkspaceSwipeGesture.cpp	2026-09-09 03:39:49.599347890 -0700
+@@ -30,7 +30,7 @@
+     const auto FSWINDOW         = Fullscreen::controller()->getFullscreenWindow(PWORKSPACE);
+     const auto INTERNAL_FS_MODE = FSWINDOW ? Fullscreen::controller()->getFullscreenModes(FSWINDOW).internal : Fullscreen::FSMODE_NONE;
+ 
+-    if (INTERNAL_FS_MODE == Fullscreen::FSMODE_FULLSCREEN) {
++    if (Fullscreen::fsCovers(INTERNAL_FS_MODE)) {
+         for (auto const& ls : Desktop::focusState()->monitor()->m_layerSurfaceLayers[2]) {
+             *ls->alpha()[Desktop::View::LS_ALPHA_FADE] = 1.F;
+         }
+@@ -315,7 +315,7 @@
+     if (pSwitchedTo) {
+         const auto FSWINDOW         = Fullscreen::controller()->getFullscreenWindow(pSwitchedTo);
+         const auto FS_MODE_INTERNAL = FSWINDOW ? Fullscreen::controller()->getFullscreenModes(FSWINDOW).internal : Fullscreen::FSMODE_NONE;
+-        const bool HIDE             = FS_MODE_INTERNAL == Fullscreen::FSMODE_FULLSCREEN &&
++        const bool HIDE             = Fullscreen::fsCovers(FS_MODE_INTERNAL) &&
+             (!FSWINDOW || !Fullscreen::controller()->layoutManagedFS(FSWINDOW) ||
+              (pSwitchedTo->m_space && pSwitchedTo->m_space->algorithm() && Fullscreen::controller()->hasFullscreen(pSwitchedTo, true)));
+ 
+diff -ruN a/src/protocols/ForeignToplevelWlr.cpp b/src/protocols/ForeignToplevelWlr.cpp
+--- a/src/protocols/ForeignToplevelWlr.cpp	2026-09-09 03:39:49.597069433 -0700
++++ b/src/protocols/ForeignToplevelWlr.cpp	2026-09-09 03:39:49.597165024 -0700
+@@ -205,7 +205,7 @@
+ 
+     if (Fullscreen::controller()->isFullscreen(PWINDOW)) {
+         auto p = sc<uint32_t*>(wl_array_add(&state, sizeof(uint32_t)));
+-        if (Fullscreen::controller()->getFullscreenModes(PWINDOW).internal == Fullscreen::FSMODE_FULLSCREEN)
++        if (Fullscreen::fsCovers(Fullscreen::controller()->getFullscreenModes(PWINDOW).internal))
+             *p = ZWLR_FOREIGN_TOPLEVEL_HANDLE_V1_STATE_FULLSCREEN;
+         else
+             *p = ZWLR_FOREIGN_TOPLEVEL_HANDLE_V1_STATE_MAXIMIZED;
+diff -ruN a/src/render/decorations/CHyprBorderDecoration.cpp b/src/render/decorations/CHyprBorderDecoration.cpp
+--- a/src/render/decorations/CHyprBorderDecoration.cpp	2026-09-09 03:39:49.604263897 -0700
++++ b/src/render/decorations/CHyprBorderDecoration.cpp	2026-09-09 03:39:49.604327528 -0700
+@@ -117,7 +117,7 @@
+ }
+ 
+ void CHyprBorderDecoration::damageEntire() {
+-    if (!validMapped(m_window) || Fullscreen::controller()->getFullscreenModes(m_window.lock()).internal == Fullscreen::FSMODE_FULLSCREEN)
++    if (!validMapped(m_window) || Fullscreen::fsCovers(Fullscreen::controller()->getFullscreenModes(m_window.lock()).internal))
+         return;
+ 
+     const auto GLOBAL_BOX = assignedBoxGlobal();
+diff -ruN a/src/render/decorations/CHyprGroupBarDecoration.cpp b/src/render/decorations/CHyprGroupBarDecoration.cpp
+--- a/src/render/decorations/CHyprGroupBarDecoration.cpp	2026-09-09 03:39:49.604802520 -0700
++++ b/src/render/decorations/CHyprGroupBarDecoration.cpp	2026-09-09 03:39:49.604895206 -0700
+@@ -439,7 +439,7 @@
+     static auto POUTERGAP         = CConfigValue<Config::INTEGER>("group:groupbar:gaps_out");
+     static auto PINNERGAP         = CConfigValue<Config::INTEGER>("group:groupbar:gaps_in");
+     static auto PMIDDLECLICKCLOSE = CConfigValue<Config::INTEGER>("group:groupbar:middle_click_close");
+-    if (Fullscreen::controller()->getFullscreenModes(m_window.lock()).internal == Fullscreen::FSMODE_FULLSCREEN)
++    if (Fullscreen::fsCovers(Fullscreen::controller()->getFullscreenModes(m_window.lock()).internal))
+         return true;
+ 
+     const float BARRELATIVEX = pos.x - assignedBoxGlobal().x;
+diff -ruN a/src/render/Renderer.cpp b/src/render/Renderer.cpp
+--- a/src/render/Renderer.cpp	2026-09-09 03:39:49.601278337 -0700
++++ b/src/render/Renderer.cpp	2026-09-09 03:39:49.601591952 -0700
+@@ -589,7 +589,7 @@
+     const bool USE_WORKSPACE_FADE_ALPHA = pWindow->m_monitorMovedFrom != -1 && (!PWORKSPACE || !PWORKSPACE->isVisible());
+ 
+     renderdata.surface   = pWindow->wlSurface()->resource();
+-    renderdata.dontRound = Fullscreen::controller()->getFullscreenModes(pWindow).internal == Fullscreen::FSMODE_FULLSCREEN;
++    renderdata.dontRound = Fullscreen::fsCovers(Fullscreen::controller()->getFullscreenModes(pWindow).internal);
+     renderdata.fadeAlpha = pWindow->alphaValue(WINDOW_ALPHA_FADE) * pWindow->alphaValue(WINDOW_ALPHA_FULLSCREEN) * pWindow->alphaValue(WINDOW_ALPHA_LAYOUT) *
+         (pWindow->m_pinned || USE_WORKSPACE_FADE_ALPHA ? 1.f : PWORKSPACE->m_alpha->value()) *
+         (USE_WORKSPACE_FADE_ALPHA ? pWindow->alphaValue(WINDOW_ALPHA_MOVE_TO_WORKSPACE) : 1.F) * pWindow->alphaValue(WINDOW_ALPHA_MOVE_FROM_WORKSPACE);
