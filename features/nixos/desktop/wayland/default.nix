@@ -478,6 +478,9 @@ in {
       slack-term
       neovide
       playground.freebuff
+      krita
+      gimp
+      pinta
     ];
     # systemd.user.units."dunst" = {wantedBy = ["hyprland-session.target"];};
     systemd.services = {
