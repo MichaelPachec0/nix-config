@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Snapshot every counter the zswap soak judges, one key=value line, so two
+# snapshots taken around a build or a hibernate can be diffed by eye or awk.
+#
+# Run as root (debugfs is root-only). Appends to $1, default ./zswap-soak.log.
+# Pair with the intent:
+#   vmstat zswpout/zswpin/zswpwb   all move; zswpwb > 0 during a build
+#   user.slice zswpwb              small next to nix-daemon's
+#   nix-daemon zswap.current       <= MemoryZSwapMax (2G)
+#   debug reject_compress_poor     ~0 (incompressible pages are stored raw)
+#   debug pool_limit_hit           low; climbing means raise max_pool_percent
+#   user.slice oom_kill            0
+#   vmstat thp_swpout              ~50/day; growth argues for mTHP
+#   meminfo Zswapped/SwapFree      before every hibernate
+set -euo pipefail
+
+out="${1:-./zswap-soak.log}"
+cg=/sys/fs/cgroup
+us="$cg/user.slice"
+nd="$cg/system.slice/nix-daemon.service"
+dbg=/sys/kernel/debug/zswap
+
+kv() { printf '%s=%s ' "$1" "$2"; }
+vmstat() { awk -v k="$1" '$1 == k { print $2; found = 1 } END { if (!found) print "na" }' /proc/vmstat; }
+meminfo() { awk -v k="$1:" '$1 == k { print $2; found = 1 } END { if (!found) print "na" }' /proc/meminfo; }
+stat() { awk -v k="$2" '$1 == k { print $2; found = 1 } END { if (!found) print "na" }' "$1/memory.stat" 2>/dev/null || echo na; }
+events() { awk -v k="$2" '$1 == k { print $2; found = 1 } END { if (!found) print "na" }' "$1/memory.events" 2>/dev/null || echo na; }
+rd() { cat "$1" 2>/dev/null || echo na; }
+
+{
+  kv ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  kv zswap_enabled "$(rd /sys/module/zswap/parameters/enabled)"
+  kv compressor "$(rd /sys/module/zswap/parameters/compressor)"
+  kv max_pool_percent "$(rd /sys/module/zswap/parameters/max_pool_percent)"
+  kv zram_active "$(swapon --noheadings --show=NAME | grep -c zram || true)"
+  kv zswpout "$(vmstat zswpout)"
+  kv zswpin "$(vmstat zswpin)"
+  kv zswpwb "$(vmstat zswpwb)"
+  kv pswpout "$(vmstat pswpout)"
+  kv pswpin "$(vmstat pswpin)"
+  kv thp_swpout "$(vmstat thp_swpout)"
+  kv pgsteal_direct "$(vmstat pgsteal_direct)"
+  kv pgsteal_kswapd "$(vmstat pgsteal_kswapd)"
+  kv meminfo_zswap_kb "$(meminfo Zswap)"
+  kv meminfo_zswapped_kb "$(meminfo Zswapped)"
+  kv meminfo_swapfree_kb "$(meminfo SwapFree)"
+  kv us_zswpwb "$(stat "$us" zswpwb)"
+  kv us_zswapped "$(stat "$us" zswapped)"
+  kv us_swapcached "$(stat "$us" swapcached)"
+  kv us_zswap_incomp "$(stat "$us" zswap_incomp)"
+  kv us_swap_current "$(rd "$us/memory.swap.current")"
+  kv us_zswap_current "$(rd "$us/memory.zswap.current")"
+  kv us_low_events "$(events "$us" low)"
+  kv us_oom_kill "$(events "$us" oom_kill)"
+  kv us_psi_mem_some "$(awk '/^some/ { sub("total=", "", $5); print $5 }' "$us/memory.pressure" 2>/dev/null || echo na)"
+  kv nd_zswpwb "$(stat "$nd" zswpwb)"
+  kv nd_zswap_current "$(rd "$nd/memory.zswap.current")"
+  kv nd_zswap_max "$(rd "$nd/memory.zswap.max")"
+  kv nd_high_events "$(events "$nd" high)"
+  kv dbg_pool_total_size "$(rd "$dbg/pool_total_size")"
+  kv dbg_stored_pages "$(rd "$dbg/stored_pages")"
+  kv dbg_written_back_pages "$(rd "$dbg/written_back_pages")"
+  kv dbg_pool_limit_hit "$(rd "$dbg/pool_limit_hit")"
+  kv dbg_reject_reclaim_fail "$(rd "$dbg/reject_reclaim_fail")"
+  kv dbg_reject_compress_poor "$(rd "$dbg/reject_compress_poor")"
+  kv dbg_reject_alloc_fail "$(rd "$dbg/reject_alloc_fail")"
+  echo
+} | tee -a "$out"
