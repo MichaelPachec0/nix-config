@@ -685,10 +685,20 @@ in {
               layout = "hy3";
               gaps_in = 2;
               gaps_out = 4;
-              border_size = 2;
+              border_size = 3;
               resize_on_border = false;
               allow_tearing = false;
-              "col.active_border" = "rgba(${theme.palette.accent}bf)";
+              # Three-stop gruvbox gradient. The window.active hook below
+              # re-sends the same table with a random angle on each focus.
+              "col.active_border" = mkLuaInline ''
+                {
+                  colors = {
+                    "rgba(${theme.palette.accentYellow}ff)",
+                    "rgba(${theme.palette.accentOrange}ff)",
+                    "rgba(${theme.palette.accentRed}ff)"
+                  },
+                  angle = 30
+                }'';
               "col.inactive_border" = "rgba(${theme.palette.borderInactive}aa)";
             };
 
@@ -858,6 +868,15 @@ in {
                 }
               ];
             }
+            {
+              _args = [
+                "linear"
+                {
+                  type = "bezier";
+                  points = [[1 1] [1 1]];
+                }
+              ];
+            }
           ];
 
           # hl.animation({...}) -- per-leaf animations (lua leaf names, verified
@@ -905,6 +924,23 @@ in {
               bezier = "md3_decel";
               style = "slidefade 15%";
             }
+            # WIP, off: border colour cross-fade and borderangle spin. With
+            # these on the random-angle hook below rotates the gradient into
+            # place instead of snapping it. Enable once the hy3 tab gradient
+            # spin lands, so both use the same borderangle leaf.
+            # {
+            #   leaf = "border";
+            #   enabled = true;
+            #   speed = 1;
+            #   bezier = "linear";
+            # }
+            # {
+            #   leaf = "borderangle";
+            #   enabled = true;
+            #   speed = 100;
+            #   bezier = "linear";
+            #   style = "loop";
+            # }
           ];
 
           # hl.env("KEY", "VALUE") -- see sessionEnv / compositorEnv above.
@@ -1053,6 +1089,36 @@ in {
             [
               {_args = ["hyprland.start" hy3SetupHook];}
               {_args = ["hyprland.start" autostartHook];}
+              # Seed the RNG once at startup. Without a seed math.random()
+              # replays the same sequence each boot, so the "random" angles
+              # repeat run to run.
+              {_args = ["hyprland.start" (mkLuaInline ''function() math.randomseed(os.time()) end'')];}
+              # Random active-border gradient angle on each focus change.
+              # col.active_border is one gradient VALUE, not merged fields, so
+              # the whole table (colors + angle) goes each time; {angle=...}
+              # alone would wipe the colors. The border snaps to the new angle
+              # until the borderangle animation (WIP block above) is enabled.
+              {
+                _args = [
+                  "window.active"
+                  (mkLuaInline ''
+                    function()
+                      hl.config({
+                        general = {
+                          ["col.active_border"] = {
+                            colors = {
+                              "rgba(${theme.palette.accentYellow}ff)",
+                              "rgba(${theme.palette.accentOrange}ff)",
+                              "rgba(${theme.palette.accentRed}ff)"
+                            },
+                            angle = math.random(0, 359)
+                          }
+                        }
+                      })
+                    end
+                  '')
+                ];
+              }
             ]
             ++ lib.optional config.hyprglass.enable
             {_args = ["hyprland.start" generatedHyprglass.setupHook];};
