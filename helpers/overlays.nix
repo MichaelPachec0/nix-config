@@ -31,6 +31,9 @@
   ];
   vimPluginsOverlayList = let
     local = final: prev: {
+      # WORKAROUND: the neotest lua package fails its tests under nixpkgs, so
+      # build it with doCheck off inside neovim's lua set. Drop this override
+      # when https://github.com/nvim-neotest/neotest/issues/530 is fixed.
       neovim-unwrapped = prev.neovim-unwrapped.overrideAttrs (old: {
         lua = old.lua.override {
           packageOverrides = final': prev': {
@@ -61,17 +64,6 @@
             };
           });
         };
-
-      # WARN: this avoids the failing tests when packaging neovim plugins
-      # TODO: CHECK WHEN THIS GETS FIXED IN NEOTEST AND NIXPKGS
-      # https://github.com/nvim-neotest/neotest/issues/530
-      # luaPackages =
-      #   final.luaPackages
-      #   // {
-      #     neotest = prev.luaPackages.neotest.override {
-      #       doCheck = false;
-      #     };
-      #   };
     };
   in [
     inputs.rustaceanvim.overlays.default
@@ -174,10 +166,12 @@
     # Invalid argument" and drm_info showing the dead connectors still holding
     # crtc_id 108/113/118.
     aquamarine = prev.aquamarine.overrideAttrs (old: {
-      patches = (old.patches or []) ++ [
-        ../overlays/aquamarine-libinput-inactive-session-devices.patch
-        ../overlays/aquamarine-release-crtc-on-disconnect.patch
-      ];
+      patches =
+        (old.patches or [])
+        ++ [
+          ../overlays/aquamarine-libinput-inactive-session-devices.patch
+          ../overlays/aquamarine-release-crtc-on-disconnect.patch
+        ];
     });
     # Hyprland CORE: bumped to the v0.56.2 point release and carrying the two
     # crash patches. Overrides the TOP-LEVEL `hyprland` (not just latest.hyprland
@@ -306,6 +300,12 @@
           # window that had ever been fullscreen. Stores the bare name. Same
           # bug on main as of 2026-09-06.
           ../overlays/hyprland-dynamic-tag-prefix.patch
+          # Third fullscreen mode FSMODE_FULLSCREEN_DECORATOR: full-monitor
+          # coverage like FSMODE_FULLSCREEN but keeps decorations rendering, so a
+          # decoration-based effect (hyprglass) survives fullscreen. Triggered
+          # per-window by the `decorate_fullscreen` tag (see hyprland.nix). Same
+          # gap on main as of 2026-09-09.
+          ../overlays/hyprland-fullscreen-decorator-mode.patch
         ];
     });
     # xdg-desktop-portal-hyprland past its v1.4.0 tag, for 71ae1a3a
@@ -441,6 +441,13 @@
             # hidden. Clears the flag on removal; a group re-applies its own
             # on the next geometry pass. Same on hy3 master as of 2026-09-06.
             ../overlays/0006-fix-hy3-unhide-window-on-remove.patch
+            # Tab-bar gradient colors: the 18 fill/border/text color options
+            # register as Hyprland's native gradient type, so the Lua config can
+            # pass a {colors, angle} table (or a plain rgba string, a 1-stop
+            # gradient) and hy3 samples it per-pixel in tab.frag. A single color
+            # renders identically to before. WIP: dominant-state render only so
+            # far (cross-fade, borderangle spin, and gradient text still to land).
+            ../overlays/0007-feat-hy3-tab-gradients.patch
           ];
       });
       # hyprglass: liquid-glass window decoration. NOT in nixpkgs: PR #547498

@@ -12,7 +12,7 @@
 set -euo pipefail
 
 PROG=hy3-project
-KCLASS=hy3proj                       # private class on the two kitty panes
+KTAG=hy3proj                         # hy3 tag on the two kitty panes
 WS=""                                # target workspace id (the active one), set in main
 
 # ---- logging --------------------------------------------------------------
@@ -79,6 +79,10 @@ active_ws() { hyprctl activeworkspace -j | jq -r '.id'; }
 # focus a window by address (native dispatcher via the window selector)
 focus() { hyprctl eval "hl.dispatch(hl.dsp.focus({ window = \"address:$1\" }))" >/dev/null; }
 
+# tag a window by address with our unit marker (kept as a tag so the panes
+# keep class "kitty" and match the kitty glass/opacity rules)
+tag_window() { hyprctl eval "hl.dispatch(hl.dsp.window.tag({ tag = \"+$KTAG\", window = \"address:$1\" }))" >/dev/null; }
+
 # hy3 dispatchers are closures -- call with a trailing ()
 hy3_top()       { hyprctl eval 'hl.plugin.hy3.change_focus("top")()' >/dev/null; }    # select the root node
 hy3_lower()     { hyprctl eval 'hl.plugin.hy3.change_focus("lower")()' >/dev/null; }  # descend one level
@@ -92,7 +96,7 @@ hy3_groupwith() { hyprctl eval "hl.plugin.hy3.group_with(\"$1\",\"$2\")()" >/dev
 # features/hm/wayland/app-run.nix); it must sit INSIDE the sh -c, after the cd,
 # because the scope inherits the caller's working directory (verified) and the
 # cd is what makes the shell start in the project dir.
-kitty_cmd() { printf "sh -c 'cd \"%s\" && exec app-run kitty --class %s'" "$1" "$KCLASS"; }
+kitty_cmd() { printf "sh -c 'cd \"%s\" && exec app-run kitty'" "$1"; }
 
 # spawn_and_wait <label> <launch...> -> echoes the new window address
 # Serialized: snapshot addresses, launch silently onto $WS, poll for the one
@@ -127,11 +131,11 @@ count_tiled() {
     '[.[] | select(.workspace.id==$ws and .floating==false)] | length'
 }
 
-# number of OUR units already on the active ws (2 hy3proj kitties per unit)
+# number of OUR units already on the active ws (2 tagged kitties per unit)
 count_units() {
   local ws; ws="$(active_ws)"
-  hyprctl clients -j | jq --argjson ws "$ws" --arg c "$KCLASS" \
-    '[.[] | select(.workspace.id==$ws and .class==$c)] | (length/2) | floor'
+  hyprctl clients -j | jq --argjson ws "$ws" --arg t "$KTAG" \
+    '[.[] | select(.workspace.id==$ws and ((.tags // []) | any(startswith($t))))] | (length/2) | floor'
 }
 
 # address of any tiled window on the active ws (to focus before normalising)
@@ -180,8 +184,10 @@ ws_state() {
 build_unit() {
   local dir="$1" browser="$2" a b
   a="$(spawn_and_wait a "$(kitty_cmd "$dir")")" || exit 1
+  tag_window "$a"
   focus "$a"
   b="$(spawn_and_wait b "$(kitty_cmd "$dir")")" || exit 1
+  tag_window "$b"
   focus "$b"
   # shellcheck disable=SC2086  # browser may carry flags, e.g. "firefox --new-window"
   spawn_and_wait c app-run $browser >/dev/null || exit 1   # c need only exist (b's right neighbour)
@@ -208,8 +214,10 @@ append_unit() {
   [ -n "$w" ] && focus "$w"
   hy3_top; hy3_lower                       # select a child of the root tab
   a="$(spawn_and_wait a "$(kitty_cmd "$dir")")" || exit 1   # -> new root tab
+  tag_window "$a"
   focus "$a"
   b="$(spawn_and_wait b "$(kitty_cmd "$dir")")" || exit 1   # -> new root tab
+  tag_window "$b"
   focus "$b"
   # shellcheck disable=SC2086
   spawn_and_wait c app-run $browser >/dev/null || exit 1            # c -> new root tab (b's right neighbour)

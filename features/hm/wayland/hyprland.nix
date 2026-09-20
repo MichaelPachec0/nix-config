@@ -247,10 +247,13 @@
   # Compositor-scoped only, and NOT written to the uwsm env file: uwsm's
   # prepare-env exports the three XDG_* ones itself from the session's
   # DesktopNames, and re-declaring them in an env file that is sourced
-  # afterwards would just be a chance to disagree with it. AQ_NO_MODIFIERS is
-  # read by aquamarine, so it belongs to the compositor process.
+  # afterwards would just be a chance to disagree with it.
+  #
+  # AQ_NO_MODIFIERS stays UNSET on purpose. The old "1" (a 2023 wlroots
+  # carry-over) made aquamarine render every monitor into LINEAR buffers:
+  # 75-95% GPU on video, and with direct scanout the client format flapped
+  # XR30 <-> AB30 each frame (black screen). Renoir handles modifiers fine.
   compositorEnv = {
-    AQ_NO_MODIFIERS = "1";
     XDG_CURRENT_DESKTOP = "Hyprland";
     XDG_SESSION_DESKTOP = "Hyprland";
     XDG_SESSION_TYPE = "wayland";
@@ -577,6 +580,15 @@ in {
     # where the look is defined, so it opts in here.
     hyprglass.xray = true;
 
+    # Off. Hyprland core already drops every decoration, glass included, for
+    # a true FSMODE_FULLSCREEN window (Renderer.cpp decoration gate), so the
+    # hyprglass_disabled tag saves nothing there. Worse, the tag would also
+    # kill glass on FSMODE_FULLSCREEN_DECORATOR windows (local patch
+    # overlays/hyprland-fullscreen-decorator-mode.patch), whose whole point is
+    # glass in full-monitor fullscreen. kitty and firefox opt into that mode
+    # through the decorate_fullscreen tag (window rules below).
+    hyprglass.disableOnFullscreen = false;
+
     # `keybind-cheatsheet` on PATH so it's runnable from a terminal too (the
     # Super+/ bind invokes it by store path regardless).
     home.packages = [cheatsheetScript hy3ProjectScript hy3LayoutScript hy3LayoutTuiScript scratchpadCycleScript];
@@ -676,10 +688,20 @@ in {
               layout = "hy3";
               gaps_in = 2;
               gaps_out = 4;
-              border_size = 2;
+              border_size = 3;
               resize_on_border = false;
               allow_tearing = false;
-              "col.active_border" = "rgba(${theme.palette.accent}bf)";
+              # Three-stop gruvbox gradient. The window.active hook below
+              # re-sends the same table with a random angle on each focus.
+              "col.active_border" = mkLuaInline ''
+                {
+                  colors = {
+                    "rgba(${theme.palette.accentYellow}ff)",
+                    "rgba(${theme.palette.accentOrange}ff)",
+                    "rgba(${theme.palette.accentRed}ff)"
+                  },
+                  angle = 30
+                }'';
               "col.inactive_border" = "rgba(${theme.palette.borderInactive}aa)";
             };
 
@@ -715,9 +737,9 @@ in {
 
               shadow = {
                 enabled = true;
-                range = 4;
-                render_power = 17;
-                color = "rgba(${theme.palette.bgMain}66)"; # active: stronger
+                range = 40;
+                render_power = 3;
+                color = "rgba(${theme.palette.black}ff)"; # active: stronger
                 color_inactive = "rgba(${theme.palette.bgMain}22)"; # inactive: recede
               };
             };
@@ -754,20 +776,25 @@ in {
               # ext-session-lock -- the escape hatch's recovery path
               # (lock-escape / QS_LOCK_ESCAPE). See quickshell-lock.nix.
               allow_session_lock_restore = true;
+              # 3: VRR only for fullscreen windows with video/game content type.
+              vrr = 3;
             };
 
             render = {
               cm_enabled = true;
               # Flip an HDR-capable output (KTC, VG259QM) to HDR only while a
               # fullscreen client presents PQ/HLG; SDR desktop otherwise.
-              cm_auto_hdr = 1;
+              cm_auto_hdr = 2;
               # Local patch (overlays/hyprland-cm-auto-hdr-advertise.patch): let
               # those outputs tell clients they are HDR while idling in SDR, so
               # Firefox/mpv detect an HDR display and trigger the flip without
               # their force-source switches (gfx.color_management.hdr.force_enabled,
               # --target-colorspace-hint-mode=source).
               cm_auto_hdr_advertise = true;
-              cm_sdr_eotf = 0;
+              cm_sdr_eotf = "gamma22";
+              # 2: direct scanout only for fullscreen game/video content.
+              direct_scanout = 2;
+              new_render_scheduling = false;
             };
 
             group = {
@@ -818,6 +845,9 @@ in {
             # per-leaf animations are separate hl.curve / hl.animation calls
             # (settings.curve / settings.animation below).
             animations.enabled = true;
+            experimental = {
+              wp_cm_1_2 = true;
+            };
           };
 
           # hl.curve(name, {...}) -- bezier curves referenced by the animations.
@@ -846,6 +876,15 @@ in {
                 {
                   type = "bezier";
                   points = [[0.3 0.0] [0.8 0.15]];
+                }
+              ];
+            }
+            {
+              _args = [
+                "linear"
+                {
+                  type = "bezier";
+                  points = [[1 1] [1 1]];
                 }
               ];
             }
@@ -896,6 +935,23 @@ in {
               bezier = "md3_decel";
               style = "slidefade 15%";
             }
+            # WIP, off: border colour cross-fade and borderangle spin. With
+            # these on the random-angle hook below rotates the gradient into
+            # place instead of snapping it. Enable once the hy3 tab gradient
+            # spin lands, so both use the same borderangle leaf.
+            # {
+            #   leaf = "border";
+            #   enabled = true;
+            #   speed = 1;
+            #   bezier = "linear";
+            # }
+            # {
+            #   leaf = "borderangle";
+            #   enabled = true;
+            #   speed = 100;
+            #   bezier = "linear";
+            #   style = "loop";
+            # }
           ];
 
           # hl.env("KEY", "VALUE") -- see sessionEnv / compositorEnv above.
@@ -907,7 +963,7 @@ in {
           monitor = [
             {
               output = "desc:LG Display 0x0676";
-              mode = "1920x1080@60.02";
+              mode = "1920x1080@60";
               position = "6400x0";
               scale = 1.0;
             }
@@ -923,6 +979,8 @@ in {
               position = "3840x0";
               scale = 1.0;
               bitdepth = 10;
+              # -1: report no HDR support, so cm_auto_hdr never flips this output.
+              supports_hdr = -1;
             }
             {
               # VG279 native panel max is 1920x1080@144 (over the dock MST link).
@@ -930,17 +988,18 @@ in {
               mode = "1920x1080@144";
               position = "0x0";
               scale = 1.0;
-              bitdepth = 10;
             }
             {
               # VG259QM is on the laptop's native HDMI (not the dock) and reaches
               # its full 1920x1080@240 even with the other two externals active;
               # the HDMI pipe is not on the DP/MST clock path. 10-bit holds at 240.
               output = "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054";
-              mode = "1920x1080@239.76";
+              mode = "1920x1080@144";
               position = "1920x0";
               scale = 1.0;
               bitdepth = 10;
+              # -1: report no HDR support, so cm_auto_hdr never flips this output.
+              supports_hdr = -1;
             }
             {
               output = "";
@@ -1044,6 +1103,36 @@ in {
             [
               {_args = ["hyprland.start" hy3SetupHook];}
               {_args = ["hyprland.start" autostartHook];}
+              # Seed the RNG once at startup. Without a seed math.random()
+              # replays the same sequence each boot, so the "random" angles
+              # repeat run to run.
+              {_args = ["hyprland.start" (mkLuaInline ''function() math.randomseed(os.time()) end'')];}
+              # Random active-border gradient angle on each focus change.
+              # col.active_border is one gradient VALUE, not merged fields, so
+              # the whole table (colors + angle) goes each time; {angle=...}
+              # alone would wipe the colors. The border snaps to the new angle
+              # until the borderangle animation (WIP block above) is enabled.
+              {
+                _args = [
+                  "window.active"
+                  (mkLuaInline ''
+                    function()
+                      hl.config({
+                        general = {
+                          ["col.active_border"] = {
+                            colors = {
+                              "rgba(${theme.palette.accentYellow}ff)",
+                              "rgba(${theme.palette.accentOrange}ff)",
+                              "rgba(${theme.palette.accentRed}ff)"
+                            },
+                            angle = math.random(0, 359)
+                          }
+                        }
+                      })
+                    end
+                  '')
+                ];
+              }
             ]
             ++ lib.optional config.hyprglass.enable
             {_args = ["hyprland.start" generatedHyprglass.setupHook];};
@@ -1247,7 +1336,27 @@ in {
             # hyprglass.apps (hyprglass.nix): per-app opacity / preset / theme /
             # mask / glass / videoRect, one rule or tag per field. The opacity
             # entries rely on splicing in after opacity-all above.
-            ++ generatedHyprglass.appRules;
+            ++ generatedHyprglass.appRules
+            # decorate_fullscreen tag: the local FSMODE_FULLSCREEN_DECORATOR
+            # patch (overlays/hyprland-fullscreen-decorator-mode.patch) turns a
+            # fullscreen request on a tagged window into the decorator mode:
+            # full-monitor coverage, but decorations (the glass backing) keep
+            # rendering, no border, no rounding, still composited. The tag is
+            # unconditional; the upgrade happens only when the window goes
+            # fullscreen. hyprglass.disableOnFullscreen is off above for the
+            # same reason.
+            ++ [
+              {
+                name = "kitty-decorate-fullscreen";
+                match = {class = "kitty";};
+                tag = "+decorate_fullscreen";
+              }
+              {
+                name = "firefox-decorate-fullscreen";
+                match = {class = "firefox-dev.*";};
+                tag = "+decorate_fullscreen";
+              }
+            ];
 
           # hl.layer_rule({...}) -- frost the bar. blur enables wallpaper blur
           # behind the bar layer; ignore_alpha 0.5 restricts it to pixels with

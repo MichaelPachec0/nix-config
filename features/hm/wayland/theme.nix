@@ -31,6 +31,7 @@
     accentYellow = "fabd2f"; # gruvbox yellow; connectivity "portal" status.
     accentSlider = "8ec07c"; # gruvbox aqua (secondary green)
     borderInactive = "595959"; # inactive window border grey (kept identical)
+    black = "000000";
   };
 
   fonts = {

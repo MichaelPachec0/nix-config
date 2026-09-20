@@ -24,7 +24,6 @@ in {
     boot.kernel.sysctl."kernel.sysrq" = 176;
 
     programs.neovim = {
-      package = inputs.neovim.packages.${pkgs.stdenv.hostPlatform.system}.default;
       enable = true;
       defaultEditor = true;
       vimAlias = true;

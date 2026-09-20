@@ -716,6 +716,16 @@ PanelWindow {
                             sourceSize.width: 28 // 2x for crisp downscaling
                             sourceSize.height: 28
                             fillMode: Image.PreserveAspectFit
+                            // nm-applet swaps its SNI icon (IconName + IconThemePath)
+                            // several times per Wi-Fi scan, and one load often fails.
+                            // A synchronous Image builds its texture inside the render
+                            // thread's scene-graph sync, so that churn frees the pixmap
+                            // factory under textureForFactory and segfaults. async
+                            // moves texture creation onto a Qt worker with refcounting.
+                            // retainWhileLoading keeps the last good texture through a
+                            // failed or slow reload instead of dropping to null.
+                            asynchronous: true
+                            retainWhileLoading: true
                             source: trayItem.modelData.icon
                         }
                     }
