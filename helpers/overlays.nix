@@ -166,10 +166,12 @@
     # Invalid argument" and drm_info showing the dead connectors still holding
     # crtc_id 108/113/118.
     aquamarine = prev.aquamarine.overrideAttrs (old: {
-      patches = (old.patches or []) ++ [
-        ../overlays/aquamarine-libinput-inactive-session-devices.patch
-        ../overlays/aquamarine-release-crtc-on-disconnect.patch
-      ];
+      patches =
+        (old.patches or [])
+        ++ [
+          ../overlays/aquamarine-libinput-inactive-session-devices.patch
+          ../overlays/aquamarine-release-crtc-on-disconnect.patch
+        ];
     });
     # Hyprland CORE: bumped to the v0.56.2 point release and carrying the two
     # crash patches. Overrides the TOP-LEVEL `hyprland` (not just latest.hyprland
