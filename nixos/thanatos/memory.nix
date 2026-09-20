@@ -10,7 +10,12 @@
 
   # Desktop working set we refuse to reclaim before anything else. Best-effort
   # (memory.low, not memory.min), so reclaim can still take it as a last resort.
-  guiReserve = "10G";
+  #
+  # 12G, was 10G: zswap charges compressed pool bytes to the owning cgroup
+  # (zram's pool was uncharged kernel memory), so the desktop's memory.current
+  # now includes its pool share (~2G at the time of the switch). Without the
+  # +2G the effective reserve would shrink by exactly that.
+  guiReserve = "12G";
 
   # memory.low only takes effect if every ancestor also grants it: the effective
   # protection is min(own, parent's undistributed share). Breaking the chain at
@@ -137,9 +142,22 @@ in {
   # side.
 
   # Greedy side. MemoryHigh is not a hard cap -- crossing it forces reclaim on
-  # this cgroup, which pushes builder anon pages to zram and drops their page
-  # cache. That is the eager eviction, and it is the only mechanism that does it.
-  # Builds needing more than this get slower, not killed; raise it if that bites.
+  # this cgroup, which compresses builder anon into the zswap pool and drops
+  # their page cache. That is the eager eviction, and it is the only mechanism
+  # that does it. Builds needing more than this get slower, not killed; raise
+  # it if that bites.
+  #
+  # 10G, was 8G: the pool bytes this cgroup owns are charged to it and LRU
+  # reclaim cannot free them (only the zswap shrinker can, by writing them to
+  # disk), so up to MemoryZSwapMax of the budget is not reclaimable. +2G keeps
+  # the reclaimable budget where it was.
+  #
+  # MemoryZSwapMax caps this cgroup's share of the shared pool. Past it,
+  # builder pages skip the pool and go straight to the cryptswap, which is the
+  # intended order: builders reach disk first, the desktop stays compressed in
+  # RAM. 2G of pool is ~7G of builder anon at the measured 3.6x. The pool has
+  # no per-cgroup reservation the other way (nothing stops the desktop filling
+  # it), so this is a ceiling on the builders, not a floor for them.
   #
   # Deliberately NO CPUWeight here: cgroup weights are relative among *siblings*,
   # so lowering nix-daemon's weight only ranks it against other system.slice
@@ -149,10 +167,14 @@ in {
   # siblings, under the root cgroup.
   systemd.services.nix-daemon.serviceConfig = {
     MemoryAccounting = true;
-    MemoryHigh = "8G";
+    MemoryHigh = "10G";
+    MemoryZSwapMax = "2G";
     # Explicit, not inherited: claim no reclaim protection at all.
     MemoryLow = "0";
     # When system swap crosses oomd's 90% limit, this is the preferred casualty.
+    # Total swap is the 48G cryptswap alone now (was zram + disk), and SwapFree
+    # counts slots held by pages sitting in the zswap pool, so the trigger is
+    # closer than it was; the policy is unchanged.
     ManagedOOMSwap = "kill";
   };
 
