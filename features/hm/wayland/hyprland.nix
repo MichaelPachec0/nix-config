@@ -247,10 +247,13 @@
   # Compositor-scoped only, and NOT written to the uwsm env file: uwsm's
   # prepare-env exports the three XDG_* ones itself from the session's
   # DesktopNames, and re-declaring them in an env file that is sourced
-  # afterwards would just be a chance to disagree with it. AQ_NO_MODIFIERS is
-  # read by aquamarine, so it belongs to the compositor process.
+  # afterwards would just be a chance to disagree with it.
+  #
+  # AQ_NO_MODIFIERS stays UNSET on purpose. The old "1" (a 2023 wlroots
+  # carry-over) made aquamarine render every monitor into LINEAR buffers:
+  # 75-95% GPU on video, and with direct scanout the client format flapped
+  # XR30 <-> AB30 each frame (black screen). Renoir handles modifiers fine.
   compositorEnv = {
-    AQ_NO_MODIFIERS = "1";
     XDG_CURRENT_DESKTOP = "Hyprland";
     XDG_SESSION_DESKTOP = "Hyprland";
     XDG_SESSION_TYPE = "wayland";
