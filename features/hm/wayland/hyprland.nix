@@ -776,20 +776,25 @@ in {
               # ext-session-lock -- the escape hatch's recovery path
               # (lock-escape / QS_LOCK_ESCAPE). See quickshell-lock.nix.
               allow_session_lock_restore = true;
+              # 3: VRR only for fullscreen windows with video/game content type.
+              vrr = 3;
             };
 
             render = {
               cm_enabled = true;
               # Flip an HDR-capable output (KTC, VG259QM) to HDR only while a
               # fullscreen client presents PQ/HLG; SDR desktop otherwise.
-              cm_auto_hdr = 1;
+              cm_auto_hdr = 2;
               # Local patch (overlays/hyprland-cm-auto-hdr-advertise.patch): let
               # those outputs tell clients they are HDR while idling in SDR, so
               # Firefox/mpv detect an HDR display and trigger the flip without
               # their force-source switches (gfx.color_management.hdr.force_enabled,
               # --target-colorspace-hint-mode=source).
               cm_auto_hdr_advertise = true;
-              cm_sdr_eotf = 0;
+              cm_sdr_eotf = "gamma22";
+              # 2: direct scanout only for fullscreen game/video content.
+              direct_scanout = 2;
+              new_render_scheduling = false;
             };
 
             group = {
@@ -840,6 +845,9 @@ in {
             # per-leaf animations are separate hl.curve / hl.animation calls
             # (settings.curve / settings.animation below).
             animations.enabled = true;
+            experimental = {
+              wp_cm_1_2 = true;
+            };
           };
 
           # hl.curve(name, {...}) -- bezier curves referenced by the animations.
@@ -955,7 +963,7 @@ in {
           monitor = [
             {
               output = "desc:LG Display 0x0676";
-              mode = "1920x1080@60.02";
+              mode = "1920x1080@60";
               position = "6400x0";
               scale = 1.0;
             }
@@ -971,6 +979,8 @@ in {
               position = "3840x0";
               scale = 1.0;
               bitdepth = 10;
+              # -1: report no HDR support, so cm_auto_hdr never flips this output.
+              supports_hdr = -1;
             }
             {
               # VG279 native panel max is 1920x1080@144 (over the dock MST link).
@@ -978,17 +988,18 @@ in {
               mode = "1920x1080@144";
               position = "0x0";
               scale = 1.0;
-              bitdepth = 10;
             }
             {
               # VG259QM is on the laptop's native HDMI (not the dock) and reaches
               # its full 1920x1080@240 even with the other two externals active;
               # the HDMI pipe is not on the DP/MST clock path. 10-bit holds at 240.
               output = "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054";
-              mode = "1920x1080@239.76";
+              mode = "1920x1080@144";
               position = "1920x0";
               scale = 1.0;
               bitdepth = 10;
+              # -1: report no HDR support, so cm_auto_hdr never flips this output.
+              supports_hdr = -1;
             }
             {
               output = "";
