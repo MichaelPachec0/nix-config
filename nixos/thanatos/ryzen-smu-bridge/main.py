@@ -166,7 +166,11 @@ def main() -> int:
         except OSError:
             pass
 
-    proc = subprocess.Popen(["ryzen_monitor", "-u", "2", "-e", FIFO])
+    # Every refresh is an SMU mailbox transaction, and
+    # ryzenadj (driven by game-tdp) writes that same mailbox with no locking
+    # between the two processes. Costs one sample per 6s of telemetry resolution,
+    # which nothing here needs, and saves a wakeup on battery.
+    proc = subprocess.Popen(["ryzen_monitor", "-u", "3", "-e", FIFO])
 
     def _term(*_: object) -> None:
         proc.terminate()
