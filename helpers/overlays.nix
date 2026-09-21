@@ -10,7 +10,6 @@
     lib,
     ...
   }: {
-    # nixpkgs.overlays = builtins.map (i: builtins.trace i i) ov;
     nixpkgs.overlays = ov;
   });
   channels = final: prev: {
@@ -73,35 +72,8 @@
     local
   ];
   wayland = final: prev: {
-    swaylock-effects-pr =
-      prev.swaylock-effects.overrideAttrs
-      (oldAttrs: {
-        version =
-          prev.lib.strings.concatStrings [oldAttrs.version "-unstable"];
-        patches =
-          (oldAttrs.patches or [])
-          ++ [
-            ../overlays/swaylock_effects/4_disp_img_insd_ind.patch
-            ../overlays/swaylock_effects/37_cairo_bilinear.patch
-            ../overlays/swaylock_effects/38_red_screen_fix.patch
-            ../overlays/swaylock_effects/8_change_state_strings.patch
-            ../overlays/swaylock_effects/32_unlock_on_USR1_accept_input.patch
-          ];
-      });
     electron-mail-latest =
       prev.callPackage ../pkgs/electron-mail {};
-    swaylockCheck =
-      prev.callPackage ../pkgs/swaylock-check {inherit prev;};
-    # charles = import ./pkgs/charles;
-
-    # strace = prev.strace.overrideAttrs (old: {
-    #       patches = (old.patches or []) ++ [
-    #         (prev.fetchpatch {
-    #            url = "https://github.com/ideak/strace/commit/cflags-decode.patch";
-    #            hash = "sha256-OY1vmO4wuxWVl14o7gD5QOcmKJblyZiuzzxQMhBBThQ=";
-    #          })
-    #       ];
-    #     });
 
     nw = let
       nw = inputs.nixpkgs-wayland.packages.${prev.stdenv.hostPlatform.system};
@@ -114,10 +86,7 @@
             "Exec=swayfx" \
           --replace-fail \
             "Name=Sway" \
-            "Name=Swayfx" \
-          # --replace-fail \
-          #   "DesktopNames=sway;wlroots;swayfx" \
-          #   "DesktopNames=swayfx;scenefx"
+            "Name=Swayfx"
 
           substituteInPlace meson.build \
           --replace-fail \
@@ -134,8 +103,6 @@
       // {
         inherit swayfx-unwrapped;
         sway = prev.sway.override {inherit (nw) sway-unwrapped;};
-
-        sway-beta = prev.sway.override {inherit (nw) sway-unwrapped;};
         swayidle-test = nw.swayidle.override {systemdSupport = false;};
         swayfx = prev.swayfx.override {inherit swayfx-unwrapped;};
       };
@@ -395,9 +362,6 @@
       # against a 0.56 compositor, so hy3's src is pinned to the matching
       # hl0.56.0.1 release (see the hy3 attr below) with our patches re-applied.
       inherit (final) hyprland;
-      inherit (prev) waybar;
-
-      sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
       # nixpkgs' hy3 is hl0.55.0; pin the src to the hl0.56.0.1 release (built
       # against final.hyprland, so the plugin hash always matches whatever that
       # attr resolves to -- 0.56.2 now) and re-apply our dispatcher patches --
@@ -566,8 +530,7 @@
           wl-clipboard # wl-copy (network widget middle-click copy)
           networkmanager # nmcli (NetworkService)
           iproute2 # ip (NetworkService default-route lookup)
-          awww
-          # config.services.awww.package # awww query (LockBackdrop reads per-output wallpaper)
+          awww # awww query (LockBackdrop reads per-output wallpaper)
         ];
       in
         (old.qtWrapperArgs or [])
@@ -593,20 +556,8 @@
     inputs.nix-vscode-extensions.overlays.default
     inputs.nix-your-shell.overlays.default
     inputs.rust-overlay.overlays.default
-    # (import ./pkgs/charles)
     wayland
-    # fastanime
   ];
-  # TODO: decide if abstracting this is worthwhile.
-  overlayList = {};
-  mkOverlay = {channel ? ""}: let
-    overlays = ["base" "nixosMinimal" "nixosDesktop" "homeManagerMinmal" "homeManagerDesktop"];
-  in
-    map (o: {
-      name = o;
-      value = overlayList."${o}";
-    })
-    overlays;
   base = [
     channels
     inputs.flake-playground.overlays.default
@@ -614,17 +565,7 @@
     qsGreeter
   ];
 in {
-  stable = let
-    # NOTE: for some reason this does not work, its asking for config, where it should not be asking for it
-    # this is not an issue when home-manager is defined in flake.nix.
-    # TODO: (high prio) understand why this is the case. Its is not apparent why this is an issue.
-    hm =
-      inputs.home-manager-stable.nixosModules.home-manager
-      {
-        home-manager.useGlobalPkgs = true;
-        home-manager.useUserPackages = true;
-      };
-  in {
+  stable = {
     # Stable-channel counterpart of unstable.hmIntegrationOverlays (see below);
     # only hoisted for stable *desktop* hosts. Servers (kore) set desktop = false
     # and never force this.
@@ -632,22 +573,13 @@ in {
       vimPluginsOverlayList
       ++ lspServers
       ++ [inputs.llm-agents.overlays.shared-nixpkgs];
-    # base =
-    # mkOverlayModules base
-    # ++ inputs.sops-nix.nixosModules.sops;
-    nixosServer = [
-      (mkOverlayModules
-        (base
-          ++ [
-          ]))
-    ];
+    nixosServer = [(mkOverlayModules base)];
     nixosDesktop = [
       (mkOverlayModules (
         base
         ++ baseDesktop
       ))
     ];
-    homeManager = hm;
     homeManagerMinmal = mkOverlayModules base;
     homeManagerDesktop = [
       (mkOverlayModules
@@ -663,12 +595,7 @@ in {
         ))
     ];
   };
-  unstable = let
-    hm = inputs.home-manager.nixosModules.home-manager {
-      home-manager.useGlobalPkgs = true;
-      home-manager.useUserPackages = true;
-    };
-  in {
+  unstable = {
     # Overlays the home-manager desktop config needs that the NixOS desktop config
     # does not apply on its own. With useGlobalPkgs = true the integrated home
     # config reuses the system pkgs, so features/nixos/home hoists these up.
@@ -676,29 +603,18 @@ in {
       vimPluginsOverlayList
       ++ lspServers
       ++ [inputs.llm-agents.overlays.shared-nixpkgs];
-    nixosServer = mkOverlayModules (base
-      ++ [
-      ]);
-    nixosDesktop =
-      [
-        (mkOverlayModules
-          (
-            base
-            ++ baseDesktop
-            ++ [
-              latest
-              inputs.nix-your-shell.overlays.default
-              # inputs.neovim.overlays.default
-            ]
-          ))
-      ]
-      ++ [
-        inputs.sops-nix.nixosModules.sops
-        # WARN: this needs to be either idsabled on first install or the segger
-        #  software needs to be added in manually by sshing and nix-store -ing it
-        # inputs.jlink.nixosModule
-      ];
-    homeManagerModule = hm;
+    nixosServer = mkOverlayModules base;
+    nixosDesktop = [
+      (mkOverlayModules (
+        base
+        ++ baseDesktop
+        ++ [
+          latest
+          inputs.nix-your-shell.overlays.default
+        ]
+      ))
+      inputs.sops-nix.nixosModules.sops
+    ];
     homeManagerMinmal = mkOverlayModules base;
     homeManagerDesktop = [
       (mkOverlayModules
