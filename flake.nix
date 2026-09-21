@@ -264,7 +264,6 @@
         modules = thanatosSharedModules ++ extraModules;
       };
   in {
-    # overlays = import ./overlays {inherit inputs;};
     nixosConfigurations = {
       nyx = let
         system = "x86_64-linux";
@@ -335,9 +334,6 @@
       kore = nixpkgs-stable.lib.nixosSystem {
         system = "x86_64-linux";
         specialArgs = {inherit inputs outputs;};
-        # modules = nixosModules ++ overlayModule ++ [./nixos/kore/configuration.nix];
-        # modules = overlay.nixos ++ overlay.channels ++ [./nixos/kore/configuration.nix];
-        # modules = [overlays.stable.nixosServer externalModules.stable.homeManager] ++ [./nixos/kore/configuration.nix];
         modules =
           overlays.stable.nixosServer
           ++ [
@@ -347,8 +343,6 @@
             ./nixos/kore/configuration.nix
             ./features/nixos/home/server.nix
           ];
-        # ++ externalModules.stable.homeManager;
-        # ++ ;
       };
       # This is commented out because there is no configuration.nix, which during a nix flake check, is checked for a root partition.
       # These machines are not available but for future use.:which.
