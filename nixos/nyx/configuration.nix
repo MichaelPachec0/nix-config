@@ -79,9 +79,9 @@ in {
     ];
 
     boot.kernel.sysctl = {
-      # Reclaim policy for hosts running zram, which is every host importing
-      # this file. Host-specific / RAM-sized values (min_free_kbytes, dirty_*)
-      # live with the host -- see nixos/thanatos/memory.nix.
+      # Reclaim policy for hosts swapping into compressed RAM: zram on nyx,
+      # zswap on thanatos. Host-specific / RAM-sized values (min_free_kbytes,
+      # dirty_*) live with the host -- see nixos/thanatos/memory.nix.
       #
       # NOTE: https://wiki.archlinux.org/title/Zram#Optimizing_swap_on_zram
       #
@@ -89,7 +89,10 @@ in {
       # settings mirror (features/nixos/cachyos-settings), which is where values
       # taken from upstream live. They were 180 and 5 here.
       #
-      # zram decompress is cheap and random, so swap readahead is pure waste.
+      # Compressed-RAM decompress is cheap and random, so swap readahead is
+      # pure waste. On thanatos the pages zswap has written back to disk pay
+      # one 4K dm-crypt read per fault instead of 8; that is a builder-only
+      # cost (the desktop is reclaimed last) and is accepted.
       "vm.page-cluster" = 0;
       "vm.watermark_boost_factor" = 0;
       "vm.watermark_scale_factor" = 125;

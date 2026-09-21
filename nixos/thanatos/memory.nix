@@ -8,11 +8,14 @@
   # value below is derived from that figure -- recheck them if the RAM changes.
   memTotalKb = 22254768;
 
-  zramDev = "/sys/block/zram0";
-
   # Desktop working set we refuse to reclaim before anything else. Best-effort
   # (memory.low, not memory.min), so reclaim can still take it as a last resort.
-  guiReserve = "10G";
+  #
+  # 12G, was 10G: zswap charges compressed pool bytes to the owning cgroup
+  # (zram's pool was uncharged kernel memory), so the desktop's memory.current
+  # now includes its pool share (~2G at the time of the switch). Without the
+  # +2G the effective reserve would shrink by exactly that.
+  guiReserve = "12G";
 
   # memory.low only takes effect if every ancestor also grants it: the effective
   # protection is min(own, parent's undistributed share). Breaking the chain at
@@ -29,12 +32,14 @@
   };
 in {
   # ---- sysctl (thanatos-only; RAM-size dependent) -------------------------
-  # The zram policy quad (swappiness / page-cluster / watermark_*) stays in the
-  # shared nyx/configuration.nix -- it is a property of running zram at all, not
-  # of this machine's RAM.
+  # The compressed-swap policy quad (swappiness / page-cluster / watermark_*)
+  # stays in the shared nyx/configuration.nix -- it is a property of swapping
+  # into compressed RAM at all (zram there, zswap here), not of this machine's
+  # RAM.
   boot.kernel.sysctl = {
-    # ~1% of MemTotal. Headroom for zram's own allocations during swap-out;
-    # starving this deadlocks reclaim (zram needs free pages to compress into).
+    # ~1% of MemTotal. Headroom for zsmalloc's own allocations during swap-out;
+    # starving this deadlocks reclaim (the pool needs free pages to compress
+    # into). Applied to zram before; zswap allocates from the same zsmalloc.
     "vm.min_free_kbytes" = memTotalKb / 100;
 
     # Bound writeback by bytes, not by percent-of-RAM. Setting *_bytes zeroes
@@ -64,68 +69,61 @@ in {
     "vm.dirty_bytes" = 64 * 1024 * 1024;
     "vm.dirty_background_bytes" = 16 * 1024 * 1024;
 
-    # THP is madvise-only, so proactive compaction only spends latency building
-    # huge pages nothing asked for. compact_stall was ~10k before this.
+    # THP is `always` (the CachyOS kernel default, kept: the gaming stack and
+    # large-working-set apps benefit). With defrag at defer+madvise a fault
+    # outside an MADV_HUGEPAGE region never waits for compaction (a madvised
+    # region still compacts inline, as under `always`), so proactive
+    # compaction would only spend background latency building huge pages
+    # ahead of demand. compact_stall was ~10k before this. Cost of `always`
+    # under zswap: a 2M folio is stored all-or-nothing, 512 x ~16us inline on
+    # zstd; the inline cost shows up under
+    # hugepages-2048kB/stats/zswpout, not thp_swpout in /proc/vmstat, which
+    # now only counts THPs that bypassed the pool and went straight to disk
+    # -- that ran ~50/day under zram, measured before this switch, so it is
+    # not a lever yet.
     "vm.compaction_proactiveness" = 0;
   };
 
-  # ---- zram ---------------------------------------------------------------
-  # disksize is virtual: real consumption is the compressed size, and the
-  # measured ratio here is ~4.2x (3.77G orig -> 922M compressed), so 200% of RAM
-  # of disksize costs under half of RAM even when fully filled. Oversubscribing
-  # is the point -- at 50% zram filled and spilled ~8G onto the NVMe swap, which
-  # is the slow tier this whole file exists to avoid.
-  zramSwap.memoryPercent = lib.mkForce 200;
+  # ---- zswap (replaces zram) ----------------------------------------------
+  # zram pinned its whole compressed pool in RAM and, when full, spilled
+  # whatever reclaim touched next onto the 48G cryptswap at priority -1, hot or
+  # cold. The one recorded episode (zram at 50% of RAM ran full during a build,
+  # ~8G spilled, the machine thrashed) is the failure mode this replaces.
+  #
+  # zswap keeps a compressed pool in RAM (zsmalloc, charged to the owning
+  # cgroup) in front of the same cryptswap, and its shrinker writes the coldest
+  # entries back to disk under memcg pressure, LRU-ordered. The disk tier is
+  # reached by age first; the pool running out is the fallback (see
+  # max_pool_percent below).
+  #
+  # The mirror module drops its zswap.enabled=0 param once zramSwap.enable is
+  # false, so the kernel's ZSWAP_DEFAULT_ON=y takes over. Deliberately no
+  # zswap.enabled=1 here: if the gate ever regressed, a =1 after the =0 would
+  # win silently and hide it. `cat /proc/cmdline | grep zswap.enabled` must be
+  # empty on this host.
+  zramSwap.enable = lib.mkForce false;
 
-  # Secondary (higher-ratio) compression tier for cold pages. CONFIG_ZRAM_MULTI_COMP=y
-  # and CONFIG_ZRAM_WRITEBACK=y on this kernel, but CONFIG_ZRAM_TRACK_ENTRY_ACTIME
-  # is NOT set -- so age-based marking (`echo 3600 > idle`) does not work and only
-  # `echo all > idle` is available. The timer works around that by recompressing
-  # last round's marks *before* re-marking: a page touched during the interval has
-  # its idle flag cleared by the access, so only genuinely cold pages get hit.
-  systemd.services.zram-recompress = {
-    description = "Recompress cold zram pages with the secondary algorithm";
-    after = ["systemd-zram-setup@zram0.service"];
-    requires = ["systemd-zram-setup@zram0.service"];
-    serviceConfig = {
-      Type = "oneshot";
-      # Cold-path maintenance; must never compete with the desktop.
-      Nice = 19;
-      IOSchedulingClass = "idle";
-    };
-    path = [pkgs.coreutils];
-    script = ''
-      set -u
-      dev=${zramDev}
-      [ -e "$dev/recomp_algorithm" ] || exit 0
-
-      # Idempotent: re-declaring the same secondary algorithm is a no-op.
-      echo "algo=deflate priority=1" > "$dev/recomp_algorithm" || exit 0
-
-      # Pages stored uncompressed because the primary could not shrink them.
-      # deflate sometimes can; costs nothing when it cannot.
-      echo "type=huge" > "$dev/recompress" || true
-
-      # Acts on the marks set at the END of the previous run (see above).
-      echo "type=idle" > "$dev/recompress" || true
-
-      # Arm the next round.
-      echo all > "$dev/idle" || true
-    '';
-  };
-
-  systemd.timers.zram-recompress = {
-    description = "Periodic zram cold-page recompression";
-    wantedBy = ["timers.target"];
-    timerConfig = {
-      # First run only arms the idle marks; recompression starts one cycle later.
-      OnBootSec = "15min";
-      OnUnitActiveSec = "30min";
-      # The interval doubles as the "how long is cold" threshold, so do not let
-      # the persistent catch-up collapse it to zero.
-      Persistent = false;
-    };
-  };
+  boot.kernelParams = [
+    # Pool cap as a percentage of RAM: ~8.5G here. The recorded worst case
+    # (above) was ~18.6G of swapped anon, which at the measured 3.6x ratio is
+    # 5.2G of pool, i.e. 24% of RAM; the kernel default of 20 would not have
+    # held it, 40 does with headroom. When the pool hits this the global
+    # shrinker writes back until it is under accept_threshold_percent (90).
+    "zswap.max_pool_percent=40"
+    # Both of these restate this kernel's Kconfig (ZSWAP_COMPRESSOR_DEFAULT
+    # zstd, ZSWAP_SHRINKER_DEFAULT_ON=y). Set explicitly only so they survive
+    # a kernel whose defaults differ; not a deviation from anything.
+    #
+    # zstd is the incumbent (same library and level zram used, ratio 3.6x
+    # measured). lz4 compresses a 4K page in ~6us against zstd's ~16us and 80%
+    # of reclaim on this box is direct, i.e. paid inline by the faulting task;
+    # the compressor is a runtime parameter, so that trade is settled by
+    # switching it live under a build, not by a rebuild.
+    "zswap.compressor=zstd"
+    # The shrinker IS the tiering: without it the pool only drains on swap-in
+    # or at the hard cap.
+    "zswap.shrinker_enabled=1"
+  ];
 
   # ---- MGLRU --------------------------------------------------------------
   # MGLRU is on (lru_gen/enabled = 0x0007) but min_ttl_ms defaults to 0, i.e.
@@ -155,9 +153,23 @@ in {
   # side.
 
   # Greedy side. MemoryHigh is not a hard cap -- crossing it forces reclaim on
-  # this cgroup, which pushes builder anon pages to zram and drops their page
-  # cache. That is the eager eviction, and it is the only mechanism that does it.
-  # Builds needing more than this get slower, not killed; raise it if that bites.
+  # this cgroup, which compresses builder anon into the zswap pool and drops
+  # their page cache. That is the eager eviction, and it is the only mechanism
+  # that does it. Builds needing more than this get slower, not killed; raise
+  # it if that bites.
+  #
+  # 10G, was 8G: the pool bytes this cgroup owns are charged to it and LRU
+  # reclaim of its pages cannot free them; they leave the pool only when the
+  # zswap shrinker writes them back, on a swap-in, or when the owner exits.
+  # So up to MemoryZSwapMax of the budget is not reclaimable. +2G keeps the
+  # reclaimable budget where it was.
+  #
+  # MemoryZSwapMax caps this cgroup's share of the shared pool. Past it,
+  # builder pages skip the pool and go straight to the cryptswap, which is the
+  # intended order: builders reach disk first, the desktop stays compressed in
+  # RAM. 2G of pool is ~7G of builder anon at the measured 3.6x. The pool has
+  # no per-cgroup reservation the other way (nothing stops the desktop filling
+  # it), so this is a ceiling on the builders, not a floor for them.
   #
   # Deliberately NO CPUWeight here: cgroup weights are relative among *siblings*,
   # so lowering nix-daemon's weight only ranks it against other system.slice
@@ -167,10 +179,15 @@ in {
   # siblings, under the root cgroup.
   systemd.services.nix-daemon.serviceConfig = {
     MemoryAccounting = true;
-    MemoryHigh = "8G";
+    MemoryHigh = "10G";
+    MemoryZSwapMax = "2G";
     # Explicit, not inherited: claim no reclaim protection at all.
     MemoryLow = "0";
     # When system swap crosses oomd's 90% limit, this is the preferred casualty.
+    # Total swap is the 48G cryptswap alone now (was zram + disk), and every
+    # page in the zswap pool still occupies a swap slot, so SwapFree falls
+    # before a single page reaches the disk; the trigger is closer than it
+    # was, the policy is unchanged.
     ManagedOOMSwap = "kill";
   };
 
@@ -287,7 +304,8 @@ in {
   #   - use-cgroups is off, so all builders share the ONE MemoryHigh above rather
   #     than getting a budget each: at 16 jobs that is ~512M apiece before the
   #     cgroup starts forcing reclaim, versus ~2G at 4. Reclaim here compresses
-  #     into zram on these same cores, so overshoot is paid in desktop latency.
+  #     into the zswap pool on these same cores, so overshoot is paid in
+  #     desktop latency.
   #     (Unverified as the trigger -- nix-daemon.service's memory.events `high`
   #     counter during a build is what would confirm it; the counter resets when
   #     the daemon restarts, which a rebuild does.)
