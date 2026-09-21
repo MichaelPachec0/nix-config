@@ -1,34 +1,26 @@
 {inputs, ...}: let
-  prepNixpkgs = _nixpkgs: system:
-    import _nixpkgs {
-      config.allowUnfree = true;
-      inherit system;
-    };
-  mkOverlayModules = ov: ({
-    config,
-    pkgs,
-    lib,
-    ...
-  }: {
-    # nixpkgs.overlays = builtins.map (i: builtins.trace i i) ov;
-    nixpkgs.overlays = ov;
-  });
-  channels = final: prev: {
-    stable = prepNixpkgs inputs.nixpkgs-stable prev.stdenv.hostPlatform.system;
-    unstable = prepNixpkgs inputs.nixpkgs prev.stdenv.hostPlatform.system;
-    master = prepNixpkgs inputs.nixpkgs-master prev.stdenv.hostPlatform.system;
-    legacy = prepNixpkgs inputs.nixpkgs-oldstable prev.stdenv.hostPlatform.system;
+  # A module that applies the given overlay list. Works for both NixOS and
+  # home-manager (standalone) since both expose `nixpkgs.overlays`.
+  mkOverlayModules = overlays: {nixpkgs.overlays = overlays;};
+  # Extra nixpkgs channels reachable as pkgs.stable / pkgs.unstable / ...,
+  # instantiated for the host's own platform.
+  channels = _final: prev: let
+    prepNixpkgs = nixpkgs:
+      import nixpkgs {
+        config.allowUnfree = true;
+        inherit (prev.stdenv.hostPlatform) system;
+      };
+  in {
+    stable = prepNixpkgs inputs.nixpkgs-stable;
+    unstable = prepNixpkgs inputs.nixpkgs;
+    master = prepNixpkgs inputs.nixpkgs-master;
+    legacy = prepNixpkgs inputs.nixpkgs-oldstable;
   };
-  lspServers = let
-    local = final: prev: {
-      # NOTE: pkgs/emmet-ls is a WIP stub (npmDepsHash = lib.fakeHash) that does
-      # not build; fall back to the nixpkgs emmet-language-server instead.
-      autotools-language-server = prev.callPackage ../pkgs/autotools-ls {};
-    };
-  in [
-    local
-    inputs.nixd.overlays.default
-  ];
+  # NOTE: pkgs/emmet-ls is a WIP stub (npmDepsHash = lib.fakeHash) that does
+  # not build; fall back to the nixpkgs emmet-language-server instead.
+  # autotools-language-server comes from nixpkgs too (the vendored copy never
+  # evaluated on current nixpkgs).
+  lspServers = [inputs.nixd.overlays.default];
   vimPluginsOverlayList = let
     local = final: prev: {
       # WORKAROUND: the neotest lua package fails its tests under nixpkgs, so
@@ -45,13 +37,10 @@
       });
       # The custom vim plugins now live in flake-playground and are injected via
       # inputs.flake-playground.overlays.vimPlugins (added to the list below).
-      # Only the two non-moved overrides remain here.
+      # Only the one non-moved override remains here.
       vimPlugins =
         prev.vimPlugins
         // {
-          # fermyon-spin is a CLI tool historically parked in the vimPlugins
-          # namespace, not a neovim plugin, so it stayed behind.
-          fermyon-spin = prev.callPackage ../pkgs/fermyon-spin;
           # fidget-nvim is pinned to an older rev for compatibility; it's an
           # override of the nixpkgs plugin (not a packaged dir), so not moved.
           fidget-nvim = prev.vimPlugins.fidget-nvim.overrideAttrs (old: {
@@ -73,35 +62,8 @@
     local
   ];
   wayland = final: prev: {
-    swaylock-effects-pr =
-      prev.swaylock-effects.overrideAttrs
-      (oldAttrs: {
-        version =
-          prev.lib.strings.concatStrings [oldAttrs.version "-unstable"];
-        patches =
-          (oldAttrs.patches or [])
-          ++ [
-            ../overlays/swaylock_effects/4_disp_img_insd_ind.patch
-            ../overlays/swaylock_effects/37_cairo_bilinear.patch
-            ../overlays/swaylock_effects/38_red_screen_fix.patch
-            ../overlays/swaylock_effects/8_change_state_strings.patch
-            ../overlays/swaylock_effects/32_unlock_on_USR1_accept_input.patch
-          ];
-      });
     electron-mail-latest =
       prev.callPackage ../pkgs/electron-mail {};
-    swaylockCheck =
-      prev.callPackage ../pkgs/swaylock-check {inherit prev;};
-    # charles = import ./pkgs/charles;
-
-    # strace = prev.strace.overrideAttrs (old: {
-    #       patches = (old.patches or []) ++ [
-    #         (prev.fetchpatch {
-    #            url = "https://github.com/ideak/strace/commit/cflags-decode.patch";
-    #            hash = "sha256-OY1vmO4wuxWVl14o7gD5QOcmKJblyZiuzzxQMhBBThQ=";
-    #          })
-    #       ];
-    #     });
 
     nw = let
       nw = inputs.nixpkgs-wayland.packages.${prev.stdenv.hostPlatform.system};
@@ -114,10 +76,7 @@
             "Exec=swayfx" \
           --replace-fail \
             "Name=Sway" \
-            "Name=Swayfx" \
-          # --replace-fail \
-          #   "DesktopNames=sway;wlroots;swayfx" \
-          #   "DesktopNames=swayfx;scenefx"
+            "Name=Swayfx"
 
           substituteInPlace meson.build \
           --replace-fail \
@@ -134,8 +93,6 @@
       // {
         inherit swayfx-unwrapped;
         sway = prev.sway.override {inherit (nw) sway-unwrapped;};
-
-        sway-beta = prev.sway.override {inherit (nw) sway-unwrapped;};
         swayidle-test = nw.swayidle.override {systemdSupport = false;};
         swayfx = prev.swayfx.override {inherit swayfx-unwrapped;};
       };
@@ -395,9 +352,6 @@
       # against a 0.56 compositor, so hy3's src is pinned to the matching
       # hl0.56.0.1 release (see the hy3 attr below) with our patches re-applied.
       inherit (final) hyprland;
-      inherit (prev) waybar;
-
-      sway = prev.sway.override {inherit (final.nw) sway-unwrapped;};
       # nixpkgs' hy3 is hl0.55.0; pin the src to the hl0.56.0.1 release (built
       # against final.hyprland, so the plugin hash always matches whatever that
       # attr resolves to -- 0.56.2 now) and re-apply our dispatcher patches --
@@ -516,19 +470,6 @@
   # (stable/unstable x nixos/homeManager), so NixOS and home-manager now get
   # the same binary by construction rather than by which channel they are on.
   # Overlays are lazy: a host that never references quickshell builds nothing.
-  #
-  # Patch 1: the forked PAM subprocess frees the caller's `pam_response**`
-  # out-param (a stack address) on any IPC write failure, so a shell that dies
-  # while a PAM child is still blocked in pam_fprintd turns into a bogus
-  # "quickshell crashed" SIGSEGV report. Unfixed upstream as of 28771c7.
-  #
-  # Patch 2: a ScreencopyView created before its item is in a scene latches
-  # WlBufferManager permanently (the retry guard is a never-reset
-  # function-static), so no capture ever starts and no screencopy protocol is
-  # bound. That is exactly the lock backdrop's per-output pool, whose delegates
-  # are reparented into place only after the lock engages, so the backdrop
-  # silently falls back to the wallpaper on every lock until the config is
-  # reloaded. Also unfixed upstream as of 28771c7.
   quickshellPatched = final: prev: {
     # Patch Quickshell: the forked PAM subprocess frees the caller's
     # `pam_response**` out-param (a stack address) on any IPC write failure, so
@@ -566,8 +507,7 @@
           wl-clipboard # wl-copy (network widget middle-click copy)
           networkmanager # nmcli (NetworkService)
           iproute2 # ip (NetworkService default-route lookup)
-          awww
-          # config.services.awww.package # awww query (LockBackdrop reads per-output wallpaper)
+          awww # awww query (LockBackdrop reads per-output wallpaper)
         ];
       in
         (old.qtWrapperArgs or [])
@@ -581,9 +521,9 @@
     });
   };
   awwwPatched = final: prev: {
-    awww = prev.awww.overrideAttrs (o: {
-      buildInputs = (o.buildInputs or []) ++ [final.dav1d];
-      cargoBuildFeatures = (o.cargoBuildFeatures or []) ++ ["avif"];
+    awww = prev.awww.overrideAttrs (old: {
+      buildInputs = (old.buildInputs or []) ++ [final.dav1d];
+      cargoBuildFeatures = (old.cargoBuildFeatures or []) ++ ["avif"];
     });
   };
 
@@ -593,126 +533,51 @@
     inputs.nix-vscode-extensions.overlays.default
     inputs.nix-your-shell.overlays.default
     inputs.rust-overlay.overlays.default
-    # (import ./pkgs/charles)
     wayland
-    # fastanime
   ];
-  # TODO: decide if abstracting this is worthwhile.
-  overlayList = {};
-  mkOverlay = {channel ? ""}: let
-    overlays = ["base" "nixosMinimal" "nixosDesktop" "homeManagerMinmal" "homeManagerDesktop"];
-  in
-    map (o: {
-      name = o;
-      value = overlayList."${o}";
-    })
-    overlays;
   base = [
     channels
     inputs.flake-playground.overlays.default
     pam_rssh
     qsGreeter
   ];
-in {
-  stable = let
-    # NOTE: for some reason this does not work, its asking for config, where it should not be asking for it
-    # this is not an issue when home-manager is defined in flake.nix.
-    # TODO: (high prio) understand why this is the case. Its is not apparent why this is an issue.
-    hm =
-      inputs.home-manager-stable.nixosModules.home-manager
-      {
-        home-manager.useGlobalPkgs = true;
-        home-manager.useUserPackages = true;
-      };
-  in {
-    # Stable-channel counterpart of unstable.hmIntegrationOverlays (see below);
-    # only hoisted for stable *desktop* hosts. Servers (kore) set desktop = false
-    # and never force this.
-    hmIntegrationOverlays =
-      vimPluginsOverlayList
-      ++ lspServers
-      ++ [inputs.llm-agents.overlays.shared-nixpkgs];
-    # base =
-    # mkOverlayModules base
-    # ++ inputs.sops-nix.nixosModules.sops;
-    nixosServer = [
-      (mkOverlayModules
-        (base
-          ++ [
-          ]))
-    ];
-    nixosDesktop = [
+  # Overlays the home-manager desktop config needs that the NixOS desktop config
+  # does not apply on its own. With useGlobalPkgs = true the integrated home
+  # config reuses the system pkgs, so features/nixos/home hoists these up; only
+  # for desktop hosts, servers (kore) set desktop = false and never force this.
+  hmIntegration =
+    vimPluginsOverlayList
+    ++ lspServers
+    ++ [inputs.llm-agents.overlays.shared-nixpkgs];
+
+  # One bundle set per channel. `desktopExtra` is what the unstable desktop
+  # bundles add on top of the shared lists (the `latest` overlay); the stable
+  # bundles add nothing.
+  mkChannel = {
+    desktopExtra ? [],
+    nixosDesktopModules ? [],
+  }: {
+    hmIntegrationOverlays = hmIntegration;
+    nixosServer = [(mkOverlayModules base)];
+    nixosDesktop =
+      [(mkOverlayModules (base ++ baseDesktop ++ desktopExtra))]
+      ++ nixosDesktopModules;
+    homeManagerMinmal = mkOverlayModules base;
+    homeManagerDesktop = [
       (mkOverlayModules (
         base
         ++ baseDesktop
+        ++ vimPluginsOverlayList
+        ++ desktopExtra
+        ++ [inputs.gruvbox-gtk-theme.overlays.default]
+        ++ lspServers
       ))
     ];
-    homeManager = hm;
-    homeManagerMinmal = mkOverlayModules base;
-    homeManagerDesktop = [
-      (mkOverlayModules
-        (
-          base
-          ++ baseDesktop
-          ++ vimPluginsOverlayList
-          ++ [
-            inputs.nix-vscode-extensions.overlays.default
-            inputs.gruvbox-gtk-theme.overlays.default
-          ]
-          ++ lspServers
-        ))
-    ];
   };
-  unstable = let
-    hm = inputs.home-manager.nixosModules.home-manager {
-      home-manager.useGlobalPkgs = true;
-      home-manager.useUserPackages = true;
-    };
-  in {
-    # Overlays the home-manager desktop config needs that the NixOS desktop config
-    # does not apply on its own. With useGlobalPkgs = true the integrated home
-    # config reuses the system pkgs, so features/nixos/home hoists these up.
-    hmIntegrationOverlays =
-      vimPluginsOverlayList
-      ++ lspServers
-      ++ [inputs.llm-agents.overlays.shared-nixpkgs];
-    nixosServer = mkOverlayModules (base
-      ++ [
-      ]);
-    nixosDesktop =
-      [
-        (mkOverlayModules
-          (
-            base
-            ++ baseDesktop
-            ++ [
-              latest
-              inputs.nix-your-shell.overlays.default
-              # inputs.neovim.overlays.default
-            ]
-          ))
-      ]
-      ++ [
-        inputs.sops-nix.nixosModules.sops
-        # WARN: this needs to be either idsabled on first install or the segger
-        #  software needs to be added in manually by sshing and nix-store -ing it
-        # inputs.jlink.nixosModule
-      ];
-    homeManagerModule = hm;
-    homeManagerMinmal = mkOverlayModules base;
-    homeManagerDesktop = [
-      (mkOverlayModules
-        (
-          base
-          ++ baseDesktop
-          ++ vimPluginsOverlayList
-          ++ [
-            latest
-            inputs.nix-vscode-extensions.overlays.default
-            inputs.gruvbox-gtk-theme.overlays.default
-          ]
-          ++ lspServers
-        ))
-    ];
+in {
+  stable = mkChannel {};
+  unstable = mkChannel {
+    desktopExtra = [latest];
+    nixosDesktopModules = [inputs.sops-nix.nixosModules.sops];
   };
 }

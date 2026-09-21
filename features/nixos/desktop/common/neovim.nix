@@ -88,8 +88,7 @@ in {
         # c stuff
         # clang_format, clangd, clang_check
         clang-tools
-        # ERROR: DOES NOT COMPILE
-        # autotools-language-server # make lsp
+        autotools-language-server # make lsp
         bear # for helping clangd with compile_commands.json
 
         # python stuff
