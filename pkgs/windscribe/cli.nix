@@ -1,3 +1,0 @@
-{stdenv, lib, openvpn, stunnel}: {
-
-  }
