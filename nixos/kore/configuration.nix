@@ -28,6 +28,11 @@ in {
     ../../features/nixos/common/remote-sudo.nix
     ../../features/nixos/server
     ../../features/nixos/server/base.nix
+    ../../features/nixos/server/boot-counting
+    ../../features/nixos/server/boot-health.nix
+    ../../features/nixos/server/ntfy.nix
+    ../../features/nixos/server/auto-upgrade.nix
+    ../../features/nixos/server/boot-fallback-alert.nix
     ../../helpers/caches.nix
     ./disk-config.nix
   ];
@@ -45,6 +50,19 @@ in {
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = false;
   boot.loader.timeout = 3;
+  # Unattended upgrades with boot-counted fallback: staged boot entries,
+  # health gate on sshd + zerotier, ntfy alert from the recovered
+  # generation. sp5100_tco is the AMD FCH watchdog systemd.watchdog drives.
+  boot.kernelModules = ["sp5100_tco"];
+  local = {
+    bootHealth = {
+      enable = true;
+      zerotierNetwork = "565799d8f65ab6a3";
+    };
+    ntfy.enable = true;
+    autoUpgrade.enable = true;
+    bootFallbackAlert.enable = true;
+  };
   # NOTE: We are running on btrfs, make sure boot supports this.
   # We are also using zfs in this system. Make sure that the zfs package is supported for the kernel used.
   boot.supportedFilesystems = ["btrfs" "zfs"];
@@ -209,6 +227,17 @@ in {
 
   users.users.sysadmin = {
     openssh.authorizedKeys.keys = keys.all;
+  };
+  # sops-nix: age key derived from the host ssh key, secrets shared in
+  # secrets/default.yaml. kore's recipient must be present in that file
+  # (ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub on kore, then
+  # `sops updatekeys secrets/default.yaml`).
+  sops = {
+    defaultSopsFile = ../../secrets/default.yaml;
+    defaultSopsFormat = "yaml";
+    age.sshKeyPaths = ["/etc/ssh/ssh_host_ed25519_key"];
+    age.keyFile = "/var/lib/sops-nix/key.txt";
+    age.generateKey = true;
   };
   # TODO: (med prio) move this away from server config, ideally makes this a feature option.
   programs.zsh = {
