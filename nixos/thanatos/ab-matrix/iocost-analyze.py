@@ -67,12 +67,23 @@ def report(rows, metric, label, higher_is_better=False):
         winner = "off" if med > 0 else "on"
     # A sign test alongside the spread rule: with one factor held against
     # everything else, consistency of direction is as informative as magnitude.
-    wins = sum(1 for x in diffs if (x > 0) == higher_is_better and x != 0)
+    #
+    # Ties are counted and reported separately. Lumping them in with losses
+    # printed "favoured 'on' in 0/20" for builds_alive when every single
+    # repetition was an exact tie at 12 -- which reads as a clean sweep for
+    # 'off' and means the opposite.
+    ties = sum(1 for x in diffs if x == 0)
+    wins = sum(1 for x in diffs if x != 0 and (x > 0) == higher_is_better)
     tag = f"{winner} better" if resolvable else "noise"
     print(f"   {label}")
     print(f"     on={mon:,.1f}  off={moff:,.1f}   delta={med:+,.1f} sd={sd:,.1f} n={n}"
           f"   -> {tag}")
-    print(f"     direction favoured 'on' in {wins}/{n} repetitions")
+    if ties == n:
+        print(f"     every one of the {n} repetitions tied exactly")
+    else:
+        extra = f", {ties} tied" if ties else ""
+        print(f"     direction favoured 'on' in {wins}/{n - ties} decided"
+              f" repetitions{extra}")
     return winner if resolvable else None
 
 
