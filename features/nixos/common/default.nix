@@ -7,7 +7,6 @@
 }: let
   report-changes = config.report-changes.enable;
 in {
-  # imports = [../../../overlays/modules/usbmuxd];
   options = {
     audio.enable = lib.mkEnableOption "Installs common audio apps.";
     devMachine.enable = lib.mkEnableOption "Install common developer apps.";

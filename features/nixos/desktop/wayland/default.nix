@@ -30,14 +30,7 @@ in {
       };
     };
   };
-  disabledModules = [
-    # "services/system/systemd-lock-handler.nix"
-  ];
-  imports = [
-    # NOTE: this was already merged
-    # ../../../../overlays/modules/systemd-lock-handler
-    ./hyprland-wldebug.nix
-  ];
+  imports = [./hyprland-wldebug.nix];
 
   config = lib.mkIf (cfg.wayland.laptop || cfg.wayland.desktop) {
     nixpkgs.overlays = [
