@@ -254,6 +254,15 @@ in {
       recommendedGzipSettings = true;
       recommendedProxySettings = true;
 
+      # Per-IP rate limits for zipline's public paths (see the zipline vhost).
+      # Folder lookups are cheap to scan, so they get a tight limit; file
+      # fetches get a loose one because one public folder page pulls every
+      # thumbnail at once.
+      appendHttpConfig = ''
+        limit_req_zone $binary_remote_addr zone=zipline_folder:10m rate=30r/m;
+        limit_req_zone $binary_remote_addr zone=zipline_files:10m rate=10r/s;
+      '';
+
       virtualHosts = let
         matrixPort = config.services.matrix-conduit.settings.global.port;
         atuinPort = config.services.atuin.port;
@@ -429,6 +438,58 @@ in {
             proxyPass = "http://127.0.0.1:${toString config.services.pingvin-share-x.frontendPort}";
             proxyWebsockets = true;
           };
+        };
+        "zipline.michaelpacheco.org" = let
+          ziplineUpstream = "http://127.0.0.1:${toString config.services.zipline.settings.CORE_PORT}";
+          rateLimited = zone: burst: {
+            proxyPass = ziplineUpstream;
+            extraConfig = ''
+              limit_req zone=${zone} burst=${toString burst} nodelay;
+              limit_req_status 429;
+            '';
+          };
+        in {
+          useACMEHost = "atuin.michaelpacheco.org";
+          forceSSL = true;
+          # Own log files, so zipline traffic and its rate-limit rejects are
+          # kept apart from the other vhosts. The nginx module's logrotate rule
+          # already covers /var/log/nginx/*.log.
+          #
+          # Server-level so every location inherits them. A location that sets
+          # its own add_header drops these, so keep add_header out of locations.
+          # noindex etc. also covers raw files, where a <meta> tag cannot go.
+          # no-referrer stops a folder URL leaking to outbound link targets.
+          extraConfig = ''
+            access_log /var/log/nginx/zipline-access.log;
+            error_log /var/log/nginx/zipline-error.log;
+            add_header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex" always;
+            add_header Referrer-Policy "no-referrer" always;
+          '';
+          locations."/" = {
+            proxyPass = ziplineUpstream;
+            proxyWebsockets = true;
+            extraConfig = ''
+              client_max_body_size 0;
+              proxy_request_buffering off;
+            '';
+          };
+          # Zipline (v4.7.0) resolves a public folder by id OR by name
+          # (prisma findFirst where id = x OR name = x), for the page and the
+          # API. A name like "photos" is guessable, and a folder with
+          # allowUploads is then open to anonymous uploads. Only let
+          # cuid-shaped ids (prisma cuid(): "c" + 24 lowercase alnum) through.
+          # Regex locations win over the prefix locations below, so a name
+          # lookup never reaches zipline. The quotes are required: nginx
+          # otherwise parses the {24} as a block.
+          locations."~ \"^/(folder|api/server/folder)/(?!c[a-z0-9]{24}(/|$))\"" = {
+            return = "404";
+          };
+          locations."/folder/" = rateLimited "zipline_folder" 20;
+          locations."/api/server/folder/" = rateLimited "zipline_folder" 20;
+          # File routes: /u (FILES_ROUTE default), /raw, /view.
+          locations."/u/" = rateLimited "zipline_files" 100;
+          locations."/raw/" = rateLimited "zipline_files" 100;
+          locations."/view/" = rateLimited "zipline_files" 100;
         };
         # "kuma.michaelpacheco.org" = {
         #   enableACME = true;
@@ -619,6 +680,51 @@ in {
     };
     systemd.services.pingvin-share-backend.environment.TRUST_PROXY = "true";
 
+    services.zipline = {
+      enable = true;
+      # CORE_HOSTNAME 127.0.0.1 / CORE_PORT 3000 defaults: behind nginx.
+      settings = {
+        CORE_TRUST_PROXY = "true"; # X-Forwarded-* from nginx for IP logging + rate limits
+        CORE_RETURN_HTTPS_URLS = "true";
+        CORE_DEFAULT_DOMAIN = "zipline.michaelpacheco.org";
+      };
+      # CORE_SECRET=<32+ random chars>. systemd EnvironmentFile is KEY=value,
+      # not a bare secret (same shape as affine/email-password).
+      environmentFiles = [config.sops.secrets."zipline/env".path];
+    };
+    # Let zipline read the amount of threads on the system
+    systemd.services.zipline.serviceConfig.ProcSubset = lib.mkForce "all";
+
+    # Zipline stores every upload as a separate file with no content dedup.
+    # Share identical extents on btrfs instead; both copies stay separate files
+    # to zipline, so deleting one leaves the other intact. The kernel compares
+    # bytes before sharing (FIDEDUPERANGE), so it is safe against live writes.
+    # DynamicUser puts the state under /var/lib/private (/var/lib/zipline is a
+    # symlink duperemove would not descend into).
+    systemd.services.zipline-dedupe = {
+      description = "Deduplicate zipline uploads with duperemove";
+      startAt = "daily";
+      serviceConfig = {
+        Type = "oneshot";
+        StateDirectory = "zipline-dedupe";
+        Nice = 19;
+        IOSchedulingClass = "idle";
+        # Hashfile keeps later runs incremental: unchanged files are not re-hashed.
+        # .tmp holds in-flight chunked uploads; skip them.
+        ExecStart = lib.concatStringsSep " " [
+          "${pkgs.duperemove}/bin/duperemove"
+          "-dr -q"
+          "--hashfile=/var/lib/zipline-dedupe/hashes.db"
+          "--exclude=/var/lib/private/zipline/uploads/.tmp/*"
+          "/var/lib/private/zipline/uploads"
+        ];
+      };
+    };
+    systemd.timers.zipline-dedupe.timerConfig = {
+      Persistent = true;
+      RandomizedDelaySec = "1h";
+    };
+
     sops.defaultSopsFile = ../../secrets/default.yaml;
     sops.defaultSopsFormat = "yaml";
     sops.age.sshKeyPaths = ["/etc/ssh/ssh_host_ed25519_key"];
@@ -651,6 +757,7 @@ in {
       "pingvin/admin-email" = {};
       "pingvin/admin-username" = {};
       "pingvin/admin-password" = {};
+      "zipline/env" = {};
     };
   };
 }
