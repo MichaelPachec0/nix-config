@@ -374,6 +374,7 @@
           ++ [
             inputs.disko.nixosModules.disko
             ./nixos/selene/configuration.nix
+            inputs.flake-playground.nixosModules.default
 
             inputs.sops-nix.nixosModules.sops
             ./features/nixos/home/server.nix

@@ -51,9 +51,6 @@ in {
     ../../features/nixos/server/boot-fallback-alert.nix
     ../../helpers/caches.nix
     # "${inputs.nixpkgs}/nixos/modules/services/matrix/conduwuit.nix"
-    # Self-hosted AFFiNE (services.affine). aarch64 package + module come from
-    # flake-playground; the input is pinned in the repo flake.lock.
-    inputs.flake-playground.nixosModules.affine
   ];
 
   options.services.matrix-conduit.settings = lib.mkOption {
@@ -416,6 +413,23 @@ in {
             extraConfig = "client_max_body_size 100M;"; # allow blob/attachment uploads
           };
         };
+        "share.michaelpacheco.org" = {
+          # Reuse the *.michaelpacheco.org wildcard (issued under the
+          # atuin.michaelpacheco.org ACME entry).
+          useACMEHost = "atuin.michaelpacheco.org";
+          forceSSL = true;
+          locations."/api/" = {
+            proxyPass = "http://127.0.0.1:${toString config.services.pingvin-share-x.backendPort}";
+            extraConfig = ''
+              client_max_body_size 0;
+              proxy_request_buffering off;
+            '';
+          };
+          locations."/" = {
+            proxyPass = "http://127.0.0.1:${toString config.services.pingvin-share-x.frontendPort}";
+            proxyWebsockets = true;
+          };
+        };
         # "kuma.michaelpacheco.org" = {
         #   enableACME = true;
         #   forceSSL = true;
@@ -568,6 +582,42 @@ in {
     systemd.services.affine.serviceConfig.BindPaths = [
       "/run/affine-schema:${config.services.affine.package}/app/src"
     ];
+    services.pingvin-share-x = {
+      enable = true;
+      settings = {
+        general = {
+          appName = "Pingvin Share";
+          appUrl = "https://share.michaelpacheco.org";
+          secureCookies = "true";
+        };
+        share = {
+          allowRegistration = "false";
+          allowUnauthenticatedShares = "false";
+          maxSize = "10737418240";
+          maxExpiration = "0 days";
+        };
+        smtp = {
+          enabled = "true";
+          port = "465";
+        };
+        # Booleans stay here: compose splices secrets as strings, and
+        # migrateInitUser writes isAdmin straight into a Prisma Boolean column.
+        initUser = {
+          enabled = true;
+          isAdmin = true;
+        };
+      };
+      secrets = {
+        "smtp.host" = config.sops.secrets."pingvin/smtp-host".path;
+        "smtp.email" = config.sops.secrets."pingvin/smtp-email".path;
+        "smtp.username" = config.sops.secrets."pingvin/smtp-username".path;
+        "smtp.password" = config.sops.secrets."pingvin/smtp-password".path;
+        "initUser.email" = config.sops.secrets."pingvin/admin-email".path;
+        "initUser.username" = config.sops.secrets."pingvin/admin-username".path;
+        "initUser.password" = config.sops.secrets."pingvin/admin-password".path;
+      };
+    };
+    systemd.services.pingvin-share-backend.environment.TRUST_PROXY = "true";
 
     sops.defaultSopsFile = ../../secrets/default.yaml;
     sops.defaultSopsFormat = "yaml";
@@ -594,6 +644,13 @@ in {
       "affine/admin-login-password" = {};
       "affine/email-password" = {};
       "dummy-token" = {};
+      "pingvin/smtp-host" = {};
+      "pingvin/smtp-email" = {};
+      "pingvin/smtp-username" = {};
+      "pingvin/smtp-password" = {};
+      "pingvin/admin-email" = {};
+      "pingvin/admin-username" = {};
+      "pingvin/admin-password" = {};
     };
   };
 }
