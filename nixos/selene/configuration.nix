@@ -254,6 +254,15 @@ in {
       recommendedGzipSettings = true;
       recommendedProxySettings = true;
 
+      # Per-IP rate limits for zipline's public paths (see the zipline vhost).
+      # Folder lookups are cheap to scan, so they get a tight limit; file
+      # fetches get a loose one because one public folder page pulls every
+      # thumbnail at once.
+      appendHttpConfig = ''
+        limit_req_zone $binary_remote_addr zone=zipline_folder:10m rate=30r/m;
+        limit_req_zone $binary_remote_addr zone=zipline_files:10m rate=10r/s;
+      '';
+
       virtualHosts = let
         matrixPort = config.services.matrix-conduit.settings.global.port;
         atuinPort = config.services.atuin.port;
@@ -430,6 +439,58 @@ in {
             proxyWebsockets = true;
           };
         };
+        "zipline.michaelpacheco.org" = let
+          ziplineUpstream = "http://127.0.0.1:${toString config.services.zipline.settings.CORE_PORT}";
+          rateLimited = zone: burst: {
+            proxyPass = ziplineUpstream;
+            extraConfig = ''
+              limit_req zone=${zone} burst=${toString burst} nodelay;
+              limit_req_status 429;
+            '';
+          };
+        in {
+          useACMEHost = "atuin.michaelpacheco.org";
+          forceSSL = true;
+          # Own log files, so zipline traffic and its rate-limit rejects are
+          # kept apart from the other vhosts. The nginx module's logrotate rule
+          # already covers /var/log/nginx/*.log.
+          #
+          # Server-level so every location inherits them. A location that sets
+          # its own add_header drops these, so keep add_header out of locations.
+          # noindex etc. also covers raw files, where a <meta> tag cannot go.
+          # no-referrer stops a folder URL leaking to outbound link targets.
+          extraConfig = ''
+            access_log /var/log/nginx/zipline-access.log;
+            error_log /var/log/nginx/zipline-error.log;
+            add_header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex" always;
+            add_header Referrer-Policy "no-referrer" always;
+          '';
+          locations."/" = {
+            proxyPass = ziplineUpstream;
+            proxyWebsockets = true;
+            extraConfig = ''
+              client_max_body_size 0;
+              proxy_request_buffering off;
+            '';
+          };
+          # Zipline (v4.7.0) resolves a public folder by id OR by name
+          # (prisma findFirst where id = x OR name = x), for the page and the
+          # API. A name like "photos" is guessable, and a folder with
+          # allowUploads is then open to anonymous uploads. Only let
+          # cuid-shaped ids (prisma cuid(): "c" + 24 lowercase alnum) through.
+          # Regex locations win over the prefix locations below, so a name
+          # lookup never reaches zipline. The quotes are required: nginx
+          # otherwise parses the {24} as a block.
+          locations."~ \"^/(folder|api/server/folder)/(?!c[a-z0-9]{24}(/|$))\"" = {
+            return = "404";
+          };
+          locations."/folder/" = rateLimited "zipline_folder" 20;
+          locations."/api/server/folder/" = rateLimited "zipline_folder" 20;
+          # File routes: /u (FILES_ROUTE default), /raw, /view.
+          locations."/u/" = rateLimited "zipline_files" 100;
+          locations."/raw/" = rateLimited "zipline_files" 100;
+          locations."/view/" = rateLimited "zipline_files" 100;
+        };
         # "kuma.michaelpacheco.org" = {
         #   enableACME = true;
         #   forceSSL = true;
@@ -450,7 +511,8 @@ in {
       };
     };
     services.fail2ban = {
-      enable = false;
+      # Also turns on the NixOS default sshd jail (and sshd LogLevel VERBOSE).
+      enable = true;
       # Ban IP after 5 failures
       maxretry = 5;
       ignoreIP = [
@@ -463,24 +525,127 @@ in {
       bantime-increment = {
         enable = true; # Enable increment of bantime after each violation
         formula = "ban.Time * math.exp(float(ban.Count+1)*banFactor)/math.exp(1*banFactor)";
-        multipliers = "1 2 4 8 16 32 64";
         maxtime = "168h"; # Do not ban for more than 1 week
         overalljails = true; # Calculate the bantime based on all the violations
       };
       jails = {
-        apache-nohome-iptables.settings = {
-          # Block an IP address if it accesses a non-existent
-          # home directory more than 5 times in 10 minutes,
-          # since that indicates that it's scanning.
-          filter = "apache-nohome";
-          action = ''iptables-multiport[name=HTTP, port="http,https"]'';
-          logpath = "/var/log/httpd/error_log*";
+        # IPs that keep hitting the zipline rate limits (the 429s from the
+        # limit_req zones in the zipline vhost). Uses the stock filter, scoped
+        # to the zipline zones. Short ban: a real visitor on a big folder can
+        # trip a limit, a scraper keeps tripping it.
+        zipline-limit-req.settings = {
+          filter = ''nginx-limit-req[ngx_limit_req_zones="zipline_folder|zipline_files"]'';
+          logpath = "/var/log/nginx/zipline-error.log";
           backend = "auto";
-          findtime = 600;
-          bantime = 600;
-          maxretry = 5;
+          port = "http,https";
+          findtime = "10m";
+          maxretry = 20;
+          bantime = "1h";
+        };
+        # IPs that probe for folders or files: repeated 404s on the public
+        # paths. Folder-name lookups get a 404 from nginx before they reach
+        # zipline, so a name scan lands here too. fail2ban removes the
+        # matched timestamp before it applies failregex, hence the empty [].
+        zipline-probe = {
+          filter.Definition = {
+            failregex = ''^<HOST> \S+ \S+ \[\] "(?:GET|HEAD|POST) /(?:folder|api/server/folder|u|raw|view)/\S* HTTP/[\d.]+" 404 '';
+            ignoreregex = "";
+          };
+          settings = {
+            logpath = "/var/log/nginx/zipline-access.log";
+            backend = "auto";
+            port = "http,https";
+            findtime = "10m";
+            maxretry = 10;
+          };
+        };
+        # IPs that request well-known scanner targets on any vhost: secret
+        # dotfiles, PHP/ASP/JSP/CGI scripts (nothing here runs them), and the
+        # admin panels of software this host does not run. Any status counts,
+        # since a SPA fallback can answer 200 to a path it does not have.
+        #
+        # Paths that serve files with user-chosen names are excluded, so a
+        # visitor fetching an upload named "x.php" is not banned: zipline
+        # /u /raw /view, and the autoindex dirs /secret and /urbex.
+        nginx-scanner = let
+          alt = lib.concatStringsSep "|";
+          safePrefixes = ["u" "raw" "view" "secret" "urbex"];
+          # Matched as /.<name> anywhere in the path (/.env, /app/.env.bak).
+          dotfiles = [
+            "env"
+            "git"
+            "svn"
+            "hg"
+            "aws"
+            "ssh"
+            "kube"
+            "docker"
+            "vscode"
+            "idea"
+            "DS_Store"
+            "htaccess"
+            "htpasswd"
+            "npmrc"
+            "bash_history"
+          ];
+          # Matched as a path ending in .<ext>, before any query or subpath.
+          scriptExts = ["php\\d?" "phtml" "asp" "aspx" "jsp" "cgi"];
+          # Matched as a leading path segment.
+          panels = [
+            "wp-admin"
+            "wp-content"
+            "wp-includes"
+            "wordpress"
+            "phpmyadmin"
+            "pma"
+            "myadmin"
+            "cgi-bin"
+            "vendor/phpunit"
+            "boaform"
+            "HNAP1"
+            "actuator"
+            "server-status"
+            "_ignition"
+            "telescope"
+            "solr"
+            "owa"
+            "ecp"
+            "autodiscover"
+            "geoserver"
+            "console"
+            "manager/html"
+            "druid"
+          ];
+          # Matched as the whole path (before any query).
+          files = [
+            ''sftp-config\.json''
+            ''web\.config''
+            "id_rsa"
+            "id_ed25519"
+            ''[\w.-]*\.sql(?:\.gz)?''
+            ''backup\.(?:zip|tar\.gz|tgz)''
+          ];
+        in {
+          filter.Definition = {
+            failregex = ''^<HOST> \S+ \S+ \[\] "[A-Z]+ (?!/(?:${alt safePrefixes})/)(?:\S*/\.(?:${alt dotfiles})|[^\s?]*\.(?:${alt scriptExts})(?=[?/\s])|/(?:${alt panels})(?=[/?.\s])|/(?:${alt files})(?=[?\s]))'';
+            ignoreregex = "";
+          };
+          settings = {
+            # Every vhost: the default access log plus zipline's own.
+            logpath = "/var/log/nginx/*access.log";
+            backend = "auto";
+            port = "http,https";
+            findtime = "1h";
+            maxretry = 3;
+          };
         };
       };
+    };
+    # The nginx jails read logs that nginx creates on start. A jail whose
+    # logpath matches no file fails fail2ban, so start after nginx.
+    systemd.services.fail2ban = {
+      after = ["nginx.service"];
+      wants = ["nginx.service"];
     };
     services.atuin = {
       enable = true;
@@ -619,6 +784,51 @@ in {
     };
     systemd.services.pingvin-share-backend.environment.TRUST_PROXY = "true";
 
+    services.zipline = {
+      enable = true;
+      # CORE_HOSTNAME 127.0.0.1 / CORE_PORT 3000 defaults: behind nginx.
+      settings = {
+        CORE_TRUST_PROXY = "true"; # X-Forwarded-* from nginx for IP logging + rate limits
+        CORE_RETURN_HTTPS_URLS = "true";
+        CORE_DEFAULT_DOMAIN = "zipline.michaelpacheco.org";
+      };
+      # CORE_SECRET=<32+ random chars>. systemd EnvironmentFile is KEY=value,
+      # not a bare secret (same shape as affine/email-password).
+      environmentFiles = [config.sops.secrets."zipline/env".path];
+    };
+    # Let zipline read the amount of threads on the system
+    systemd.services.zipline.serviceConfig.ProcSubset = lib.mkForce "all";
+
+    # Zipline stores every upload as a separate file with no content dedup.
+    # Share identical extents on btrfs instead; both copies stay separate files
+    # to zipline, so deleting one leaves the other intact. The kernel compares
+    # bytes before sharing (FIDEDUPERANGE), so it is safe against live writes.
+    # DynamicUser puts the state under /var/lib/private (/var/lib/zipline is a
+    # symlink duperemove would not descend into).
+    systemd.services.zipline-dedupe = {
+      description = "Deduplicate zipline uploads with duperemove";
+      startAt = "daily";
+      serviceConfig = {
+        Type = "oneshot";
+        StateDirectory = "zipline-dedupe";
+        Nice = 19;
+        IOSchedulingClass = "idle";
+        # Hashfile keeps later runs incremental: unchanged files are not re-hashed.
+        # .tmp holds in-flight chunked uploads; skip them.
+        ExecStart = lib.concatStringsSep " " [
+          "${pkgs.duperemove}/bin/duperemove"
+          "-dr -q"
+          "--hashfile=/var/lib/zipline-dedupe/hashes.db"
+          "--exclude=/var/lib/private/zipline/uploads/.tmp/*"
+          "/var/lib/private/zipline/uploads"
+        ];
+      };
+    };
+    systemd.timers.zipline-dedupe.timerConfig = {
+      Persistent = true;
+      RandomizedDelaySec = "1h";
+    };
+
     sops.defaultSopsFile = ../../secrets/default.yaml;
     sops.defaultSopsFormat = "yaml";
     sops.age.sshKeyPaths = ["/etc/ssh/ssh_host_ed25519_key"];
@@ -651,6 +861,7 @@ in {
       "pingvin/admin-email" = {};
       "pingvin/admin-username" = {};
       "pingvin/admin-password" = {};
+      "zipline/env" = {};
     };
   };
 }
