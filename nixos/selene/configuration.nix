@@ -511,7 +511,8 @@ in {
       };
     };
     services.fail2ban = {
-      enable = false;
+      # Also turns on the NixOS default sshd jail (and sshd LogLevel VERBOSE).
+      enable = true;
       # Ban IP after 5 failures
       maxretry = 5;
       ignoreIP = [
@@ -524,24 +525,127 @@ in {
       bantime-increment = {
         enable = true; # Enable increment of bantime after each violation
         formula = "ban.Time * math.exp(float(ban.Count+1)*banFactor)/math.exp(1*banFactor)";
-        multipliers = "1 2 4 8 16 32 64";
         maxtime = "168h"; # Do not ban for more than 1 week
         overalljails = true; # Calculate the bantime based on all the violations
       };
       jails = {
-        apache-nohome-iptables.settings = {
-          # Block an IP address if it accesses a non-existent
-          # home directory more than 5 times in 10 minutes,
-          # since that indicates that it's scanning.
-          filter = "apache-nohome";
-          action = ''iptables-multiport[name=HTTP, port="http,https"]'';
-          logpath = "/var/log/httpd/error_log*";
+        # IPs that keep hitting the zipline rate limits (the 429s from the
+        # limit_req zones in the zipline vhost). Uses the stock filter, scoped
+        # to the zipline zones. Short ban: a real visitor on a big folder can
+        # trip a limit, a scraper keeps tripping it.
+        zipline-limit-req.settings = {
+          filter = ''nginx-limit-req[ngx_limit_req_zones="zipline_folder|zipline_files"]'';
+          logpath = "/var/log/nginx/zipline-error.log";
           backend = "auto";
-          findtime = 600;
-          bantime = 600;
-          maxretry = 5;
+          port = "http,https";
+          findtime = "10m";
+          maxretry = 20;
+          bantime = "1h";
+        };
+        # IPs that probe for folders or files: repeated 404s on the public
+        # paths. Folder-name lookups get a 404 from nginx before they reach
+        # zipline, so a name scan lands here too. fail2ban removes the
+        # matched timestamp before it applies failregex, hence the empty [].
+        zipline-probe = {
+          filter.Definition = {
+            failregex = ''^<HOST> \S+ \S+ \[\] "(?:GET|HEAD|POST) /(?:folder|api/server/folder|u|raw|view)/\S* HTTP/[\d.]+" 404 '';
+            ignoreregex = "";
+          };
+          settings = {
+            logpath = "/var/log/nginx/zipline-access.log";
+            backend = "auto";
+            port = "http,https";
+            findtime = "10m";
+            maxretry = 10;
+          };
+        };
+        # IPs that request well-known scanner targets on any vhost: secret
+        # dotfiles, PHP/ASP/JSP/CGI scripts (nothing here runs them), and the
+        # admin panels of software this host does not run. Any status counts,
+        # since a SPA fallback can answer 200 to a path it does not have.
+        #
+        # Paths that serve files with user-chosen names are excluded, so a
+        # visitor fetching an upload named "x.php" is not banned: zipline
+        # /u /raw /view, and the autoindex dirs /secret and /urbex.
+        nginx-scanner = let
+          alt = lib.concatStringsSep "|";
+          safePrefixes = ["u" "raw" "view" "secret" "urbex"];
+          # Matched as /.<name> anywhere in the path (/.env, /app/.env.bak).
+          dotfiles = [
+            "env"
+            "git"
+            "svn"
+            "hg"
+            "aws"
+            "ssh"
+            "kube"
+            "docker"
+            "vscode"
+            "idea"
+            "DS_Store"
+            "htaccess"
+            "htpasswd"
+            "npmrc"
+            "bash_history"
+          ];
+          # Matched as a path ending in .<ext>, before any query or subpath.
+          scriptExts = ["php\\d?" "phtml" "asp" "aspx" "jsp" "cgi"];
+          # Matched as a leading path segment.
+          panels = [
+            "wp-admin"
+            "wp-content"
+            "wp-includes"
+            "wordpress"
+            "phpmyadmin"
+            "pma"
+            "myadmin"
+            "cgi-bin"
+            "vendor/phpunit"
+            "boaform"
+            "HNAP1"
+            "actuator"
+            "server-status"
+            "_ignition"
+            "telescope"
+            "solr"
+            "owa"
+            "ecp"
+            "autodiscover"
+            "geoserver"
+            "console"
+            "manager/html"
+            "druid"
+          ];
+          # Matched as the whole path (before any query).
+          files = [
+            ''sftp-config\.json''
+            ''web\.config''
+            "id_rsa"
+            "id_ed25519"
+            ''[\w.-]*\.sql(?:\.gz)?''
+            ''backup\.(?:zip|tar\.gz|tgz)''
+          ];
+        in {
+          filter.Definition = {
+            failregex = ''^<HOST> \S+ \S+ \[\] "[A-Z]+ (?!/(?:${alt safePrefixes})/)(?:\S*/\.(?:${alt dotfiles})|[^\s?]*\.(?:${alt scriptExts})(?=[?/\s])|/(?:${alt panels})(?=[/?.\s])|/(?:${alt files})(?=[?\s]))'';
+            ignoreregex = "";
+          };
+          settings = {
+            # Every vhost: the default access log plus zipline's own.
+            logpath = "/var/log/nginx/*access.log";
+            backend = "auto";
+            port = "http,https";
+            findtime = "1h";
+            maxretry = 3;
+          };
         };
       };
+    };
+    # The nginx jails read logs that nginx creates on start. A jail whose
+    # logpath matches no file fails fail2ban, so start after nginx.
+    systemd.services.fail2ban = {
+      after = ["nginx.service"];
+      wants = ["nginx.service"];
     };
     services.atuin = {
       enable = true;
