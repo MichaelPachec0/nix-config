@@ -49,6 +49,14 @@
           # dbus-broker cgroups, ...). Home Manager reloads kitty on switch
           # instead (see home.activation.reloadKitty below).
           auto_reload_config = -0.1;
+          # remember_window_size also replays the last closed window's
+          # maximized state (~/.cache/kitty/main.json "window-state"): every
+          # new kitty sends xdg_toplevel.set_maximized after its first frame.
+          # On Hyprland that puts the workspace in fullscreen mode, and hy3
+          # refuses every focus/tab dispatcher while a workspace has a
+          # fullscreen window, so tabs look stacked but stop cycling. The
+          # tiler owns window size here, so remember nothing.
+          remember_window_size = false;
           # Want a huge buffer. 100000 in-memory lines is the wrong way to get
           # it -- upstream: "very large scrollback ... can slow down performance
           # of the terminal and also use large amounts of RAM. Instead, consider
