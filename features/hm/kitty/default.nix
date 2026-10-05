@@ -11,7 +11,191 @@
   pkgs,
   lib,
   ...
-}: {
+}: let
+  # Proactive reclaim for kitty. kitty keeps its pager history
+  # (scrollback_pager_history_size) as a plain heap ring buffer: there is no
+  # disk backing. kitty only writes at the ring head, so the older pages go
+  # cold, but the kernel only reclaims under memory pressure, and with free RAM
+  # they stay resident. This pushes the cold anon pages of each kitty scope into
+  # zswap (zstd, still RAM, ~3-5x smaller for text); kitty_mod+h faults them
+  # back in.
+  #
+  # One scope per kitty instance (app-run gives each launch its own
+  # app-*-kitty-*.scope). A scope also holds the shells and programs run in
+  # it, so the floor keeps a hot working set resident for the whole tree.
+  #
+  # Measure against `anon` from memory.stat, not memory.current:
+  # memory.current also counts the compressed zswap pool charged to the
+  # cgroup, and that pool cannot shrink further (zswap shrinker is off), so a
+  # current-based target would evict hot pages on every run.
+  kittyReclaim = pkgs.writeShellApplication {
+    name = "kitty-reclaim";
+    runtimeInputs = [pkgs.coreutils pkgs.findutils pkgs.gawk];
+    text = ''
+      floor=$((256 * 1024 * 1024))
+      base="/sys/fs/cgroup/user.slice/user-$UID.slice/user@$UID.service/app.slice"
+      [[ -d $base ]] || exit 0
+
+      while IFS= read -r -d "" scope; do
+        # The scope can exit between find and here; skip it if so.
+        anon=$(awk '$1 == "anon" { print $2 }' "$scope/memory.stat" 2>/dev/null) || continue
+        [[ -n $anon ]] || continue
+        excess=$((anon - floor))
+        ((excess > 0)) || continue
+        # swappiness=max: reclaim anon only. The kernel returns EAGAIN when
+        # it frees less than asked; that is not a failure here.
+        echo "$excess swappiness=max" >"$scope/memory.reclaim" 2>/dev/null || true
+      done < <(find "$base" -maxdepth 3 -type d -name 'app-*kitty*.scope' -print0)
+    '';
+  };
+
+  # Shared with settings below: the soft reset flushes exactly this many lines
+  # to push the live buffer into the pager history, and it finds kitty's
+  # remote-control socket from this path.
+  scrollbackLines = 10000;
+  listenOn = "unix:/tmp/kitty";
+
+  # kitty_mod+delete: get back to a sane shell prompt WITHOUT losing history.
+  #
+  # kitty's own reset (clear_terminal reset / RIS / `reset`) calls
+  # historybuf_clear(), which also frees the pager history. This does not.
+  # It runs as a kitty background launch, so it works even when the window
+  # itself cannot take input: kitty reads its shortcuts before it encodes keys
+  # for the program.
+  #
+  # 1. Find what owns the terminal: the tty's foreground process group
+  #    (tpgid), the same group ctrl+C and kitty's signal_child target.
+  # 2. If that is a shell (the window's own, or a nested one from nix develop
+  #    / sudo -s), send no signal. If it is a pass-through client (ssh, mosh,
+  #    tmux, zellij), send no signal and do nothing else: the garbage comes
+  #    from the far side, and writing to the tty under it breaks the session.
+  # 3. Otherwise escalate one step per press: SIGINT, then SIGTERM, then
+  #    SIGKILL, with presses at most 5 s apart. One stray press can at most
+  #    SIGINT something; SIGKILL needs three deliberate presses.
+  # 4. Only when a shell owns the terminal again: write mode resets into the
+  #    pty SLAVE (kitty parses that as program output), flush the live buffer
+  #    into the pager history with newlines, and send ctrl+L so zsh redraws
+  #    its prompt. A program that survived the signal keeps its terminal state
+  #    untouched.
+  #
+  # No `stty sane`: zsh restores its own termios every time it regains the
+  # foreground, and changing termios under an active zle would break it.
+  kittySoftReset = pkgs.writeShellApplication {
+    name = "kitty-soft-reset";
+    # kitten comes from the system kitty on PATH (programs.kitty.package is
+    # emptyDirectory), so it always matches the running kitty.
+    runtimeInputs = [pkgs.coreutils pkgs.procps pkgs.jq pkgs.libnotify];
+    text = ''
+      wid=$1
+      # A background launch gets no KITTY_LISTEN_ON; kitty is our parent and
+      # listen_on appends its pid to the socket path.
+      to=''${KITTY_LISTEN_ON:-${listenOn}-$PPID}
+      state_dir=''${XDG_RUNTIME_DIR:-/run/user/$UID}/kitty-soft-reset
+      state=$state_dir/$wid
+      mkdir -p "$state_dir"
+
+      shell_pid=$(kitten @ --to "$to" ls --match "id:$wid" |
+        jq -r --argjson w "$wid" '[.[].tabs[].windows[] | select(.id == $w)][0].pid')
+      [[ $shell_pid =~ ^[0-9]+$ ]] || exit 0
+      tty=/dev/$(ps -o tty= -p "$shell_pid" | tr -d ' ')
+
+      fg_pgid() { ps -o tpgid= -p "$shell_pid" | tr -d ' '; }
+      fg_comm() {
+        local c member
+        c=$(ps -o comm= -p "$1" 2>/dev/null) || c=""
+        # The group leader may have exited; fall back to any member.
+        if [[ -z $c ]]; then
+          member=$(pgrep -g "$1" | head -n1) || member=""
+          [[ -z $member ]] || c=$(ps -o comm= -p "$member" 2>/dev/null) || c=""
+        fi
+        echo "$c"
+      }
+      is_shell() { [[ $1 == "$shell_pid" ]] || [[ $2 =~ ^-?(zsh|bash|fish|sh|dash|nu)$ ]]; }
+      is_passthrough() { [[ $1 =~ ^(ssh|mosh-client|tmux|tmux:.*|zellij)$ ]]; }
+
+      soft_reset() {
+        local rows
+        rows=$(stty -F "$tty" size 2>/dev/null | cut -d' ' -f1) || rows=""
+        [[ $rows =~ ^[0-9]+$ ]] || rows=100
+        {
+          # G0 charset + shift-in, attributes, scroll region, origin mode off,
+          # autowrap on, cursor visible, cursor keys + keypad normal.
+          printf '\e(B\x0f\e[0m\e[r\e[?6l\e[?7h\e[?25h\e[?1l\e>'
+          # Leave the alternate screen, all mouse modes + focus reporting off,
+          # end any synchronized update, pop the kitty keyboard protocol stack.
+          printf '\e[?1049l\e[?1000;1002;1003;1004;1005;1006;1015;1016l\e[?2026l\e[<99u'
+          # Cursor shape default; palette, fg, bg and cursor colors default.
+          # OSCs end in BEL, not ESC-backslash, which trips shellcheck SC1003.
+          printf '\e[ q\e]104\a\e]110\a\e]111\a\e]112\a'
+          # Flush: from the bottom row, push the whole live buffer (screen +
+          # scrollback_lines) off into the pager history.
+          printf '\e[999;1H'
+          head -c "$((${toString scrollbackLines} + rows))" /dev/zero | tr '\0' '\n'
+        } >"$tty"
+        printf '\f' | kitten @ --to "$to" send-text --match "id:$wid" --stdin
+        rm -f "$state"
+      }
+
+      pgid=$(fg_pgid)
+      comm=$(fg_comm "$pgid")
+      if is_shell "$pgid" "$comm"; then
+        soft_reset
+        exit 0
+      fi
+      if is_passthrough "$comm"; then
+        notify-send -a kitty "kitty soft reset" "Skipped: $comm owns the terminal. Reset the remote side, or use ctrl+shift+alt+delete."
+        exit 0
+      fi
+
+      # Presses more than 5 s apart start over at SIGINT.
+      now=$(date +%s)
+      count=0
+      if [[ -f $state ]]; then
+        read -r last_count last_time <"$state" || true
+        if ((now - ''${last_time:-0} <= 5)); then count=''${last_count:-0}; fi
+      fi
+      count=$((count + 1))
+      case $count in
+        1) sig=INT next=SIGTERM ;;
+        2) sig=TERM next=SIGKILL ;;
+        *) sig=KILL next=SIGKILL ;;
+      esac
+      kill -s "$sig" -- "-$pgid" 2>/dev/null || true
+
+      # Give the group up to ~500 ms to die and the shell to take the tty back.
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        sleep 0.05
+        pgid=$(fg_pgid)
+        comm=$(fg_comm "$pgid")
+        if is_shell "$pgid" "$comm"; then
+          soft_reset
+          exit 0
+        fi
+      done
+
+      echo "$count $now" >"$state"
+      notify-send -a kitty "kitty soft reset" "Sent SIG$sig; $comm still running. Press again within 5 s for $next."
+    '';
+  };
+
+  # kitty_mod+alt+delete: kitty's real hard reset (its default kitty_mod+delete
+  # binding, moved here), snapshot first. The full history, pager history
+  # included (@ansi_screen_scrollback goes through as_text(add_history=True)),
+  # is captured in kitty's main process before clear_terminal runs, then
+  # written here. Read one back with `zstdcat <file> | less -R`. Terminal
+  # output can hold secrets, so the files are 0600 and pruned after 30 days.
+  kittySnapshot = pkgs.writeShellApplication {
+    name = "kitty-snapshot";
+    runtimeInputs = [pkgs.coreutils pkgs.findutils pkgs.zstd];
+    text = ''
+      dir=''${XDG_STATE_HOME:-$HOME/.local/state}/kitty-snapshots
+      umask 077
+      mkdir -p "$dir"
+      zstd -q -o "$dir/$(date +%F_%H%M%S)-w''${1:-x}.ansi.zst"
+      find "$dir" -name '*.ansi.zst' -mtime +30 -delete
+    '';
+  };
+in {
   imports = [];
   options = {};
   config = {
@@ -61,10 +245,12 @@
           # it -- upstream: "very large scrollback ... can slow down performance
           # of the terminal and also use large amounts of RAM. Instead, consider
           # using scrollback_pager_history_size". So: a modest live buffer plus a
-          # large on-disk history that the pager (kitty_scrollback_nvim, bound to
-          # kitty_mod+f below) reads.
-          scrollback_lines = 10000;
-          scrollback_pager_history_size = 1024; # MB on disk
+          # large pager history (kitty_mod+h, or kitty_scrollback_nvim on
+          # kitty_mod+f below). Both live in kitty's heap; the pager history is
+          # compact UTF-8, grows lazily in 1 MB steps, and the kitty-reclaim
+          # timer below pushes its cold pages into zswap.
+          scrollback_lines = scrollbackLines;
+          scrollback_pager_history_size = 4096; # MB of RAM per window; kitty's max
           enable_audio_bell = true;
           bold_font = bold_font;
           italic_font = italic_font;
@@ -79,7 +265,7 @@
           # TODO: (med prio) setup later
           # tab_bar_style = "custom";
           allow_remote_control = "socket-only";
-          listen_on = "unix:/tmp/kitty";
+          listen_on = listenOn;
           disable_ligatures = "always";
           # PERF: input_delay/repaint_delay/sync_to_monitor are back at their
           # upstream defaults. The old 0/2/no trio targeted ~500 FPS with the
@@ -130,6 +316,13 @@
           # map ctrl+shift+v paste_from_clipboard
           # map ctrl+shift+c copy_to_clipboard
 
+          # Replaces kitty's default kitty_mod+delete (clear_terminal reset
+          # active), which wipes the pager history. See kittySoftReset.
+          "kitty_mod+delete" = "launch --type=background ${kittySoftReset}/bin/kitty-soft-reset @active-kitty-window-id";
+          # The old hard reset, moved off kitty_mod+delete, with a snapshot of
+          # the full history taken first. See kittySnapshot.
+          "kitty_mod+alt+delete" = "combine : launch --type=background --stdin-source=@ansi_screen_scrollback ${kittySnapshot}/bin/kitty-snapshot @active-kitty-window-id : clear_terminal reset active";
+
           "kitty_mod+f" = "kitty_scrollback_nvim";
           "kitty_mod+g" = "kitty_scrollback_nvim --config ksb_builtin_last_cmd_output";
           # "kitty_mod+j"
@@ -155,5 +348,22 @@
       lib.hm.dag.entryAfter ["linkGeneration"] ''
         run ${pkgs.procps}/bin/pkill -USR1 -x kitty || true
       '';
+
+    systemd.user.services.kitty-reclaim = {
+      Unit.Description = "Push cold kitty scrollback pages into zswap.";
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${kittyReclaim}/bin/kitty-reclaim";
+        Nice = 10;
+      };
+    };
+    systemd.user.timers.kitty-reclaim = {
+      Unit.Description = "Periodic proactive reclaim of kitty scopes.";
+      Timer = {
+        OnActiveSec = "5min";
+        OnUnitActiveSec = "5min";
+      };
+      Install.WantedBy = ["timers.target"];
+    };
   };
 }
