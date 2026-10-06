@@ -258,6 +258,30 @@ in {
       };
     };
     programs.appimage.binfmt = true;
-    services.windscribe.enable = true;
+    services.windscribe = {
+      enable = true;
+      # WORKAROUND: windscribe 2.23.9 compiles its Linux helper with -Werror, and
+      # boost 1.91 deprecated boost::asio::deadline_timer ("Use system_timer").
+      # The helper's dns_resolver.h still declares
+      # std::optional<boost::asio::deadline_timer> timer_, so every translation
+      # unit including it dies on -Werror=deprecated-declarations. Downgrade that
+      # one warning class until upstream moves to system_timer. Belongs in
+      # flake-playground's own windscribe package; done here so the host builds.
+      #
+      # NIX_CFLAGS_COMPILE, not cmakeFlags: cc-wrapper appends these AFTER the
+      # command line, so the -Wno-error lands to the right of the project's own
+      # -Werror and wins. CMAKE_CXX_FLAGS is placed before it and would lose.
+      package =
+        inputs.flake-playground.packages.${pkgs.stdenv.hostPlatform.system}.windscribe.overrideAttrs
+        (old: {
+          env =
+            (old.env or {})
+            // {
+              NIX_CFLAGS_COMPILE =
+                (old.env.NIX_CFLAGS_COMPILE or "")
+                + " -Wno-error=deprecated-declarations";
+            };
+        });
+    };
   };
 }
