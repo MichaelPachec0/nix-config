@@ -13,7 +13,9 @@ in
       languageTool.bare.enable = mkEnableOption "Enable languageTool server";
       languageTool.container.enable = mkEnableOption "Enable languageTool in a container";
     };
-    config =
+    # mkMerge, not `//`: mkIf returns a tagged attrset, and `//` on it leaves the
+    # other keys as stray siblings that the module system silently discards.
+    config = mkMerge [
       (mkIf cfg.languageTool.bare.enable {
         services.languagetool = {
           enable = true;
@@ -24,8 +26,9 @@ in
             cacheSize = 10000;
           };
         };
-      }
-      // {
+      })
+      {
         services.eternal-terminal.enable = true;
-      });
+      }
+    ];
   }
