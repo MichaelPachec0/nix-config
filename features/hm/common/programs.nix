@@ -6,55 +6,59 @@
 }: let
   cfg = config;
 in {
-  config = {
-    programs = lib.attrsets.recursiveUpdate (lib.attrsets.recursiveUpdate
-      (lib.attrsets.recursiveUpdate {
-          # cat alternative
-          bat.enable = true;
-          # tldr alternative
-          tealdeer = {
-            enable = true;
-            settings = {
-              display.use_pager = true;
-              updates.auto_update = true;
-            };
+  config = lib.mkMerge [
+    {
+      programs = {
+        # cat alternative
+        bat.enable = true;
+        # tldr alternative
+        tealdeer = {
+          enable = true;
+          settings = {
+            display.use_pager = true;
+            updates.auto_update = true;
           };
-          # cmd fuzzy finder, for now default to using fzf
-          skim = {
-            enable = true;
-            enableZshIntegration = true;
-          };
-          # downloader
-          aria2.enable = true;
-          # cheat sheet commands
-          navi = {
-            enable = true;
-            enableZshIntegration = true;
-          };
-          # terminal document converter
-          pandoc.enable = true;
-          # smarter cd ( with caveats)
-          zoxide.enable = true;
-          # terminal git ui (uses ncurses iirc)
-          gitui.enable = false;
-          # modern ls alterantive
-          eza = {
-            enable = true;
-            icons = "auto";
-            git = true;
-            # enableAliases = true;
-            enableZshIntegration = true;
-            extraOptions = [
-              "--group-directories-first"
-              "--header"
-              "--group"
-              "--time-style=long-iso"
-              "--extended"
-            ];
-          };
-        } (lib.attrsets.optionalAttrs config.audio.enable {
-          ncmpcpp.enable = true;
-        })) (lib.attrsets.optionalAttrs config.graphical.enable {
+        };
+        # cmd fuzzy finder, for now default to using fzf
+        skim = {
+          enable = true;
+          enableZshIntegration = true;
+        };
+        # downloader
+        aria2.enable = true;
+        # cheat sheet commands
+        navi = {
+          enable = true;
+          enableZshIntegration = true;
+        };
+        # terminal document converter
+        pandoc.enable = true;
+        # smarter cd ( with caveats)
+        zoxide.enable = true;
+        # terminal git ui (uses ncurses iirc)
+        gitui.enable = false;
+        # modern ls alterantive
+        eza = {
+          enable = true;
+          icons = "auto";
+          git = true;
+          # enableAliases = true;
+          enableZshIntegration = true;
+          extraOptions = [
+            "--group-directories-first"
+            "--header"
+            "--group"
+            "--time-style=long-iso"
+            "--extended"
+          ];
+        };
+      };
+    }
+    (lib.mkIf config.audio.enable {
+      programs.ncmpcpp.enable = true;
+    })
+    (lib.mkIf config.graphical.enable {
+      programs = {
         # terminal that uses gpu for fast rendering
         foot = {enable = true;};
         # launcher
@@ -80,159 +84,163 @@ in {
           #   firefoxpwa
           # ];
         };
-      })) (lib.attrsets.optionalAttrs config.devMachine.enable {
-      direnv = {
-        enable = true;
-        nix-direnv.enable = true;
       };
-      gh = {
-        enable = true;
-        extensions = [pkgs.gh-eco pkgs.gh-dash];
-        settings = {
-          editor = "vim";
-          git_protocol = "ssh";
+    })
+    (lib.mkIf config.devMachine.enable {
+      programs = {
+        direnv = {
+          enable = true;
+          nix-direnv.enable = true;
         };
-      };
-      # NOTE: this should only be enabled if both the dev and graphical roles are enabled.
-      vscode = {
-        enable = cfg.graphical.enable;
-        enableExtensionUpdateCheck = false;
-        enableUpdateCheck = false;
-        mutableExtensionsDir = true;
-        userSettings = {
-          "nix.serverPath" = "nil";
-          "nix.enableLanguageServer" = true;
-          "nix.formatterPath" = "alenjandra";
-          "[nix]"."editor.defaultFormatter" = "jnoortheen.nix-ide";
-        };
-        # NOTE: This is from nixpkgs (stable)
-        extensions = with pkgs.stable.vscode-extensions;
-          [
-            # WARN: this is not how i want to solve this, as this is downgrading vscodelldb from v1.11.x to v1.10.0
-            # the issue is that codelldb remove rust formatters, which kills pretty printing.
-            # TODO: change so that this works in plugin.
-            vadimcn.vscode-lldb
-          ]
-          # NOTE: This is from nixpkgs (unstable)
-          ++ (with pkgs.vscode-extensions; [
-            # (ms-python.vscode-pylance.overrideAttrs (old: {
-            #   nativeBuildInputs = (old.nativeBuildInputs or []) ++ (with pkgs; [jsbeautifier]);
-            #   # NOTE: sssh :)
-            #   patcher = ''
-            #     server="$out/${old.installPrefix}/dist/server.bundle.js"
-            #     js-beautify -r $server
-            #     # sed -n -E '/if(.*(process|startsWith).*return !0x1)/p' $server
-            #     sed -i -E "/if(.*(process|startsWith).*return\s+\!0x1;)/d" $server
-            #     # NOTE: need to specify numbering style [number all lines] (-b a) since nl by default uses
-            #     #  non-empty line numbering (-bt)
-            #     start=$( nl -b a -n ln $server | sed -n -E '/.*const.*of\s+process.+\)/p' | cut -d " " -f 1 )
-            #     end=$(( $start + 1 ))
-            #     # echo $start , $end
-            #     sed -i "''${start},''${end}d" $server
-            #   '';
-            #   preFixupPhases = ["patcher"];
-            # }))
-            jnoortheen.nix-ide
-            kamadorueda.alejandra
-          ])
-          # NOTE: for todo: plugins should stay compatible with the version of vscode in the near future.
-          # TODO: (low prio) Find a way to lock versions of these packages.
-          # WARN: These 2 are not locked the same way nixpkgs are in a flake (to my knowledge)
-          # NOTE: This is "prerelease" vscode plugins
-          ++ (with pkgs.vscode-marketplace; [
-            petrmaliarov.vscode-gruvbox-material-p-dark
-          ])
-          # NOTE: These are "stable" vscode plugins
-          ++ (with pkgs.vscode-marketplace-release; [
-            ]);
-      };
-      lazygit = {
-        enable = true;
-        settings = {
-          git = {
-            autoFetch = false;
-            autoRefresh = false;
-            parseEmoji = true;
+        gh = {
+          enable = true;
+          extensions = [pkgs.gh-eco pkgs.gh-dash];
+          settings = {
+            editor = "vim";
+            git_protocol = "ssh";
           };
-          gui = {
-            nerdFontsVersion = "3";
-            theme = {
-              selectedLineBgColor = ["reverse"];
-              selectedRangeBgColor = ["reverse"];
+        };
+        # NOTE: this should only be enabled if both the dev and graphical roles are enabled.
+        vscode = {
+          enable = cfg.graphical.enable;
+          enableExtensionUpdateCheck = false;
+          enableUpdateCheck = false;
+          mutableExtensionsDir = true;
+          userSettings = {
+            "nix.serverPath" = "nil";
+            "nix.enableLanguageServer" = true;
+            "nix.formatterPath" = "alenjandra";
+            "[nix]"."editor.defaultFormatter" = "jnoortheen.nix-ide";
+          };
+          # NOTE: This is from nixpkgs (stable)
+          extensions = with pkgs.stable.vscode-extensions;
+            [
+              # WARN: this is not how i want to solve this, as this is downgrading vscodelldb from v1.11.x to v1.10.0
+              # the issue is that codelldb remove rust formatters, which kills pretty printing.
+              # TODO: change so that this works in plugin.
+              vadimcn.vscode-lldb
+            ]
+            # NOTE: This is from nixpkgs (unstable)
+            ++ (with pkgs.vscode-extensions; [
+              # (ms-python.vscode-pylance.overrideAttrs (old: {
+              #   nativeBuildInputs = (old.nativeBuildInputs or []) ++ (with pkgs; [jsbeautifier]);
+              #   # NOTE: sssh :)
+              #   patcher = ''
+              #     server="$out/${old.installPrefix}/dist/server.bundle.js"
+              #     js-beautify -r $server
+              #     # sed -n -E '/if(.*(process|startsWith).*return !0x1)/p' $server
+              #     sed -i -E "/if(.*(process|startsWith).*return\s+\!0x1;)/d" $server
+              #     # NOTE: need to specify numbering style [number all lines] (-b a) since nl by default uses
+              #     #  non-empty line numbering (-bt)
+              #     start=$( nl -b a -n ln $server | sed -n -E '/.*const.*of\s+process.+\)/p' | cut -d " " -f 1 )
+              #     end=$(( $start + 1 ))
+              #     # echo $start , $end
+              #     sed -i "''${start},''${end}d" $server
+              #   '';
+              #   preFixupPhases = ["patcher"];
+              # }))
+              jnoortheen.nix-ide
+              kamadorueda.alejandra
+            ])
+            # NOTE: for todo: plugins should stay compatible with the version of vscode in the near future.
+            # TODO: (low prio) Find a way to lock versions of these packages.
+            # WARN: These 2 are not locked the same way nixpkgs are in a flake (to my knowledge)
+            # NOTE: This is "prerelease" vscode plugins
+            ++ (with pkgs.vscode-marketplace; [
+              petrmaliarov.vscode-gruvbox-material-p-dark
+            ])
+            # NOTE: These are "stable" vscode plugins
+            ++ (with pkgs.vscode-marketplace-release; [
+              ]);
+        };
+        lazygit = {
+          enable = true;
+          settings = {
+            git = {
+              autoFetch = false;
+              autoRefresh = false;
+              parseEmoji = true;
+            };
+            gui = {
+              nerdFontsVersion = "3";
+              theme = {
+                selectedLineBgColor = ["reverse"];
+                selectedRangeBgColor = ["reverse"];
+              };
+            };
+            update = {
+              method = "never";
             };
           };
-          update = {
-            method = "never";
-          };
         };
-      };
-      git = {
-        enable = true;
-        package = pkgs.gitFull;
-        userName = "Michael Pacheco";
-        userEmail = "git@michaelpacheco.org";
-        ignores = ["*~" "*.swap" ".vscode" ".idea"];
-        diff-so-fancy = {
+        git = {
           enable = true;
-          markEmptyLines = true;
-          useUnicodeRuler = true;
-        };
-        aliases = {
-          # git ${alias}
-          "fuckit" = "reset --hard";
-          "forgor" = "commit --amend --no-edit";
-          "weball" = "push --force";
-          "boop" = "init";
-          "stashes" = "stash list";
-          "uncommit" = "reset --soft HEAD~";
-          "unstage" = "reset --staged .";
-        };
-        signing = {
-          signByDefault = true;
-          # key = null;
-          key = "2A1E939CF48AC3CC";
-        };
-        extraConfig = let
-          # sz = "8096";
-          sz = "1024";
-        in {
-          core = {
-            packedGitLimit = "${sz}m";
-            packedGitWindowSize = "${sz}m";
+          package = pkgs.gitFull;
+          userName = "Michael Pacheco";
+          userEmail = "git@michaelpacheco.org";
+          ignores = ["*~" "*.swap" ".vscode" ".idea"];
+          diff-so-fancy = {
+            enable = true;
+            markEmptyLines = true;
+            useUnicodeRuler = true;
           };
-          pack = {
-            deltaCacheSize = "2047m";
-            packSizeLimit = "2047m";
-            windowMemory = "2047m";
+          aliases = {
+            # git ${alias}
+            "fuckit" = "reset --hard";
+            "forgor" = "commit --amend --no-edit";
+            "weball" = "push --force";
+            "boop" = "init";
+            "stashes" = "stash list";
+            "uncommit" = "reset --soft HEAD~";
+            "unstage" = "reset --staged .";
           };
+          signing = {
+            signByDefault = true;
+            # key = null;
+            key = "2A1E939CF48AC3CC";
+          };
+          extraConfig = let
+            # sz = "8096";
+            sz = "1024";
+          in {
+            core = {
+              packedGitLimit = "${sz}m";
+              packedGitWindowSize = "${sz}m";
+            };
+            pack = {
+              deltaCacheSize = "2047m";
+              packSizeLimit = "2047m";
+              windowMemory = "2047m";
+            };
 
-          # NOTE: taken from https://gist.github.com/ugultopu/0b6412674073a5b603f8227cb108441c?permalink_comment_id=4647857#gistcomment-4647857
-          # this makes it possible to preserve timestamps for GIT_COMMITTER_DATE.
-          # this was based on the anwser given here: https://stackoverflow.com/a/29355320
-          # [core]
-          # packedGitLimit = 512m
-          # packedGitWindowSize = 512m
-          # [pack]
-          # deltaCacheSize = 2047m
-          # packSizeLimit = 2047m
-          # windowMemory = 2047m
-          # [core]
-          # packedGitLimit = ${sz}m
-          # packedGitWindowSize = ${sz}m
-          # [pack]
-          # deltaCacheSize = ${sz}m
-          # packSizeLimit = ${sz}m
-          # windowMemory = ${sz}m
-          # git -c rebase.instructionFormat='%s%nexec GIT_COMMITTER_DATE="%cD" GIT_COMMITTER_NAME="%cn" GIT_COMMITTER_EMAIL="%ce"  git commit --amend --no-edit --reset-author --date="%cD"' rebase -i
+            # NOTE: taken from https://gist.github.com/ugultopu/0b6412674073a5b603f8227cb108441c?permalink_comment_id=4647857#gistcomment-4647857
+            # this makes it possible to preserve timestamps for GIT_COMMITTER_DATE.
+            # this was based on the anwser given here: https://stackoverflow.com/a/29355320
+            # [core]
+            # packedGitLimit = 512m
+            # packedGitWindowSize = 512m
+            # [pack]
+            # deltaCacheSize = 2047m
+            # packSizeLimit = 2047m
+            # windowMemory = 2047m
+            # [core]
+            # packedGitLimit = ${sz}m
+            # packedGitWindowSize = ${sz}m
+            # [pack]
+            # deltaCacheSize = ${sz}m
+            # packSizeLimit = ${sz}m
+            # windowMemory = ${sz}m
+            # git -c rebase.instructionFormat='%s%nexec GIT_COMMITTER_DATE="%cD" GIT_COMMITTER_NAME="%cn" GIT_COMMITTER_EMAIL="%ce"  git commit --amend --no-edit --reset-author --date="%cD"' rebase -i
 
-          # %s%nexec GIT_COMMITTER_DATE="%cD" GIT_COMMITTER_NAME="%cn" GIT_COMMITTER_EMAIL="%ce"  git commit --amend --no-edit --reset-author --date="%cD"
+            # %s%nexec GIT_COMMITTER_DATE="%cD" GIT_COMMITTER_NAME="%cn" GIT_COMMITTER_EMAIL="%ce"  git commit --amend --no-edit --reset-author --date="%cD"
 
-          # moved this to an alias, having this the default might bite me in the ass in the future
-          # rebase.instructionFormat = ''
-          #   %s%nexec GIT_COMMITTER_DATE="%cD" git commit --amend --no-edit --reset-author --date="%cD"
-          # '';
+            # moved this to an alias, having this the default might bite me in the ass in the future
+            # rebase.instructionFormat = ''
+            #   %s%nexec GIT_COMMITTER_DATE="%cD" git commit --amend --no-edit --reset-author --date="%cD"
+            # '';
+          };
         };
       };
-    });
-  };
+    })
+  ];
 }
