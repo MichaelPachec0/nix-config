@@ -110,24 +110,19 @@
     # seat, and if the libseat session is not active yet (VT still being handed
     # over from the greeter) logind revokes every fd and nothing re-enumerates
     # afterwards. Leaves the session with no keyboard or touchpad at all.
-    # Written against the v0.14.0 tag, which is what nixpkgs builds.
+    # Rebased onto v0.15.1, which braced that branch and added a
+    # dispatchLibinputEvents() call after the resume.
     #
-    # Second patch: release the CRTC in the kernel when a connector goes away.
-    # aquamarine never commits a disable for a disconnected connector, and the
-    # kernel unregisters DP MST connectors on removal, so after a dock unplug
-    # or one monitor dropping off the hub the CRTC stays routed to a zombie
-    # connector. The kernel then refuses (silent EINVAL from
-    # update_connector_routing) every modeset that activates that CRTC, at any
-    # mode, until fbcon restores on a VT switch. Seen 2026-09-04 as all three
-    # dock monitors stuck at 0x0 with "atomic drm request: failed to commit:
-    # Invalid argument" and drm_info showing the dead connectors still holding
-    # crtc_id 108/113/118.
+    # The second patch (release the CRTC in the kernel when a connector goes
+    # away, for the dock-unplug monitors-stuck-at-0x0 bug) is gone: v0.15.1
+    # does it upstream in SDRMConnector::disconnect(), committing an
+    # enabled = false modeset before releasing the output, and it pauses the
+    # commit queue around it, which ours did not.
     aquamarine = prev.aquamarine.overrideAttrs (old: {
       patches =
         (old.patches or [])
         ++ [
           ../overlays/aquamarine-libinput-inactive-session-devices.patch
-          ../overlays/aquamarine-release-crtc-on-disconnect.patch
         ];
     });
     # Hyprland CORE: bumped to the v0.56.2 point release and carrying the two
