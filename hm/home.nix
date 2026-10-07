@@ -229,7 +229,6 @@
       wtf-nvim
       nvim-dap-repl-highlights
       neoai-nvim
-      telescope-docker-nvim
       nvim-emmet
       kitty-scrollback-nvim
       clear-action-nvim
