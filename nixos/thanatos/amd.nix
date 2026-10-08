@@ -242,7 +242,20 @@ in {
     in
       map withKernelToolchain [
         kpkg.ryzen-smu
-        kpkg.zenpower
+        # zenpower5 hardcodes the gcc-only `-Wimplicit-fallthrough=3`; clang
+        # (the -lto kernel's compiler) rejects the `=N` form, and kbuild's
+        # -Werror=unknown-warning-option makes that fatal. The bare flag means
+        # level 3 on gcc and is valid on clang. Applied only for a clang kernel,
+        # so a gcc kernel builds the untouched source. replace-fail flags when
+        # upstream fixes it so this override can be dropped.
+        (kpkg.zenpower.overrideAttrs (prev: {
+          postPatch =
+            (prev.postPatch or "")
+            + lib.optionalString kpkg.kernel.stdenv.cc.isClang ''
+              substituteInPlace Makefile \
+                --replace-fail -Wimplicit-fallthrough=3 -Wimplicit-fallthrough
+            '';
+        }))
       ];
     boot.loader.systemd-boot.consoleMode = lib.mkForce "max";
     environment.systemPackages = with pkgs; [
