@@ -5,10 +5,19 @@
 # Run as root (debugfs is root-only). Appends to $1, default ./zswap-soak.log.
 # Under sudo the log is created by root; chown it back if your editor minds.
 # Pair with the intent:
-#   vmstat zswpout/zswpin/zswpwb   all move; zswpwb > 0 during a build
-#   user.slice zswpwb              small next to nix-daemon's
-#   nix-daemon zswap.current       <= MemoryZSwapMax (2G)
-#   debug reject_compress_poor     ~0 (incompressible pages are stored raw)
+#   vmstat zswpout/zswpin          both move under pressure
+#   vmstat zswpwb, pswpout         0 while shrinker_enabled=0 (any growth means
+#     the pool hit max_pool_percent, i.e. the global drain, not the shrinker)
+#   user.slice zswpwb              0, always: writeback is denied for the
+#     desktop slices (MemoryZSwapWriteback=false), so all of zswpwb is the
+#     builders. Nonzero here means the denial is not reaching this cgroup.
+#   user.slice zswap_writeback     0 (1 means the drop-in did not apply)
+#   nix-daemon zswap_writeback     1 (the builders ARE the disk tier)
+#   nix-daemon zswap.current       <= MemoryZSwapMax (4G)
+#   debug reject_compress_poor     ~0
+#   debug reject_compress_fail     climbs: desktop pages that will not
+#     compress are rejected (not stored raw) because writeback is denied
+#   debug stored_incompressible    near 0 for the same reason
 #   debug pool_limit_hit           low; climbing means raise max_pool_percent
 #   user.slice oom_kill            0
 #   thp_zswpout                    zswap-era THP counter; growth argues mTHP
@@ -57,6 +66,7 @@ rd() { cat "$1" 2>/dev/null || echo na; }
   kv us_zswap_incomp "$(cg_stat "$us" zswap_incomp)"
   kv us_swap_current "$(rd "$us/memory.swap.current")"
   kv us_zswap_current "$(rd "$us/memory.zswap.current")"
+  kv us_zswap_writeback "$(rd "$us/memory.zswap.writeback")"
   kv us_low_events "$(events "$us" low)"
   kv us_oom_kill "$(events "$us" oom_kill)"
   kv us_psi_mem_some "$(awk '/^some/ { sub("total=", "", $5); print $5 }' "$us/memory.pressure" 2>/dev/null || echo na)"
@@ -66,6 +76,7 @@ rd() { cat "$1" 2>/dev/null || echo na; }
   kv nd_zswap_incomp "$(cg_stat "$nd" zswap_incomp)"
   kv nd_zswap_current "$(rd "$nd/memory.zswap.current")"
   kv nd_zswap_max "$(rd "$nd/memory.zswap.max")"
+  kv nd_zswap_writeback "$(rd "$nd/memory.zswap.writeback")"
   kv nd_high_events "$(events "$nd" high)"
   kv dbg_pool_total_size "$(rd "$dbg/pool_total_size")"
   kv dbg_stored_pages "$(rd "$dbg/stored_pages")"
