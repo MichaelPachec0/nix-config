@@ -7,6 +7,11 @@
 }: let
   report-changes = config.report-changes.enable;
 in {
+  # NOTE: gives a really nice diff between generations.
+  # Started from https://github.com/luishfonseca/dotfiles/blob/32c10e775d9ec7cc55e44592a060c1c9aadf113e/modules/upgrade-diff.nix
+  # (a bare `nvd diff`), now a fuller pre-flight report.
+  imports = [./system-diff.nix];
+
   options = {
     audio.enable = lib.mkEnableOption "Installs common audio apps.";
     devMachine.enable = lib.mkEnableOption "Install common developer apps.";
@@ -297,21 +302,6 @@ in {
     system.userActivationScripts.reloadDbusActivation = ''
       ${pkgs.systemd}/bin/systemctl --user reload dbus.service || true
     '';
-    # NOTE: gives a really nice diff between generations
-    # src: https://github.com/luishfonseca/dotfiles/blob/32c10e775d9ec7cc55e44592a060c1c9aadf113e/modules/upgrade-diff.nix
-    system.activationScripts.diff = {
-      supportsDryActivation = true;
-      # ${lib.getExe pkgs.nvd} --nix-bin-dir=${pkgs.nix}/bin diff /run/current-system "$systemConfig"
-      text = ''
-        if [[ -e /run/current-system ]]; then
-          echo "#############################        diff to current-system        ##############################"
-          echo "#                                                                                               #"
-          ${pkgs.nvd}/bin/nvd --nix-bin-dir=${config.nix.package}/bin diff $(${pkgs.coreutils}/bin/readlink "/run/current-system") "$systemConfig" | tee /etc/gradientos-changelog
-          echo "#                                                                                               #"
-          echo "#############################      end diff to current-system      ##############################"
-        fi
-      '';
-    };
   };
   # // (lib.optionalAttrs report-changes {
   # });
