@@ -524,23 +524,26 @@ in {
       # live curve comes from the mkForce'd THINKFAN_ARGS + active.yaml below.
       levels = quietLevels;
     };
-    services.pixiecore = {
+    services.pixiecore = let
+      netbootVer = pkgs.netbootxyz-efi.version;
+      netbootBios = pkgs.fetchurl {
+        url = "https://github.com/netbootxyz/netboot.xyz/releases/download/${netbootVer}/netboot.xyz-undionly.kpxe";
+        hash = "sha256-aMPNlf+AZW4k2IB91GzF5KDP6kEz+CliHaz+N/kz1Jk=";
+      };
+    in {
       enable = true;
       openFirewall = true;
       dhcpNoBind = true;
       debug = true;
-      # kernel = "https://boot.netboot.xyz";
       kernel = "https://boot.netboot.xyz/ipxe/netboot.xyz.lkrn";
+      port = 8080;
+      statusPort = 8080;
       extraArguments = [
-        # "--ipxe-ipxe"
-        # "${pkgs.ipxe}/ipxe.efi"
+        "--ipxe-bios"
+        "${netbootBios}"
+
         "--ipxe-efi64"
-        "${../../assets/ipxe.efi}"
-        # "${../../assets/netboot.xyz.efi}"
-        # "--listen-addr"
-        # "192.168.200.1"
-        "--port"
-        "8080"
+        "${pkgs.netbootxyz-efi}"
       ];
     };
     services.udev.packages = let
