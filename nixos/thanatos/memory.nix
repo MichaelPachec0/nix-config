@@ -11,11 +11,18 @@
   # Desktop working set we refuse to reclaim before anything else. Best-effort
   # (memory.low, not memory.min), so reclaim can still take it as a last resort.
   #
-  # 12G, was 10G: zswap charges compressed pool bytes to the owning cgroup
-  # (zram's pool was uncharged kernel memory), so the desktop's memory.current
-  # now includes its pool share (~2G at the time of the switch). Without the
-  # +2G the effective reserve would shrink by exactly that.
-  guiReserve = "12G";
+  # 16G, was 12G: the reserve is the only thing that orders reclaim. Global
+  # reclaim skips cgroups under memory.low, so the desktop is taken last only
+  # while it sits under this figure; every byte above it reclaims
+  # proportionally with the builders. A working desktop measured 16.1G of
+  # memory.current (7.2G anon, 7.6G file), so 12G left ~4G unordered. 16G
+  # covers the measured set and still leaves ~5G of the 21.2G for system.slice
+  # and the builders before global reclaim has to eat into the reserve.
+  #
+  # The 12G itself was 10G plus the pool share: zswap charges compressed pool
+  # bytes to the owning cgroup (zram's pool was uncharged kernel memory), so
+  # the desktop's memory.current includes its pool share (~2G at the switch).
+  guiReserve = "16G";
 
   # memory.low only takes effect if every ancestor also grants it: the effective
   # protection is min(own, parent's undistributed share). Breaking the chain at
@@ -28,6 +35,37 @@
       MemoryLow = guiReserve;
       # oomd may only pick these once no unprotected candidate is left.
       ManagedOOMPreference = "avoid";
+      # Desktop pool entries may never be written back to the cryptswap. This is
+      # the knob that makes zswap eviction obey the cgroup tiering: memory.low
+      # above decides who ENTERS the pool, and this decides who may LEAVE it for
+      # disk. Without it both writeback paths -- the memcg shrinker and the
+      # global max_pool_percent drain -- pick by LRU age, and a desktop's idle
+      # tabs are older than any builder page, i.e. exactly backwards (measured:
+      # see zswap.shrinker_enabled below).
+      #
+      # Unlike MemoryLow this does NOT need the whole ancestor chain:
+      # mem_cgroup_zswap_writeback_enabled() walks parent_mem_cgroup() upwards
+      # and returns false if ANY ancestor has it off, so
+      # user.slice alone would cover every descendant. Set on all of them anyway
+      # so no single unit reads as permitting writeback.
+      #
+      # The cost: a swap-out that can neither compress into the pool nor reach
+      # disk simply fails and the page stays resident. With a full pool that
+      # turns "desktop gets slow" into "something must be killed", which is what
+      # the ManagedOOMPreference above and oomd's preference for nix-daemon are
+      # there to aim. Untested under a genuinely full pool.
+      #
+      # Expect debugfs zswap/reject_compress_fail to climb (1.2M after a few
+      # days here) and stored_incompressible_pages to sit near zero. That is
+      # this setting working, not a fault: zswap_compress() stores a page that
+      # will not compress below PAGE_SIZE raw only when writeback is allowed,
+      # because a raw entry saves no RAM and exists only to be written back
+      # later. With writeback denied it rejects the page instead, counts it as
+      # compress_fail, and swap_writeout() returns it to the active LRU. The
+      # counter is attempts, not pages, since reclaim retries the same page.
+      # Real cost is one wasted zstd pass (~16us) per retry; RAM cost is nil,
+      # as the raw entry would have held the same 4K.
+      MemoryZSwapWriteback = false;
     };
   };
 in {
@@ -91,10 +129,10 @@ in {
   # ~8G spilled, the machine thrashed) is the failure mode this replaces.
   #
   # zswap keeps a compressed pool in RAM (zsmalloc, charged to the owning
-  # cgroup) in front of the same cryptswap, and its shrinker writes the coldest
-  # entries back to disk under memcg pressure, LRU-ordered. The disk tier is
-  # reached by age first; the pool running out is the fallback (see
-  # max_pool_percent below).
+  # cgroup) in front of the same cryptswap. The disk tier is reached two ways:
+  # builder pages past MemoryZSwapMax bypass the pool (below), and the pool
+  # running out writes back globally (see max_pool_percent below). The
+  # age-ordered shrinker path is deliberately off (see shrinker_enabled).
   #
   # The mirror module drops its zswap.enabled=0 param once zramSwap.enable is
   # false, so the kernel's ZSWAP_DEFAULT_ON=y takes over. Deliberately no
@@ -110,9 +148,8 @@ in {
     # held it, 40 does with headroom. When the pool hits this the global
     # shrinker writes back until it is under accept_threshold_percent (90).
     "zswap.max_pool_percent=40"
-    # Both of these restate this kernel's Kconfig (ZSWAP_COMPRESSOR_DEFAULT
-    # zstd, ZSWAP_SHRINKER_DEFAULT_ON=y). Set explicitly only so they survive
-    # a kernel whose defaults differ; not a deviation from anything.
+    # Restates this kernel's Kconfig (ZSWAP_COMPRESSOR_DEFAULT zstd). Set
+    # explicitly only so it survives a kernel whose default differs.
     #
     # zstd is the incumbent (same library and level zram used, ratio 3.6x
     # measured). lz4 compresses a 4K page in ~6us against zstd's ~16us and 80%
@@ -120,9 +157,31 @@ in {
     # the compressor is a runtime parameter, so that trade is settled by
     # switching it live under a build, not by a rebuild.
     "zswap.compressor=zstd"
-    # The shrinker IS the tiering: without it the pool only drains on swap-in
-    # or at the hard cap.
-    "zswap.shrinker_enabled=1"
+    # Shrinker OFF (Kconfig default is ZSWAP_SHRINKER_DEFAULT_ON=y). It was on
+    # as "the tiering", and it tiered the wrong side: under memory pressure it
+    # writes the coldest pool entries to disk by LRU age, and a desktop's idle
+    # tabs are older than any builder page. Measured with pool_limit_hit=0 and
+    # a small build running: written_back_pages=102277 (~400M), of which
+    # user.slice held ~500M of on-disk swap (memory.swap.current minus
+    # memory.stat zswapped) and nix-daemon ~4M. The cgroup ordering (MemoryLow
+    # on the desktop, MemoryZSwapMax on the builders) chooses who enters the
+    # pool; the shrinker chose who leaves it, in the opposite order.
+    #
+    # Off, the pool drains only on swap-in, when the owner exits, or by the
+    # global writeback at max_pool_percent (never reached, see above). The
+    # builder tier still works: past MemoryZSwapMax their pages bypass the pool
+    # and go straight to disk, that path does not need the shrinker.
+    #
+    # MemoryZSwapWriteback=false on the desktop slices is the narrower fix for
+    # the same inversion, and it exempts by cgroup rather than by disabling the
+    # mechanism for everyone -- with it in place the shrinker could come back to
+    # =1 and would then only age builder and system.slice entries out to disk,
+    # which is the behaviour actually wanted. Left at 0 until that exemption is
+    # observed working (user.slice memory.stat zswapped holding steady while
+    # written_back_pages climbs under a build); turning both on at once would
+    # re-arm the measured failure above on nothing but a reading of the kernel
+    # ancestor-walk semantics.
+    "zswap.shrinker_enabled=0"
   ];
 
   # ---- MGLRU --------------------------------------------------------------
@@ -159,15 +218,17 @@ in {
   # it if that bites.
   #
   # 10G, was 8G: the pool bytes this cgroup owns are charged to it and LRU
-  # reclaim of its pages cannot free them; they leave the pool only when the
-  # zswap shrinker writes them back, on a swap-in, or when the owner exits.
+  # reclaim of its pages cannot free them; they leave the pool only on a
+  # swap-in, when the owner exits, or at the global max_pool_percent writeback.
   # So up to MemoryZSwapMax of the budget is not reclaimable. +2G keeps the
   # reclaimable budget where it was.
   #
   # MemoryZSwapMax caps this cgroup's share of the shared pool. Past it,
   # builder pages skip the pool and go straight to the cryptswap, which is the
   # intended order: builders reach disk first, the desktop stays compressed in
-  # RAM. 2G of pool is ~7G of builder anon at the measured 3.6x. The pool has
+  # RAM. 4G of pool is ~14G of builder anon at the measured 3.6x (was 2G, ~7G):
+  # most builds stay compressed in RAM; only the recorded worst case (~18.6G
+  # swapped anon) spills its tail to disk. The pool has
   # no per-cgroup reservation the other way (nothing stops the desktop filling
   # it), so this is a ceiling on the builders, not a floor for them.
   #
@@ -180,7 +241,7 @@ in {
   systemd.services.nix-daemon.serviceConfig = {
     MemoryAccounting = true;
     MemoryHigh = "10G";
-    MemoryZSwapMax = "2G";
+    MemoryZSwapMax = "4G";
     # Explicit, not inherited: claim no reclaim protection at all.
     MemoryLow = "0";
     # When system swap crosses oomd's 90% limit, this is the preferred casualty.
@@ -438,12 +499,14 @@ in {
   };
 
   systemd.slices."user-" = protectSlice;
+  # Repeats protectSlice by hand because this one is a service, not a slice.
   systemd.services."user@" = {
     overrideStrategy = "asDropin";
     serviceConfig = {
       MemoryAccounting = true;
       MemoryLow = guiReserve;
       ManagedOOMPreference = "avoid";
+      MemoryZSwapWriteback = false;
     };
   };
   systemd.user.slices.session = protectSlice;
