@@ -62,9 +62,6 @@
     local
   ];
   wayland = final: prev: {
-    electron-mail-latest =
-      prev.callPackage ../pkgs/electron-mail {};
-
     nw = let
       nw = inputs.nixpkgs-wayland.packages.${prev.stdenv.hostPlatform.system};
       swayfx-unwrapped = prev.swayfx-unwrapped.overrideAttrs (old: {
