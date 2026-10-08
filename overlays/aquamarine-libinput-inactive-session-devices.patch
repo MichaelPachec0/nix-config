@@ -1,14 +1,13 @@
 --- a/src/backend/Session.cpp
 +++ b/src/backend/Session.cpp
-@@ -76,14 +76,39 @@ static void libinputLog(libinput*, libinput_log_priority level, const char* fmt,
- 
+@@ -76,15 +76,39 @@ static void libinputLog(libinput*, libinput_log_priority level, const char* fmt,
+
  // ------------ Libseat
- 
+
  static void libseatEnableSeat(struct libseat* seat, void* data) {
      auto PSESSION    = (Aquamarine::CSession*)data;
      PSESSION->active = true;
--    if (PSESSION->libinputHandle)
-+    if (PSESSION->libinputHandle) {
+     if (PSESSION->libinputHandle) {
 +        // libinput_resume() only re-enumerates when the context is currently suspended:
 +        // its udev backend (udev_input_enable(), udev-seat.c) returns early as long as
 +        // the udev monitor is still alive. Suspending first turns this into an
@@ -34,10 +33,13 @@
 +        // libseatDisableSeat() already suspended and the extra suspend is a no-op.
 +        libinput_suspend(PSESSION->libinputHandle);
          libinput_resume(PSESSION->libinputHandle);
-+    }
+         PSESSION->dispatchLibinputEvents();
+     }
      PSESSION->events.changeActive.emit();
  }
- 
+
  static void libseatDisableSeat(struct libseat* seat, void* data) {
      auto PSESSION    = (Aquamarine::CSession*)data;
      PSESSION->active = false;
+     if (PSESSION->libinputHandle)
+         libinput_suspend(PSESSION->libinputHandle);
