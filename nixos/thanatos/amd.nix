@@ -267,6 +267,7 @@ in {
       pixiecore
       fanMode
     ];
+    programs.arduino-flasher-cli.enable = true;
     # Publish SMU metrics (temps + power/limits) for the QuickShell system popup.
     # Falls back gracefully: if this unit is down the file goes stale and the
     # popup reverts to its lm_sensors group.
