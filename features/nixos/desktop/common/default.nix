@@ -111,8 +111,7 @@ in {
 
         # mail clients
         neomutt
-        # electron-mail
-        electron-mail-latest
+        playground.electron-mail
 
         # video players
         # WARN: mpv: 2026-06-18: getting errors trying to build
