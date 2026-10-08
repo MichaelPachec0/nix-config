@@ -47,19 +47,6 @@ pkgs.testers.nixosTest {
     # even if that ever changes.
     security.pam.services.greetd.u2fAuth = lib.mkForce false;
 
-    # Reproduces the exact host condition that killed the first real cutover.
-    # greetd sources /etc/profile for the greeter session (source_profile,
-    # documented as defaulting to true in greetd.5), and NixOS's /etc/profile
-    # sources /etc/set-environment -- so the host's whole environment.variables
-    # set reaches the greeter after all, including the QT_QPA_PLATFORMTHEME
-    # that qt.platformTheme writes. With "gtk2" that is fatal rather than
-    # cosmetic: Qt loads the qt6gtk2 platform theme, which links GTK and calls
-    # gtk_init(), and gtk_init() (unlike gtk_init_check()) prints
-    # "cannot open display:" and calls exit(1) on the whole process when no X
-    # display exists. The greeter compositor runs "xwayland disable", so one
-    # never does, and quickshell died inside the QGuiApplication constructor
-    # before loading a line of QML.
-    #
     # This must be the real qt module and not just a hand-set
     # environment.variables entry: without the plugin actually installed, Qt
     # merely warns that the platform theme could not be loaded and carries on,
@@ -67,7 +54,7 @@ pkgs.testers.nixosTest {
     # back. It is the plugin being present AND selected that reproduces it.
     qt = {
       enable = true;
-      platformTheme = "gtk2";
+      platformTheme = "qt5ct";
     };
 
     # environment.sessionVariables reaches the greeter through PAM: NixOS
