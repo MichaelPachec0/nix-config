@@ -434,6 +434,9 @@ in {
       # package = pkgs.master.zerotierone;
     };
 
+    # Same exit(15)-on-SIGTERM story as privoxy, but onedrive ships as a user
+    # template unit, and switch-to-configuration counts failed USER units too.
+    systemd.user.services."onedrive@".serviceConfig.SuccessExitStatus = "0 15";
     services.onedrive = {
       enable = true;
       package = pkgs.onedrive.overrideAttrs (old: {

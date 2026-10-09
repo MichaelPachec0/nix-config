@@ -160,6 +160,11 @@ in {
       enable = true;
       enableTor = true;
     };
+    # privoxy calls exit(15) when it takes SIGTERM instead of exiting 0, so every
+    # nixos-rebuild switch that restarts it books a failed unit and the whole
+    # switch-to-configuration run returns 4, even though privoxy comes straight
+    # back up. Teach systemd that 15 is a clean stop for this daemon.
+    systemd.services.privoxy.serviceConfig.SuccessExitStatus = "0 15";
 
     # Select internationalisation properties.
     i18n.defaultLocale = "en_US.UTF-8";
