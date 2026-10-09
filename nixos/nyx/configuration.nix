@@ -285,7 +285,12 @@ in {
         "192.168.0.2" = [];
       };
     };
-    systemd.services."zerotierone" = {after = ["dhcpcd.service"];};
+    systemd.services."zerotierone" = {
+      after = ["dhcpcd.service"];
+      # zerotier needs more time to to disconnect and shutdown, forced
+      # forced because the default is  5s
+      serviceConfig.TimeoutStopSec = lib.mkForce "30s";
+    };
 
     # The user session bus inherits systemd's legacy soft RLIMIT_NOFILE of 1024,
     # because dbus-broker's own user unit (shipped by the package) sets no
