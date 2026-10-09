@@ -331,6 +331,11 @@ in {
         default = 0.32;
         description = "Alpha of the toolbox tint; multiplies with the compositor opacity of the firefox apps entry.";
       };
+      chromeDim = lib.mkOption {
+        type = lib.types.numbers.between 0 1;
+        default = 0.12;
+        description = "Alpha of a black layer drawn over the toolbox tint; 0 = none.";
+      };
       chromeColor = lib.mkOption {
         type = lib.types.str;
         default = theme.palette.bgMain;
@@ -374,7 +379,8 @@ in {
         }
         #navigator-toolbox {
           background-color: rgba(${rgb config.hyprglass.firefox.chromeColor}, ${num config.hyprglass.firefox.chromeAlpha}) !important;
-          background-image: none !important;
+          background-image: linear-gradient(rgba(0, 0, 0, ${num config.hyprglass.firefox.chromeDim}),
+                                            rgba(0, 0, 0, ${num config.hyprglass.firefox.chromeDim})) !important;
         }
         #nav-bar,
         #toolbar-menubar,
