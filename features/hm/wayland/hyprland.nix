@@ -836,7 +836,8 @@ in {
               touchpad = {
                 natural_scroll = true;
                 disable_while_typing = true;
-                tap_to_click = true;
+                # disable tap to click, too many false positives
+                tap_to_click = false;
                 drag_lock = false;
               };
             };
