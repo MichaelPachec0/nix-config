@@ -962,19 +962,26 @@ in {
 
           # hl.monitor({...}) -- the sway desc rules split into fields.
           monitor = [
+            # Left to right: VG279 | VG259QM | KTC | eDP, all top-aligned.
             {
-              output = "desc:LG Display 0x0676";
+              # Internal panel (EDID reports Lenovo 0x40A9; the old rule named
+              # "LG Display 0x0676" and no longer matched, so eDP fell to the
+              # catch-all auto placement).
+              output = "desc:Lenovo Group Limited 0x40A9";
               mode = "1920x1080@60";
               position = "6400x0";
               scale = 1.0;
             }
             {
-              # KTC native max is 2560x1440@165, but Renoir DCN 2.1 has a shared
-              # display-clock budget: @165 is only reachable when the other two
-              # externals are near-idle. With VG279 and VG259QM both active above
-              # 100Hz, DC caps this pipe at 144 (measured 2026-09-04: @165 request
-              # falls back to 144 even with the others at 100/100 or 120/60). 144
-              # is the best achievable here and clears the >=120 priority.
+              # KTC native max is 2560x1440@165, but all outputs share one
+              # Renoir DCN 2.1 display budget; the kernel rejects an over-budget
+              # mix with EINVAL and Hyprland falls back to 59.95. Measured
+              # 2026-10-07 (KTC on its own DP cable, VG279 on the dock, eDP on,
+              # modifier/DCC swapchains): VG279 144 + VG259QM 120 + KTC 144 fits,
+              # 10-bit included. VG259QM at 144 is what breaks it: KTC then falls
+              # to 60 unless VG279 drops to ~85. @165 did not fit at all, not
+              # even with VG279 at 640x480@60. These rates are the best mix
+              # with every output >=120.
               output = "desc:Shenzhen KTC Technology Group H27S17 0x00000001";
               mode = "2560x1440@144";
               position = "3840x0";
@@ -985,17 +992,22 @@ in {
             }
             {
               # VG279 native panel max is 1920x1080@144 (over the dock MST link).
+              # Fits at 144 only while VG259QM stays at 120; see the KTC rule.
               output = "desc:ASUSTek COMPUTER INC VG279 K5LMQS018158";
               mode = "1920x1080@144";
               position = "0x0";
               scale = 1.0;
             }
             {
-              # VG259QM is on the laptop's native HDMI (not the dock) and reaches
-              # its full 1920x1080@240 even with the other two externals active;
-              # the HDMI pipe is not on the DP/MST clock path. 10-bit holds at 240.
+              # VG259QM is on the laptop's native HDMI (not the dock). Its panel
+              # does 1920x1080@240, but it shares the DCN budget with the other
+              # externals: at 144 (325 MHz) it pushes KTC down to 60. 120 (VIC
+              # 63, 297 MHz) leaves room for KTC and VG279 at 144 (measured
+              # 2026-10-07; 10-bit holds). Before 2026-09-20 it ran 240 with the
+              # others at 144, so the budget shrank with that day's switch to
+              # modifier/DCC swapchains or that day's flake update (unsplit).
               output = "desc:ASUSTek COMPUTER INC VG259QM S1LMQS002054";
-              mode = "1920x1080@144";
+              mode = "1920x1080@120";
               position = "1920x0";
               scale = 1.0;
               bitdepth = 10;
